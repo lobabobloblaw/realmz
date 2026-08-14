@@ -986,6 +986,69 @@ void verify_mode_switch_cancellation(const fs::path& repository_root) {
       "presentation assets must refresh after mode selection and before recomposition");
 }
 
+void verify_window_manager_combat_sink_order(
+    const fs::path& repository_root) {
+  const std::string source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string create_window = function_body(source, "create_sdl_window");
+  require(count_identifier(
+              create_window, "RuntimeLegacyCommandBridge") == 1,
+      "window creation must construct exactly one runtime legacy bridge");
+
+  const std::size_t bridge = find_identifier(
+      create_window, "RuntimeLegacyCommandBridge");
+  const std::size_t invocation_open = create_window.find(
+      '(', bridge + std::string_view("RuntimeLegacyCommandBridge").size());
+  require(invocation_open != std::string::npos,
+      "runtime legacy bridge construction is missing its argument list");
+  const std::size_t invocation_close = matching_delimiter(
+      create_window, invocation_open, '(', ')');
+  const std::string invocation = create_window.substr(
+      invocation_open, invocation_close - invocation_open + 1);
+
+  for (const auto identifier : {
+           "legacy_key_message_for_guard_combatant",
+           "semantic_guard_combatant_tag",
+           "PushSemanticGuardCombatantEvent",
+           "legacy_key_message_for_finish_combatant",
+           "semantic_finish_combatant_tag",
+           "PushSemanticFinishCombatantEvent",
+           "legacy_key_message_for_delay_combatant",
+           "semantic_delay_combatant_tag",
+           "PushSemanticDelayCombatantEvent",
+       }) {
+    require(count_identifier(invocation, identifier) == 1,
+        std::string("runtime legacy bridge construction must contain exactly ") +
+            "one " + identifier);
+  }
+
+  const std::string compact = without_whitespace(invocation);
+  const std::size_t guard_mapper = compact.find(
+      "legacy_key_message_for_guard_combatant");
+  const std::size_t guard_tag = compact.find(
+      "semantic_guard_combatant_tag");
+  const std::size_t guard_push = compact.find(
+      "PushSemanticGuardCombatantEvent");
+  const std::size_t finish_mapper = compact.find(
+      "legacy_key_message_for_finish_combatant");
+  const std::size_t finish_tag = compact.find(
+      "semantic_finish_combatant_tag");
+  const std::size_t finish_push = compact.find(
+      "PushSemanticFinishCombatantEvent");
+  const std::size_t delay_mapper = compact.find(
+      "legacy_key_message_for_delay_combatant");
+  const std::size_t delay_tag = compact.find(
+      "semantic_delay_combatant_tag");
+  const std::size_t delay_push = compact.find(
+      "PushSemanticDelayCombatantEvent");
+  require(guard_mapper < guard_tag && guard_tag < guard_push &&
+          guard_push < finish_mapper && finish_mapper < finish_tag &&
+          finish_tag < finish_push && finish_push < delay_mapper &&
+          delay_mapper < delay_tag && delay_tag < delay_push,
+      "identically typed combat sinks must remain ordered Guard, Finish, "
+      "then Delay in runtime legacy bridge construction");
+}
+
 void verify_top_level_loop(
     std::string_view body,
     std::string_view function_name,
@@ -1361,6 +1424,7 @@ int main(int argc, char** argv) {
     verify_party_selection_adapter(repository_root);
     verify_legacy_loop_ownership(repository_root);
     verify_production_call_ownership(repository_root);
+    verify_window_manager_combat_sink_order(repository_root);
     verify_mode_switch_cancellation(repository_root);
     std::cout << "SemanticTopLevelLoopContractTest passed ("
               << checks_run << " checks)\n";
