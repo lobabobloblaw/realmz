@@ -86,20 +86,23 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes four bounded semantic actions: typed `GuardCombatantAction`,
-`FinishCombatantAction`, `DelayCombatantAction`, and
-`CenterActiveCombatantAction` commands each carry the stable active-party
-combatant ID through distinct combat-only tagged events. The top-level combat
-loop late-validates a fresh snapshot, including the acting ID, party ownership,
-active/targetable state, and positive stamina, before translating an action to
-its exact preserved Classic key record. Delay is available only before movement
-(`movement == movement_maximum`), revalidates that condition at delivery, and
-becomes the exact Classic `d` message `0x00000264`. Center becomes the exact
-Classic `c` message `0x00000863`. Validation fails closed, so stale or newly
-ineligible actions become inert. The original Classic guard/finish/delay
-mutations and turn advance remain authoritative, as does Center's existing
-non-turn-ending camera sequence; all other combat commands remain in the
-interactive Classic frame.
+Combat exposes five bounded semantic actions: typed `GuardCombatantAction`,
+`FinishCombatantAction`, `DelayCombatantAction`,
+`CenterActiveCombatantAction`, and `SwitchWeaponSetAction` commands each carry
+the stable active-party combatant ID through distinct combat-only tagged
+events. The top-level combat loop late-validates a fresh snapshot, including
+the acting ID, party ownership, active/targetable state, and positive stamina,
+before translating an action to its exact preserved Classic key record. Delay
+is available only before movement (`movement == movement_maximum`), revalidates
+that condition at delivery, and becomes the exact Classic `d` message
+`0x00000264`. Center becomes the exact Classic `c` message `0x00000863`, and
+Switch Weapon becomes the exact lowercase `w` message `0x00000D77`. Weapon
+Switch intentionally carries no desired set; the live relative toggle remains
+inside Classic combat. Validation fails closed, so stale or newly ineligible
+actions become inert. The original Classic guard/finish/delay mutations and
+turn advance remain authoritative, as do Center's existing non-turn-ending
+camera sequence and Weapon's toggle, failure feedback, and shared post-command
+handling; all other combat commands remain in the interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are

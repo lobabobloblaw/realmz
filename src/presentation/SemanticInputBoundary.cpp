@@ -42,6 +42,10 @@ constexpr uint32_t kSemanticCenterActiveCombatantSignature = 0x52430000U;
 constexpr uint32_t kSemanticCenterActiveCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticCenterActiveCombatantSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticCenterActiveCombatantIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticSwitchWeaponSignature = 0x52570000U;
+constexpr uint32_t kSemanticSwitchWeaponMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticSwitchWeaponSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticSwitchWeaponIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -99,6 +103,11 @@ struct DecodedDelayCombatant {
 };
 
 struct DecodedCenterActiveCombatant {
+  realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedSwitchWeapon {
   realmz::presentation::CombatantId combatant;
   RealmzSemanticInputSurface surface;
 };
@@ -293,6 +302,24 @@ std::optional<DecodedCenterActiveCombatant> decode_center_active_combatant(
   return DecodedCenterActiveCombatant{
       .combatant = static_cast<realmz::presentation::CombatantId>(
           tagged_message & kSemanticCenterActiveCombatantIdMask),
+      .surface = surface_value,
+  };
+}
+
+std::optional<DecodedSwitchWeapon> decode_switch_weapon(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticSwitchWeaponMask) !=
+      kSemanticSwitchWeaponSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticSwitchWeaponSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedSwitchWeapon{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticSwitchWeaponIdMask),
       .surface = surface_value,
   };
 }
@@ -525,6 +552,18 @@ uint32_t semantic_center_active_combatant_tag(
       static_cast<uint32_t>(combatant);
 }
 
+uint32_t semantic_switch_weapon_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticSwitchWeaponSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -683,6 +722,17 @@ RealmzSemanticCenterActiveCombatantTagSurface(uint32_t tagged_message) {
   return center ? center->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticSwitchWeaponTag(
+    uint32_t tagged_message) {
+  return decode_switch_weapon(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticSwitchWeaponTagSurface(uint32_t tagged_message) {
+  const auto switch_weapon = decode_switch_weapon(tagged_message);
+  return switch_weapon ? switch_weapon->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -694,7 +744,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_guard_combatant(tagged_message) ||
           decode_finish_combatant(tagged_message) ||
           decode_delay_combatant(tagged_message) ||
-          decode_center_active_combatant(tagged_message))
+          decode_center_active_combatant(tagged_message) ||
+          decode_switch_weapon(tagged_message))
       ? 1
       : 0;
 }
@@ -730,6 +781,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto center = decode_center_active_combatant(tagged_message)) {
     return center->surface;
+  }
+  if (const auto switch_weapon = decode_switch_weapon(tagged_message)) {
+    return switch_weapon->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1032,4 +1086,15 @@ extern "C" uint8_t RealmzConsumeSemanticCenterActiveCombatantEvent(
       decode_center_active_combatant(tagged_message),
       classic_key_message,
       realmz::presentation::legacy_key_message_for_center_active_combatant);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticSwitchWeaponEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  return consume_semantic_combatant_event(
+      expected_surface,
+      decode_switch_weapon(tagged_message),
+      classic_key_message,
+      realmz::presentation::legacy_key_message_for_switch_weapon);
 }

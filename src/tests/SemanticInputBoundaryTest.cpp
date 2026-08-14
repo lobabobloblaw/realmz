@@ -168,6 +168,14 @@ bool consume_center_active(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_switch_weapon(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticSwitchWeaponEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 using CombatTagFactory = uint32_t (*)(
     CombatantId,
     RealmzSemanticInputSurface) noexcept;
@@ -202,6 +210,11 @@ constexpr std::array kCombatActionCases{
         .tag = semantic_center_active_combatant_tag,
         .consume = consume_center_active,
         .classic_message = 0x00000863U,
+    },
+    CombatActionCase{
+        .tag = semantic_switch_weapon_tag,
+        .consume = consume_switch_weapon,
+        .classic_message = 0x00000D77U,
     },
 };
 
@@ -599,6 +612,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticFinishCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticGuardCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -653,6 +667,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
     CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticFinishCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -708,6 +723,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
     CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticDelayCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -764,6 +780,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticCenterActiveCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -801,6 +818,65 @@ void test_tag_encoding_and_validation() {
        }) {
     CHECK(RealmzIsSemanticCenterActiveCombatantTag(malformed) == 0);
     CHECK(RealmzSemanticCenterActiveCombatantTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  std::set<uint32_t> switch_weapon_tags;
+  for (const CombatantId combatant : {0, 1, 10, 109, 255}) {
+    const uint32_t tag = semantic_switch_weapon_tag(
+        combatant, REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK((tag & 0xFFFF0000U) == 0x52570000U);
+    CHECK(((tag >> 8U) & 0xFFU) == REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK((tag & 0xFFU) == static_cast<uint32_t>(combatant));
+    CHECK(RealmzIsSemanticSwitchWeaponTag(tag) != 0);
+    CHECK(RealmzIsSemanticGuardCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticFinishCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+    CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+    CHECK(RealmzSemanticSwitchWeaponTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(RealmzSemanticGameplayTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(switch_weapon_tags.emplace(tag).second);
+    CHECK(!guard_tags.contains(tag));
+    CHECK(!finish_tags.contains(tag));
+    CHECK(!delay_tags.contains(tag));
+    CHECK(!center_active_tags.contains(tag));
+    CHECK(!tags.contains(tag));
+    CHECK(!selection_tags.contains(tag));
+    CHECK(!inventory_tags.contains(tag));
+    CHECK(!spellbook_tags.contains(tag));
+    CHECK(!save_game_tags.contains(tag));
+    CHECK(!load_game_tags.contains(tag));
+  }
+  CHECK(semantic_switch_weapon_tag(
+            -1, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_switch_weapon_tag(
+            256, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_switch_weapon_tag(
+            1, REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_switch_weapon_tag(
+            1, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  CHECK(semantic_switch_weapon_tag(
+            1, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0);
+  for (const uint32_t malformed : {
+           0U,
+           0x52560000U,
+           0x52570000U,
+           0x52570101U,
+           0x52570201U,
+           0x52570401U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticSwitchWeaponTag(malformed) == 0);
+    CHECK(RealmzSemanticSwitchWeaponTagSurface(malformed) ==
         REALMZ_SEMANTIC_INPUT_NONE);
   }
 }

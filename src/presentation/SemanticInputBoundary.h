@@ -88,6 +88,13 @@ uint8_t RealmzIsSemanticCenterActiveCombatantTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticCenterActiveCombatantTagSurface(
     uint32_t tagged_message);
 
+// Switch-weapon tags carry the acting combatant explicitly and are valid only
+// on the combat surface. The desired set is intentionally left to the live
+// Classic relative-toggle flow.
+uint8_t RealmzIsSemanticSwitchWeaponTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticSwitchWeaponTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -171,6 +178,14 @@ uint8_t RealmzConsumeSemanticCenterActiveCombatantEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant, then returns the preserved
+// Classic lowercase "w" key record. The original combat flow owns the relative
+// weapon-set toggle, feedback, and any subsequent turn handling.
+uint8_t RealmzConsumeSemanticSwitchWeaponEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -215,6 +230,10 @@ enum class MovementCommand;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_center_active_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_switch_weapon_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 
