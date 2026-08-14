@@ -66,6 +66,10 @@ using RuntimeLegacyCenterActiveCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacySwitchWeaponSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Combat sinks are named because their callable signatures are intentionally
 // identical even though their commands are not interchangeable. A disengaged
@@ -78,6 +82,7 @@ struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacyDelayCombatantSink> delay_combatant;
   std::optional<RuntimeLegacyCenterActiveCombatantSink>
       center_active_combatant;
+  std::optional<RuntimeLegacySwitchWeaponSink> switch_weapon;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -142,6 +147,14 @@ legacy_key_message_for_delay_combatant(
 // a queued camera command cannot silently follow a later turn.
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_center_active_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "w" key record consumed by the preserved combat
+// switch. The actor is carried through the typed route so a queued toggle
+// cannot be applied to whichever combatant owns a later turn.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_switch_weapon(
     CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 

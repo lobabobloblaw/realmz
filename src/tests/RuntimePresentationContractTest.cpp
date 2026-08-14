@@ -58,6 +58,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(CenterActiveCombatantAction::combatant),
     CombatantId>);
+static_assert(std::is_same_v<
+    decltype(SwitchWeaponSetAction::combatant),
+    CombatantId>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -267,6 +270,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.finish_combatant = mutateEngine;
   handlers.delay_combatant = mutateEngine;
   handlers.center_active_combatant = mutateEngine;
+  handlers.switch_weapon_set = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -410,6 +414,19 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
       DispatchStatus::unsupported);
   CHECK(centerActiveCombatantUnsupported.detail ==
       "No legacy handler registered for center_active_combatant");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction switchWeaponAction{
+      .sequence = sequence++,
+      .payload = SwitchWeaponSetAction{1},
+  };
+  CHECK(action_name(switchWeaponAction.payload) == "switch_weapon_set");
+  const auto switchWeaponUnsupported =
+      unsupportedBridge.dispatch(switchWeaponAction);
+  CHECK(switchWeaponUnsupported.status == DispatchStatus::unsupported);
+  CHECK(switchWeaponUnsupported.detail ==
+      "No legacy handler registered for switch_weapon_set");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

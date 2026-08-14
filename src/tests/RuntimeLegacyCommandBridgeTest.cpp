@@ -36,6 +36,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     RuntimeLegacyDelayCombatantSink,
     RuntimeLegacyCenterActiveCombatantSink>);
+static_assert(std::is_same_v<
+    RuntimeLegacyCenterActiveCombatantSink,
+    RuntimeLegacySwitchWeaponSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -49,6 +52,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::center_active_combatant),
     std::optional<RuntimeLegacyCenterActiveCombatantSink>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::switch_weapon),
+    std::optional<RuntimeLegacySwitchWeaponSink>>);
 
 struct ExpectedMovement {
   MovementCommand command;
@@ -1383,7 +1389,7 @@ void test_delay_combatant_mapping_and_dispatch() {
   CHECK(thrown.detail.find("delay sink failure") != std::string::npos);
 }
 
-void test_center_active_combatant_mapping_and_dispatch() {
+void test_named_combat_mapping_and_dispatch() {
   RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
       .world_presentation = WorldPresentation::none,
@@ -1393,15 +1399,19 @@ void test_center_active_combatant_mapping_and_dispatch() {
   int finish_calls = 0;
   int delay_calls = 0;
   int center_calls = 0;
+  int switch_weapon_calls = 0;
   bool accept_center = true;
+  bool accept_switch_weapon = true;
   CombatantId received_guard_combatant = -1;
   CombatantId received_finish_combatant = -1;
   CombatantId received_delay_combatant = -1;
   CombatantId received_center_combatant = -1;
+  CombatantId received_switch_weapon_combatant = -1;
   uint32_t received_guard_message = 0;
   uint32_t received_finish_message = 0;
   uint32_t received_delay_message = 0;
   uint32_t received_center_message = 0;
+  uint32_t received_switch_weapon_message = 0;
 
   RuntimeLegacyGuardCombatantSink guard_sink =
       [&guard_calls, &received_guard_combatant, &received_guard_message,
@@ -1447,6 +1457,18 @@ void test_center_active_combatant_mapping_and_dispatch() {
         CHECK(captured_context == context);
         return accept_center;
       };
+  RuntimeLegacySwitchWeaponSink switch_weapon_sink =
+      [&switch_weapon_calls, &accept_switch_weapon,
+          &received_switch_weapon_combatant,
+          &received_switch_weapon_message, &context](CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++switch_weapon_calls;
+        received_switch_weapon_combatant = combatant;
+        received_switch_weapon_message = message;
+        CHECK(captured_context == context);
+        return accept_switch_weapon;
+      };
 
   const RuntimeLegacyMovementSink movement_sink =
       [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
@@ -1484,6 +1506,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
           .finish_combatant = finish_sink,
           .delay_combatant = delay_sink,
           .center_active_combatant = center_sink,
+          .switch_weapon = switch_weapon_sink,
       });
 
   CHECK(bridge.dispatch(UIAction{
@@ -1494,6 +1517,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
   CHECK(finish_calls == 0);
   CHECK(delay_calls == 0);
   CHECK(center_calls == 0);
+  CHECK(switch_weapon_calls == 0);
   CHECK(received_guard_combatant == 6);
   CHECK(received_guard_message == 0x00000567U);
 
@@ -1505,6 +1529,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
   CHECK(finish_calls == 1);
   CHECK(delay_calls == 0);
   CHECK(center_calls == 0);
+  CHECK(switch_weapon_calls == 0);
   CHECK(received_finish_combatant == 7);
   CHECK(received_finish_message == 0x00000366U);
 
@@ -1516,6 +1541,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
   CHECK(finish_calls == 1);
   CHECK(delay_calls == 1);
   CHECK(center_calls == 0);
+  CHECK(switch_weapon_calls == 0);
   CHECK(received_delay_combatant == 8);
   CHECK(received_delay_message == 0x00000264U);
 
@@ -1527,8 +1553,21 @@ void test_center_active_combatant_mapping_and_dispatch() {
   CHECK(finish_calls == 1);
   CHECK(delay_calls == 1);
   CHECK(center_calls == 1);
+  CHECK(switch_weapon_calls == 0);
   CHECK(received_center_combatant == 9);
   CHECK(received_center_message == 0x00000863U);
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 364,
+      .payload = SwitchWeaponSetAction{10},
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(finish_calls == 1);
+  CHECK(delay_calls == 1);
+  CHECK(center_calls == 1);
+  CHECK(switch_weapon_calls == 1);
+  CHECK(received_switch_weapon_combatant == 10);
+  CHECK(received_switch_weapon_message == 0x00000D77U);
 
   for (const auto world : {
            WorldPresentation::none,
@@ -1545,7 +1584,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
   context.world_presentation = WorldPresentation::none;
   for (const CombatantId boundary : {0, 255}) {
     CHECK(bridge.dispatch(UIAction{
-        .sequence = 364,
+        .sequence = 365,
         .payload = CenterActiveCombatantAction{boundary},
     }).status == DispatchStatus::handled);
   }
@@ -1568,7 +1607,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
     context.screen = screen;
     CHECK(!legacy_key_message_for_center_active_combatant(9, context));
     CHECK(bridge.dispatch(UIAction{
-        .sequence = 365,
+        .sequence = 366,
         .payload = CenterActiveCombatantAction{9},
     }).status == DispatchStatus::rejected);
   }
@@ -1578,7 +1617,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
   context.adaptive_eligible = false;
   CHECK(!legacy_key_message_for_center_active_combatant(9, context));
   CHECK(bridge.dispatch(UIAction{
-      .sequence = 366,
+      .sequence = 367,
       .payload = CenterActiveCombatantAction{9},
   }).status == DispatchStatus::rejected);
   CHECK(center_calls == 3);
@@ -1593,7 +1632,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
   for (const auto invalid : invalid_combatants) {
     CHECK(!legacy_key_message_for_center_active_combatant(invalid, context));
     CHECK(bridge.dispatch(UIAction{
-        .sequence = 367,
+        .sequence = 368,
         .payload = CenterActiveCombatantAction{invalid},
     }).status == DispatchStatus::rejected);
   }
@@ -1601,7 +1640,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
 
   accept_center = false;
   CHECK(bridge.dispatch(UIAction{
-      .sequence = 368,
+      .sequence = 369,
       .payload = CenterActiveCombatantAction{3},
   }).status == DispatchStatus::failed);
   CHECK(center_calls == 4);
@@ -1620,7 +1659,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
       delay_sink,
       center_sink);
   const auto no_provider = missing_provider.dispatch(UIAction{
-      .sequence = 369,
+      .sequence = 370,
       .payload = CenterActiveCombatantAction{3},
   });
   CHECK(no_provider.status == DispatchStatus::failed);
@@ -1640,7 +1679,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
       delay_sink,
       RuntimeLegacyCenterActiveCombatantSink{});
   const auto no_sink = missing_center_sink.dispatch(UIAction{
-      .sequence = 370,
+      .sequence = 371,
       .payload = CenterActiveCombatantAction{3},
   });
   CHECK(no_sink.status == DispatchStatus::failed);
@@ -1660,7 +1699,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
       finish_sink,
       delay_sink);
   CHECK(without_center.dispatch(UIAction{
-      .sequence = 371,
+      .sequence = 372,
       .payload = CenterActiveCombatantAction{3},
   }).status == DispatchStatus::unsupported);
   CHECK(center_calls == 4);
@@ -1680,7 +1719,7 @@ void test_center_active_combatant_mapping_and_dispatch() {
       delay_sink,
       center_sink);
   const auto provider_thrown = provider_throws.dispatch(UIAction{
-      .sequence = 372,
+      .sequence = 373,
       .payload = CenterActiveCombatantAction{3},
   });
   CHECK(provider_thrown.status == DispatchStatus::failed);
@@ -1707,11 +1746,250 @@ void test_center_active_combatant_mapping_and_dispatch() {
       delay_sink,
       throwing_center_sink);
   const auto sink_thrown = center_sink_throws.dispatch(UIAction{
-      .sequence = 373,
+      .sequence = 374,
       .payload = CenterActiveCombatantAction{3},
   });
   CHECK(sink_thrown.status == DispatchStatus::failed);
   CHECK(sink_thrown.detail.find("center sink failure") != std::string::npos);
+}
+
+void test_switch_weapon_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int switch_weapon_calls = 0;
+  bool accept_switch_weapon = true;
+  CombatantId received_combatant = -1;
+  uint32_t received_message = 0;
+  RuntimeLegacySwitchWeaponSink switch_weapon_sink =
+      [&switch_weapon_calls, &accept_switch_weapon, &received_combatant,
+          &received_message, &context](CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++switch_weapon_calls;
+        received_combatant = combatant;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept_switch_weapon;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .switch_weapon = switch_weapon_sink,
+      });
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    CHECK(legacy_key_message_for_switch_weapon(0, context) == 0x00000D77U);
+    CHECK(legacy_key_message_for_switch_weapon(255, context) == 0x00000D77U);
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 375,
+      .payload = SwitchWeaponSetAction{9},
+  }).status == DispatchStatus::handled);
+  CHECK(switch_weapon_calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_message == 0x00000D77U);
+
+  for (const CombatantId boundary : {0, 255}) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 376,
+        .payload = SwitchWeaponSetAction{boundary},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(switch_weapon_calls == 3);
+  CHECK(received_combatant == 255);
+  CHECK(received_message == 0x00000D77U);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_switch_weapon(9, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 377,
+        .payload = SwitchWeaponSetAction{9},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(switch_weapon_calls == 3);
+
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_switch_weapon(9, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 378,
+      .payload = SwitchWeaponSetAction{9},
+  }).status == DispatchStatus::rejected);
+  CHECK(switch_weapon_calls == 3);
+
+  context.adaptive_eligible = true;
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(),
+           CombatantId{-1},
+           CombatantId{256},
+           std::numeric_limits<CombatantId>::max(),
+       }) {
+    CHECK(!legacy_key_message_for_switch_weapon(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 379,
+        .payload = SwitchWeaponSetAction{invalid},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(switch_weapon_calls == 3);
+
+  accept_switch_weapon = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 380,
+      .payload = SwitchWeaponSetAction{3},
+  }).status == DispatchStatus::failed);
+  CHECK(switch_weapon_calls == 4);
+  accept_switch_weapon = true;
+
+  RuntimeLegacyCommandBridge missing_provider(
+      RuntimeLegacyContextProvider{},
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .switch_weapon = switch_weapon_sink,
+      });
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 381,
+      .payload = SwitchWeaponSetAction{3},
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+  CHECK(switch_weapon_calls == 4);
+
+  RuntimeLegacyCommandBridge missing_switch_weapon_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .switch_weapon = RuntimeLegacySwitchWeaponSink{},
+      });
+  const auto no_sink = missing_switch_weapon_sink.dispatch(UIAction{
+      .sequence = 382,
+      .payload = SwitchWeaponSetAction{3},
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("switch-weapon sink") != std::string::npos);
+  CHECK(switch_weapon_calls == 4);
+
+  RuntimeLegacyCommandBridge without_switch_weapon(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(without_switch_weapon.dispatch(UIAction{
+      .sequence = 383,
+      .payload = SwitchWeaponSetAction{3},
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge provider_throws(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("switch weapon provider failure");
+      },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .switch_weapon = switch_weapon_sink,
+      });
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 384,
+      .payload = SwitchWeaponSetAction{3},
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("switch weapon provider failure") !=
+      std::string::npos);
+  CHECK(switch_weapon_calls == 4);
+
+  RuntimeLegacySwitchWeaponSink throwing_switch_weapon_sink =
+      [](CombatantId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("switch weapon sink failure");
+      };
+  RuntimeLegacyCommandBridge switch_weapon_sink_throws(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .switch_weapon = throwing_switch_weapon_sink,
+      });
+  const auto sink_thrown = switch_weapon_sink_throws.dispatch(UIAction{
+      .sequence = 385,
+      .payload = SwitchWeaponSetAction{3},
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("switch weapon sink failure") !=
+      std::string::npos);
 }
 
 void test_named_combat_sink_registration_semantics() {
@@ -1759,6 +2037,10 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 383,
           .payload = CenterActiveCombatantAction{4},
       },
+      UIAction{
+          .sequence = 384,
+          .payload = SwitchWeaponSetAction{5},
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -1789,6 +2071,7 @@ void test_named_combat_sink_registration_semantics() {
           .delay_combatant = RuntimeLegacyDelayCombatantSink{},
           .center_active_combatant =
               RuntimeLegacyCenterActiveCombatantSink{},
+          .switch_weapon = RuntimeLegacySwitchWeaponSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -1842,6 +2125,10 @@ void test_named_combat_sink_registration_semantics() {
       .sequence = 387,
       .payload = CenterActiveCombatantAction{6},
   }).status == DispatchStatus::handled);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 388,
+      .payload = SwitchWeaponSetAction{6},
+  }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(center_calls == 1);
 }
@@ -1975,6 +2262,10 @@ void test_positional_combat_constructor_compatibility() {
       .sequence = 396,
       .payload = CenterActiveCombatantAction{4},
   }).status == DispatchStatus::handled);
+  CHECK(through_center.dispatch(UIAction{
+      .sequence = 397,
+      .payload = SwitchWeaponSetAction{4},
+  }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(finish_calls == 1);
   CHECK(delay_calls == 1);
@@ -2162,7 +2453,8 @@ int main() {
     test_guard_combatant_mapping_and_dispatch();
     test_finish_combatant_mapping_and_dispatch();
     test_delay_combatant_mapping_and_dispatch();
-    test_center_active_combatant_mapping_and_dispatch();
+    test_named_combat_mapping_and_dispatch();
+    test_switch_weapon_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

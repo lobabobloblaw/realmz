@@ -21,6 +21,7 @@ constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
 constexpr uint32_t kCenterActiveCombatantMessage = 0x00000863U;
+constexpr uint32_t kSwitchWeaponMessage = 0x00000D77U;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -245,6 +246,41 @@ LegacyActionHandlers make_handlers(
         return DispatchResult::failed(
             "Legacy event queue rejected semantic center-active-combatant "
             "action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
+  if (combat_action_sinks.switch_weapon.has_value()) {
+    handlers.switch_weapon_set = [
+        context_provider,
+        switch_weapon_sink = std::move(*combat_action_sinks.switch_weapon)](
+            const SwitchWeaponSetAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!switch_weapon_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy switch-weapon sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic weapon "
+            "switching");
+      }
+      const auto message = legacy_key_message_for_switch_weapon(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Weapon switching is not supported for this combatant in the "
+            "current legacy context");
+      }
+      if (!switch_weapon_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic switch-weapon action");
       }
       return DispatchResult::handled();
     };
@@ -662,6 +698,16 @@ std::optional<uint32_t> legacy_key_message_for_center_active_combatant(
     return std::nullopt;
   }
   return kCenterActiveCombatantMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_switch_weapon(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kSwitchWeaponMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
