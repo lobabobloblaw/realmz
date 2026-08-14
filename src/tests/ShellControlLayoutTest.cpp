@@ -238,7 +238,7 @@ void test_open_inventory_control() {
   }).empty());
 }
 
-void test_spellbook_and_save_controls_at_combined_minimum_layout() {
+void test_spellbook_save_and_load_controls_at_combined_minimum_layout() {
   constexpr std::array sizes{
       LogicalSize{1024.0, 768.0},
       LogicalSize{1359.0, 900.0},
@@ -260,6 +260,8 @@ void test_spellbook_and_save_controls_at_combined_minimum_layout() {
                  .spellbook_available = true,
                  .save_control_visible = true,
                  .save_available = true,
+                 .load_control_visible = true,
+                 .load_available = true,
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -272,15 +274,18 @@ void test_spellbook_and_save_controls_at_combined_minimum_layout() {
                  .spellbook_available = true,
                  .save_control_visible = true,
                  .save_available = true,
+                 .load_control_visible = true,
+                 .load_available = true,
              },
          }) {
       const auto controls = compute_shell_control_layout(request);
       const size_t expected_count =
-          request.screen == ScreenContext::exploration ? 11U : 7U;
+          request.screen == ScreenContext::exploration ? 12U : 8U;
       CHECK(controls.size() == expected_count);
-      const auto& inventory = controls[controls.size() - 3U];
-      const auto& spellbook = controls[controls.size() - 2U];
-      const auto& save = controls.back();
+      const auto& inventory = controls[controls.size() - 4U];
+      const auto& spellbook = controls[controls.size() - 3U];
+      const auto& save = controls[controls.size() - 2U];
+      const auto& load = controls.back();
       CHECK(inventory.kind == ShellControlKind::open_inventory);
       CHECK(spellbook.region.value == 1101U);
       CHECK(spellbook.kind == ShellControlKind::open_spellbook);
@@ -306,11 +311,25 @@ void test_spellbook_and_save_controls_at_combined_minimum_layout() {
       CHECK(request.action_panel.contains(save.bounds));
       CHECK(save.bounds.width >= 44.0);
       CHECK(save.bounds.height >= 44.0);
-      for (size_t index = 0; index + 2U < controls.size(); ++index) {
+      CHECK(load.region.value == 1103U);
+      CHECK(load.kind == ShellControlKind::open_load_game);
+      CHECK(load.label == "LOAD");
+      CHECK(load.accessibility_label == "Open load dialog");
+      CHECK(load.focus_identifier == "focus.action.load.open");
+      CHECK(load.tab_order == 1103);
+      CHECK(load.enabled);
+      CHECK(std::holds_alternative<OpenLoadGameAction>(load.payload));
+      CHECK(request.action_panel.contains(load.bounds));
+      CHECK(load.bounds.width >= 44.0);
+      CHECK(load.bounds.height >= 44.0);
+      for (size_t index = 0; index + 3U < controls.size(); ++index) {
         CHECK(!interiors_overlap(controls[index].bounds, spellbook.bounds));
       }
-      for (size_t index = 0; index + 1U < controls.size(); ++index) {
+      for (size_t index = 0; index + 2U < controls.size(); ++index) {
         CHECK(!interiors_overlap(controls[index].bounds, save.bounds));
+      }
+      for (size_t index = 0; index + 1U < controls.size(); ++index) {
+        CHECK(!interiors_overlap(controls[index].bounds, load.bounds));
       }
     }
   }
@@ -357,6 +376,28 @@ void test_spellbook_and_save_controls_at_combined_minimum_layout() {
       .action_panel = panel,
       .navigation_available = true,
       .save_available = true,
+  }).empty());
+
+  const auto load_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .load_control_visible = true,
+      .load_available = false,
+  });
+  CHECK(load_disabled.size() == 9U);
+  CHECK(load_disabled.back().kind == ShellControlKind::open_load_game);
+  CHECK(!load_disabled.back().enabled);
+  CHECK(std::holds_alternative<OpenLoadGameAction>(
+      load_disabled.back().payload));
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .load_available = true,
   }).empty());
 }
 
@@ -412,7 +453,7 @@ int main() {
     test_canonical_sizes();
     test_payload_order_and_disabled_state();
     test_open_inventory_control();
-    test_spellbook_and_save_controls_at_combined_minimum_layout();
+    test_spellbook_save_and_load_controls_at_combined_minimum_layout();
     test_fail_closed_inputs();
     std::cout << "ShellControlLayoutTest passed ("
               << checks_run << " checks)\n";

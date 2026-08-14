@@ -74,13 +74,21 @@ struct ClassicOpenSaveMenu {
   bool operator==(const ClassicOpenSaveMenu&) const = default;
 };
 
+struct ClassicOpenLoadMenu {
+  std::int16_t menu_id = 129;
+  std::int16_t item_id = 2;
+
+  bool operator==(const ClassicOpenLoadMenu&) const = default;
+};
+
 using ClassicExplorationInput = std::variant<
     ClassicOutdoorScanCode,
     ClassicDungeonKey,
     ClassicPortraitClick,
     ClassicOpenInventoryKey,
     ClassicOpenSpellbookKey,
-    ClassicOpenSaveMenu>;
+    ClassicOpenSaveMenu,
+    ClassicOpenLoadMenu>;
 
 struct ReplayStep {
   std::string_view label;
@@ -174,13 +182,21 @@ struct ReplayStep {
           .sequence = sequence,
           .payload = OpenSpellbookAction{*selected_member},
       };
-    } else {
+    } else if constexpr (std::is_same_v<Input, ClassicOpenSaveMenu>) {
       if ((concrete.menu_id != 129) || (concrete.item_id != 3)) {
         return std::nullopt;
       }
       return UIAction{
           .sequence = sequence,
           .payload = OpenSaveGameAction{},
+      };
+    } else {
+      if ((concrete.menu_id != 129) || (concrete.item_id != 2)) {
+        return std::nullopt;
+      }
+      return UIAction{
+          .sequence = sequence,
+          .payload = OpenLoadGameAction{},
       };
     }
   }, input);
@@ -425,6 +441,18 @@ public:
     }});
   }
 
+  [[nodiscard]] DispatchResult open_load_game(
+      const OpenLoadGameAction&) const {
+    return DispatchResult::handled({GameEvent{
+        .sequence = snapshot_.revision,
+        .payload = ModalRequestEvent{
+            .request_id = snapshot_.revision,
+            .title = "Load game",
+            .body = "Choose a Classic save slot",
+        },
+    }});
+  }
+
 private:
   static void write_u16(
       SaveFacingBytes& bytes,
@@ -506,6 +534,9 @@ private:
   };
   handlers.open_save_game = [&fixture](const OpenSaveGameAction& action) {
     return fixture.open_save_game(action);
+  };
+  handlers.open_load_game = [&fixture](const OpenLoadGameAction& action) {
+    return fixture.open_load_game(action);
   };
   return handlers;
 }
@@ -646,6 +677,8 @@ enum class ReplayRoute {
           OpenInventoryAction{2}},
       {"open selected spellbook", ClassicOpenSpellbookKey{'s'},
           OpenSpellbookAction{2}},
+      {"open Classic load chooser", ClassicOpenLoadMenu{129, 2},
+          OpenLoadGameAction{}},
       {"open Classic save chooser", ClassicOpenSaveMenu{129, 3},
           OpenSaveGameAction{}},
   };
@@ -686,6 +719,8 @@ void test_classic_adapter_matches_semantic_payloads() {
       ClassicOpenSpellbookKey{'s'}, 1, std::nullopt));
   CHECK(!adapt_classic_input(ClassicOpenSaveMenu{128, 3}, 1, 0));
   CHECK(!adapt_classic_input(ClassicOpenSaveMenu{129, 4}, 1, 0));
+  CHECK(!adapt_classic_input(ClassicOpenLoadMenu{128, 2}, 1, 0));
+  CHECK(!adapt_classic_input(ClassicOpenLoadMenu{129, 1}, 1, 0));
 }
 
 void test_equivalent_replay_and_determinism() {
@@ -748,6 +783,14 @@ void test_equivalent_replay_and_determinism() {
             std::get_if<ModalRequestEvent>(&observed.events[0].payload);
         CHECK(modal != nullptr);
         CHECK(modal->title == "Save game");
+        CHECK(modal->body == "Choose a Classic save slot");
+      } else if (std::holds_alternative<OpenLoadGameAction>(
+                     steps[index].remastered_payload)) {
+        CHECK(observed.events.size() == 1);
+        const auto* modal =
+            std::get_if<ModalRequestEvent>(&observed.events[0].payload);
+        CHECK(modal != nullptr);
+        CHECK(modal->title == "Load game");
         CHECK(modal->body == "Choose a Classic save slot");
       } else {
         CHECK(observed.events.empty());

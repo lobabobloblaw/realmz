@@ -166,8 +166,16 @@ void test_actions_and_events() {
   CHECK(std::holds_alternative<OpenSaveGameAction>(
       open_save_game.payload));
 
-  UIAction casting{
+  UIAction open_load_game{
       .sequence = 12,
+      .payload = OpenLoadGameAction{},
+  };
+  CHECK(action_name(open_load_game.payload) == "open_load_game");
+  CHECK(std::holds_alternative<OpenLoadGameAction>(
+      open_load_game.payload));
+
+  UIAction casting{
+      .sequence = 13,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -267,6 +275,14 @@ void test_command_bridge() {
   });
   CHECK(save_chooser_unsupported.status == DispatchStatus::unsupported);
   CHECK(save_chooser_unsupported.detail.find("open_save_game") !=
+      std::string::npos);
+
+  const auto load_chooser_unsupported = bridge.dispatch(UIAction{
+      .sequence = 9,
+      .payload = OpenLoadGameAction{},
+  });
+  CHECK(load_chooser_unsupported.status == DispatchStatus::unsupported);
+  CHECK(load_chooser_unsupported.detail.find("open_load_game") !=
       std::string::npos);
 
   const auto failed = bridge.dispatch(UIAction{

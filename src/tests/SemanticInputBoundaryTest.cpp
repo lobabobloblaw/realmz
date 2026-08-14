@@ -126,6 +126,15 @@ bool consume_save_game(
              expected_surface, tag, &menu_id, &item_id) != 0;
 }
 
+bool consume_load_game(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    int16_t& menu_id,
+    int16_t& item_id) {
+  return RealmzConsumeSemanticOpenLoadGameEvent(
+             expected_surface, tag, &menu_id, &item_id) != 0;
+}
+
 void complete_top_level_scope(RealmzSemanticInputSurface surface) {
   RealmzBeginSemanticInputSurface(surface);
   CHECK(RealmzCurrentSemanticInputSurface() == surface);
@@ -173,6 +182,7 @@ void test_tag_encoding_and_validation() {
       CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
       CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
       CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
       CHECK(tags.emplace(tag).second);
@@ -218,6 +228,7 @@ void test_tag_encoding_and_validation() {
       CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
       CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
       CHECK(RealmzSemanticPartySelectionTagSurface(tag) == surface);
       CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
@@ -261,6 +272,7 @@ void test_tag_encoding_and_validation() {
       CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
       CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
       CHECK(RealmzSemanticOpenInventoryTagSurface(tag) == surface);
       CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
@@ -300,6 +312,7 @@ void test_tag_encoding_and_validation() {
       CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
       CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
       CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
       CHECK(RealmzSemanticOpenSpellbookTagSurface(tag) == surface);
       CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
@@ -338,6 +351,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticOpenSaveGameTagSurface(tag) == surface);
     CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
@@ -362,6 +376,46 @@ void test_tag_encoding_and_validation() {
        }) {
     CHECK(RealmzIsSemanticOpenSaveGameTag(malformed) == 0);
     CHECK(RealmzSemanticOpenSaveGameTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  std::set<uint32_t> load_game_tags;
+  for (const auto surface : surfaces) {
+    const uint32_t tag = semantic_open_load_game_tag(surface);
+    CHECK((tag & 0xFFFF0000U) == 0x524C0000U);
+    CHECK(((tag >> 8U) & 0xFFU) == static_cast<uint32_t>(surface));
+    CHECK((tag & 0xFFU) == 0U);
+    CHECK(RealmzIsSemanticOpenLoadGameTag(tag) != 0);
+    CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+    CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+    CHECK(RealmzSemanticOpenLoadGameTagSurface(tag) == surface);
+    CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
+    CHECK(load_game_tags.emplace(tag).second);
+    CHECK(!tags.contains(tag));
+    CHECK(!selection_tags.contains(tag));
+    CHECK(!inventory_tags.contains(tag));
+    CHECK(!spellbook_tags.contains(tag));
+    CHECK(!save_game_tags.contains(tag));
+  }
+  CHECK(load_game_tags.size() == surfaces.size());
+  CHECK(semantic_open_load_game_tag(REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_open_load_game_tag(
+            static_cast<RealmzSemanticInputSurface>(3)) == 0);
+  for (const uint32_t malformed : {
+           0U,
+           0x524B0000U,
+           0x524C0000U,
+           0x524C0300U,
+           0x524CFF00U,
+           0x524C0104U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticOpenLoadGameTag(malformed) == 0);
+    CHECK(RealmzSemanticOpenLoadGameTagSurface(malformed) ==
         REALMZ_SEMANTIC_INPUT_NONE);
   }
 }
@@ -1039,6 +1093,125 @@ void test_open_save_game_late_validation_and_exact_menu_translation() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_open_load_game_late_validation_and_exact_menu_translation() {
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  const uint32_t open_load = semantic_open_load_game_tag(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  int16_t menu_id = 0x5A5A;
+  int16_t item_id = 0x4B4B;
+
+  CHECK(!consume_load_game(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      open_load,
+      menu_id,
+      item_id));
+  CHECK(menu_id == 0x5A5A);
+  CHECK(item_id == 0x4B4B);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_load_game(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      open_load,
+      menu_id,
+      item_id));
+  CHECK(menu_id == 129);
+  CHECK(item_id == 2);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // Authorization is single-use and a missing destination consumes it.
+  menu_id = 0x5A5A;
+  item_id = 0x4B4B;
+  CHECK(!consume_load_game(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      open_load,
+      menu_id,
+      item_id));
+  CHECK(menu_id == 0x5A5A);
+  CHECK(item_id == 0x4B4B);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticOpenLoadGameEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            open_load,
+            nullptr,
+            &item_id) == 0);
+
+  // A save tag cannot cross into the load route.
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_load_game(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      semantic_open_save_game_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      menu_id,
+      item_id));
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    const uint32_t dungeon_load = semantic_open_load_game_tag(
+        REALMZ_SEMANTIC_INPUT_DUNGEON);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    menu_id = 0;
+    item_id = 0;
+    CHECK(consume_load_game(
+        REALMZ_SEMANTIC_INPUT_DUNGEON,
+        dungeon_load,
+        menu_id,
+        item_id));
+    CHECK(menu_id == 129);
+    CHECK(item_id == 2);
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_load_game(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      open_load,
+      menu_id,
+      item_id));
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::dungeon,
+      WorldPresentation::outdoor);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_load_game(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      open_load,
+      menu_id,
+      item_id));
+  CHECK(snapshot_capture_calls == 1);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_load_game(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      open_load,
+      menu_id,
+      item_id));
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void expect_rejected_without_output_change(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tag) {
@@ -1189,6 +1362,7 @@ int main() {
     test_open_inventory_late_validation_and_exact_translation();
     test_open_spellbook_late_validation_and_exact_translation();
     test_open_save_game_late_validation_and_exact_menu_translation();
+    test_open_load_game_late_validation_and_exact_menu_translation();
     test_fail_closed_context_and_payloads();
     RealmzEndSemanticInputSurface();
     std::cout << "SemanticInputBoundaryTest passed ("

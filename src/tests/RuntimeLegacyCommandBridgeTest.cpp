@@ -705,6 +705,124 @@ void test_open_save_game_mapping_and_dispatch() {
   }).status == DispatchStatus::unsupported);
 }
 
+void test_open_load_game_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  constexpr RuntimeLegacyMenuCommand expected_save{129, 3};
+  constexpr RuntimeLegacyMenuCommand expected_load{129, 2};
+  int load_calls = 0;
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [expected_save](RuntimeLegacyMenuCommand command,
+          const RuntimeLegacyCommandContext&) {
+        CHECK(command == expected_save);
+        return true;
+      },
+      [&load_calls, &context, expected_load](
+          RuntimeLegacyMenuCommand command,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++load_calls;
+        CHECK(command == expected_load);
+        CHECK(captured_context == context);
+        return true;
+      });
+
+  ActionSequence sequence = 200;
+  for (const auto valid : {
+           RuntimeLegacyCommandContext{
+               ScreenContext::exploration,
+               WorldPresentation::outdoor,
+               true},
+           RuntimeLegacyCommandContext{
+               ScreenContext::dungeon,
+               WorldPresentation::dungeon_map,
+               true},
+           RuntimeLegacyCommandContext{
+               ScreenContext::dungeon,
+               WorldPresentation::dungeon_first_person,
+               true},
+       }) {
+    context = valid;
+    CHECK(legacy_menu_command_for_open_load_game(context) == expected_load);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenLoadGameAction{},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(load_calls == 3);
+
+  for (const auto invalid : {
+           RuntimeLegacyCommandContext{
+               ScreenContext::exploration,
+               WorldPresentation::dungeon_map,
+               true},
+           RuntimeLegacyCommandContext{
+               ScreenContext::dungeon,
+               WorldPresentation::outdoor,
+               true},
+           RuntimeLegacyCommandContext{
+               ScreenContext::combat,
+               WorldPresentation::none,
+               true},
+           RuntimeLegacyCommandContext{
+               ScreenContext::exploration,
+               WorldPresentation::outdoor,
+               false},
+       }) {
+    context = invalid;
+    CHECK(!legacy_menu_command_for_open_load_game(context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenLoadGameAction{},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(load_calls == 3);
+
+  context = {ScreenContext::exploration, WorldPresentation::outdoor, true};
+  RuntimeLegacyCommandBridge rejecting_sink(
+      [&context] { return context; },
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return false;
+      });
+  CHECK(rejecting_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenLoadGameAction{},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; }, [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = OpenLoadGameAction{},
+  }).status == DispatchStatus::unsupported);
+}
+
 void test_exception_boundary() {
   RuntimeLegacyCommandBridge provider_throws(
       []() -> RuntimeLegacyCommandContext {
@@ -836,6 +954,36 @@ void test_exception_boundary() {
       .sequence = 7,
       .payload = OpenSaveGameAction{},
   }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge load_sink_throws(
+      [] {
+        return RuntimeLegacyCommandContext{
+            .screen = ScreenContext::exploration,
+            .world_presentation = WorldPresentation::outdoor,
+            .adaptive_eligible = true,
+        };
+      },
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("load chooser sink failure");
+      });
+  CHECK(load_sink_throws.dispatch(UIAction{
+      .sequence = 8,
+      .payload = OpenLoadGameAction{},
+  }).status == DispatchStatus::failed);
 }
 
 } // namespace
@@ -852,6 +1000,7 @@ int main() {
     test_open_inventory_mapping_and_dispatch();
     test_open_spellbook_mapping_and_dispatch();
     test_open_save_game_mapping_and_dispatch();
+    test_open_load_game_mapping_and_dispatch();
     test_exception_boundary();
     std::cout << "RuntimeLegacyCommandBridgeTest passed ("
               << checks_run << " checks)\n";

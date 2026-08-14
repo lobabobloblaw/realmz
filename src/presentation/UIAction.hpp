@@ -65,6 +65,13 @@ struct OpenSaveGameAction {
   bool operator==(const OpenSaveGameAction&) const = default;
 };
 
+// Opens the preserved in-game load/revert chooser. Selecting a slot and
+// replacing engine state remain separate LoadGameAction concerns owned by the
+// compatibility flow.
+struct OpenLoadGameAction {
+  bool operator==(const OpenLoadGameAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -184,6 +191,7 @@ using UIActionPayload = std::variant<
     OpenInventoryAction,
     OpenSpellbookAction,
     OpenSaveGameAction,
+    OpenLoadGameAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -214,6 +222,8 @@ struct UIAction {
       return "open_spellbook";
     } else if constexpr (std::is_same_v<Action, OpenSaveGameAction>) {
       return "open_save_game";
+    } else if constexpr (std::is_same_v<Action, OpenLoadGameAction>) {
+      return "open_load_game";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

@@ -80,9 +80,12 @@ selection, eligibility, and screen before returning the exact Classic `i` or
 inventory and spell-selection screens remain unmodified and full-frame.
 The adjacent typed Save action has its own member-free tagged event. It is
 late-validated against the current exploration or dungeon surface and only then
-translated to the preserved File menu ID 129, item 3 route. That route opens
+translated to the preserved Game menu ID 129, item 3 route. That route opens
 the unmodified Classic slot chooser; no slot selection or save write occurs at
-the semantic boundary.
+the semantic boundary. The neighboring typed Load action follows an independent
+member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
+Previous Game). It opens the preserved in-game chooser without identifying a
+slot; selection and live-state replacement remain inside the Classic flow.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
@@ -184,11 +187,12 @@ Automated checks do not replace these release decisions:
 - two human start-to-finish playthroughs of Tutorial and City, with no unresolved Classic fallback;
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, and Save controls at compact and wide layouts, including an inert
+  Spells, Save, and Load controls at compact and wide layouts, including an inert
   stale Spells action after selection, consciousness, spell points, or surface
   state changes and an inert stale Save action after leaving its gameplay
-  surface; verify Save opens the Classic chooser without selecting or writing a
-  slot;
+  surface plus an inert stale Load action after leaving its gameplay surface;
+  verify Save and Load open the Classic chooser without selecting a slot,
+  writing a save, or replacing live state;
 - clean install on macOS 13.3 and the current macOS release, plus upgrade/import from an existing Realmz installation;
 - crash-free soak sessions and zero P0/P1 defects;
 - verification that imported saves were copied, hashed, and backed up, and the old installation remained byte-for-byte unchanged;

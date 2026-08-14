@@ -15,6 +15,7 @@ enum class ShellControlKind {
   open_inventory,
   open_spellbook,
   open_save_game,
+  open_load_game,
   drawer_tab,
 };
 
@@ -43,6 +44,8 @@ struct ShellControlLayoutRequest {
   bool spellbook_available = false;
   bool save_control_visible = false;
   bool save_available = false;
+  bool load_control_visible = false;
+  bool load_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

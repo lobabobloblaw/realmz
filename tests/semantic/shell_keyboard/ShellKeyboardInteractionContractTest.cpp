@@ -57,6 +57,9 @@ private:
     handlers.open_save_game = [](const OpenSaveGameAction&) {
       return DispatchResult::handled();
     };
+    handlers.open_load_game = [](const OpenLoadGameAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -496,6 +499,46 @@ void test_open_save_payload_activates_exactly_once() {
   CHECK(bridge.actions().size() == 1);
 }
 
+void test_open_load_payload_activates_exactly_once() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  const ShellControlPlacement load{
+      .region = ShellRegionId{1103},
+      .kind = ShellControlKind::open_load_game,
+      .bounds = {284.0, 20.0, 80.0, 48.0},
+      .label = "LOAD",
+      .accessibility_label = "Open load dialog",
+      .focus_identifier = "focus.action.load.open",
+      .tab_order = 1103,
+      .enabled = true,
+      .payload = OpenLoadGameAction{},
+  };
+  CHECK(!harness.recompose({load}));
+  CHECK(harness.focus(load.focus_identifier));
+
+  const auto down = harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(down.shell.consumed);
+  CHECK(!down.shell.invoked_control);
+  CHECK(bridge.actions().empty());
+
+  const auto up = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(up.shell.consumed);
+  CHECK(up.shell.invoked_control.has_value());
+  CHECK(up.shell.invoked_control->kind ==
+      ShellControlKind::open_load_game);
+  CHECK(up.dispatch.has_value());
+  CHECK(up.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1);
+  CHECK(std::holds_alternative<OpenLoadGameAction>(
+      bridge.actions()[0].payload));
+
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1);
+}
+
 using DescriptorMutation =
     std::function<void(std::vector<ShellControlPlacement>&)>;
 
@@ -666,6 +709,7 @@ int main() {
     test_open_inventory_payload_activates_exactly_once();
     test_open_spellbook_payload_activates_exactly_once();
     test_open_save_payload_activates_exactly_once();
+    test_open_load_payload_activates_exactly_once();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();
