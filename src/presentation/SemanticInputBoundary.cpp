@@ -375,7 +375,14 @@ uint8_t consume_semantic_combatant_event(
         snapshot.combat->combatants,
         decoded->combatant,
         &realmz::presentation::CombatantView::id);
-    if ((combatant == snapshot.combat->combatants.end()) ||
+    const auto* party_member =
+        (decoded->combatant >= 0) && (decoded->combatant <= 0xFF)
+        ? snapshot.party.member(
+              static_cast<realmz::presentation::PartyMemberId>(
+                  decoded->combatant))
+        : nullptr;
+    if (!party_member ||
+        (combatant == snapshot.combat->combatants.end()) ||
         (combatant->kind != realmz::presentation::CombatantKind::party_member) ||
         !combatant->active || !combatant->targetable ||
         (combatant->stamina.current <= 0)) {

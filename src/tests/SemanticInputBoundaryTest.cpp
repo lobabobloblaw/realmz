@@ -20,6 +20,7 @@ GameSnapshot captured_snapshot{};
 bool snapshot_capture_throws = false;
 int legacy_capture_calls = 0;
 int snapshot_capture_calls = 0;
+constexpr uint32_t kUnchangedClassicMessage = 0xA5A5A5A5U;
 
 void check(bool condition, const char* expression, int line) {
   ++checks_run;
@@ -167,11 +168,141 @@ bool consume_center_active(
              expected_surface, tag, &output) != 0;
 }
 
+using CombatTagFactory = uint32_t (*)(
+    CombatantId,
+    RealmzSemanticInputSurface) noexcept;
+using CombatConsumer = bool (*)(
+    RealmzSemanticInputSurface,
+    uint32_t,
+    uint32_t&);
+
+struct CombatActionCase {
+  CombatTagFactory tag = nullptr;
+  CombatConsumer consume = nullptr;
+  uint32_t classic_message = 0;
+};
+
+constexpr std::array kCombatActionCases{
+    CombatActionCase{
+        .tag = semantic_guard_combatant_tag,
+        .consume = consume_guard,
+        .classic_message = 0x00000567U,
+    },
+    CombatActionCase{
+        .tag = semantic_finish_combatant_tag,
+        .consume = consume_finish,
+        .classic_message = 0x00000366U,
+    },
+    CombatActionCase{
+        .tag = semantic_delay_combatant_tag,
+        .consume = consume_delay,
+        .classic_message = 0x00000264U,
+    },
+    CombatActionCase{
+        .tag = semantic_center_active_combatant_tag,
+        .consume = consume_center_active,
+        .classic_message = 0x00000863U,
+    },
+};
+
+enum class SharedCombatRejection {
+  acting_combatant_changed,
+  combat_missing,
+  combat_inactive,
+  combatant_missing,
+  non_party_combatant,
+  combatant_inactive,
+  combatant_untargetable,
+  combatant_without_stamina,
+  party_member_missing,
+};
+
+constexpr std::array kSharedCombatRejections{
+    SharedCombatRejection::acting_combatant_changed,
+    SharedCombatRejection::combat_missing,
+    SharedCombatRejection::combat_inactive,
+    SharedCombatRejection::combatant_missing,
+    SharedCombatRejection::non_party_combatant,
+    SharedCombatRejection::combatant_inactive,
+    SharedCombatRejection::combatant_untargetable,
+    SharedCombatRejection::combatant_without_stamina,
+    SharedCombatRejection::party_member_missing,
+};
+
 void complete_top_level_scope(RealmzSemanticInputSurface surface) {
   RealmzBeginSemanticInputSurface(surface);
   CHECK(RealmzCurrentSemanticInputSurface() == surface);
   RealmzEndSemanticInputSurface();
   CHECK(RealmzCurrentSemanticInputSurface() == REALMZ_SEMANTIC_INPUT_NONE);
+}
+
+void configure_valid_shared_combat() {
+  captured_snapshot.party.members[1].movement = 9;
+  captured_snapshot.party.members[1].movement_maximum = 9;
+  captured_snapshot.combat = CombatView{
+      .active = true,
+      .round = 3,
+      .acting_combatant = 1,
+      .combatants = {
+          CombatantView{
+              .id = 1,
+              .kind = CombatantKind::party_member,
+              .name = "Bryn",
+              .stamina = {14, 20},
+              .active = true,
+              .targetable = true,
+          },
+          CombatantView{
+              .id = 10,
+              .kind = CombatantKind::monster,
+              .name = "Goblin",
+              .stamina = {8, 8},
+              .targetable = true,
+          },
+      },
+  };
+}
+
+void reset_valid_shared_combat() {
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_COMBAT,
+      ScreenContext::combat,
+      WorldPresentation::none);
+  configure_valid_shared_combat();
+}
+
+void apply_shared_combat_rejection(SharedCombatRejection rejection) {
+  switch (rejection) {
+    case SharedCombatRejection::acting_combatant_changed:
+      captured_snapshot.combat->acting_combatant = 2;
+      return;
+    case SharedCombatRejection::combat_missing:
+      captured_snapshot.combat.reset();
+      return;
+    case SharedCombatRejection::combat_inactive:
+      captured_snapshot.combat->active = false;
+      return;
+    case SharedCombatRejection::combatant_missing:
+      captured_snapshot.combat->combatants.erase(
+          captured_snapshot.combat->combatants.begin());
+      return;
+    case SharedCombatRejection::non_party_combatant:
+      captured_snapshot.combat->combatants[0].kind = CombatantKind::monster;
+      return;
+    case SharedCombatRejection::combatant_inactive:
+      captured_snapshot.combat->combatants[0].active = false;
+      return;
+    case SharedCombatRejection::combatant_untargetable:
+      captured_snapshot.combat->combatants[0].targetable = false;
+      return;
+    case SharedCombatRejection::combatant_without_stamina:
+      captured_snapshot.combat->combatants[0].stamina.current = 0;
+      return;
+    case SharedCombatRejection::party_member_missing:
+      captured_snapshot.party.members.erase(
+          captured_snapshot.party.members.begin() + 1);
+      return;
+  }
 }
 
 bool consume_after_top_level_scope(
@@ -1472,6 +1603,53 @@ void test_open_load_game_late_validation_and_exact_menu_translation() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_shared_combat_late_validation_matrix() {
+  for (const auto& action : kCombatActionCases) {
+    reset_valid_shared_combat();
+    const uint32_t tag = action.tag(
+        1, REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(tag != 0);
+
+    uint32_t classic_message = kUnchangedClassicMessage;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(action.consume(
+        REALMZ_SEMANTIC_INPUT_COMBAT, tag, classic_message));
+    CHECK(classic_message == action.classic_message);
+    CHECK(legacy_capture_calls == 1);
+    CHECK(snapshot_capture_calls == 1);
+
+    classic_message = kUnchangedClassicMessage;
+    CHECK(!action.consume(
+        REALMZ_SEMANTIC_INPUT_COMBAT, tag, classic_message));
+    CHECK(classic_message == kUnchangedClassicMessage);
+    CHECK(legacy_capture_calls == 1);
+    CHECK(snapshot_capture_calls == 1);
+
+    for (const auto rejection : kSharedCombatRejections) {
+      reset_valid_shared_combat();
+      const GameSnapshot valid_snapshot = captured_snapshot;
+      classic_message = kUnchangedClassicMessage;
+      complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+      apply_shared_combat_rejection(rejection);
+
+      CHECK(!action.consume(
+          REALMZ_SEMANTIC_INPUT_COMBAT, tag, classic_message));
+      CHECK(classic_message == kUnchangedClassicMessage);
+      CHECK(legacy_capture_calls == 1);
+      CHECK(snapshot_capture_calls == 1);
+
+      // A failed delivery consumes its authorization too. Repairing the
+      // snapshot cannot make the same tagged event valid without a new scope.
+      captured_snapshot = valid_snapshot;
+      CHECK(!action.consume(
+          REALMZ_SEMANTIC_INPUT_COMBAT, tag, classic_message));
+      CHECK(classic_message == kUnchangedClassicMessage);
+      CHECK(legacy_capture_calls == 1);
+      CHECK(snapshot_capture_calls == 1);
+    }
+  }
+}
+
 void test_guard_combatant_late_validation_and_exact_translation() {
   const auto configure_valid_combat = [] {
     captured_snapshot.combat = CombatView{
@@ -2096,6 +2274,7 @@ int main() {
     test_open_spellbook_late_validation_and_exact_translation();
     test_open_save_game_late_validation_and_exact_menu_translation();
     test_open_load_game_late_validation_and_exact_menu_translation();
+    test_shared_combat_late_validation_matrix();
     test_guard_combatant_late_validation_and_exact_translation();
     test_finish_combatant_late_validation_and_exact_translation();
     test_delay_combatant_late_validation_and_exact_translation();
