@@ -90,6 +90,13 @@ run_cpp_test PartyRailControlLayoutTest \
   src/presentation/PartyRailLayout.cpp \
   src/presentation/ResponsiveLayout.cpp
 
+run_cpp_test DrawerControlLayoutTest \
+  src/tests/DrawerControlLayoutTest.cpp \
+  src/presentation/DrawerControlLayout.cpp \
+  src/presentation/PartyRailModel.cpp \
+  src/presentation/ResponsiveLayout.cpp \
+  src/presentation/ShellKeyboardInteraction.cpp
+
 run_cpp_test RuntimeLegacyCommandBridgeTest \
   src/tests/RuntimeLegacyCommandBridgeTest.cpp \
   src/presentation/RuntimeLegacyCommandBridge.cpp \

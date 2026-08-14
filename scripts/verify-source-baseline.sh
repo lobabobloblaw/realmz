@@ -145,8 +145,13 @@ else
     tracked_changes=0
     staged_changes=0
     untracked_changes=0
-    git -C "$repo" diff --quiet --no-ext-diff 2>/dev/null || tracked_changes=1
-    git -C "$repo" diff --cached --quiet --no-ext-diff 2>/dev/null || staged_changes=1
+    # Root-tree dirtiness and submodule validity are checked separately below.
+    # Ignoring submodules here avoids recursively scanning a large initialized
+    # dependency checkout merely to discover whether root files changed.
+    git -C "$repo" diff --quiet --no-ext-diff \
+      --ignore-submodules=all 2>/dev/null || tracked_changes=1
+    git -C "$repo" diff --cached --quiet --no-ext-diff \
+      --ignore-submodules=all 2>/dev/null || staged_changes=1
     # `--directory` collapses untracked build trees instead of recursively
     # enumerating them. We need only know whether one exists for the clean gate.
     if [[ -n "$(git -C "$repo" ls-files --others --exclude-standard --directory 2>/dev/null | sed -n '1p')" ]]; then

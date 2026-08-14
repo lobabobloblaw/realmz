@@ -42,6 +42,7 @@
 #include "ResourceManagerRemaster.hpp"
 #include "StringConvert.hpp"
 #include "Types.hpp"
+#include "presentation/DrawerControlLayout.hpp"
 #include "presentation/LegacyGameSnapshotSource.hpp"
 #include "presentation/LegacyPresentationContext.h"
 #include "presentation/PartyRailControlLayout.hpp"
@@ -2112,13 +2113,105 @@ void draw_shell_panel_contents(
   }
 
   if (kind == ShellPanelKind::drawer_tabs) {
-    draw_shell_text(renderer, font, "DETAILS  ·  EVENT LOG",
-        {left, panel.y + 13.0, width, 22.0},
-        kHeading, backing_scale, body_size, TTF_STYLE_BOLD);
-    draw_shell_text(renderer, font,
-        "Keyboard-accessible drawers are staged; legacy dialogs remain complete.",
-        {left, panel.y + 42.0, width, std::max(22.0, panel.height - 52.0)},
-        kMuted, backing_scale, caption_size);
+    for (const auto& tab : model.drawers.tabs) {
+      const auto control = std::ranges::find_if(
+          controls,
+          [&tab](const auto& candidate) {
+            return candidate.kind ==
+                    realmz::presentation::ShellControlKind::drawer_tab &&
+                candidate.focus_identifier == tab.focus_identifier;
+          });
+      if (control == controls.end()) {
+        continue;
+      }
+      const bool pressed = pressed_control &&
+          (*pressed_control == control->region);
+      const bool focused = focused_control &&
+          (*focused_control == control->region);
+      auto button = sdl_rect(control->bounds);
+      SDL_SetRenderDrawColor(
+          renderer,
+          pressed ? 91 : (tab.active ? 57 : 39),
+          pressed ? 73 : (tab.active ? 51 : 42),
+          pressed ? 46 : (tab.active ? 39 : 45),
+          255);
+      SDL_RenderFillRect(renderer, &button);
+      SDL_SetRenderDrawColor(
+          renderer,
+          tab.active ? 222 : 116,
+          tab.active ? 174 : 101,
+          tab.active ? 92 : 82,
+          255);
+      SDL_RenderRect(renderer, &button);
+      if (pressed) {
+        SDL_FRect inner = button;
+        inner.x += 2.0f;
+        inner.y += 2.0f;
+        inner.w = std::max(0.0f, inner.w - 4.0f);
+        inner.h = std::max(0.0f, inner.h - 4.0f);
+        SDL_RenderRect(renderer, &inner);
+      }
+      if (focused) {
+        draw_shell_focus_corners(renderer, control->bounds);
+      }
+      std::string label = control->label;
+      if (tab.badge_count != 0U) {
+        label += std::format(" ({})", tab.badge_count);
+      }
+      if (tab.active) {
+        label += "\nOPEN";
+      }
+      draw_shell_text(
+          renderer,
+          font,
+          label,
+          {
+              control->bounds.x + 7.0,
+              control->bounds.y + 5.0,
+              std::max(0.0, control->bounds.width - 14.0),
+              std::max(0.0, control->bounds.height - 10.0),
+          },
+          tab.active ? kSelected : kBody,
+          backing_scale,
+          caption_size,
+          TTF_STYLE_BOLD);
+    }
+
+    const LogicalRect content{
+        left,
+        panel.y + 61.0,
+        width,
+        std::max(20.0, panel.height - 70.0),
+    };
+    if (!model.drawers.active_panel) {
+      draw_shell_text(renderer, font,
+          "Open Details or Event log. Tab selects; Return or Space opens.",
+          content, kMuted, backing_scale, caption_size);
+    } else if (*model.drawers.active_panel ==
+        realmz::presentation::DrawerPanel::details) {
+      if (!model.selected_details.member) {
+        draw_shell_text(renderer, font,
+            "DETAILS — Select a party member in the game frame.",
+            content, kMuted, backing_scale, caption_size);
+      } else {
+        draw_shell_text(renderer, font,
+            std::format("DETAILS — {}\nLevel {} · Armor {} · Move {}/{}",
+                model.selected_details.name.empty()
+                    ? "Selected party member"
+                    : model.selected_details.name,
+                model.selected_details.level,
+                model.selected_details.armor_class,
+                model.selected_details.movement,
+                model.selected_details.movement_maximum),
+            content, kBody, backing_scale, caption_size);
+      }
+    } else {
+      draw_shell_text(renderer, font,
+          model.event_log.entries.empty()
+              ? "EVENT LOG — Semantic game messages will appear here."
+              : "EVENT LOG — " + model.event_log.entries.back().text,
+          content, kMuted, backing_scale, caption_size);
+    }
   }
 }
 
@@ -2287,7 +2380,10 @@ void WindowManager::present_remastered_frame() {
       shell_model = realmz::presentation::build_presentation_shell_model(
           snapshot,
           {},
-          {.panels_collapsed = panels_collapsed});
+          {
+              .panels_collapsed = panels_collapsed,
+              .active_drawer = this->remastered_active_drawer,
+          });
       const bool navigation_available =
           legacy_context.adaptive_eligible != 0 &&
           std::ranges::any_of(
@@ -2342,6 +2438,18 @@ void WindowManager::present_remastered_frame() {
               });
         }
       }
+      if (this->adaptive_shell_plan->adaptive_layout->drawer_tabs) {
+        const auto drawer_controls =
+            realmz::presentation::compute_drawer_control_layout(
+                shell_model->drawers,
+                *this->adaptive_shell_plan->adaptive_layout->drawer_tabs,
+                snapshot_context_matches && !this->text_editing_active &&
+                    legacy_context.adaptive_eligible != 0);
+        this->remastered_shell_controls.insert(
+            this->remastered_shell_controls.end(),
+            drawer_controls.begin(),
+            drawer_controls.end());
+      }
       auto font = load_font(GENEVA_FONT_ID);
       if (auto* ttf = std::get_if<TTF_Font*>(&font)) {
         shell_font = *ttf;
@@ -2366,15 +2474,25 @@ void WindowManager::present_remastered_frame() {
               if (const auto* movement =
                       std::get_if<realmz::presentation::MovePartyAction>(
                           &control.payload)) {
-                return realmz::presentation::legacy_key_message_for_movement(
-                    movement->command, context)
-                    .has_value();
+                return control.kind ==
+                        realmz::presentation::ShellControlKind::movement &&
+                    realmz::presentation::legacy_key_message_for_movement(
+                        movement->command, context)
+                        .has_value();
               }
               if (const auto* selection =
                       std::get_if<
                           realmz::presentation::SelectPartyMemberAction>(
                           &control.payload)) {
-                return snapshot.party.member(selection->member) != nullptr;
+                return control.kind ==
+                        realmz::presentation::ShellControlKind::party_member &&
+                    snapshot.party.member(selection->member) != nullptr;
+              }
+              if (std::holds_alternative<
+                      realmz::presentation::SetDrawerPanelAction>(
+                      control.payload)) {
+                return control.kind ==
+                    realmz::presentation::ShellControlKind::drawer_tab;
               }
               return false;
             });
@@ -2627,7 +2745,6 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
   const auto semantic_surface = RealmzCurrentSemanticInputSurface();
   if ((this->presentation_host.mode() !=
           realmz::presentation::PresentationMode::remastered) ||
-      (semantic_surface == REALMZ_SEMANTIC_INPUT_NONE) ||
       this->text_editing_active || !this->adaptive_shell_plan ||
       !this->adaptive_shell_plan->adaptive_layout ||
       !this->remastered_input_mapper ||
@@ -2649,7 +2766,7 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
               realmz::presentation::ScreenContext::exploration)) ||
       ((semantic_surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
           (context.screen == realmz::presentation::ScreenContext::dungeon));
-  if (!surface_matches_context || !context.adaptive_eligible ||
+  if (!context.adaptive_eligible ||
       (context.screen != this->adaptive_shell_plan->screen)) {
     return false;
   }
@@ -2660,10 +2777,29 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       continue;
     }
     found_enabled = true;
+    if (const auto* drawer =
+            std::get_if<realmz::presentation::SetDrawerPanelAction>(
+                &control.payload)) {
+      const bool valid_requested_panel = !drawer->panel ||
+          *drawer->panel == realmz::presentation::DrawerPanel::details ||
+          *drawer->panel == realmz::presentation::DrawerPanel::event_log;
+      const auto& layout = *this->adaptive_shell_plan->adaptive_layout;
+      if (control.kind !=
+              realmz::presentation::ShellControlKind::drawer_tab ||
+          layout.layout_class != realmz::presentation::LayoutClass::compact ||
+          !layout.drawer_tabs ||
+          !layout.drawer_tabs->contains(control.bounds) ||
+          !valid_requested_panel) {
+        return false;
+      }
+      continue;
+    }
     if (const auto* movement =
             std::get_if<realmz::presentation::MovePartyAction>(
                 &control.payload)) {
-      if (!realmz::presentation::legacy_key_message_for_movement(
+      if (!surface_matches_context ||
+          control.kind != realmz::presentation::ShellControlKind::movement ||
+          !realmz::presentation::legacy_key_message_for_movement(
               movement->command, context)) {
         return false;
       }
@@ -2672,6 +2808,11 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
     if (const auto* selection =
             std::get_if<realmz::presentation::SelectPartyMemberAction>(
                 &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::party_member) {
+        return false;
+      }
       try {
         if (!snapshot) {
           snapshot =
@@ -2747,11 +2888,42 @@ void WindowManager::cancel_remastered_keyboard_route() {
 
 void WindowManager::dispatch_remastered_shell_control(
     const realmz::presentation::ShellControlPlacement& control) {
-  if (!control.enabled || !this->runtime_legacy_command_bridge ||
-      (RealmzCurrentSemanticInputSurface() ==
-          REALMZ_SEMANTIC_INPUT_NONE) ||
+  if (!control.enabled ||
       (this->presentation_host.mode() !=
           realmz::presentation::PresentationMode::remastered)) {
+    return;
+  }
+
+  const auto* drawer =
+      std::get_if<realmz::presentation::SetDrawerPanelAction>(
+          &control.payload);
+  if (drawer) {
+    const bool valid_requested_panel = !drawer->panel ||
+        *drawer->panel == realmz::presentation::DrawerPanel::details ||
+        *drawer->panel == realmz::presentation::DrawerPanel::event_log;
+    const auto live_control = std::ranges::find_if(
+        this->remastered_shell_controls,
+        [&control](const auto& candidate) {
+          return candidate.enabled &&
+              candidate.focus_identifier == control.focus_identifier;
+        });
+    if (!this->remastered_shell_keyboard_route_is_eligible() ||
+        live_control == this->remastered_shell_controls.end() ||
+        *live_control != control ||
+        control.kind != realmz::presentation::ShellControlKind::drawer_tab ||
+        !this->adaptive_shell_plan ||
+        !this->adaptive_shell_plan->adaptive_layout ||
+        this->adaptive_shell_plan->adaptive_layout->layout_class !=
+            realmz::presentation::LayoutClass::compact ||
+        !this->adaptive_shell_plan->adaptive_layout->drawer_tabs ||
+        !this->adaptive_shell_plan->adaptive_layout->drawer_tabs->contains(
+            control.bounds) ||
+        !valid_requested_panel) {
+      return;
+    }
+  } else if (!this->runtime_legacy_command_bridge ||
+      (RealmzCurrentSemanticInputSurface() ==
+          REALMZ_SEMANTIC_INPUT_NONE)) {
     return;
   }
 
@@ -2762,6 +2934,10 @@ void WindowManager::dispatch_remastered_shell_control(
   ++this->next_shell_action_sequence;
   if (this->next_shell_action_sequence == 0) {
     this->next_shell_action_sequence = 1;
+  }
+  if (drawer) {
+    this->remastered_active_drawer = drawer->panel;
+    return;
   }
   const auto result = this->runtime_legacy_command_bridge->dispatch(action);
   if (!result.was_handled()) {

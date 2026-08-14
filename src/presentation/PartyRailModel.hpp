@@ -152,11 +152,6 @@ struct EventLogModel {
   bool operator==(const EventLogModel&) const = default;
 };
 
-enum class DrawerPanel {
-  details,
-  event_log,
-};
-
 struct DrawerTabModel {
   DrawerPanel panel = DrawerPanel::details;
   std::string label;

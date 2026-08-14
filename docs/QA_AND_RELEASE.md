@@ -73,7 +73,9 @@ late-validated against a fresh party snapshot, then a narrow
 legacy adapter changes `charselectnew` exactly once or performs an idempotent
 no-op for the selected member; it never synthesizes a portrait click or opens a
 modal. Details and log surfaces stay informational, and the complete
-Classic frame remains interactive. Popup anchors, text-input rectangles, cursor
+Classic frame remains interactive. Compact Details/Event Log drawer tabs are
+local presentation actions with pointer and wrapping keyboard operation; they
+never cross the legacy mutation bridge. Popup anchors, text-input rectangles, cursor
 warps, and pointer capture use the same central Classic-to-window transform.
 
 A narrow legacy-context adapter keeps title/no-gameplay state and nested legacy

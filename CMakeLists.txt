@@ -74,6 +74,7 @@ endfunction()
 
 set(PRESENTATION_CORE_SOURCES
     src/presentation/AdaptiveShell.cpp
+    src/presentation/DrawerControlLayout.cpp
     src/presentation/LegacyCommandBridge.cpp
     src/presentation/PartyRailControlLayout.cpp
     src/presentation/PartyRailLayout.cpp
@@ -144,6 +145,14 @@ if(REALMZ_BUILD_CORE_TESTS)
     realmz_configure_core_target(PartyRailControlLayoutTest)
     add_test(NAME PartyRailControlLayoutTest
         COMMAND PartyRailControlLayoutTest)
+
+    add_executable(DrawerControlLayoutTest
+        src/tests/DrawerControlLayoutTest.cpp)
+    target_link_libraries(DrawerControlLayoutTest PRIVATE
+        realmz_presentation_core)
+    realmz_configure_core_target(DrawerControlLayoutTest)
+    add_test(NAME DrawerControlLayoutTest
+        COMMAND DrawerControlLayoutTest)
 
     add_executable(RuntimeLegacyCommandBridgeTest
         src/tests/RuntimeLegacyCommandBridgeTest.cpp)

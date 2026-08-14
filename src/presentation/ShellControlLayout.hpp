@@ -11,6 +11,7 @@ namespace realmz::presentation {
 enum class ShellControlKind {
   movement,
   party_member,
+  drawer_tab,
 };
 
 struct ShellControlPlacement {

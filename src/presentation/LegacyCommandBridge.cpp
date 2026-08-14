@@ -81,6 +81,9 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
       return invoke_handler(this->handlers_.confirm, payload, "confirm");
     } else if constexpr (std::is_same_v<Action, CancelAction>) {
       return invoke_handler(this->handlers_.cancel, payload, "cancel");
+    } else if constexpr (std::is_same_v<Action, SetDrawerPanelAction>) {
+      return DispatchResult::unsupported(
+          "Presentation-local set_drawer_panel cannot cross the legacy bridge");
     } else {
       return invoke_handler(
           this->handlers_.set_presentation_mode,

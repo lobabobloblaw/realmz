@@ -158,6 +158,14 @@ void test_actions_and_events() {
   CHECK(cast.target.primary == 4);
   CHECK(cast.target.secondary == 5);
 
+  UIAction drawer{
+      .sequence = 10,
+      .payload = SetDrawerPanelAction{DrawerPanel::event_log},
+  };
+  CHECK(action_name(drawer.payload) == "set_drawer_panel");
+  CHECK(std::get<SetDrawerPanelAction>(drawer.payload).panel ==
+      DrawerPanel::event_log);
+
   GameEvent event{
       .sequence = 3,
       .payload = MessageEvent{MessageSeverity::success, "Saved"},
@@ -207,6 +215,13 @@ void test_command_bridge() {
   });
   CHECK(unsupported.status == DispatchStatus::unsupported);
   CHECK(unsupported.detail.find("save_game") != std::string::npos);
+
+  const auto local_only = bridge.dispatch(UIAction{
+      .sequence = 5,
+      .payload = SetDrawerPanelAction{DrawerPanel::details},
+  });
+  CHECK(local_only.status == DispatchStatus::unsupported);
+  CHECK(local_only.detail.find("set_drawer_panel") != std::string::npos);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

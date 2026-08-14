@@ -43,6 +43,9 @@ static_assert(!CarriesPresentationMode<GameSnapshot>,
     "presentation mode must remain outside the engine snapshot DTO");
 static_assert(std::is_copy_constructible_v<GameSnapshot>);
 static_assert(std::is_same_v<decltype(SetPresentationModeAction::mode), PresentationMode>);
+static_assert(std::is_same_v<
+    decltype(SetDrawerPanelAction::panel),
+    std::optional<DrawerPanel>>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -305,6 +308,16 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(unsupported.status == DispatchStatus::unsupported);
   CHECK(unsupported.detail ==
       "No legacy handler registered for set_presentation_mode");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const auto localDrawerUnsupported = unsupportedBridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetDrawerPanelAction{DrawerPanel::details},
+  });
+  CHECK(localDrawerUnsupported.status == DispatchStatus::unsupported);
+  CHECK(localDrawerUnsupported.detail ==
+      "Presentation-local set_drawer_panel cannot cross the legacy bridge");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

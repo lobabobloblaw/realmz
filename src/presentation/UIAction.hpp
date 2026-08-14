@@ -132,6 +132,20 @@ struct CancelAction {
   bool operator==(const CancelAction&) const = default;
 };
 
+enum class DrawerPanel {
+  details,
+  event_log,
+};
+
+// Compact-shell drawers are presentation state only. The desired panel is
+// explicit so a recorded action does not depend on whatever happened to be
+// open when it is replayed; nullopt closes the current drawer.
+struct SetDrawerPanelAction {
+  std::optional<DrawerPanel> panel;
+
+  bool operator==(const SetDrawerPanelAction&) const = default;
+};
+
 // Presentation changes are semantic UI commands but do not mutate save data.
 // Keeping them in the same stream allows deterministic input replays.
 struct SetPresentationModeAction {
@@ -150,6 +164,7 @@ using UIActionPayload = std::variant<
     LoadGameAction,
     ConfirmAction,
     CancelAction,
+    SetDrawerPanelAction,
     SetPresentationModeAction>;
 
 struct UIAction {
@@ -180,6 +195,8 @@ struct UIAction {
       return "confirm";
     } else if constexpr (std::is_same_v<Action, CancelAction>) {
       return "cancel";
+    } else if constexpr (std::is_same_v<Action, SetDrawerPanelAction>) {
+      return "set_drawer_panel";
     } else {
       return "set_presentation_mode";
     }
