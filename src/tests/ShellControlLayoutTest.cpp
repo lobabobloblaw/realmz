@@ -446,7 +446,7 @@ void test_fail_closed_inputs() {
   }).empty());
 }
 
-void test_combat_guard_finish_and_delay_controls() {
+void test_combat_guard_finish_delay_and_center_controls() {
   constexpr std::array sizes{
       LogicalSize{1024.0, 768.0},
       LogicalSize{1359.0, 900.0},
@@ -466,11 +466,14 @@ void test_combat_guard_finish_and_delay_controls() {
         .finish_available = true,
         .delay_combatant = CombatantId{2},
         .delay_available = true,
+        .center_active_combatant = CombatantId{2},
+        .center_active_available = true,
     });
-    CHECK(controls.size() == 3U);
+    CHECK(controls.size() == 4U);
     const auto& guard = controls[0];
     const auto& finish = controls[1];
     const auto& delay = controls[2];
+    const auto& center = controls[3];
     CHECK(guard.region.value == 1104U);
     CHECK(guard.kind == ShellControlKind::guard_combatant);
     CHECK(guard.label == "GUARD");
@@ -497,6 +500,15 @@ void test_combat_guard_finish_and_delay_controls() {
     CHECK(delay.tab_order == 1106);
     CHECK(delay.enabled);
     CHECK(std::get<DelayCombatantAction>(delay.payload).combatant == 2);
+    CHECK(center.region.value == 1107U);
+    CHECK(center.kind == ShellControlKind::center_active_combatant);
+    CHECK(center.label == "CENTER");
+    CHECK(center.accessibility_label ==
+        "Center view on active combatant");
+    CHECK(center.focus_identifier == "focus.action.combat.center");
+    CHECK(center.tab_order == 1107);
+    CHECK(center.enabled);
+    CHECK(std::get<CenterActiveCombatantAction>(center.payload).combatant == 2);
     for (const auto& control : controls) {
       CHECK(panel.contains(control.bounds));
       CHECK(control.bounds.width >= 44.0);
@@ -505,16 +517,21 @@ void test_combat_guard_finish_and_delay_controls() {
     }
     CHECK(!interiors_overlap(guard.bounds, finish.bounds));
     CHECK(!interiors_overlap(guard.bounds, delay.bounds));
+    CHECK(!interiors_overlap(guard.bounds, center.bounds));
     CHECK(!interiors_overlap(finish.bounds, delay.bounds));
+    CHECK(!interiors_overlap(finish.bounds, center.bounds));
+    CHECK(!interiors_overlap(delay.bounds, center.bounds));
     CHECK(finish.bounds.x > guard.bounds.x);
     CHECK(delay.bounds.x > finish.bounds.x);
-    const LogicalPoint delay_pointer{
-        delay.bounds.x + delay.bounds.width / 2.0,
-        delay.bounds.y + delay.bounds.height / 2.0,
+    CHECK(center.bounds.x > delay.bounds.x);
+    const LogicalPoint center_pointer{
+        center.bounds.x + center.bounds.width / 2.0,
+        center.bounds.y + center.bounds.height / 2.0,
     };
-    CHECK(delay.bounds.contains(delay_pointer));
-    CHECK(!guard.bounds.contains(delay_pointer));
-    CHECK(!finish.bounds.contains(delay_pointer));
+    CHECK(center.bounds.contains(center_pointer));
+    CHECK(!guard.bounds.contains(center_pointer));
+    CHECK(!finish.bounds.contains(center_pointer));
+    CHECK(!delay.bounds.contains(center_pointer));
   }
 
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
@@ -525,11 +542,25 @@ void test_combat_guard_finish_and_delay_controls() {
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{2},
       .delay_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{2},
   });
-  CHECK(disabled.size() == 3U);
+  CHECK(disabled.size() == 4U);
   CHECK(!disabled[0].enabled);
   CHECK(!disabled[1].enabled);
   CHECK(!disabled[2].enabled);
+  CHECK(!disabled[3].enabled);
+  CHECK(std::get<CenterActiveCombatantAction>(
+      disabled[3].payload).combatant == 2);
+  const LogicalPoint disabled_center_pointer{
+      disabled[3].bounds.x + disabled[3].bounds.width / 2.0,
+      disabled[3].bounds.y + disabled[3].bounds.height / 2.0,
+  };
+  CHECK(std::ranges::none_of(
+      disabled,
+      [disabled_center_pointer](const auto& control) {
+        return control.enabled &&
+            control.bounds.contains(disabled_center_pointer);
+      }));
 
   const auto guard_only = compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -560,6 +591,19 @@ void test_combat_guard_finish_and_delay_controls() {
   CHECK(delay_only.front().enabled);
   CHECK(std::get<DelayCombatantAction>(delay_only.front().payload).combatant ==
       2);
+
+  const auto center_only = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .center_active_combatant = CombatantId{2},
+      .center_active_available = true,
+  });
+  CHECK(center_only.size() == 1U);
+  CHECK(center_only.front().kind ==
+      ShellControlKind::center_active_combatant);
+  CHECK(center_only.front().enabled);
+  CHECK(std::get<CenterActiveCombatantAction>(
+      center_only.front().payload).combatant == 2);
 
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -611,6 +655,27 @@ void test_combat_guard_finish_and_delay_controls() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .center_active_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .center_active_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .center_active_combatant = CombatantId{-1},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .center_active_combatant = CombatantId{256},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{-1},
   }).empty());
@@ -642,6 +707,32 @@ void test_combat_guard_finish_and_delay_controls() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .finish_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .delay_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .finish_combatant = CombatantId{2},
+      .delay_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .navigation_available = true,
       .guard_combatant = CombatantId{2},
       .guard_available = true,
@@ -649,6 +740,8 @@ void test_combat_guard_finish_and_delay_controls() {
       .finish_available = true,
       .delay_combatant = CombatantId{2},
       .delay_available = true,
+      .center_active_combatant = CombatantId{2},
+      .center_active_available = true,
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -657,6 +750,8 @@ void test_combat_guard_finish_and_delay_controls() {
       .inventory_available = true,
       .delay_combatant = CombatantId{2},
       .delay_available = true,
+      .center_active_combatant = CombatantId{2},
+      .center_active_available = true,
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::exploration,
@@ -678,6 +773,13 @@ void test_combat_guard_finish_and_delay_controls() {
       .action_panel = panel,
       .navigation_available = true,
       .delay_combatant = CombatantId{2},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .center_active_combatant = CombatantId{2},
   }).empty());
 
   const LogicalRect narrow_panel{0.0, 0.0, 110.0, 150.0};
@@ -734,6 +836,29 @@ void test_combat_guard_finish_and_delay_controls() {
       .finish_combatant = CombatantId{2},
       .delay_combatant = CombatantId{2},
   }).empty());
+
+  const LogicalRect four_minimum{0.0, 0.0, 222.0, 120.0};
+  const auto four_controls = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = four_minimum,
+      .guard_combatant = CombatantId{2},
+      .finish_combatant = CombatantId{2},
+      .delay_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{2},
+  });
+  CHECK(four_controls.size() == 4U);
+  for (const auto& control : four_controls) {
+    CHECK(control.bounds.width == 44.0);
+    CHECK(control.bounds.height == 44.0);
+  }
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = {0.0, 0.0, 221.0, 120.0},
+      .guard_combatant = CombatantId{2},
+      .finish_combatant = CombatantId{2},
+      .delay_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{2},
+  }).empty());
 }
 
 } // namespace
@@ -744,7 +869,7 @@ int main() {
     test_payload_order_and_disabled_state();
     test_open_inventory_control();
     test_spellbook_save_and_load_controls_at_combined_minimum_layout();
-    test_combat_guard_finish_and_delay_controls();
+    test_combat_guard_finish_delay_and_center_controls();
     test_fail_closed_inputs();
     std::cout << "ShellControlLayoutTest passed ("
               << checks_run << " checks)\n";

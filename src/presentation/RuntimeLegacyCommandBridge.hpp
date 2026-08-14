@@ -62,6 +62,10 @@ using RuntimeLegacyDelayCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyCenterActiveCombatantSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Returns the exact Classic Mac key message already consumed by the preserved
 // exploration/dungeon event loops. Unsupported command/context combinations
@@ -117,6 +121,14 @@ legacy_key_message_for_finish_combatant(
 // the adjacent Guard or Finish commands despite their identical signatures.
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_delay_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "c" key record consumed by the preserved combat
+// switch. The acting combatant is carried through an independent typed route so
+// a queued camera command cannot silently follow a later turn.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_center_active_combatant(
     CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 
@@ -195,6 +207,18 @@ public:
       RuntimeLegacyGuardCombatantSink guard_combatant_sink,
       RuntimeLegacyFinishCombatantSink finish_combatant_sink,
       RuntimeLegacyDelayCombatantSink delay_combatant_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyOpenInventorySink open_inventory_sink,
+      RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+      RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+      RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+      RuntimeLegacyGuardCombatantSink guard_combatant_sink,
+      RuntimeLegacyFinishCombatantSink finish_combatant_sink,
+      RuntimeLegacyDelayCombatantSink delay_combatant_sink,
+      RuntimeLegacyCenterActiveCombatantSink center_active_combatant_sink);
 
   [[nodiscard]] DispatchResult dispatch(const UIAction& action) override;
 

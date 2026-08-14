@@ -30,15 +30,18 @@ and `OpenLoadGameAction` commands. After late surface validation, they become
 the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
-During combat, code-native Guard, Finish, and Delay controls each carry the
-stable active-party combatant ID in typed `GuardCombatantAction`,
-`FinishCombatantAction`, and `DelayCombatantAction` commands. Their combat-only
-guarded routes late-validate the fresh acting combatant and fail closed before
-returning the exact Classic `g`, `f`, or `d` key record. Delay is available only
-before movement and revalidates that eligibility before returning the exact
-Classic `d` message `0x00000264`. The preserved Classic handlers remain
-authoritative for the resulting combat-state mutations and turn advance. Other
-combat commands remain inside the interactive Classic frame.
+During combat, code-native Guard, Finish, Delay, and Center controls each carry
+the stable active-party combatant ID in typed `GuardCombatantAction`,
+`FinishCombatantAction`, `DelayCombatantAction`, and
+`CenterActiveCombatantAction` commands. Their combat-only guarded routes
+late-validate the fresh acting combatant and fail closed before returning the
+exact Classic `g`, `f`, `d`, or `c` key record. Delay is available only before
+movement and revalidates that eligibility before returning the exact Classic
+`d` message `0x00000264`; Center returns the exact Classic `c` message
+`0x00000863`. The preserved Classic handlers remain authoritative for the
+Guard, Finish, and Delay combat-state mutations and turn advance, and for
+Center's existing camera sequence. Other combat commands remain inside the
+interactive Classic frame.
 The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a

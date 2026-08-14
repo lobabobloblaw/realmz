@@ -51,24 +51,28 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first three bounded combat actions are covered outside this exploration
+The first four bounded combat actions are covered outside this exploration
 fixture by the presentation, runtime-bridge, semantic-boundary, top-level-loop,
 and keyboard contract tests. They verify that typed `GuardCombatantAction`,
-`FinishCombatantAction`, and `DelayCombatantAction` commands each carry the
-stable acting-combatant ID and are late-validated against the fresh acting
-party member with fail-closed rejection. Delay is available only before
-movement and revalidates that eligibility before becoming the exact Classic
-`d` message `0x00000264`; Guard and Finish become the exact Classic `g` and `f`
-key records. The preserved Classic handlers still own the resulting
-combat-state mutations and turn advance. This is not a full combat replay or
+`FinishCombatantAction`, `DelayCombatantAction`, and
+`CenterActiveCombatantAction` commands each carry the stable acting-combatant ID
+and are late-validated against the fresh acting party member with fail-closed
+rejection. Delay is available only before movement and revalidates that
+eligibility before becoming the exact Classic `d` message `0x00000264`; Center
+becomes the exact Classic `c` message `0x00000863`, while Guard and Finish become
+the exact Classic `g` and `f` key records. The preserved Classic handlers still
+own the Guard, Finish, and Delay combat-state mutations and turn advance, and
+Center's existing camera sequence. This is not a full combat replay or
 save-equivalence claim; every other combat command remains on the Classic input
 route.
 
 `SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
 fixture-owned legacy globals flow through the real presentation-context and
 snapshot adapters before the semantic boundary emits those exact key records.
-It performs no Classic combat mutation, reads or writes no user data, and is
-not a full combat replay.
+It covers stale acting-combatant and non-gameplay-window rejection for all four
+actions while leaving its output sentinel unchanged. It performs no Classic
+combat mutation, reads or writes no user data, and is not a full combat replay
+or save-equivalence test.
 
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:

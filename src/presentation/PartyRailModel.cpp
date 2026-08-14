@@ -368,6 +368,20 @@ std::vector<ActionControlModel> build_actions(
     if (can_act) {
       result.back().combatant = acting->id;
     }
+    result.emplace_back(action(
+        ActionIntent::center_active,
+        "action.combat.center",
+        "Center",
+        can_act ? ActionAvailability::deferred_to_engine
+                : ActionAvailability::unavailable,
+        tab_order++,
+        can_act
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{
+                  unavailable_token("Wait for an active party member")}));
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
   }
 
   if (encounter_active) {

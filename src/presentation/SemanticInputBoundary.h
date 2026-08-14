@@ -81,6 +81,13 @@ uint8_t RealmzIsSemanticDelayCombatantTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticDelayCombatantTagSurface(
     uint32_t tagged_message);
 
+// Center-active tags carry the acting combatant explicitly and are valid only
+// on the combat surface. This prevents a queued camera command from following
+// a later turn's actor.
+uint8_t RealmzIsSemanticCenterActiveCombatantTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticCenterActiveCombatantTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -156,6 +163,14 @@ uint8_t RealmzConsumeSemanticDelayCombatantEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant, then returns the preserved
+// Classic "c" key record that centers the combat view through the original
+// combat loop.
+uint8_t RealmzConsumeSemanticCenterActiveCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -196,6 +211,10 @@ enum class MovementCommand;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_delay_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_center_active_combatant_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 

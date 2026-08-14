@@ -55,6 +55,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(DelayCombatantAction::combatant),
     CombatantId>);
+static_assert(std::is_same_v<
+    decltype(CenterActiveCombatantAction::combatant),
+    CombatantId>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -263,6 +266,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.guard_combatant = mutateEngine;
   handlers.finish_combatant = mutateEngine;
   handlers.delay_combatant = mutateEngine;
+  handlers.center_active_combatant = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -394,6 +398,18 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(delayCombatantUnsupported.status == DispatchStatus::unsupported);
   CHECK(delayCombatantUnsupported.detail ==
       "No legacy handler registered for delay_combatant");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const auto centerActiveCombatantUnsupported =
+      unsupportedBridge.dispatch(UIAction{
+          .sequence = sequence++,
+          .payload = CenterActiveCombatantAction{1},
+      });
+  CHECK(centerActiveCombatantUnsupported.status ==
+      DispatchStatus::unsupported);
+  CHECK(centerActiveCombatantUnsupported.detail ==
+      "No legacy handler registered for center_active_combatant");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

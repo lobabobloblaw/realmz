@@ -99,6 +99,15 @@ struct DelayCombatantAction {
   bool operator==(const DelayCombatantAction&) const = default;
 };
 
+// Recenters the preserved Classic combat view on the explicitly identified
+// acting party combatant. The stable actor ID prevents a queued presentation
+// command from centering whichever combatant owns a later turn.
+struct CenterActiveCombatantAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const CenterActiveCombatantAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -222,6 +231,7 @@ using UIActionPayload = std::variant<
     GuardCombatantAction,
     FinishCombatantAction,
     DelayCombatantAction,
+    CenterActiveCombatantAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -260,6 +270,9 @@ struct UIAction {
       return "finish_combatant";
     } else if constexpr (std::is_same_v<Action, DelayCombatantAction>) {
       return "delay_combatant";
+    } else if constexpr (
+        std::is_same_v<Action, CenterActiveCombatantAction>) {
+      return "center_active_combatant";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

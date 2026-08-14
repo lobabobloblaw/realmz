@@ -86,17 +86,19 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes three bounded semantic actions: typed `GuardCombatantAction`,
-`FinishCombatantAction`, and `DelayCombatantAction` commands each carry the
-stable active-party combatant ID through distinct combat-only tagged events.
-The top-level combat loop late-validates a fresh snapshot, including the acting
-ID, party ownership, active/targetable state, and positive stamina, before
-translating an action to its exact preserved Classic key record. Delay is
-available only before movement (`movement == movement_maximum`), revalidates
-that condition at delivery, and becomes the exact Classic `d` message
-`0x00000264`. Validation fails closed, so stale or newly ineligible actions
-become inert. The original Classic guard/finish/delay mutations and turn
-advance remain authoritative, and all other combat commands remain in the
+Combat exposes four bounded semantic actions: typed `GuardCombatantAction`,
+`FinishCombatantAction`, `DelayCombatantAction`, and
+`CenterActiveCombatantAction` commands each carry the stable active-party
+combatant ID through distinct combat-only tagged events. The top-level combat
+loop late-validates a fresh snapshot, including the acting ID, party ownership,
+active/targetable state, and positive stamina, before translating an action to
+its exact preserved Classic key record. Delay is available only before movement
+(`movement == movement_maximum`), revalidates that condition at delivery, and
+becomes the exact Classic `d` message `0x00000264`. Center becomes the exact
+Classic `c` message `0x00000863`. Validation fails closed, so stale or newly
+ineligible actions become inert. The original Classic guard/finish/delay
+mutations and turn advance remain authoritative, as does Center's existing
+non-turn-ending camera sequence; all other combat commands remain in the
 interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
@@ -199,11 +201,13 @@ Automated checks do not replace these release decisions:
 - two human start-to-finish playthroughs of Tutorial and City, with no unresolved Classic fallback;
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, Save, Load, Guard, and Finish controls at compact and wide layouts,
+  Spells, Save, Load, Guard, Finish, Delay, and Center controls at compact and
+  wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
-  leaving their gameplay surface; and inert stale Guard and Finish actions
-  after the acting combatant, eligibility, or combat surface changes; verify
+  leaving their gameplay surface; and inert stale Guard, Finish, Delay, and
+  Center actions after the acting combatant, eligibility, or combat surface
+  changes; verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;
 - clean install on macOS 13.3 and the current macOS release, plus upgrade/import from an existing Realmz installation;

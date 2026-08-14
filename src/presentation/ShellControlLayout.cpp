@@ -17,6 +17,7 @@ constexpr uint32_t kLoadGameRegion = 1103U;
 constexpr uint32_t kGuardCombatantRegion = 1104U;
 constexpr uint32_t kFinishCombatantRegion = 1105U;
 constexpr uint32_t kDelayCombatantRegion = 1106U;
+constexpr uint32_t kCenterActiveCombatantRegion = 1107U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
@@ -83,24 +84,39 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.finish_combatant);
   const bool valid_delay = request.delay_combatant &&
       valid_combatant(*request.delay_combatant);
+  const bool valid_center = request.center_active_combatant &&
+      valid_combatant(*request.center_active_combatant);
   const bool invalid_guard = request.guard_combatant && !valid_guard;
   const bool invalid_finish = request.finish_combatant && !valid_finish;
   const bool invalid_delay = request.delay_combatant && !valid_delay;
+  const bool invalid_center =
+      request.center_active_combatant && !valid_center;
   const bool mismatched_combatants =
       (request.guard_combatant && request.finish_combatant &&
           (*request.guard_combatant != *request.finish_combatant)) ||
       (request.guard_combatant && request.delay_combatant &&
           (*request.guard_combatant != *request.delay_combatant)) ||
       (request.finish_combatant && request.delay_combatant &&
-          (*request.finish_combatant != *request.delay_combatant));
+          (*request.finish_combatant != *request.delay_combatant)) ||
+      (request.guard_combatant && request.center_active_combatant &&
+          (*request.guard_combatant !=
+              *request.center_active_combatant)) ||
+      (request.finish_combatant && request.center_active_combatant &&
+          (*request.finish_combatant !=
+              *request.center_active_combatant)) ||
+      (request.delay_combatant && request.center_active_combatant &&
+          (*request.delay_combatant !=
+              *request.center_active_combatant));
   const bool combat_controls =
       (request.screen == ScreenContext::combat) &&
-      (valid_guard || valid_finish || valid_delay) && !invalid_guard &&
-      !invalid_finish && !invalid_delay && !mismatched_combatants;
+      (valid_guard || valid_finish || valid_delay || valid_center) &&
+      !invalid_guard && !invalid_finish && !invalid_delay && !invalid_center &&
+      !mismatched_combatants;
   if ((!world_controls && !combat_controls) ||
       (world_controls &&
           (request.guard_combatant || request.finish_combatant ||
-              request.delay_combatant)) ||
+              request.delay_combatant ||
+              request.center_active_combatant)) ||
       (combat_controls &&
           (request.navigation_available || request.inventory_member ||
               request.spellbook_member || request.save_control_visible ||
@@ -111,7 +127,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.load_available && !request.load_control_visible) ||
       (request.guard_available && !valid_guard) ||
       (request.finish_available && !valid_finish) ||
-      (request.delay_available && !valid_delay)) {
+      (request.delay_available && !valid_delay) ||
+      (request.center_active_available && !valid_center)) {
     return {};
   }
 
@@ -122,7 +139,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.load_control_visible ? 1U : 0U) +
       (request.guard_combatant ? 1U : 0U) +
       (request.finish_combatant ? 1U : 0U) +
-      (request.delay_combatant ? 1U : 0U);
+      (request.delay_combatant ? 1U : 0U) +
+      (request.center_active_combatant ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -258,6 +276,21 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .tab_order = 1106,
         .enabled = request.delay_available,
         .payload = DelayCombatantAction{*request.delay_combatant},
+    });
+    x += button_width + gap;
+  }
+  if (request.center_active_combatant) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kCenterActiveCombatantRegion},
+        .kind = ShellControlKind::center_active_combatant,
+        .bounds = {x, y, button_width, button_height},
+        .label = "CENTER",
+        .accessibility_label = "Center view on active combatant",
+        .focus_identifier = "focus.action.combat.center",
+        .tab_order = 1107,
+        .enabled = request.center_active_available,
+        .payload = CenterActiveCombatantAction{
+            *request.center_active_combatant},
     });
   }
   return result;

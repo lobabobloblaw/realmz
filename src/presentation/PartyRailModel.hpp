@@ -108,6 +108,7 @@ enum class ActionIntent {
   guard,
   finish,
   delay,
+  center_active,
   cancel,
   encounter_choice,
 };
