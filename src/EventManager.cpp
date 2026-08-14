@@ -612,6 +612,28 @@ public:
     return true;
   }
 
+  bool push_semantic_cycle_combat_focus_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticCycleCombatFocusTag(tagged_message)) {
+      return false;
+    }
+    // Preserve the actor and relative direction until the guarded combat loop
+    // confirms that the same live party member still owns the turn.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic cycle combat focus (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   void discard_semantic_gameplay_events() {
     std::erase_if(this->event_queue, [](const EventRecord& candidate) {
       return (candidate.what == app1Evt) &&
@@ -1127,6 +1149,18 @@ Boolean GetNextSemanticGameplayEvent(
       ret->what = nullEvent;
       ret->message = 0;
     }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticCycleCombatFocusTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticCycleCombatFocusEvent(
+            surface, ret->message, &classic_key_message)) {
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      // A queued relative focus command cannot follow a later turn's actor.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
   } else {
     // Authorization belongs only to the event returned by this wrapper. Do
     // not leave a completed scope available after an ordinary Classic event.
@@ -1223,6 +1257,10 @@ Boolean PushSemanticCenterActiveCombatantEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticSwitchWeaponEvent(uint32_t tagged_message) {
   return em.push_semantic_switch_weapon_event(tagged_message);
+}
+
+Boolean PushSemanticCycleCombatFocusEvent(uint32_t tagged_message) {
+  return em.push_semantic_cycle_combat_focus_event(tagged_message);
 }
 
 void CancelSemanticGameplayInput(void) {

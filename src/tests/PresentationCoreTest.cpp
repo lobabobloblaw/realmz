@@ -211,8 +211,21 @@ void test_actions_and_events() {
   CHECK(std::get<SwitchWeaponSetAction>(
             switch_weapon.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction cycle_focus{
       .sequence = 18,
+      .payload = CycleCombatFocusAction{
+          .combatant = 2,
+          .direction = CombatFocusDirection::previous,
+      },
+  };
+  CHECK(action_name(cycle_focus.payload) == "cycle_combat_focus");
+  CHECK(std::get<CycleCombatFocusAction>(
+            cycle_focus.payload).combatant == 2);
+  CHECK(std::get<CycleCombatFocusAction>(cycle_focus.payload).direction ==
+      CombatFocusDirection::previous);
+
+  UIAction casting{
+      .sequence = 19,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -251,6 +264,8 @@ void test_actions_and_events() {
 void test_command_bridge() {
   MovementCommand received = MovementCommand::step_backward;
   CombatantId weapon_combatant = -1;
+  CombatantId focus_combatant = -1;
+  CombatFocusDirection focus_direction = CombatFocusDirection::next;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -265,6 +280,13 @@ void test_command_bridge() {
   handlers.switch_weapon_set =
       [&weapon_combatant](const SwitchWeaponSetAction& action) {
         weapon_combatant = action.combatant;
+        return DispatchResult::handled();
+      };
+  handlers.cycle_combat_focus =
+      [&focus_combatant, &focus_direction](
+          const CycleCombatFocusAction& action) {
+        focus_combatant = action.combatant;
+        focus_direction = action.direction;
         return DispatchResult::handled();
       };
 
@@ -382,6 +404,17 @@ void test_command_bridge() {
   });
   CHECK(weapon_handled.was_handled());
   CHECK(weapon_combatant == 7);
+
+  const auto cycle_focus_handled = bridge.dispatch(UIAction{
+      .sequence = 15,
+      .payload = CycleCombatFocusAction{
+          .combatant = 8,
+          .direction = CombatFocusDirection::previous,
+      },
+  });
+  CHECK(cycle_focus_handled.was_handled());
+  CHECK(focus_combatant == 8);
+  CHECK(focus_direction == CombatFocusDirection::previous);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

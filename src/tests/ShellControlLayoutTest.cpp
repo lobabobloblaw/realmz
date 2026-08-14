@@ -471,6 +471,10 @@ void test_combat_primary_and_secondary_action_pages() {
         .center_active_available = true,
         .switch_weapon_combatant = CombatantId{2},
         .switch_weapon_available = true,
+        .center_previous_combatant = CombatantId{2},
+        .center_previous_available = true,
+        .center_next_combatant = CombatantId{2},
+        .center_next_available = true,
     });
     CHECK(controls.size() == 5U);
     const auto& guard = controls[0];
@@ -562,10 +566,16 @@ void test_combat_primary_and_secondary_action_pages() {
         .combat_action_page = CombatActionPage::secondary,
         .switch_weapon_combatant = CombatantId{2},
         .switch_weapon_available = true,
+        .center_previous_combatant = CombatantId{2},
+        .center_previous_available = true,
+        .center_next_combatant = CombatantId{2},
+        .center_next_available = true,
     });
-    CHECK(secondary.size() == 2U);
+    CHECK(secondary.size() == 4U);
     const auto& back = secondary[0];
     const auto& weapon = secondary[1];
+    const auto& previous = secondary[2];
+    const auto& next = secondary[3];
     CHECK(back.region.value == 1108U);
     CHECK(back.kind == ShellControlKind::combat_action_page);
     CHECK(back.label == "BACK");
@@ -585,14 +595,65 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(weapon.tab_order == 1109);
     CHECK(weapon.enabled);
     CHECK(std::get<SwitchWeaponSetAction>(weapon.payload).combatant == 2);
+    CHECK(previous.region.value == 1110U);
+    CHECK(previous.kind == ShellControlKind::cycle_combat_focus);
+    CHECK(previous.label == "PREV");
+    CHECK(previous.accessibility_label ==
+        "Center view on previous combatant");
+    CHECK(previous.focus_identifier ==
+        "focus.action.combat.center.previous");
+    CHECK(previous.tab_order == 1110);
+    CHECK(previous.enabled);
+    const auto& previous_action =
+        std::get<CycleCombatFocusAction>(previous.payload);
+    CHECK(previous_action.combatant == 2);
+    CHECK(previous_action.direction == CombatFocusDirection::previous);
+    CHECK(next.region.value == 1111U);
+    CHECK(next.kind == ShellControlKind::cycle_combat_focus);
+    CHECK(next.label == "NEXT");
+    CHECK(next.accessibility_label == "Center view on next combatant");
+    CHECK(next.focus_identifier == "focus.action.combat.center.next");
+    CHECK(next.tab_order == 1111);
+    CHECK(next.enabled);
+    const auto& next_action =
+        std::get<CycleCombatFocusAction>(next.payload);
+    CHECK(next_action.combatant == 2);
+    CHECK(next_action.direction == CombatFocusDirection::next);
     CHECK(panel.contains(back.bounds));
     CHECK(panel.contains(weapon.bounds));
+    CHECK(panel.contains(previous.bounds));
+    CHECK(panel.contains(next.bounds));
     CHECK(back.bounds.width == 44.0);
     CHECK(back.bounds.height == 44.0);
     CHECK(weapon.bounds.width >= 44.0);
     CHECK(weapon.bounds.width <= 160.0);
     CHECK(weapon.bounds.height >= 44.0);
     CHECK(!interiors_overlap(back.bounds, weapon.bounds));
+    CHECK(previous.bounds.width >= 44.0);
+    CHECK(previous.bounds.width <= 160.0);
+    CHECK(previous.bounds.height >= 44.0);
+    CHECK(next.bounds.width >= 44.0);
+    CHECK(next.bounds.width <= 160.0);
+    CHECK(next.bounds.height >= 44.0);
+    CHECK(!interiors_overlap(weapon.bounds, previous.bounds));
+    CHECK(!interiors_overlap(weapon.bounds, next.bounds));
+    CHECK(!interiors_overlap(previous.bounds, next.bounds));
+    CHECK(previous.bounds.x > weapon.bounds.x);
+    CHECK(next.bounds.x > previous.bounds.x);
+    const LogicalPoint previous_pointer{
+        previous.bounds.x + previous.bounds.width / 2.0,
+        previous.bounds.y + previous.bounds.height / 2.0,
+    };
+    const LogicalPoint next_pointer{
+        next.bounds.x + next.bounds.width / 2.0,
+        next.bounds.y + next.bounds.height / 2.0,
+    };
+    CHECK(previous.bounds.contains(previous_pointer));
+    CHECK(!weapon.bounds.contains(previous_pointer));
+    CHECK(!next.bounds.contains(previous_pointer));
+    CHECK(next.bounds.contains(next_pointer));
+    CHECK(!weapon.bounds.contains(next_pointer));
+    CHECK(!previous.bounds.contains(next_pointer));
   }
 
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
@@ -686,6 +747,48 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(std::get<SwitchWeaponSetAction>(
       weapon_disabled[1].payload).combatant == 2);
 
+  const auto previous_only = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::secondary,
+      .center_previous_combatant = CombatantId{2},
+      .center_previous_available = true,
+  });
+  CHECK(previous_only.size() == 2U);
+  CHECK(previous_only[0].kind == ShellControlKind::combat_action_page);
+  CHECK(previous_only[1].kind == ShellControlKind::cycle_combat_focus);
+  CHECK(std::get<CycleCombatFocusAction>(
+      previous_only[1].payload).direction == CombatFocusDirection::previous);
+
+  const auto focus_pair = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::secondary,
+      .center_previous_combatant = CombatantId{2},
+      .center_previous_available = true,
+      .center_next_combatant = CombatantId{2},
+      .center_next_available = true,
+  });
+  CHECK(focus_pair.size() == 3U);
+  CHECK(focus_pair[0].kind == ShellControlKind::combat_action_page);
+  CHECK(std::get<CycleCombatFocusAction>(
+      focus_pair[1].payload).direction == CombatFocusDirection::previous);
+  CHECK(std::get<CycleCombatFocusAction>(
+      focus_pair[2].payload).direction == CombatFocusDirection::next);
+
+  const auto more_without_weapon = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .guard_available = true,
+      .center_next_combatant = CombatantId{2},
+      .center_next_available = true,
+  });
+  CHECK(more_without_weapon.size() == 2U);
+  CHECK(more_without_weapon[0].kind == ShellControlKind::guard_combatant);
+  CHECK(more_without_weapon[1].kind ==
+      ShellControlKind::combat_action_page);
+
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
@@ -775,6 +878,30 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .combat_action_page = CombatActionPage::secondary,
+      .center_previous_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::secondary,
+      .center_previous_combatant = CombatantId{-1},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::secondary,
+      .center_next_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::secondary,
+      .center_next_combatant = CombatantId{256},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{-1},
   }).empty());
@@ -860,6 +987,17 @@ void test_combat_primary_and_secondary_action_pages() {
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{2},
       .delay_combatant = CombatantId{2},
+      .center_active_combatant = CombatantId{2},
+      .switch_weapon_combatant = CombatantId{2},
+      .center_previous_combatant = CombatantId{2},
+      .center_next_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .finish_combatant = CombatantId{2},
+      .delay_combatant = CombatantId{2},
       .center_active_combatant = CombatantId{3},
   }).empty());
   CHECK(compute_shell_control_layout({
@@ -923,6 +1061,20 @@ void test_combat_primary_and_secondary_action_pages() {
       .action_panel = panel,
       .navigation_available = true,
       .switch_weapon_combatant = CombatantId{2},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .center_previous_combatant = CombatantId{2},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .center_next_combatant = CombatantId{2},
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::exploration,
@@ -1052,6 +1204,34 @@ void test_combat_primary_and_secondary_action_pages() {
       .action_panel = {0.0, 0.0, 71.0, 120.0},
       .combat_action_page = CombatActionPage::secondary,
       .switch_weapon_combatant = CombatantId{2},
+  }).empty());
+
+  const auto three_secondary_controls = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = three_minimum,
+      .combat_action_page = CombatActionPage::secondary,
+      .switch_weapon_combatant = CombatantId{2},
+      .switch_weapon_available = true,
+      .center_previous_combatant = CombatantId{2},
+      .center_previous_available = true,
+      .center_next_combatant = CombatantId{2},
+      .center_next_available = true,
+  });
+  CHECK(three_secondary_controls.size() == 4U);
+  CHECK(three_secondary_controls[0].kind ==
+      ShellControlKind::combat_action_page);
+  for (const auto& control :
+      std::span{three_secondary_controls}.subspan(1)) {
+    CHECK(control.bounds.width == 44.0);
+    CHECK(control.bounds.height == 44.0);
+  }
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = {0.0, 0.0, 171.0, 120.0},
+      .combat_action_page = CombatActionPage::secondary,
+      .switch_weapon_combatant = CombatantId{2},
+      .center_previous_combatant = CombatantId{2},
+      .center_next_combatant = CombatantId{2},
   }).empty());
 }
 

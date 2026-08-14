@@ -76,6 +76,9 @@ private:
     handlers.switch_weapon_set = [](const SwitchWeaponSetAction&) {
       return DispatchResult::handled();
     };
+    handlers.cycle_combat_focus = [](const CycleCombatFocusAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -905,7 +908,7 @@ void test_center_payload_orders_dispatches_and_cancels_recomposition() {
   CHECK(bridge.actions().size() == 1U);
 }
 
-void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
+void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   RecordingBridge bridge;
   ProductionKeyboardHarness harness(bridge);
   const ShellControlPlacement guard{
@@ -977,7 +980,7 @@ void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
   const ShellControlPlacement weapon{
       .region = ShellRegionId{1109},
       .kind = ShellControlKind::switch_weapon_set,
-      .bounds = {20.0, 72.0, 464.0, 48.0},
+      .bounds = {20.0, 72.0, 140.0, 48.0},
       .label = "WEAPON",
       .accessibility_label = "Switch active combatant's weapon set",
       .focus_identifier = "focus.action.combat.weapon",
@@ -985,8 +988,30 @@ void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = SwitchWeaponSetAction{2},
   };
+  const ShellControlPlacement previous{
+      .region = ShellRegionId{1110},
+      .kind = ShellControlKind::cycle_combat_focus,
+      .bounds = {168.0, 72.0, 140.0, 48.0},
+      .label = "PREV",
+      .accessibility_label = "Center view on previous combatant",
+      .focus_identifier = "focus.action.combat.center.previous",
+      .tab_order = 1110,
+      .enabled = true,
+      .payload = CycleCombatFocusAction{2, CombatFocusDirection::previous},
+  };
+  const ShellControlPlacement next{
+      .region = ShellRegionId{1111},
+      .kind = ShellControlKind::cycle_combat_focus,
+      .bounds = {316.0, 72.0, 140.0, 48.0},
+      .label = "NEXT",
+      .accessibility_label = "Center view on next combatant",
+      .focus_identifier = "focus.action.combat.center.next",
+      .tab_order = 1111,
+      .enabled = true,
+      .payload = CycleCombatFocusAction{2, CombatFocusDirection::next},
+  };
   const std::vector primary{guard, finish, delay, center, more};
-  const std::vector secondary{back, weapon};
+  const std::vector secondary{back, weapon, previous, next};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1011,19 +1036,61 @@ void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
       open.shell.invoked_control->payload).page ==
       CombatActionPage::secondary);
   CHECK(bridge.actions().empty());
-  CHECK(harness.recompose({weapon, back}));
+  CHECK(harness.recompose({next, previous, weapon, back}));
   CHECK(!harness.keyboard().focused_identifier());
 
-  // BACK precedes WEAPON on the secondary page even when inserted second.
-  CHECK(harness.handle(
-      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
-  CHECK(harness.keyboard().focused_identifier() == back.focus_identifier);
-  release_tab(harness);
-  CHECK(harness.handle(
-      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
-  CHECK(harness.keyboard().focused_identifier() == weapon.focus_identifier);
-  release_tab(harness);
+  // BACK, WEAPON, PREV, NEXT is stable even under reversed insertion.
+  for (const auto& expected : secondary) {
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() ==
+        expected.focus_identifier);
+    release_tab(harness);
+  }
 
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto next_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(next_release.shell.consumed);
+  CHECK(next_release.shell.invoked_control.has_value());
+  CHECK(next_release.shell.invoked_control->kind ==
+      ShellControlKind::cycle_combat_focus);
+  CHECK(next_release.dispatch.has_value());
+  CHECK(next_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1U);
+  const auto& next_action = std::get<CycleCombatFocusAction>(
+      bridge.actions()[0].payload);
+  CHECK(next_action.combatant == 2);
+  CHECK(next_action.direction == CombatFocusDirection::next);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+
+  CHECK(harness.focus(previous.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto previous_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(previous_release.shell.consumed);
+  CHECK(previous_release.shell.invoked_control.has_value());
+  CHECK(previous_release.dispatch.has_value());
+  CHECK(previous_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 2U);
+  const auto& previous_action = std::get<CycleCombatFocusAction>(
+      bridge.actions()[1].payload);
+  CHECK(previous_action.combatant == 2);
+  CHECK(previous_action.direction == CombatFocusDirection::previous);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+
+  CHECK(harness.focus(weapon.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
   for (int repeat = 0; repeat < 3; ++repeat) {
@@ -1041,17 +1108,14 @@ void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
       ShellControlKind::switch_weapon_set);
   CHECK(weapon_release.dispatch.has_value());
   CHECK(weapon_release.dispatch->status == DispatchStatus::handled);
-  CHECK(bridge.actions().size() == 1U);
+  CHECK(bridge.actions().size() == 3U);
   CHECK(std::get<SwitchWeaponSetAction>(
-      bridge.actions()[0].payload).combatant == 2);
+      bridge.actions()[2].payload).combatant == 2);
   CHECK(!harness.handle(
       key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
-  CHECK(bridge.actions().size() == 1U);
+  CHECK(bridge.actions().size() == 3U);
 
-  CHECK(harness.handle(
-      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
-  CHECK(harness.keyboard().focused_identifier() == back.focus_identifier);
-  release_tab(harness);
+  CHECK(harness.focus(back.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
   const auto close = harness.handle(
@@ -1062,43 +1126,45 @@ void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
   CHECK(std::get<SetCombatActionPageAction>(
       close.shell.invoked_control->payload).page ==
       CombatActionPage::primary);
-  CHECK(bridge.actions().size() == 1U);
+  CHECK(bridge.actions().size() == 3U);
   CHECK(harness.recompose(primary));
   CHECK(!harness.keyboard().focused_identifier());
 
-  // A held Weapon activation cannot silently retarget after the actor changes.
+  // A held relative-focus activation cannot silently retarget after the
+  // acting combatant changes.
   CHECK(!harness.recompose(secondary));
-  CHECK(harness.focus(weapon.focus_identifier));
+  CHECK(harness.focus(previous.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
   auto changed = secondary;
-  changed[1].payload = SwitchWeaponSetAction{3};
+  changed[2].payload = CycleCombatFocusAction{
+      3, CombatFocusDirection::previous};
   CHECK(harness.recompose(std::move(changed)));
   const auto stale_actor_release = harness.handle(
       key_up(ShellKeyboardKey::enter, kEnterToken));
   CHECK(stale_actor_release.shell.consumed);
   CHECK(!stale_actor_release.shell.invoked_control);
   CHECK(!stale_actor_release.dispatch);
-  CHECK(bridge.actions().size() == 1U);
+  CHECK(bridge.actions().size() == 3U);
 
   // Disabling the live descriptor and changing pages both cancel a held key
   // while retaining ownership of its eventual release.
   CHECK(!harness.recompose(secondary));
-  CHECK(harness.focus(weapon.focus_identifier));
+  CHECK(harness.focus(next.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
   changed = secondary;
-  changed[1].enabled = false;
+  changed[3].enabled = false;
   CHECK(harness.recompose(std::move(changed)));
   const auto disabled_release = harness.handle(
       key_up(ShellKeyboardKey::enter, kEnterToken));
   CHECK(disabled_release.shell.consumed);
   CHECK(!disabled_release.shell.invoked_control);
   CHECK(!disabled_release.dispatch);
-  CHECK(bridge.actions().size() == 1U);
+  CHECK(bridge.actions().size() == 3U);
 
   CHECK(!harness.recompose(secondary));
-  CHECK(harness.focus(weapon.focus_identifier));
+  CHECK(harness.focus(previous.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
   CHECK(harness.recompose(primary));
@@ -1107,7 +1173,20 @@ void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
   CHECK(changed_page_release.shell.consumed);
   CHECK(!changed_page_release.shell.invoked_control);
   CHECK(!changed_page_release.dispatch);
-  CHECK(bridge.actions().size() == 1U);
+  CHECK(bridge.actions().size() == 3U);
+
+  CHECK(!harness.recompose(secondary));
+  CHECK(harness.focus(next.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto changed_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(changed_route_release.shell.consumed);
+  CHECK(!changed_route_release.shell.invoked_control);
+  CHECK(!changed_route_release.dispatch);
+  CHECK(bridge.actions().size() == 3U);
 }
 
 using DescriptorMutation =
@@ -1285,7 +1364,7 @@ int main() {
     test_finish_payload_orders_dispatches_and_cancels_stale_actor();
     test_delay_payload_orders_dispatches_and_cancels_recomposition();
     test_center_payload_orders_dispatches_and_cancels_recomposition();
-    test_combat_action_pages_and_weapon_recomposition_are_fail_closed();
+    test_secondary_combat_actions_and_recomposition_are_fail_closed();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();

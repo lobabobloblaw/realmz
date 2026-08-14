@@ -99,6 +99,11 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
           this->handlers_.switch_weapon_set,
           payload,
           "switch_weapon_set");
+    } else if constexpr (std::is_same_v<Action, CycleCombatFocusAction>) {
+      return invoke_handler(
+          this->handlers_.cycle_combat_focus,
+          payload,
+          "cycle_combat_focus");
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return invoke_handler(this->handlers_.inventory, payload, "inventory");
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

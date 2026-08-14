@@ -95,6 +95,12 @@ uint8_t RealmzIsSemanticSwitchWeaponTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticSwitchWeaponTagSurface(
     uint32_t tagged_message);
 
+// Cycle-focus tags carry both the acting combatant and the relative direction.
+// The eventual destination remains owned by the live Classic combat view.
+uint8_t RealmzIsSemanticCycleCombatFocusTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticCycleCombatFocusTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -186,6 +192,14 @@ uint8_t RealmzConsumeSemanticSwitchWeaponEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant, then returns the preserved
+// Classic lowercase "p" or "n" key record. Classic remains authoritative for
+// resolving the requested relative focus destination.
+uint8_t RealmzConsumeSemanticCycleCombatFocusEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -194,6 +208,7 @@ uint8_t RealmzConsumeSemanticSwitchWeaponEvent(
 namespace realmz::presentation {
 
 enum class MovementCommand;
+enum class CombatFocusDirection;
 
 [[nodiscard]] uint32_t semantic_movement_tag(
     MovementCommand command,
@@ -235,6 +250,11 @@ enum class MovementCommand;
 
 [[nodiscard]] uint32_t semantic_switch_weapon_tag(
     CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_cycle_combat_focus_tag(
+    CombatantId combatant,
+    CombatFocusDirection direction,
     RealmzSemanticInputSurface surface) noexcept;
 
 } // namespace realmz::presentation

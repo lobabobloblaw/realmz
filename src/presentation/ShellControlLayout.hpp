@@ -22,6 +22,7 @@ enum class ShellControlKind {
   center_active_combatant,
   combat_action_page,
   switch_weapon_set,
+  cycle_combat_focus,
   drawer_tab,
 };
 
@@ -63,6 +64,10 @@ struct ShellControlLayoutRequest {
   CombatActionPage combat_action_page = CombatActionPage::primary;
   std::optional<CombatantId> switch_weapon_combatant;
   bool switch_weapon_available = false;
+  std::optional<CombatantId> center_previous_combatant;
+  bool center_previous_available = false;
+  std::optional<CombatantId> center_next_combatant;
+  bool center_next_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

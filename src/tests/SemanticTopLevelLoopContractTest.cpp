@@ -300,6 +300,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticSwitchWeaponEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic switch-weapon input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticCycleCombatFocusEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic cycle-focus input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -596,6 +600,31 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(switch_wrapper, "mouseDown") == 0,
       "public semantic switch-weapon enqueue must not synthesize Classic input");
 
+  const std::string push_cycle = function_body(
+      source, "push_semantic_cycle_combat_focus_event");
+  const std::string compact_push_cycle = without_whitespace(push_cycle);
+  require(count_identifier(
+              push_cycle, "RealmzIsSemanticCycleCombatFocusTag") == 1,
+      "semantic cycle-focus enqueue must validate exactly one tag");
+  require(count_identifier(push_cycle, "app1Evt") == 1,
+      "semantic cycle-focus enqueue must use app1Evt exactly once");
+  require(count_identifier(push_cycle, "keyDown") == 0 &&
+          count_identifier(push_cycle, "mouseDown") == 0,
+      "semantic cycle-focus enqueue must not synthesize Classic input");
+  require(compact_push_cycle.contains("ev.what=app1Evt;") &&
+          compact_push_cycle.contains("ev.message=tagged_message;"),
+      "semantic cycle focus must retain its tagged app1Evt payload");
+
+  const std::string cycle_wrapper = function_body(
+      source, "PushSemanticCycleCombatFocusEvent");
+  require(without_whitespace(cycle_wrapper).contains(
+              "returnem.push_semantic_cycle_combat_focus_event("
+              "tagged_message);"),
+      "public semantic cycle-focus enqueue must delegate to tagged queue");
+  require(count_identifier(cycle_wrapper, "keyDown") == 0 &&
+          count_identifier(cycle_wrapper, "mouseDown") == 0,
+      "public semantic cycle-focus enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -688,15 +717,19 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticSwitchWeaponEvent") == 1,
       "semantic gameplay wrapper must have one late switch-weapon consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticCycleCombatFocusEvent") == 1,
+      "semantic gameplay wrapper must have one late cycle-focus consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 11,
-      "semantic gameplay wrapper must recognize all eleven tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 8,
+  require(count_identifier(semantic_wrapper, "app1Evt") == 12,
+      "semantic gameplay wrapper must recognize all twelve tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 9,
       "only late movement, inventory, spellbook, guard, finish, delay, center, "
-      "or switch-weapon validation may produce keyDown");
+      "switch-weapon, or cycle-focus validation may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
@@ -742,6 +775,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticSwitchWeaponEvent") == 1,
       "EventManager may consume semantic switch-weapon input only inside its "
+      "gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticCycleCombatFocusEvent") == 1,
+      "EventManager may consume semantic cycle-focus input only inside its "
       "gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
@@ -887,6 +924,17 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", switch_keydown);
   const std::size_t switch_rejected_message = compact_semantic.find(
       "ret->message=0", switch_null);
+  const std::size_t cycle_branch = compact_semantic.find(
+      "RealmzIsSemanticCycleCombatFocusTag(ret->message)",
+      switch_rejected_message);
+  const std::size_t cycle_consume = compact_semantic.find(
+      "RealmzConsumeSemanticCycleCombatFocusEvent(", cycle_branch);
+  const std::size_t cycle_keydown = compact_semantic.find(
+      "ret->what=keyDown", cycle_consume);
+  const std::size_t cycle_null = compact_semantic.find(
+      "ret->what=nullEvent", cycle_keydown);
+  const std::size_t cycle_rejected_message = compact_semantic.find(
+      "ret->message=0", cycle_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -954,7 +1002,12 @@ void verify_event_manager(const fs::path& repository_root) {
           switch_consume != std::string::npos &&
           switch_keydown != std::string::npos &&
           switch_null != std::string::npos &&
-          switch_rejected_message != std::string::npos,
+          switch_rejected_message != std::string::npos &&
+          cycle_branch != std::string::npos &&
+          cycle_consume != std::string::npos &&
+          cycle_keydown != std::string::npos &&
+          cycle_null != std::string::npos &&
+          cycle_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -1017,7 +1070,12 @@ void verify_event_manager(const fs::path& repository_root) {
           switch_branch < switch_consume &&
           switch_consume < switch_keydown &&
           switch_keydown < switch_null &&
-          switch_null < switch_rejected_message,
+          switch_null < switch_rejected_message &&
+          switch_rejected_message < cycle_branch &&
+          cycle_branch < cycle_consume &&
+          cycle_consume < cycle_keydown &&
+          cycle_keydown < cycle_null &&
+          cycle_null < cycle_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
@@ -1179,6 +1237,9 @@ void verify_window_manager_named_combat_sinks(
            "legacy_key_message_for_switch_weapon",
            "semantic_switch_weapon_tag",
            "PushSemanticSwitchWeaponEvent",
+           "legacy_key_message_for_cycle_combat_focus",
+           "semantic_cycle_combat_focus_tag",
+           "PushSemanticCycleCombatFocusEvent",
        }) {
     require(count_identifier(invocation, identifier) == 1,
         std::string("runtime legacy bridge construction must contain exactly ") +
@@ -1222,6 +1283,11 @@ void verify_window_manager_named_combat_sinks(
       "legacy_key_message_for_switch_weapon",
       "semantic_switch_weapon_tag",
       "PushSemanticSwitchWeaponEvent");
+  verify_field(
+      "cycle_combat_focus",
+      "legacy_key_message_for_cycle_combat_focus",
+      "semantic_cycle_combat_focus_tag",
+      "PushSemanticCycleCombatFocusEvent");
 }
 
 void verify_window_manager_shell_dispatch_freshness(
@@ -1235,9 +1301,13 @@ void verify_window_manager_shell_dispatch_freshness(
   const std::size_t switch_payload = compact_dispatch.find(
       "std::get_if<realmz::presentation::SwitchWeaponSetAction>"
       "(&control.payload)");
+  const std::size_t cycle_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::CycleCombatFocusAction>"
+      "(&control.payload)",
+      switch_payload);
   const std::size_t ordinary_branch = compact_dispatch.find(
       "}else{constautolive_control=std::ranges::find_if(",
-      switch_payload);
+      cycle_payload);
   const std::size_t current_controls = compact_dispatch.find(
       "this->remastered_shell_controls,", ordinary_branch);
   const std::size_t exact_enabled_descriptor = compact_dispatch.find(
@@ -1249,54 +1319,69 @@ void verify_window_manager_shell_dispatch_freshness(
       "live_control==this->remastered_shell_controls.end()", fresh_route);
   const std::size_t bridge_missing = compact_dispatch.find(
       "!this->runtime_legacy_command_bridge", descriptor_missing);
+  const std::size_t secondary_action_guard = compact_dispatch.find(
+      "((switch_weapon||cycle_focus)&&", bridge_missing);
   const std::size_t switch_guard = compact_dispatch.find(
-      "(switch_weapon&&", bridge_missing);
+      "(switch_weapon&&", secondary_action_guard);
   const std::size_t switch_kind = compact_dispatch.find(
       "control.kind!=realmz::presentation::ShellControlKind::"
       "switch_weapon_set",
       switch_guard);
-  const std::size_t switch_page = compact_dispatch.find(
+  const std::size_t cycle_guard = compact_dispatch.find(
+      "(cycle_focus&&", switch_kind);
+  const std::size_t cycle_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "cycle_combat_focus",
+      cycle_guard);
+  const std::size_t secondary_page = compact_dispatch.find(
       "this->remastered_combat_action_page!="
       "realmz::presentation::CombatActionPage::secondary",
-      switch_kind);
-  const std::size_t switch_layout = compact_dispatch.find(
+      cycle_kind);
+  const std::size_t secondary_layout = compact_dispatch.find(
       "this->adaptive_shell_plan->adaptive_layout->action_bar"
       ".contains(control.bounds)",
-      switch_page);
+      secondary_page);
   const std::size_t reject = compact_dispatch.find(
-      "return;", switch_layout);
+      "return;", secondary_layout);
   const std::size_t action = compact_dispatch.find(
       "constrealmz::presentation::UIActionaction{", reject);
   const std::size_t bridge_dispatch = compact_dispatch.find(
       "this->runtime_legacy_command_bridge->dispatch(action)", action);
   require(switch_payload != std::string::npos &&
+          cycle_payload != std::string::npos &&
           ordinary_branch != std::string::npos &&
           current_controls != std::string::npos &&
           exact_enabled_descriptor != std::string::npos &&
           fresh_route != std::string::npos &&
           descriptor_missing != std::string::npos &&
           bridge_missing != std::string::npos &&
+          secondary_action_guard != std::string::npos &&
           switch_guard != std::string::npos &&
           switch_kind != std::string::npos &&
-          switch_page != std::string::npos &&
-          switch_layout != std::string::npos &&
+          cycle_guard != std::string::npos &&
+          cycle_kind != std::string::npos &&
+          secondary_page != std::string::npos &&
+          secondary_layout != std::string::npos &&
           reject != std::string::npos &&
           action != std::string::npos &&
           bridge_dispatch != std::string::npos,
       "bridge-bound shell dispatch must retain its live descriptor, fresh "
-      "route, and Weapon page/layout rejection gate");
-  require(switch_payload < ordinary_branch &&
+      "route, and Weapon/Cycle Focus page/layout rejection gate");
+  require(switch_payload < cycle_payload &&
+          cycle_payload < ordinary_branch &&
           ordinary_branch < current_controls &&
           current_controls < exact_enabled_descriptor &&
           exact_enabled_descriptor < fresh_route &&
           fresh_route < descriptor_missing &&
           descriptor_missing < bridge_missing &&
-          bridge_missing < switch_guard &&
-          switch_guard < switch_kind && switch_kind < switch_page &&
-          switch_page < switch_layout && switch_layout < reject &&
+          bridge_missing < secondary_action_guard &&
+          secondary_action_guard < switch_guard &&
+          switch_guard < switch_kind && switch_kind < cycle_guard &&
+          cycle_guard < cycle_kind && cycle_kind < secondary_page &&
+          secondary_page < secondary_layout && secondary_layout < reject &&
           reject < action && action < bridge_dispatch,
-      "cached shell descriptors and stale Weapon routes must be rejected "
-      "before any runtime legacy bridge dispatch");
+      "cached shell descriptors and stale Weapon/Cycle Focus routes must be "
+      "rejected before any runtime legacy bridge dispatch");
 
   const std::string compact_source = without_whitespace(source);
   const std::size_t eligibility_signature = compact_source.find(
@@ -1349,6 +1434,71 @@ void verify_window_manager_shell_dispatch_freshness(
           party_member < combatant_view && combatant_view < route_accept,
       "Weapon route eligibility must validate a fresh snapshot before "
       "accepting the current control");
+
+  const std::size_t cycle_route = compact_eligibility.find(
+      "std::get_if<realmz::presentation::CycleCombatFocusAction>"
+      "(&control.payload)",
+      route_accept);
+  const std::size_t cycle_mapper = compact_eligibility.find(
+      "legacy_key_message_for_cycle_combat_focus(", cycle_route);
+  const std::size_t cycle_snapshot = compact_eligibility.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      cycle_mapper);
+  const std::size_t cycle_acting_actor = compact_eligibility.find(
+      "snapshot->combat->acting_combatant!=cycle_focus->combatant",
+      cycle_snapshot);
+  const std::size_t cycle_party_member = compact_eligibility.find(
+      "snapshot->party.member(", cycle_acting_actor);
+  const std::size_t cycle_combatant_view = compact_eligibility.find(
+      "std::ranges::find(snapshot->combat->combatants,"
+      "cycle_focus->combatant,",
+      cycle_party_member);
+  const std::size_t cycle_membership_rejection = compact_eligibility.find(
+      "if((combatant==snapshot->combat->combatants.end())||!member||",
+      cycle_combatant_view);
+  const std::size_t cycle_party_kind = compact_eligibility.find(
+      "combatant->kind!="
+      "realmz::presentation::CombatantKind::party_member",
+      cycle_membership_rejection);
+  const std::size_t cycle_active = compact_eligibility.find(
+      "!combatant->active", cycle_party_kind);
+  const std::size_t cycle_targetable = compact_eligibility.find(
+      "!combatant->targetable", cycle_active);
+  const std::size_t cycle_stamina = compact_eligibility.find(
+      "combatant->stamina.current<=0", cycle_targetable);
+  const std::size_t cycle_route_accept = compact_eligibility.find(
+      "continue;", cycle_stamina);
+  require(cycle_route != std::string::npos,
+      "fresh shell route eligibility must inspect Cycle Focus controls");
+  require(cycle_mapper != std::string::npos,
+      "fresh Cycle Focus eligibility must use its direction-aware mapper");
+  require(cycle_snapshot != std::string::npos &&
+          cycle_acting_actor != std::string::npos,
+      "fresh Cycle Focus eligibility must recapture the snapshot and match "
+      "the acting actor");
+  require(cycle_party_member != std::string::npos &&
+          cycle_combatant_view != std::string::npos &&
+          cycle_membership_rejection != std::string::npos &&
+          cycle_party_kind != std::string::npos &&
+          cycle_active != std::string::npos &&
+          cycle_targetable != std::string::npos &&
+          cycle_stamina != std::string::npos &&
+          cycle_route_accept != std::string::npos,
+      "fresh Cycle Focus eligibility must reject missing PartyView or "
+      "ineligible CombatView membership before acceptance");
+  require(route_accept < cycle_route && cycle_route < cycle_mapper &&
+          cycle_mapper < cycle_snapshot &&
+          cycle_snapshot < cycle_acting_actor &&
+          cycle_acting_actor < cycle_party_member &&
+          cycle_party_member < cycle_combatant_view &&
+          cycle_combatant_view < cycle_membership_rejection &&
+          cycle_membership_rejection < cycle_party_kind &&
+          cycle_party_kind < cycle_active &&
+          cycle_active < cycle_targetable &&
+          cycle_targetable < cycle_stamina &&
+          cycle_stamina < cycle_route_accept,
+      "Cycle Focus route eligibility must map and validate its fresh actor, "
+      "PartyView, and CombatView before accepting the current control");
 }
 
 void verify_top_level_loop(
@@ -1413,6 +1563,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticSwitchWeaponEvent") == 0,
       std::string(function_name) +
           " must leave tagged switch-weapon consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticCycleCombatFocusEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged cycle-focus consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -1446,6 +1600,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const std::string combat_source = code_only(combat_raw_source);
   const std::string combatchoice_source = code_only(read_file(
       legacy_root / "combatinfo-combatchoice.c"));
+  const std::string centerstage_source = code_only(read_file(
+      legacy_root / "centerstage.c"));
   const std::string getchoice_source = code_only(
       read_file(legacy_root / "getchoice.c"));
 
@@ -1455,6 +1611,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const std::string combat_raw = function_body(combat_raw_source, "combat");
   const std::string combatchoice = function_body(
       combatchoice_source, "combatchoice");
+  const std::string centerstage = function_body(
+      centerstage_source, "centerstage");
   verify_top_level_loop(
       mainscreen,
       "mainscreen",
@@ -1481,7 +1639,164 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   require(guard_case < guard_mutation && guard_mutation < guard_turn_advance,
       "combat Guard must mutate the active party member before advancing the "
       "turn");
-  const std::size_t center_case = compact_combat.find("case'c':");
+  const std::size_t next_focus_case = compact_combat.find("case'n':");
+  const std::size_t next_focus_boundary = compact_combat.find(
+      "case'p':", next_focus_case);
+  const std::size_t next_focus_top = compact_combat.find(
+      "buttonrect.top=386+downshift;", next_focus_case);
+  const std::size_t next_focus_bottom = compact_combat.find(
+      "buttonrect.bottom=buttonrect.top+18;", next_focus_top);
+  const std::size_t next_focus_left = compact_combat.find(
+      "buttonrect.left=428+leftshift;", next_focus_bottom);
+  const std::size_t next_focus_right = compact_combat.find(
+      "buttonrect.right=buttonrect.left+38;", next_focus_left);
+  const std::size_t next_focus_button_down = compact_combat.find(
+      "downbutton(TRUE);", next_focus_right);
+  const std::size_t next_focus_target_save = compact_combat.find(
+      "targetrect=buttonrect;", next_focus_button_down);
+  const std::size_t next_focus_stage = compact_combat.find(
+      "centerstage(1);", next_focus_target_save);
+  const std::size_t next_focus_target_restore = compact_combat.find(
+      "buttonrect=targetrect;", next_focus_stage);
+  const std::size_t next_focus_button_up = compact_combat.find(
+      "upbutton(TRUE);", next_focus_target_restore);
+  const std::size_t next_focus_break = compact_combat.find(
+      "break;", next_focus_button_up);
+  require(next_focus_case != std::string::npos &&
+          next_focus_boundary != std::string::npos &&
+          next_focus_top != std::string::npos &&
+          next_focus_bottom != std::string::npos &&
+          next_focus_left != std::string::npos &&
+          next_focus_right != std::string::npos &&
+          next_focus_button_down != std::string::npos &&
+          next_focus_target_save != std::string::npos &&
+          next_focus_stage != std::string::npos &&
+          next_focus_target_restore != std::string::npos &&
+          next_focus_button_up != std::string::npos &&
+          next_focus_break != std::string::npos,
+      "combat must retain the exact bounded Center Next button and relative "
+      "centerstage sequence");
+  require(next_focus_case < next_focus_top &&
+          next_focus_top < next_focus_bottom &&
+          next_focus_bottom < next_focus_left &&
+          next_focus_left < next_focus_right &&
+          next_focus_right < next_focus_button_down &&
+          next_focus_button_down < next_focus_target_save &&
+          next_focus_target_save < next_focus_stage &&
+          next_focus_stage < next_focus_target_restore &&
+          next_focus_target_restore < next_focus_button_up &&
+          next_focus_button_up < next_focus_break &&
+          next_focus_break < next_focus_boundary,
+      "combat Center Next must preserve its exact relative-focus sequence "
+      "before Center Previous");
+  const std::string next_focus_branch = compact_combat.substr(
+      next_focus_case, next_focus_boundary - next_focus_case);
+  require(count_identifier(next_focus_branch, "getup") == 0 &&
+          count_identifier(next_focus_branch, "combatchoice") == 0 &&
+          count_identifier(next_focus_branch, "WaitNextEvent") == 0 &&
+          count_identifier(next_focus_branch, "GetNextEvent") == 0 &&
+          count_identifier(next_focus_branch, "Rand") == 0,
+      "combat Center Next must not advance the turn, enter another input "
+      "flow, or choose a destination randomly");
+
+  const std::size_t previous_focus_case = next_focus_boundary;
+  const std::size_t previous_focus_boundary = compact_combat.find(
+      "case'c':", previous_focus_case);
+  const std::size_t previous_focus_top = compact_combat.find(
+      "buttonrect.top=386+downshift;", previous_focus_case);
+  const std::size_t previous_focus_bottom = compact_combat.find(
+      "buttonrect.bottom=buttonrect.top+18;", previous_focus_top);
+  const std::size_t previous_focus_left = compact_combat.find(
+      "buttonrect.left=470+leftshift;", previous_focus_bottom);
+  const std::size_t previous_focus_right = compact_combat.find(
+      "buttonrect.right=buttonrect.left+50;", previous_focus_left);
+  const std::size_t previous_focus_target_save = compact_combat.find(
+      "targetrect=buttonrect;", previous_focus_right);
+  const std::size_t previous_focus_button_down = compact_combat.find(
+      "downbutton(TRUE);", previous_focus_target_save);
+  const std::size_t previous_focus_stage = compact_combat.find(
+      "centerstage(-1);", previous_focus_button_down);
+  const std::size_t previous_focus_target_restore = compact_combat.find(
+      "buttonrect=targetrect;", previous_focus_stage);
+  const std::size_t previous_focus_button_up = compact_combat.find(
+      "upbutton(TRUE);", previous_focus_target_restore);
+  const std::size_t previous_focus_break = compact_combat.find(
+      "break;", previous_focus_button_up);
+  require(previous_focus_case != std::string::npos &&
+          previous_focus_boundary != std::string::npos &&
+          previous_focus_top != std::string::npos &&
+          previous_focus_bottom != std::string::npos &&
+          previous_focus_left != std::string::npos &&
+          previous_focus_right != std::string::npos &&
+          previous_focus_target_save != std::string::npos &&
+          previous_focus_button_down != std::string::npos &&
+          previous_focus_stage != std::string::npos &&
+          previous_focus_target_restore != std::string::npos &&
+          previous_focus_button_up != std::string::npos &&
+          previous_focus_break != std::string::npos,
+      "combat must retain the exact bounded Center Previous button and "
+      "relative centerstage sequence");
+  require(previous_focus_case < previous_focus_top &&
+          previous_focus_top < previous_focus_bottom &&
+          previous_focus_bottom < previous_focus_left &&
+          previous_focus_left < previous_focus_right &&
+          previous_focus_right < previous_focus_target_save &&
+          previous_focus_target_save < previous_focus_button_down &&
+          previous_focus_button_down < previous_focus_stage &&
+          previous_focus_stage < previous_focus_target_restore &&
+          previous_focus_target_restore < previous_focus_button_up &&
+          previous_focus_button_up < previous_focus_break &&
+          previous_focus_break < previous_focus_boundary,
+      "combat Center Previous must preserve its exact relative-focus "
+      "sequence before Center Active");
+  const std::string previous_focus_branch = compact_combat.substr(
+      previous_focus_case, previous_focus_boundary - previous_focus_case);
+  require(count_identifier(previous_focus_branch, "getup") == 0 &&
+          count_identifier(previous_focus_branch, "combatchoice") == 0 &&
+          count_identifier(previous_focus_branch, "WaitNextEvent") == 0 &&
+          count_identifier(previous_focus_branch, "GetNextEvent") == 0 &&
+          count_identifier(previous_focus_branch, "Rand") == 0,
+      "combat Center Previous must not advance the turn, enter another input "
+      "flow, or choose a destination randomly");
+
+  const std::string compact_centerstage = without_whitespace(centerstage);
+  const std::size_t relative_step = compact_centerstage.find(
+      "aimindex+=way;");
+  const std::size_t upper_wrap = compact_centerstage.find(
+      "if(aimindex>maxloopminus)aimindex=1;", relative_step);
+  const std::size_t lower_wrap = compact_centerstage.find(
+      "if(aimindex<1)aimindex=maxloopminus;", upper_wrap);
+  const std::size_t bounded_return = compact_centerstage.find(
+      "if(++count>maxloopminus)return;", lower_wrap);
+  const std::size_t skip_empty = compact_centerstage.find(
+      "while(q[aimindex]==-1);", bounded_return);
+  const std::size_t resolve_relative = compact_centerstage.find(
+      "who=q[aimindex];", skip_empty);
+  const std::size_t relative_sound = compact_centerstage.find(
+      "if(way)sound(147);", resolve_relative);
+  require(relative_step != std::string::npos &&
+          upper_wrap != std::string::npos &&
+          lower_wrap != std::string::npos &&
+          bounded_return != std::string::npos &&
+          skip_empty != std::string::npos &&
+          resolve_relative != std::string::npos &&
+          relative_sound != std::string::npos,
+      "centerstage must retain bounded queue-relative focus resolution and "
+      "relative-command feedback");
+  require(relative_step < upper_wrap && upper_wrap < lower_wrap &&
+          lower_wrap < bounded_return && bounded_return < skip_empty &&
+          skip_empty < resolve_relative && resolve_relative < relative_sound,
+      "centerstage must step, wrap, bound, skip empty queue slots, resolve, "
+      "and then provide relative-command feedback");
+  require(count_identifier(centerstage, "Rand") == 0 &&
+          count_identifier(centerstage, "WaitNextEvent") == 0 &&
+          count_identifier(centerstage, "GetNextEvent") == 0 &&
+          count_identifier(centerstage, "getup") == 0 &&
+          count_identifier(centerstage, "combatchoice") == 0,
+      "centerstage must remain a bounded non-random view operation without "
+      "nested input or turn ownership");
+
+  const std::size_t center_case = previous_focus_boundary;
   const std::size_t center_next_case = compact_combat.find(
       "case'f':", center_case);
   const std::size_t center_target_save = compact_combat.find(
@@ -1733,6 +2048,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_delay_consumer_count = 0;
   std::size_t global_center_consumer_count = 0;
   std::size_t global_switch_consumer_count = 0;
+  std::size_t global_cycle_focus_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -1771,6 +2087,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticCenterActiveCombatantEvent");
     global_switch_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticSwitchWeaponEvent");
+    global_cycle_focus_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticCycleCombatFocusEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -1803,6 +2121,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic center input directly");
   require(global_switch_consumer_count == 0,
       "legacy loops must not consume tagged semantic switch-weapon input "
+      "directly");
+  require(global_cycle_focus_consumer_count == 0,
+      "legacy loops must not consume tagged semantic cycle-focus input "
       "directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
@@ -1838,6 +2159,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t delay_consume_calls = 0;
   std::size_t center_consume_calls = 0;
   std::size_t switch_consume_calls = 0;
+  std::size_t cycle_focus_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -1887,6 +2209,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticCenterActiveCombatantEvent");
     switch_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticSwitchWeaponEvent");
+    cycle_focus_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticCycleCombatFocusEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -1930,6 +2254,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "RealmzConsumeSemanticCenterActiveCombatantEvent");
   require(switch_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticSwitchWeaponEvent");
+  require(cycle_focus_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticCycleCombatFocusEvent");
 }
 
 } // namespace

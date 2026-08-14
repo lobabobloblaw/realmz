@@ -55,6 +55,16 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::switch_weapon),
     std::optional<RuntimeLegacySwitchWeaponSink>>);
+static_assert(std::is_same_v<
+    RuntimeLegacyCycleCombatFocusSink,
+    std::function<bool(
+        CombatantId,
+        CombatFocusDirection,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::cycle_combat_focus),
+    std::optional<RuntimeLegacyCycleCombatFocusSink>>);
 
 struct ExpectedMovement {
   MovementCommand command;
@@ -1400,6 +1410,7 @@ void test_named_combat_mapping_and_dispatch() {
   int delay_calls = 0;
   int center_calls = 0;
   int switch_weapon_calls = 0;
+  int cycle_focus_calls = 0;
   bool accept_center = true;
   bool accept_switch_weapon = true;
   CombatantId received_guard_combatant = -1;
@@ -1407,11 +1418,15 @@ void test_named_combat_mapping_and_dispatch() {
   CombatantId received_delay_combatant = -1;
   CombatantId received_center_combatant = -1;
   CombatantId received_switch_weapon_combatant = -1;
+  CombatantId received_cycle_focus_combatant = -1;
   uint32_t received_guard_message = 0;
   uint32_t received_finish_message = 0;
   uint32_t received_delay_message = 0;
   uint32_t received_center_message = 0;
   uint32_t received_switch_weapon_message = 0;
+  uint32_t received_cycle_focus_message = 0;
+  CombatFocusDirection received_cycle_focus_direction =
+      CombatFocusDirection::next;
 
   RuntimeLegacyGuardCombatantSink guard_sink =
       [&guard_calls, &received_guard_combatant, &received_guard_message,
@@ -1469,6 +1484,20 @@ void test_named_combat_mapping_and_dispatch() {
         CHECK(captured_context == context);
         return accept_switch_weapon;
       };
+  RuntimeLegacyCycleCombatFocusSink cycle_focus_sink =
+      [&cycle_focus_calls, &received_cycle_focus_combatant,
+          &received_cycle_focus_direction, &received_cycle_focus_message,
+          &context](CombatantId combatant,
+          CombatFocusDirection direction,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++cycle_focus_calls;
+        received_cycle_focus_combatant = combatant;
+        received_cycle_focus_direction = direction;
+        received_cycle_focus_message = message;
+        CHECK(captured_context == context);
+        return true;
+      };
 
   const RuntimeLegacyMovementSink movement_sink =
       [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
@@ -1507,6 +1536,7 @@ void test_named_combat_mapping_and_dispatch() {
           .delay_combatant = delay_sink,
           .center_active_combatant = center_sink,
           .switch_weapon = switch_weapon_sink,
+          .cycle_combat_focus = cycle_focus_sink,
       });
 
   CHECK(bridge.dispatch(UIAction{
@@ -1566,8 +1596,43 @@ void test_named_combat_mapping_and_dispatch() {
   CHECK(delay_calls == 1);
   CHECK(center_calls == 1);
   CHECK(switch_weapon_calls == 1);
+  CHECK(cycle_focus_calls == 0);
   CHECK(received_switch_weapon_combatant == 10);
   CHECK(received_switch_weapon_message == 0x00000D77U);
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 365,
+      .payload = CycleCombatFocusAction{
+          .combatant = 11,
+          .direction = CombatFocusDirection::previous,
+      },
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(finish_calls == 1);
+  CHECK(delay_calls == 1);
+  CHECK(center_calls == 1);
+  CHECK(switch_weapon_calls == 1);
+  CHECK(cycle_focus_calls == 1);
+  CHECK(received_cycle_focus_combatant == 11);
+  CHECK(received_cycle_focus_direction == CombatFocusDirection::previous);
+  CHECK(received_cycle_focus_message == 0x00002370U);
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 366,
+      .payload = CycleCombatFocusAction{
+          .combatant = 12,
+          .direction = CombatFocusDirection::next,
+      },
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(finish_calls == 1);
+  CHECK(delay_calls == 1);
+  CHECK(center_calls == 1);
+  CHECK(switch_weapon_calls == 1);
+  CHECK(cycle_focus_calls == 2);
+  CHECK(received_cycle_focus_combatant == 12);
+  CHECK(received_cycle_focus_direction == CombatFocusDirection::next);
+  CHECK(received_cycle_focus_message == 0x00002D6EU);
 
   for (const auto world : {
            WorldPresentation::none,
@@ -1992,6 +2057,321 @@ void test_switch_weapon_mapping_and_dispatch() {
       std::string::npos);
 }
 
+void test_cycle_combat_focus_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int cycle_calls = 0;
+  bool accept_cycle = true;
+  CombatantId received_combatant = -1;
+  CombatFocusDirection received_direction = CombatFocusDirection::next;
+  uint32_t received_message = 0;
+  const RuntimeLegacyCycleCombatFocusSink cycle_sink =
+      [&cycle_calls, &accept_cycle, &received_combatant, &received_direction,
+          &received_message, &context](CombatantId combatant,
+          CombatFocusDirection direction,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++cycle_calls;
+        received_combatant = combatant;
+        received_direction = direction;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept_cycle;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .cycle_combat_focus = cycle_sink,
+      });
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    for (const CombatantId boundary : {0, 255}) {
+      CHECK(legacy_key_message_for_cycle_combat_focus(
+                boundary, CombatFocusDirection::previous, context) ==
+          0x00002370U);
+      CHECK(legacy_key_message_for_cycle_combat_focus(
+                boundary, CombatFocusDirection::next, context) ==
+          0x00002D6EU);
+    }
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 386,
+      .payload = CycleCombatFocusAction{
+          .combatant = 3,
+          .direction = CombatFocusDirection::previous,
+      },
+  }).status == DispatchStatus::handled);
+  CHECK(cycle_calls == 1);
+  CHECK(received_combatant == 3);
+  CHECK(received_direction == CombatFocusDirection::previous);
+  CHECK(received_message == 0x00002370U);
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 387,
+      .payload = CycleCombatFocusAction{
+          .combatant = 4,
+          .direction = CombatFocusDirection::next,
+      },
+  }).status == DispatchStatus::handled);
+  CHECK(cycle_calls == 2);
+  CHECK(received_combatant == 4);
+  CHECK(received_direction == CombatFocusDirection::next);
+  CHECK(received_message == 0x00002D6EU);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    for (const auto direction : {
+             CombatFocusDirection::previous,
+             CombatFocusDirection::next,
+         }) {
+      CHECK(!legacy_key_message_for_cycle_combat_focus(
+          4, direction, context));
+      CHECK(bridge.dispatch(UIAction{
+          .sequence = 388,
+          .payload = CycleCombatFocusAction{
+              .combatant = 4,
+              .direction = direction,
+          },
+      }).status == DispatchStatus::rejected);
+    }
+  }
+  CHECK(cycle_calls == 2);
+
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  for (const auto direction : {
+           CombatFocusDirection::previous,
+           CombatFocusDirection::next,
+       }) {
+    CHECK(!legacy_key_message_for_cycle_combat_focus(4, direction, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 389,
+        .payload = CycleCombatFocusAction{
+            .combatant = 4,
+            .direction = direction,
+        },
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(cycle_calls == 2);
+
+  context.adaptive_eligible = true;
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(),
+           CombatantId{-1},
+           CombatantId{256},
+           std::numeric_limits<CombatantId>::max(),
+       }) {
+    for (const auto direction : {
+             CombatFocusDirection::previous,
+             CombatFocusDirection::next,
+         }) {
+      CHECK(!legacy_key_message_for_cycle_combat_focus(
+          invalid, direction, context));
+      CHECK(bridge.dispatch(UIAction{
+          .sequence = 390,
+          .payload = CycleCombatFocusAction{
+              .combatant = invalid,
+              .direction = direction,
+          },
+      }).status == DispatchStatus::rejected);
+    }
+  }
+  CHECK(cycle_calls == 2);
+
+  for (const auto invalid_direction : {
+           static_cast<CombatFocusDirection>(-1),
+           static_cast<CombatFocusDirection>(2),
+           static_cast<CombatFocusDirection>(255),
+       }) {
+    CHECK(!legacy_key_message_for_cycle_combat_focus(
+        4, invalid_direction, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 391,
+        .payload = CycleCombatFocusAction{
+            .combatant = 4,
+            .direction = invalid_direction,
+        },
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(cycle_calls == 2);
+
+  accept_cycle = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 392,
+      .payload = CycleCombatFocusAction{
+          .combatant = 5,
+          .direction = CombatFocusDirection::previous,
+      },
+  }).status == DispatchStatus::failed);
+  CHECK(cycle_calls == 3);
+  accept_cycle = true;
+
+  RuntimeLegacyCommandBridge missing_provider(
+      RuntimeLegacyContextProvider{},
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .cycle_combat_focus = cycle_sink,
+      });
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 393,
+      .payload = CycleCombatFocusAction{
+          .combatant = 5,
+          .direction = CombatFocusDirection::next,
+      },
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+  CHECK(cycle_calls == 3);
+
+  RuntimeLegacyCommandBridge empty_cycle_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .cycle_combat_focus = RuntimeLegacyCycleCombatFocusSink{},
+      });
+  const auto no_sink = empty_cycle_sink.dispatch(UIAction{
+      .sequence = 394,
+      .payload = CycleCombatFocusAction{
+          .combatant = 5,
+          .direction = CombatFocusDirection::next,
+      },
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("cycle-combat-focus sink") != std::string::npos);
+  CHECK(cycle_calls == 3);
+
+  RuntimeLegacyCommandBridge without_cycle_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(without_cycle_sink.dispatch(UIAction{
+      .sequence = 395,
+      .payload = CycleCombatFocusAction{
+          .combatant = 5,
+          .direction = CombatFocusDirection::next,
+      },
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge provider_throws(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("cycle focus provider failure");
+      },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .cycle_combat_focus = cycle_sink,
+      });
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 396,
+      .payload = CycleCombatFocusAction{
+          .combatant = 5,
+          .direction = CombatFocusDirection::previous,
+      },
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("cycle focus provider failure") !=
+      std::string::npos);
+  CHECK(cycle_calls == 3);
+
+  const RuntimeLegacyCycleCombatFocusSink throwing_cycle_sink =
+      [](CombatantId,
+          CombatFocusDirection,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("cycle focus sink failure");
+      };
+  RuntimeLegacyCommandBridge cycle_sink_throws(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .cycle_combat_focus = throwing_cycle_sink,
+      });
+  const auto sink_thrown = cycle_sink_throws.dispatch(UIAction{
+      .sequence = 397,
+      .payload = CycleCombatFocusAction{
+          .combatant = 5,
+          .direction = CombatFocusDirection::previous,
+      },
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("cycle focus sink failure") !=
+      std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -2041,6 +2421,13 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 384,
           .payload = SwitchWeaponSetAction{5},
       },
+      UIAction{
+          .sequence = 385,
+          .payload = CycleCombatFocusAction{
+              .combatant = 6,
+              .direction = CombatFocusDirection::previous,
+          },
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -2072,6 +2459,7 @@ void test_named_combat_sink_registration_semantics() {
           .center_active_combatant =
               RuntimeLegacyCenterActiveCombatantSink{},
           .switch_weapon = RuntimeLegacySwitchWeaponSink{},
+          .cycle_combat_focus = RuntimeLegacyCycleCombatFocusSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -2128,6 +2516,13 @@ void test_named_combat_sink_registration_semantics() {
   CHECK(sparse_combat_sinks.dispatch(UIAction{
       .sequence = 388,
       .payload = SwitchWeaponSetAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 389,
+      .payload = CycleCombatFocusAction{
+          .combatant = 6,
+          .direction = CombatFocusDirection::next,
+      },
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(center_calls == 1);
@@ -2265,6 +2660,13 @@ void test_positional_combat_constructor_compatibility() {
   CHECK(through_center.dispatch(UIAction{
       .sequence = 397,
       .payload = SwitchWeaponSetAction{4},
+  }).status == DispatchStatus::unsupported);
+  CHECK(through_center.dispatch(UIAction{
+      .sequence = 398,
+      .payload = CycleCombatFocusAction{
+          .combatant = 4,
+          .direction = CombatFocusDirection::next,
+      },
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(finish_calls == 1);
@@ -2455,6 +2857,7 @@ int main() {
     test_delay_combatant_mapping_and_dispatch();
     test_named_combat_mapping_and_dispatch();
     test_switch_weapon_mapping_and_dispatch();
+    test_cycle_combat_focus_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

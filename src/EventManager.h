@@ -105,6 +105,7 @@ Boolean PushSemanticFinishCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticDelayCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticCenterActiveCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticSwitchWeaponEvent(uint32_t tagged_message);
+Boolean PushSemanticCycleCombatFocusEvent(uint32_t tagged_message);
 
 // Cancels active authorization and removes every queued presentation command.
 // Used by presentation-mode transitions, including native-menu callbacks.

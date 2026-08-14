@@ -61,6 +61,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(SwitchWeaponSetAction::combatant),
     CombatantId>);
+static_assert(std::is_same_v<
+    decltype(CycleCombatFocusAction::combatant),
+    CombatantId>);
+static_assert(std::is_same_v<
+    decltype(CycleCombatFocusAction::direction),
+    CombatFocusDirection>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -271,6 +277,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.delay_combatant = mutateEngine;
   handlers.center_active_combatant = mutateEngine;
   handlers.switch_weapon_set = mutateEngine;
+  handlers.cycle_combat_focus = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -427,6 +434,22 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(switchWeaponUnsupported.status == DispatchStatus::unsupported);
   CHECK(switchWeaponUnsupported.detail ==
       "No legacy handler registered for switch_weapon_set");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction cycleCombatFocusAction{
+      .sequence = sequence++,
+      .payload = CycleCombatFocusAction{
+          .combatant = 1,
+          .direction = CombatFocusDirection::previous,
+      },
+  };
+  CHECK(action_name(cycleCombatFocusAction.payload) == "cycle_combat_focus");
+  const auto cycleCombatFocusUnsupported =
+      unsupportedBridge.dispatch(cycleCombatFocusAction);
+  CHECK(cycleCombatFocusUnsupported.status == DispatchStatus::unsupported);
+  CHECK(cycleCombatFocusUnsupported.detail ==
+      "No legacy handler registered for cycle_combat_focus");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

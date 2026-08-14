@@ -22,6 +22,8 @@ constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
 constexpr uint32_t kCenterActiveCombatantMessage = 0x00000863U;
 constexpr uint32_t kSwitchWeaponMessage = 0x00000D77U;
+constexpr uint32_t kCenterPreviousCombatantMessage = 0x00002370U;
+constexpr uint32_t kCenterNextCombatantMessage = 0x00002D6EU;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -281,6 +283,43 @@ LegacyActionHandlers make_handlers(
       if (!switch_weapon_sink(action.combatant, *message, context)) {
         return DispatchResult::failed(
             "Legacy event queue rejected semantic switch-weapon action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
+  if (combat_action_sinks.cycle_combat_focus.has_value()) {
+    handlers.cycle_combat_focus = [
+        context_provider,
+        cycle_combat_focus_sink =
+            std::move(*combat_action_sinks.cycle_combat_focus)](
+            const CycleCombatFocusAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!cycle_combat_focus_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy cycle-combat-focus sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic combat-focus "
+            "cycling");
+      }
+      const auto message = legacy_key_message_for_cycle_combat_focus(
+          action.combatant, action.direction, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Combat-focus cycling is not supported for this combatant or "
+            "direction in the current legacy context");
+      }
+      if (!cycle_combat_focus_sink(
+              action.combatant, action.direction, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic cycle-combat-focus action");
       }
       return DispatchResult::handled();
     };
@@ -708,6 +747,23 @@ std::optional<uint32_t> legacy_key_message_for_switch_weapon(
     return std::nullopt;
   }
   return kSwitchWeaponMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_cycle_combat_focus(
+    CombatantId combatant,
+    CombatFocusDirection direction,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  switch (direction) {
+    case CombatFocusDirection::previous:
+      return kCenterPreviousCombatantMessage;
+    case CombatFocusDirection::next:
+      return kCenterNextCombatantMessage;
+  }
+  return std::nullopt;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

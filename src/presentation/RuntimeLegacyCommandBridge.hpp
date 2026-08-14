@@ -70,12 +70,18 @@ using RuntimeLegacySwitchWeaponSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyCycleCombatFocusSink = std::function<bool(
+    CombatantId,
+    CombatFocusDirection,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
-// Combat sinks are named because their callable signatures are intentionally
-// identical even though their commands are not interchangeable. A disengaged
-// field leaves that action unsupported. An engaged field containing an empty
-// std::function registers the action and makes dispatch fail closed, preserving
-// the behavior of the positional compatibility constructors below.
+// Combat sinks are named because several callable signatures are intentionally
+// identical even though their commands are not interchangeable. The focus
+// sink additionally carries its typed direction. A disengaged field leaves
+// that action unsupported. An engaged field containing an empty std::function
+// registers the action and makes dispatch fail closed, preserving the behavior
+// of the positional compatibility constructors below.
 struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacyGuardCombatantSink> guard_combatant;
   std::optional<RuntimeLegacyFinishCombatantSink> finish_combatant;
@@ -83,6 +89,7 @@ struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacyCenterActiveCombatantSink>
       center_active_combatant;
   std::optional<RuntimeLegacySwitchWeaponSink> switch_weapon;
+  std::optional<RuntimeLegacyCycleCombatFocusSink> cycle_combat_focus;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -156,6 +163,15 @@ legacy_key_message_for_center_active_combatant(
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_switch_weapon(
     CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "p" or "n" key record consumed by the preserved
+// combat camera switch. The destination remains intentionally relative, while
+// the acting combatant prevents a queued camera command from crossing a turn.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_cycle_combat_focus(
+    CombatantId combatant,
+    CombatFocusDirection direction,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Live UIAction boundary for the migrated command subset. The bridge queues

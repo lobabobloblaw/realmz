@@ -6,6 +6,7 @@
 #include <string>
 
 #include "presentation/SemanticInputBoundary.h"
+#include "presentation/UIAction.hpp"
 
 extern "C" {
 #include "realmz_orig/structs.h"
@@ -92,7 +93,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 5> combat_cases() {
+std::array<CombatCase, 7> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -123,6 +124,22 @@ std::array<CombatCase, 5> combat_cases() {
               1, REALMZ_SEMANTIC_INPUT_COMBAT),
           .consume = RealmzConsumeSemanticSwitchWeaponEvent,
           .classic_message = 0x00000D77U,
+      },
+      CombatCase{
+          .tag = semantic_cycle_combat_focus_tag(
+              1,
+              CombatFocusDirection::previous,
+              REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticCycleCombatFocusEvent,
+          .classic_message = 0x00002370U,
+      },
+      CombatCase{
+          .tag = semantic_cycle_combat_focus_tag(
+              1,
+              CombatFocusDirection::next,
+              REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticCycleCombatFocusEvent,
+          .classic_message = 0x00002D6EU,
       },
   };
 }

@@ -118,6 +118,21 @@ struct SwitchWeaponSetAction {
   bool operator==(const SwitchWeaponSetAction&) const = default;
 };
 
+enum class CombatFocusDirection {
+  previous,
+  next,
+};
+
+// Cycles the preserved Classic combat view relative to its current inspected
+// combatant. The acting combatant is carried independently so a queued camera
+// command cannot silently cross a turn before it reaches the legacy loop.
+struct CycleCombatFocusAction {
+  CombatantId combatant = 0;
+  CombatFocusDirection direction = CombatFocusDirection::next;
+
+  bool operator==(const CycleCombatFocusAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -256,6 +271,7 @@ using UIActionPayload = std::variant<
     DelayCombatantAction,
     CenterActiveCombatantAction,
     SwitchWeaponSetAction,
+    CycleCombatFocusAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -300,6 +316,8 @@ struct UIAction {
       return "center_active_combatant";
     } else if constexpr (std::is_same_v<Action, SwitchWeaponSetAction>) {
       return "switch_weapon_set";
+    } else if constexpr (std::is_same_v<Action, CycleCombatFocusAction>) {
+      return "cycle_combat_focus";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

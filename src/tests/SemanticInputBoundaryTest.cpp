@@ -176,6 +176,28 @@ bool consume_switch_weapon(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_cycle_focus(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticCycleCombatFocusEvent(
+             expected_surface, tag, &output) != 0;
+}
+
+uint32_t semantic_cycle_previous_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  return semantic_cycle_combat_focus_tag(
+      combatant, CombatFocusDirection::previous, surface);
+}
+
+uint32_t semantic_cycle_next_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  return semantic_cycle_combat_focus_tag(
+      combatant, CombatFocusDirection::next, surface);
+}
+
 using CombatTagFactory = uint32_t (*)(
     CombatantId,
     RealmzSemanticInputSurface) noexcept;
@@ -215,6 +237,16 @@ constexpr std::array kCombatActionCases{
         .tag = semantic_switch_weapon_tag,
         .consume = consume_switch_weapon,
         .classic_message = 0x00000D77U,
+    },
+    CombatActionCase{
+        .tag = semantic_cycle_previous_tag,
+        .consume = consume_cycle_focus,
+        .classic_message = 0x00002370U,
+    },
+    CombatActionCase{
+        .tag = semantic_cycle_next_tag,
+        .consume = consume_cycle_focus,
+        .classic_message = 0x00002D6EU,
     },
 };
 
@@ -613,6 +645,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
+    CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticGuardCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -668,6 +701,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
+    CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticFinishCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -724,6 +758,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
     CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
+    CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticDelayCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -781,6 +816,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
     CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
+    CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticCenterActiveCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -839,6 +875,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticSwitchWeaponTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -877,6 +914,103 @@ void test_tag_encoding_and_validation() {
        }) {
     CHECK(RealmzIsSemanticSwitchWeaponTag(malformed) == 0);
     CHECK(RealmzSemanticSwitchWeaponTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  std::set<uint32_t> cycle_focus_tags;
+  for (const auto direction : {
+           CombatFocusDirection::previous,
+           CombatFocusDirection::next,
+       }) {
+    const uint32_t expected_signature =
+        (direction == CombatFocusDirection::previous)
+        ? 0x52420000U
+        : 0x524E0000U;
+    for (const CombatantId combatant : {0, 1, 10, 109, 255}) {
+      const uint32_t tag = semantic_cycle_combat_focus_tag(
+          combatant, direction, REALMZ_SEMANTIC_INPUT_COMBAT);
+      CHECK((tag & 0xFFFF0000U) == expected_signature);
+      CHECK(((tag >> 8U) & 0xFFU) == REALMZ_SEMANTIC_INPUT_COMBAT);
+      CHECK((tag & 0xFFU) == static_cast<uint32_t>(combatant));
+      CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) != 0);
+      CHECK(RealmzIsSemanticGuardCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticFinishCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
+      CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+      CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+      CHECK(RealmzSemanticCycleCombatFocusTagSurface(tag) ==
+          REALMZ_SEMANTIC_INPUT_COMBAT);
+      CHECK(RealmzSemanticGameplayTagSurface(tag) ==
+          REALMZ_SEMANTIC_INPUT_COMBAT);
+      CHECK(cycle_focus_tags.emplace(tag).second);
+      CHECK(!guard_tags.contains(tag));
+      CHECK(!finish_tags.contains(tag));
+      CHECK(!delay_tags.contains(tag));
+      CHECK(!center_active_tags.contains(tag));
+      CHECK(!switch_weapon_tags.contains(tag));
+      CHECK(!tags.contains(tag));
+      CHECK(!selection_tags.contains(tag));
+      CHECK(!inventory_tags.contains(tag));
+      CHECK(!spellbook_tags.contains(tag));
+      CHECK(!save_game_tags.contains(tag));
+      CHECK(!load_game_tags.contains(tag));
+    }
+  }
+  CHECK(cycle_focus_tags.size() == 10);
+  for (const CombatantId combatant : {0, 1, 10, 109, 255}) {
+    const uint32_t previous = semantic_cycle_combat_focus_tag(
+        combatant,
+        CombatFocusDirection::previous,
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    const uint32_t next = semantic_cycle_combat_focus_tag(
+        combatant,
+        CombatFocusDirection::next,
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(previous != next);
+    CHECK((previous & 0xFFFF0000U) == 0x52420000U);
+    CHECK((next & 0xFFFF0000U) == 0x524E0000U);
+  }
+  for (const auto direction : {
+           CombatFocusDirection::previous,
+           CombatFocusDirection::next,
+       }) {
+    CHECK(semantic_cycle_combat_focus_tag(
+              -1, direction, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+    CHECK(semantic_cycle_combat_focus_tag(
+              256, direction, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+    CHECK(semantic_cycle_combat_focus_tag(
+              1, direction, REALMZ_SEMANTIC_INPUT_NONE) == 0);
+    CHECK(semantic_cycle_combat_focus_tag(
+              1, direction, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+    CHECK(semantic_cycle_combat_focus_tag(
+              1, direction, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0);
+  }
+  CHECK(semantic_cycle_combat_focus_tag(
+            1,
+            static_cast<CombatFocusDirection>(-1),
+            REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  for (const uint32_t malformed : {
+           0U,
+           0x52410000U,
+           0x52420000U,
+           0x52420101U,
+           0x52420201U,
+           0x52420401U,
+           0x524E0000U,
+           0x524E0101U,
+           0x524E0201U,
+           0x524E0401U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticCycleCombatFocusTag(malformed) == 0);
+    CHECK(RealmzSemanticCycleCombatFocusTagSurface(malformed) ==
         REALMZ_SEMANTIC_INPUT_NONE);
   }
 }

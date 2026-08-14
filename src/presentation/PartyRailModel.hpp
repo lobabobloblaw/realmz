@@ -110,6 +110,8 @@ enum class ActionIntent {
   delay,
   center_active,
   switch_weapon,
+  center_previous,
+  center_next,
   cancel,
   encounter_choice,
 };

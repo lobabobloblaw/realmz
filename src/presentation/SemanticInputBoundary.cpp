@@ -46,6 +46,11 @@ constexpr uint32_t kSemanticSwitchWeaponSignature = 0x52570000U;
 constexpr uint32_t kSemanticSwitchWeaponMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticSwitchWeaponSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticSwitchWeaponIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticCycleCombatFocusNextSignature = 0x524E0000U;
+constexpr uint32_t kSemanticCycleCombatFocusPreviousSignature = 0x52420000U;
+constexpr uint32_t kSemanticCycleCombatFocusMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticCycleCombatFocusSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticCycleCombatFocusIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -109,6 +114,12 @@ struct DecodedCenterActiveCombatant {
 
 struct DecodedSwitchWeapon {
   realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedCycleCombatFocus {
+  realmz::presentation::CombatantId combatant;
+  realmz::presentation::CombatFocusDirection direction;
   RealmzSemanticInputSurface surface;
 };
 
@@ -324,6 +335,31 @@ std::optional<DecodedSwitchWeapon> decode_switch_weapon(
   };
 }
 
+std::optional<DecodedCycleCombatFocus> decode_cycle_combat_focus(
+    uint32_t tagged_message) noexcept {
+  const uint32_t signature =
+      tagged_message & kSemanticCycleCombatFocusMask;
+  realmz::presentation::CombatFocusDirection direction;
+  if (signature == kSemanticCycleCombatFocusPreviousSignature) {
+    direction = realmz::presentation::CombatFocusDirection::previous;
+  } else if (signature == kSemanticCycleCombatFocusNextSignature) {
+    direction = realmz::presentation::CombatFocusDirection::next;
+  } else {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticCycleCombatFocusSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedCycleCombatFocus{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticCycleCombatFocusIdMask),
+      .direction = direction,
+      .surface = surface_value,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -352,9 +388,6 @@ realmz::presentation::ScreenContext screen_for_surface(
   }
 }
 
-using CombatantMessageMapper = std::optional<uint32_t> (*)(
-    realmz::presentation::CombatantId,
-    const realmz::presentation::RuntimeLegacyCommandContext&) noexcept;
 using CombatantSnapshotValidator = bool (*)(
     const realmz::presentation::GameSnapshot&,
     realmz::presentation::CombatantId) noexcept;
@@ -370,12 +403,12 @@ bool has_full_movement(
   return member && (member->movement == member->movement_maximum);
 }
 
-template <typename DecodedCombatant>
+template <typename DecodedCombatant, typename MessageMapper>
 uint8_t consume_semantic_combatant_event(
     RealmzSemanticInputSurface expected_surface,
     const std::optional<DecodedCombatant>& decoded,
     uint32_t* classic_key_message,
-    CombatantMessageMapper message_mapper,
+    MessageMapper message_mapper,
     CombatantSnapshotValidator snapshot_validator = nullptr) {
   const bool authorized = authorize_completed_scope(expected_surface);
   if (!classic_key_message || !authorized || !decoded ||
@@ -564,6 +597,30 @@ uint32_t semantic_switch_weapon_tag(
       static_cast<uint32_t>(combatant);
 }
 
+uint32_t semantic_cycle_combat_focus_tag(
+    CombatantId combatant,
+    CombatFocusDirection direction,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  uint32_t signature = 0;
+  switch (direction) {
+    case CombatFocusDirection::previous:
+      signature = kSemanticCycleCombatFocusPreviousSignature;
+      break;
+    case CombatFocusDirection::next:
+      signature = kSemanticCycleCombatFocusNextSignature;
+      break;
+    default:
+      return 0;
+  }
+  return signature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -733,6 +790,19 @@ RealmzSemanticSwitchWeaponTagSurface(uint32_t tagged_message) {
   return switch_weapon ? switch_weapon->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticCycleCombatFocusTag(
+    uint32_t tagged_message) {
+  return decode_cycle_combat_focus(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticCycleCombatFocusTagSurface(uint32_t tagged_message) {
+  const auto cycle_focus = decode_cycle_combat_focus(tagged_message);
+  return cycle_focus
+      ? cycle_focus->surface
+      : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -745,7 +815,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_finish_combatant(tagged_message) ||
           decode_delay_combatant(tagged_message) ||
           decode_center_active_combatant(tagged_message) ||
-          decode_switch_weapon(tagged_message))
+          decode_switch_weapon(tagged_message) ||
+          decode_cycle_combat_focus(tagged_message))
       ? 1
       : 0;
 }
@@ -784,6 +855,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto switch_weapon = decode_switch_weapon(tagged_message)) {
     return switch_weapon->surface;
+  }
+  if (const auto cycle_focus = decode_cycle_combat_focus(tagged_message)) {
+    return cycle_focus->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1097,4 +1171,26 @@ extern "C" uint8_t RealmzConsumeSemanticSwitchWeaponEvent(
       decode_switch_weapon(tagged_message),
       classic_key_message,
       realmz::presentation::legacy_key_message_for_switch_weapon);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticCycleCombatFocusEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const auto cycle_focus = decode_cycle_combat_focus(tagged_message);
+  const auto direction = cycle_focus
+      ? cycle_focus->direction
+      : realmz::presentation::CombatFocusDirection::next;
+  return consume_semantic_combatant_event(
+      expected_surface,
+      cycle_focus,
+      classic_key_message,
+      [direction](
+          realmz::presentation::CombatantId combatant,
+          const realmz::presentation::RuntimeLegacyCommandContext& context)
+          noexcept {
+        return realmz::presentation::
+            legacy_key_message_for_cycle_combat_focus(
+                combatant, direction, context);
+      });
 }
