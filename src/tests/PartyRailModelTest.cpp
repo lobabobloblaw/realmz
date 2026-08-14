@@ -209,10 +209,44 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(finish.combatant == guard.combatant);
   CHECK(finish.tab_order == guard.tab_order + 1);
   CHECK(finish.focus_identifier != guard.focus_identifier);
+  const auto& delay = action_with(model, ActionIntent::delay);
+  CHECK(!delay.can_invoke());
+  CHECK(delay.availability == ActionAvailability::unavailable);
+  CHECK(delay.command == "action.combat.delay");
+  CHECK(delay.combatant == guard.combatant);
+  CHECK(delay.tab_order == finish.tab_order + 1);
+  CHECK(delay.focus_identifier != finish.focus_identifier);
+  CHECK(delay.availability_reason->label ==
+      "Delay is only available before moving");
+
+  snapshot.party.members[0].movement =
+      snapshot.party.members[0].movement_maximum;
+  model = build_presentation_shell_model(snapshot);
+  const auto& available_delay = action_with(model, ActionIntent::delay);
+  CHECK(available_delay.can_invoke());
+  CHECK(available_delay.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(available_delay.combatant == 1);
+  CHECK(available_delay.availability_reason->label == "Game rules apply");
+
+  snapshot.party.members.erase(snapshot.party.members.begin());
+  model = build_presentation_shell_model(snapshot);
+  const auto& unmatched_delay = action_with(model, ActionIntent::delay);
+  CHECK(!unmatched_delay.can_invoke());
+  CHECK(unmatched_delay.combatant == 1);
+  CHECK(unmatched_delay.availability_reason->label ==
+      "Delay is only available before moving");
+  CHECK(action_with(model, ActionIntent::guard).can_invoke());
+  CHECK(action_with(model, ActionIntent::finish).can_invoke());
+  snapshot.party = sample_snapshot().party;
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
-    for (const auto intent : {ActionIntent::guard, ActionIntent::finish}) {
+    for (const auto intent : {
+             ActionIntent::guard,
+             ActionIntent::finish,
+             ActionIntent::delay,
+         }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());
       CHECK(!combat_action.combatant);

@@ -34,6 +34,10 @@ constexpr uint32_t kSemanticOpenLoadGameSignature = 0x524C0000U;
 constexpr uint32_t kSemanticOpenLoadGameMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenLoadGameSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenLoadGameReservedMask = 0x000000FFU;
+constexpr uint32_t kSemanticDelayCombatantSignature = 0x52440000U;
+constexpr uint32_t kSemanticDelayCombatantMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticDelayCombatantSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticDelayCombatantIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -81,6 +85,11 @@ struct DecodedGuardCombatant {
 };
 
 struct DecodedFinishCombatant {
+  realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedDelayCombatant {
   realmz::presentation::CombatantId combatant;
   RealmzSemanticInputSurface surface;
 };
@@ -243,6 +252,24 @@ std::optional<DecodedFinishCombatant> decode_finish_combatant(
   };
 }
 
+std::optional<DecodedDelayCombatant> decode_delay_combatant(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticDelayCombatantMask) !=
+      kSemanticDelayCombatantSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticDelayCombatantSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedDelayCombatant{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticDelayCombatantIdMask),
+      .surface = surface_value,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -274,13 +301,28 @@ realmz::presentation::ScreenContext screen_for_surface(
 using CombatantMessageMapper = std::optional<uint32_t> (*)(
     realmz::presentation::CombatantId,
     const realmz::presentation::RuntimeLegacyCommandContext&) noexcept;
+using CombatantSnapshotValidator = bool (*)(
+    const realmz::presentation::GameSnapshot&,
+    realmz::presentation::CombatantId) noexcept;
+
+bool has_full_movement(
+    const realmz::presentation::GameSnapshot& snapshot,
+    realmz::presentation::CombatantId combatant) noexcept {
+  if ((combatant < 0) || (combatant > 0xFF)) {
+    return false;
+  }
+  const auto* member = snapshot.party.member(
+      static_cast<realmz::presentation::PartyMemberId>(combatant));
+  return member && (member->movement == member->movement_maximum);
+}
 
 template <typename DecodedCombatant>
 uint8_t consume_semantic_combatant_event(
     RealmzSemanticInputSurface expected_surface,
     const std::optional<DecodedCombatant>& decoded,
     uint32_t* classic_key_message,
-    CombatantMessageMapper message_mapper) {
+    CombatantMessageMapper message_mapper,
+    CombatantSnapshotValidator snapshot_validator = nullptr) {
   const bool authorized = authorize_completed_scope(expected_surface);
   if (!classic_key_message || !authorized || !decoded ||
       (decoded->surface != expected_surface)) {
@@ -310,6 +352,10 @@ uint8_t consume_semantic_combatant_event(
         (combatant->kind != realmz::presentation::CombatantKind::party_member) ||
         !combatant->active || !combatant->targetable ||
         (combatant->stamina.current <= 0)) {
+      return 0;
+    }
+    if (snapshot_validator &&
+        !snapshot_validator(snapshot, decoded->combatant)) {
       return 0;
     }
     const auto message = message_mapper(
@@ -417,6 +463,18 @@ uint32_t semantic_finish_combatant_tag(
     return 0;
   }
   return kSemanticFinishCombatantSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
+uint32_t semantic_delay_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticDelayCombatantSignature |
       (static_cast<uint32_t>(surface) << 8U) |
       static_cast<uint32_t>(combatant);
 }
@@ -557,6 +615,17 @@ RealmzSemanticFinishCombatantTagSurface(uint32_t tagged_message) {
   return finish ? finish->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticDelayCombatantTag(
+    uint32_t tagged_message) {
+  return decode_delay_combatant(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticDelayCombatantTagSurface(uint32_t tagged_message) {
+  const auto delay = decode_delay_combatant(tagged_message);
+  return delay ? delay->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -566,7 +635,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_open_save_game(tagged_message) ||
           decode_open_load_game(tagged_message) ||
           decode_guard_combatant(tagged_message) ||
-          decode_finish_combatant(tagged_message))
+          decode_finish_combatant(tagged_message) ||
+          decode_delay_combatant(tagged_message))
       ? 1
       : 0;
 }
@@ -596,6 +666,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto finish = decode_finish_combatant(tagged_message)) {
     return finish->surface;
+  }
+  if (const auto delay = decode_delay_combatant(tagged_message)) {
+    return delay->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -875,4 +948,16 @@ extern "C" uint8_t RealmzConsumeSemanticFinishCombatantEvent(
       decode_finish_combatant(tagged_message),
       classic_key_message,
       realmz::presentation::legacy_key_message_for_finish_combatant);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticDelayCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  return consume_semantic_combatant_event(
+      expected_surface,
+      decode_delay_combatant(tagged_message),
+      classic_key_message,
+      realmz::presentation::legacy_key_message_for_delay_combatant,
+      has_full_movement);
 }

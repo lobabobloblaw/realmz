@@ -1509,6 +1509,25 @@ void WindowManager::create_sdl_window() {
                 realmz::presentation::semantic_finish_combatant_tag(
                     combatant, surface);
             return tag && PushSemanticFinishCombatantEvent(tag);
+          },
+          [](realmz::presentation::CombatantId combatant,
+              uint32_t message,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                (context.screen ==
+                    realmz::presentation::ScreenContext::combat);
+            const auto expected = realmz::presentation::
+                legacy_key_message_for_delay_combatant(combatant, context);
+            if (!matching_surface || !expected || (message != *expected)) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_delay_combatant_tag(
+                    combatant, surface);
+            return tag && PushSemanticDelayCombatantEvent(tag);
           });
   this->configure_window_for_presentation_mode();
 
@@ -2150,6 +2169,12 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::finish_combatant;
         });
+    const bool has_semantic_delay = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::delay_combatant;
+        });
     std::string action_summary =
         "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
     if (has_semantic_movement) {
@@ -2167,7 +2192,8 @@ void draw_shell_panel_contents(
         action_summary += " + LOAD";
       }
       action_summary += " — other actions remain in the game frame";
-    } else if (has_semantic_guard || has_semantic_finish) {
+    } else if (has_semantic_guard || has_semantic_finish ||
+        has_semantic_delay) {
       action_summary = "SEMANTIC COMBAT";
       if (has_semantic_guard) {
         action_summary += " + GUARD";
@@ -2175,12 +2201,16 @@ void draw_shell_panel_contents(
       if (has_semantic_finish) {
         action_summary += " + FINISH";
       }
+      if (has_semantic_delay) {
+        action_summary += " + DELAY";
+      }
       action_summary += " — other actions remain in the game frame";
     }
     draw_shell_text(renderer, font, action_summary,
         {left, panel.y + 37.0, width, 24.0},
         kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
-    if (has_semantic_movement || has_semantic_guard || has_semantic_finish) {
+    if (has_semantic_movement || has_semantic_guard ||
+        has_semantic_finish || has_semantic_delay) {
       for (const auto& control : controls) {
         if ((control.kind !=
                 realmz::presentation::ShellControlKind::movement) &&
@@ -2195,7 +2225,9 @@ void draw_shell_panel_contents(
             (control.kind !=
                 realmz::presentation::ShellControlKind::guard_combatant) &&
             (control.kind !=
-                realmz::presentation::ShellControlKind::finish_combatant)) {
+                realmz::presentation::ShellControlKind::finish_combatant) &&
+            (control.kind !=
+                realmz::presentation::ShellControlKind::delay_combatant)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -2690,6 +2722,33 @@ void WindowManager::present_remastered_frame() {
                   .adaptive_eligible =
                       legacy_context.adaptive_eligible != 0,
               }).has_value();
+      const auto delay_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::delay;
+          });
+      const std::optional<realmz::presentation::CombatantId> delay_combatant =
+          (delay_action != shell_model->actions.end())
+          ? delay_action->combatant
+          : std::nullopt;
+      const auto* delay_member = delay_combatant &&
+              (*delay_combatant >= 0) && (*delay_combatant <= 0xFF)
+          ? snapshot.party.member(
+                static_cast<realmz::presentation::PartyMemberId>(
+                    *delay_combatant))
+          : nullptr;
+      const bool delay_available = delay_combatant && delay_member &&
+          (delay_member->movement == delay_member->movement_maximum) &&
+          delay_action->can_invoke() && snapshot_context_matches &&
+          realmz::presentation::legacy_key_message_for_delay_combatant(
+              *delay_combatant,
+              {
+                  .screen = screen,
+                  .world_presentation = snapshot.world.presentation,
+                  .adaptive_eligible =
+                      legacy_context.adaptive_eligible != 0,
+              }).has_value();
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -2709,6 +2768,8 @@ void WindowManager::present_remastered_frame() {
               .guard_available = guard_available,
               .finish_combatant = finish_combatant,
               .finish_available = finish_available,
+              .delay_combatant = delay_combatant,
+              .delay_available = delay_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -2891,6 +2952,34 @@ void WindowManager::present_remastered_frame() {
                         realmz::presentation::CombatantKind::party_member &&
                     combatant->active && combatant->targetable &&
                     combatant->stamina.current > 0;
+              }
+              if (const auto* delay =
+                      std::get_if<
+                          realmz::presentation::DelayCombatantAction>(
+                          &control.payload)) {
+                if (control.kind != realmz::presentation::
+                        ShellControlKind::delay_combatant ||
+                    !snapshot.combat || !snapshot.combat->active ||
+                    snapshot.combat->acting_combatant != delay->combatant ||
+                    !realmz::presentation::
+                        legacy_key_message_for_delay_combatant(
+                            delay->combatant, context) ||
+                    (delay->combatant < 0) || (delay->combatant > 0xFF)) {
+                  return false;
+                }
+                const auto combatant = std::ranges::find(
+                    snapshot.combat->combatants,
+                    delay->combatant,
+                    &realmz::presentation::CombatantView::id);
+                const auto* member = snapshot.party.member(
+                    static_cast<realmz::presentation::PartyMemberId>(
+                        delay->combatant));
+                return combatant != snapshot.combat->combatants.end() &&
+                    combatant->kind ==
+                        realmz::presentation::CombatantKind::party_member &&
+                    combatant->active && combatant->targetable &&
+                    combatant->stamina.current > 0 && member &&
+                    member->movement == member->movement_maximum;
               }
               if (std::holds_alternative<
                       realmz::presentation::SetDrawerPanelAction>(
@@ -3376,6 +3465,47 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
               realmz::presentation::CombatantKind::party_member) ||
           !combatant->active || !combatant->targetable ||
           (combatant->stamina.current <= 0)) {
+        return false;
+      }
+      continue;
+    }
+    if (const auto* delay =
+            std::get_if<realmz::presentation::DelayCombatantAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::delay_combatant ||
+          !realmz::presentation::legacy_key_message_for_delay_combatant(
+              delay->combatant, context) ||
+          (delay->combatant < 0) || (delay->combatant > 0xFF)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) || !snapshot->combat ||
+          !snapshot->combat->active ||
+          snapshot->combat->acting_combatant != delay->combatant) {
+        return false;
+      }
+      const auto combatant = std::ranges::find(
+          snapshot->combat->combatants,
+          delay->combatant,
+          &realmz::presentation::CombatantView::id);
+      const auto* member = snapshot->party.member(
+          static_cast<realmz::presentation::PartyMemberId>(
+              delay->combatant));
+      if ((combatant == snapshot->combat->combatants.end()) ||
+          (combatant->kind !=
+              realmz::presentation::CombatantKind::party_member) ||
+          !combatant->active || !combatant->targetable ||
+          (combatant->stamina.current <= 0) || !member ||
+          (member->movement != member->movement_maximum)) {
         return false;
       }
       continue;

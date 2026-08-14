@@ -18,6 +18,7 @@ enum class ShellControlKind {
   open_load_game,
   guard_combatant,
   finish_combatant,
+  delay_combatant,
   drawer_tab,
 };
 
@@ -52,6 +53,8 @@ struct ShellControlLayoutRequest {
   bool guard_available = false;
   std::optional<CombatantId> finish_combatant;
   bool finish_available = false;
+  std::optional<CombatantId> delay_combatant;
+  bool delay_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

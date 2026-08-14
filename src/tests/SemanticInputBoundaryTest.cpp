@@ -151,6 +151,14 @@ bool consume_finish(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_delay(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticDelayCombatantEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 void complete_top_level_scope(RealmzSemanticInputSurface surface) {
   RealmzBeginSemanticInputSurface(surface);
   CHECK(RealmzCurrentSemanticInputSurface() == surface);
@@ -450,6 +458,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
     CHECK(RealmzIsSemanticFinishCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticGuardCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -502,6 +511,7 @@ void test_tag_encoding_and_validation() {
     CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
     CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
     CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
     CHECK(RealmzSemanticFinishCombatantTagSurface(tag) ==
         REALMZ_SEMANTIC_INPUT_COMBAT);
@@ -537,6 +547,61 @@ void test_tag_encoding_and_validation() {
        }) {
     CHECK(RealmzIsSemanticFinishCombatantTag(malformed) == 0);
     CHECK(RealmzSemanticFinishCombatantTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  std::set<uint32_t> delay_tags;
+  for (const CombatantId combatant : {0, 1, 10, 109, 255}) {
+    const uint32_t tag = semantic_delay_combatant_tag(
+        combatant, REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK((tag & 0xFFFF0000U) == 0x52440000U);
+    CHECK(((tag >> 8U) & 0xFFU) == REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK((tag & 0xFFU) == static_cast<uint32_t>(combatant));
+    CHECK(RealmzIsSemanticDelayCombatantTag(tag) != 0);
+    CHECK(RealmzIsSemanticGuardCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticFinishCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+    CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+    CHECK(RealmzSemanticDelayCombatantTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(RealmzSemanticGameplayTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(delay_tags.emplace(tag).second);
+    CHECK(!guard_tags.contains(tag));
+    CHECK(!finish_tags.contains(tag));
+    CHECK(!tags.contains(tag));
+    CHECK(!selection_tags.contains(tag));
+    CHECK(!inventory_tags.contains(tag));
+    CHECK(!spellbook_tags.contains(tag));
+    CHECK(!save_game_tags.contains(tag));
+    CHECK(!load_game_tags.contains(tag));
+  }
+  CHECK(semantic_delay_combatant_tag(
+            -1, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_delay_combatant_tag(
+            256, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_delay_combatant_tag(
+            1, REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_delay_combatant_tag(
+            1, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  CHECK(semantic_delay_combatant_tag(
+            1, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0);
+  for (const uint32_t malformed : {
+           0U,
+           0x52430000U,
+           0x52440000U,
+           0x52440101U,
+           0x52440201U,
+           0x52440401U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticDelayCombatantTag(malformed) == 0);
+    CHECK(RealmzSemanticDelayCombatantTagSurface(malformed) ==
         REALMZ_SEMANTIC_INPUT_NONE);
   }
 }
@@ -1603,6 +1668,120 @@ void test_finish_combatant_late_validation_and_exact_translation() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_delay_combatant_late_validation_and_exact_translation() {
+  const auto configure_valid_delay = [] {
+    captured_snapshot.party.members[1].movement = 9;
+    captured_snapshot.party.members[1].movement_maximum = 9;
+    captured_snapshot.combat = CombatView{
+        .active = true,
+        .round = 3,
+        .acting_combatant = 1,
+        .combatants = {
+            CombatantView{
+                .id = 1,
+                .kind = CombatantKind::party_member,
+                .name = "Bryn",
+                .stamina = {14, 20},
+                .active = true,
+                .targetable = true,
+            },
+            CombatantView{
+                .id = 10,
+                .kind = CombatantKind::monster,
+                .name = "Goblin",
+                .stamina = {8, 8},
+                .active = true,
+                .targetable = true,
+            },
+        },
+    };
+  };
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_COMBAT,
+      ScreenContext::combat,
+      WorldPresentation::none);
+  configure_valid_delay();
+  const uint32_t delay = semantic_delay_combatant_tag(
+      1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  uint32_t classic_message = 0xA5A5A5A5U;
+
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(classic_message == 0xA5A5A5A5U);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(classic_message == 0x00000264U);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  classic_message = 0xA5A5A5A5U;
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(classic_message == 0xA5A5A5A5U);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(RealmzConsumeSemanticDelayCombatantEvent(
+            REALMZ_SEMANTIC_INPUT_COMBAT, delay, nullptr) == 0);
+  classic_message = 0xA5A5A5A5U;
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(classic_message == 0xA5A5A5A5U);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_COMBAT,
+      ScreenContext::combat,
+      WorldPresentation::none);
+  configure_valid_delay();
+  captured_snapshot.party.members[1].movement = 8;
+  classic_message = 0xA5A5A5A5U;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(classic_message == 0xA5A5A5A5U);
+  captured_snapshot.party.members[1].movement = 9;
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(classic_message == 0xA5A5A5A5U);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_COMBAT,
+      ScreenContext::combat,
+      WorldPresentation::none);
+  configure_valid_delay();
+  captured_snapshot.party.members.erase(
+      captured_snapshot.party.members.begin() + 1);
+  classic_message = 0xA5A5A5A5U;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(classic_message == 0xA5A5A5A5U);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_COMBAT,
+      ScreenContext::combat,
+      WorldPresentation::none);
+  configure_valid_delay();
+  captured_snapshot.combat->acting_combatant = 10;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_COMBAT,
+      ScreenContext::combat,
+      WorldPresentation::none);
+  configure_valid_delay();
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(!consume_delay(
+      REALMZ_SEMANTIC_INPUT_COMBAT, delay, classic_message));
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void expect_rejected_without_output_change(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tag) {
@@ -1756,6 +1935,7 @@ int main() {
     test_open_load_game_late_validation_and_exact_menu_translation();
     test_guard_combatant_late_validation_and_exact_translation();
     test_finish_combatant_late_validation_and_exact_translation();
+    test_delay_combatant_late_validation_and_exact_translation();
     test_fail_closed_context_and_payloads();
     RealmzEndSemanticInputSurface();
     std::cout << "SemanticInputBoundaryTest passed ("

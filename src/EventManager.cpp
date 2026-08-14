@@ -545,6 +545,28 @@ public:
     return true;
   }
 
+  bool push_semantic_delay_combatant_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticDelayCombatantTag(tagged_message)) {
+      return false;
+    }
+    // Preserve both the actor and command identity until the guarded combat
+    // loop rechecks that this party member still owns an unmoved turn.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic delay combatant (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   void discard_semantic_gameplay_events() {
     std::erase_if(this->event_queue, [](const EventRecord& candidate) {
       return (candidate.what == app1Evt) &&
@@ -1024,6 +1046,18 @@ Boolean GetNextSemanticGameplayEvent(
       ret->what = nullEvent;
       ret->message = 0;
     }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticDelayCombatantTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticDelayCombatantEvent(
+            surface, ret->message, &classic_key_message)) {
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      // Delay is inert after movement, an actor change, or a surface change.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
   } else {
     // Authorization belongs only to the event returned by this wrapper. Do
     // not leave a completed scope available after an ordinary Classic event.
@@ -1108,6 +1142,10 @@ Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticFinishCombatantEvent(uint32_t tagged_message) {
   return em.push_semantic_finish_combatant_event(tagged_message);
+}
+
+Boolean PushSemanticDelayCombatantEvent(uint32_t tagged_message) {
+  return em.push_semantic_delay_combatant_event(tagged_message);
 }
 
 void CancelSemanticGameplayInput(void) {

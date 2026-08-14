@@ -66,6 +66,9 @@ private:
     handlers.finish_combatant = [](const FinishCombatantAction&) {
       return DispatchResult::handled();
     };
+    handlers.delay_combatant = [](const DelayCombatantAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -662,6 +665,116 @@ void test_finish_payload_orders_dispatches_and_cancels_stale_actor() {
   CHECK(bridge.actions().size() == 1);
 }
 
+void test_delay_payload_orders_dispatches_and_cancels_recomposition() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  const ShellControlPlacement guard{
+      .region = ShellRegionId{1104},
+      .kind = ShellControlKind::guard_combatant,
+      .bounds = {20.0, 20.0, 120.0, 48.0},
+      .label = "GUARD",
+      .accessibility_label = "Guard active combatant",
+      .focus_identifier = "focus.action.combat.guard",
+      .tab_order = 1104,
+      .enabled = true,
+      .payload = GuardCombatantAction{2},
+  };
+  const ShellControlPlacement finish{
+      .region = ShellRegionId{1105},
+      .kind = ShellControlKind::finish_combatant,
+      .bounds = {148.0, 20.0, 120.0, 48.0},
+      .label = "FINISH",
+      .accessibility_label = "Finish active combatant's turn",
+      .focus_identifier = "focus.action.combat.finish",
+      .tab_order = 1105,
+      .enabled = true,
+      .payload = FinishCombatantAction{2},
+  };
+  const ShellControlPlacement delay{
+      .region = ShellRegionId{1106},
+      .kind = ShellControlKind::delay_combatant,
+      .bounds = {276.0, 20.0, 120.0, 48.0},
+      .label = "DELAY",
+      .accessibility_label = "Delay active combatant's turn",
+      .focus_identifier = "focus.action.combat.delay",
+      .tab_order = 1106,
+      .enabled = true,
+      .payload = DelayCombatantAction{2},
+  };
+
+  // Reversed insertion proves the stable Guard, Finish, Delay tab order.
+  CHECK(!harness.recompose({delay, finish, guard}));
+  for (const auto& expected : {guard, finish, delay}) {
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() ==
+        expected.focus_identifier);
+    release_tab(harness);
+  }
+
+  const auto down = harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(down.shell.consumed);
+  CHECK(!down.shell.invoked_control);
+  CHECK(bridge.actions().empty());
+  const auto up = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(up.shell.consumed);
+  CHECK(up.shell.invoked_control.has_value());
+  CHECK(up.shell.invoked_control->kind ==
+      ShellControlKind::delay_combatant);
+  CHECK(up.dispatch.has_value());
+  CHECK(up.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1U);
+  CHECK(std::get<DelayCombatantAction>(bridge.actions()[0].payload).combatant ==
+      2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1U);
+
+  // Pointer focus uses this same production focus-control path.
+  CHECK(harness.focus(guard.focus_identifier));
+  CHECK(harness.focus(delay.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.keyboard().pressed_identifier() == delay.focus_identifier);
+  auto changed = harness.controls();
+  const auto changed_delay = std::ranges::find_if(
+      changed, [](const auto& control) {
+        return control.kind == ShellControlKind::delay_combatant;
+      });
+  CHECK(changed_delay != changed.end());
+  changed_delay->payload = DelayCombatantAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.keyboard().pressed_identifier());
+  const auto stale_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_release.shell.consumed);
+  CHECK(!stale_release.shell.invoked_control);
+  CHECK(!stale_release.dispatch);
+  CHECK(bridge.actions().size() == 1U);
+
+  CHECK(!harness.recompose({delay, finish, guard}));
+  CHECK(harness.focus(delay.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = harness.controls();
+  const auto disabled_delay = std::ranges::find_if(
+      changed, [](const auto& control) {
+        return control.kind == ShellControlKind::delay_combatant;
+      });
+  CHECK(disabled_delay != changed.end());
+  disabled_delay->enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_release.shell.consumed);
+  CHECK(!disabled_release.shell.invoked_control);
+  CHECK(!disabled_release.dispatch);
+  CHECK(bridge.actions().size() == 1U);
+}
+
 using DescriptorMutation =
     std::function<void(std::vector<ShellControlPlacement>&)>;
 
@@ -835,6 +948,7 @@ int main() {
     test_open_load_payload_activates_exactly_once();
     test_guard_payload_activates_exactly_once();
     test_finish_payload_orders_dispatches_and_cancels_stale_actor();
+    test_delay_payload_orders_dispatches_and_cancels_recomposition();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();

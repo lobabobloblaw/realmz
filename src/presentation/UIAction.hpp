@@ -90,6 +90,15 @@ struct FinishCombatantAction {
   bool operator==(const FinishCombatantAction&) const = default;
 };
 
+// Requests the preserved Classic Delay command for the explicitly identified
+// party combatant. Carrying the actor prevents a queued Delay from being
+// retargeted if the combat turn changes before the command is consumed.
+struct DelayCombatantAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const DelayCombatantAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -212,6 +221,7 @@ using UIActionPayload = std::variant<
     OpenLoadGameAction,
     GuardCombatantAction,
     FinishCombatantAction,
+    DelayCombatantAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -248,6 +258,8 @@ struct UIAction {
       return "guard_combatant";
     } else if constexpr (std::is_same_v<Action, FinishCombatantAction>) {
       return "finish_combatant";
+    } else if constexpr (std::is_same_v<Action, DelayCombatantAction>) {
+      return "delay_combatant";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

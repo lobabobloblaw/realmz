@@ -92,7 +92,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 2> combat_cases() {
+std::array<CombatCase, 3> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -105,6 +105,12 @@ std::array<CombatCase, 2> combat_cases() {
               1, REALMZ_SEMANTIC_INPUT_COMBAT),
           .consume = RealmzConsumeSemanticFinishCombatantEvent,
           .classic_message = 0x00000366U,
+      },
+      CombatCase{
+          .tag = semantic_delay_combatant_tag(
+              1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticDelayCombatantEvent,
+          .classic_message = 0x00000264U,
       },
   };
 }
@@ -158,6 +164,8 @@ void seed_active_party_combatant() {
   c[1].stamina = 14;
   c[1].staminamax = 20;
   c[1].inbattle = 1;
+  c[1].movement = 9;
+  c[1].movementmax = 9;
 }
 
 void complete_combat_scope() {
@@ -169,7 +177,7 @@ void complete_combat_scope() {
       REALMZ_SEMANTIC_INPUT_NONE);
 }
 
-void test_exact_guard_and_finish_messages() {
+void test_exact_combat_action_messages() {
   seed_active_party_combatant();
 
   for (const auto& action : combat_cases()) {
@@ -180,6 +188,20 @@ void test_exact_guard_and_finish_messages() {
         REALMZ_SEMANTIC_INPUT_COMBAT, action.tag, &output) != 0);
     CHECK(output == action.classic_message);
   }
+}
+
+void test_moved_combatant_delay_is_rejected() {
+  seed_active_party_combatant();
+  const uint32_t tag = semantic_delay_combatant_tag(
+      1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(tag != 0);
+  complete_combat_scope();
+
+  c[1].movement = 8;
+  uint32_t output = kUnchangedMessage;
+  CHECK(RealmzConsumeSemanticDelayCombatantEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
 }
 
 void test_stale_acting_combatant_is_rejected() {
@@ -212,7 +234,8 @@ void test_non_gameplay_front_window_is_rejected() {
 
 int main() {
   try {
-    test_exact_guard_and_finish_messages();
+    test_exact_combat_action_messages();
+    test_moved_combatant_delay_is_rejected();
     test_stale_acting_combatant_is_rejected();
     test_non_gameplay_front_window_is_rejected();
     reset_legacy_globals();

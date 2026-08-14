@@ -52,6 +52,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(OpenSpellbookAction::member),
     PartyMemberId>);
+static_assert(std::is_same_v<
+    decltype(DelayCombatantAction::combatant),
+    CombatantId>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -259,6 +262,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.open_load_game = mutateEngine;
   handlers.guard_combatant = mutateEngine;
   handlers.finish_combatant = mutateEngine;
+  handlers.delay_combatant = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -380,6 +384,16 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(finishCombatantUnsupported.status == DispatchStatus::unsupported);
   CHECK(finishCombatantUnsupported.detail ==
       "No legacy handler registered for finish_combatant");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const auto delayCombatantUnsupported = unsupportedBridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = DelayCombatantAction{1},
+  });
+  CHECK(delayCombatantUnsupported.status == DispatchStatus::unsupported);
+  CHECK(delayCombatantUnsupported.detail ==
+      "No legacy handler registered for delay_combatant");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

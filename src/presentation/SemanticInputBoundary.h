@@ -74,6 +74,13 @@ uint8_t RealmzIsSemanticFinishCombatantTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticFinishCombatantTagSurface(
     uint32_t tagged_message);
 
+// Delay tags carry the acting combatant explicitly and are valid only on the
+// combat surface. Processing-time movement validation prevents a queued Delay
+// from rotating a later or already-moved turn.
+uint8_t RealmzIsSemanticDelayCombatantTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticDelayCombatantTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -142,6 +149,13 @@ uint8_t RealmzConsumeSemanticFinishCombatantEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant and full-movement prerequisite,
+// then returns the preserved Classic "d" key record to the combat loop.
+uint8_t RealmzConsumeSemanticDelayCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -178,6 +192,10 @@ enum class MovementCommand;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_finish_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_delay_combatant_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 

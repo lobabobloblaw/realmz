@@ -86,15 +86,18 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes two bounded semantic actions: typed `GuardCombatantAction` and
-`FinishCombatantAction` commands each carry the stable active-party combatant
-ID through distinct combat-only tagged events. The top-level combat loop
-revalidates a fresh snapshot, including the acting ID, party ownership,
-active/targetable state, and positive stamina, before translating either
-action to the exact preserved Classic `g` or `f` key record. The original
-Classic guard/finish mutations and turn advance remain authoritative; stale
-actions become inert, and all other combat commands remain in the interactive
-Classic frame.
+Combat exposes three bounded semantic actions: typed `GuardCombatantAction`,
+`FinishCombatantAction`, and `DelayCombatantAction` commands each carry the
+stable active-party combatant ID through distinct combat-only tagged events.
+The top-level combat loop late-validates a fresh snapshot, including the acting
+ID, party ownership, active/targetable state, and positive stamina, before
+translating an action to its exact preserved Classic key record. Delay is
+available only before movement (`movement == movement_maximum`), revalidates
+that condition at delivery, and becomes the exact Classic `d` message
+`0x00000264`. Validation fails closed, so stale or newly ineligible actions
+become inert. The original Classic guard/finish/delay mutations and turn
+advance remain authoritative, and all other combat commands remain in the
+interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are

@@ -260,6 +260,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticFinishCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic finish input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticDelayCombatantEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic delay input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -483,6 +487,30 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(finish_wrapper, "mouseDown") == 0,
       "public semantic finish enqueue must not synthesize Classic input");
 
+  const std::string push_delay = function_body(
+      source, "push_semantic_delay_combatant_event");
+  const std::string compact_push_delay = without_whitespace(push_delay);
+  require(count_identifier(
+              push_delay, "RealmzIsSemanticDelayCombatantTag") == 1,
+      "semantic delay enqueue must validate exactly one tag");
+  require(count_identifier(push_delay, "app1Evt") == 1,
+      "semantic delay enqueue must use app1Evt exactly once");
+  require(count_identifier(push_delay, "keyDown") == 0 &&
+          count_identifier(push_delay, "mouseDown") == 0,
+      "semantic delay enqueue must not synthesize Classic input");
+  require(compact_push_delay.contains("ev.what=app1Evt;") &&
+          compact_push_delay.contains("ev.message=tagged_message;"),
+      "semantic delay must retain its tagged app1Evt payload");
+
+  const std::string delay_wrapper = function_body(
+      source, "PushSemanticDelayCombatantEvent");
+  require(without_whitespace(delay_wrapper).contains(
+              "returnem.push_semantic_delay_combatant_event(tagged_message);"),
+      "public semantic delay enqueue must delegate to tagged queue");
+  require(count_identifier(delay_wrapper, "keyDown") == 0 &&
+          count_identifier(delay_wrapper, "mouseDown") == 0,
+      "public semantic delay enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -563,14 +591,18 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticFinishCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late finish consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticDelayCombatantEvent") == 1,
+      "semantic gameplay wrapper must have one late delay consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 8,
-      "semantic gameplay wrapper must recognize all eight tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 5,
-      "only late movement, inventory, spellbook, guard, and finish "
+  require(count_identifier(semantic_wrapper, "app1Evt") == 9,
+      "semantic gameplay wrapper must recognize all nine tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 6,
+      "only late movement, inventory, spellbook, guard, finish, and delay "
       "validation may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
@@ -608,6 +640,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticFinishCombatantEvent") == 1,
       "EventManager may consume semantic finish input only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticDelayCombatantEvent") == 1,
+      "EventManager may consume semantic delay input only inside its gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
 
@@ -719,6 +754,17 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", finish_keydown);
   const std::size_t finish_rejected_message = compact_semantic.find(
       "ret->message=0", finish_null);
+  const std::size_t delay_branch = compact_semantic.find(
+      "RealmzIsSemanticDelayCombatantTag(ret->message)",
+      finish_rejected_message);
+  const std::size_t delay_consume = compact_semantic.find(
+      "RealmzConsumeSemanticDelayCombatantEvent(", delay_branch);
+  const std::size_t delay_keydown = compact_semantic.find(
+      "ret->what=keyDown", delay_consume);
+  const std::size_t delay_null = compact_semantic.find(
+      "ret->what=nullEvent", delay_keydown);
+  const std::size_t delay_rejected_message = compact_semantic.find(
+      "ret->message=0", delay_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -771,7 +817,12 @@ void verify_event_manager(const fs::path& repository_root) {
           finish_consume != std::string::npos &&
           finish_keydown != std::string::npos &&
           finish_null != std::string::npos &&
-          finish_rejected_message != std::string::npos,
+          finish_rejected_message != std::string::npos &&
+          delay_branch != std::string::npos &&
+          delay_consume != std::string::npos &&
+          delay_keydown != std::string::npos &&
+          delay_null != std::string::npos &&
+          delay_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -819,7 +870,12 @@ void verify_event_manager(const fs::path& repository_root) {
           finish_branch < finish_consume &&
           finish_consume < finish_keydown &&
           finish_keydown < finish_null &&
-          finish_null < finish_rejected_message,
+          finish_null < finish_rejected_message &&
+          finish_rejected_message < delay_branch &&
+          delay_branch < delay_consume &&
+          delay_consume < delay_keydown &&
+          delay_keydown < delay_null &&
+          delay_null < delay_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
@@ -980,6 +1036,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticFinishCombatantEvent") == 0,
       std::string(function_name) +
           " must leave tagged finish consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticDelayCombatantEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged delay consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -1058,6 +1118,42 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           finish_mutation < finish_turn_advance,
       "combat Finish must clear movement and guarding before advancing the "
       "turn");
+  const std::size_t delay_case = compact_combat.find("case'd':");
+  const std::size_t delay_next_case = compact_combat.find(
+      "case'm':", delay_case);
+  const std::size_t delay_predicate = compact_combat.find(
+      "if(c[charup].movement==c[charup].movementmax){", delay_case);
+  const std::size_t delay_attack_deduction = compact_combat.find(
+      "c[charup].attacks-=(c[charup].normattacks+"
+      "c[charup].attackbonus);",
+      delay_predicate);
+  const std::size_t delay_queue_rotation = compact_combat.find(
+      "q[ttt]=q[ttt+1];", delay_attack_deduction);
+  const std::size_t delay_rewind = compact_combat.find(
+      "up--;", delay_queue_rotation);
+  const std::size_t delay_turn_advance = compact_combat.find(
+      "getup(TRUE);", delay_rewind);
+  const std::size_t delay_warning = compact_combat.find(
+      "warn(59);", delay_turn_advance);
+  require(delay_case != std::string::npos &&
+          delay_next_case != std::string::npos &&
+          delay_predicate != std::string::npos &&
+          delay_attack_deduction != std::string::npos &&
+          delay_queue_rotation != std::string::npos &&
+          delay_rewind != std::string::npos &&
+          delay_turn_advance != std::string::npos &&
+          delay_warning != std::string::npos,
+      "combat must retain the preserved Delay predicate, queue rotation, "
+      "turn advance, and moved-actor warning");
+  require(delay_case < delay_predicate &&
+          delay_predicate < delay_attack_deduction &&
+          delay_attack_deduction < delay_queue_rotation &&
+          delay_queue_rotation < delay_rewind &&
+          delay_rewind < delay_turn_advance &&
+          delay_turn_advance < delay_warning &&
+          delay_warning < delay_next_case,
+      "combat Delay must remain a full-movement-only queue rotation before "
+      "the next Classic command branch");
 
   std::size_t global_wrapper_count = 0;
   std::size_t global_begin_count = 0;
@@ -1070,6 +1166,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_load_consumer_count = 0;
   std::size_t global_guard_consumer_count = 0;
   std::size_t global_finish_consumer_count = 0;
+  std::size_t global_delay_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -1102,6 +1199,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     global_finish_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticFinishCombatantEvent");
+    global_delay_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticDelayCombatantEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -1128,6 +1227,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic guard input directly");
   require(global_finish_consumer_count == 0,
       "legacy loops must not consume tagged semantic finish input directly");
+  require(global_delay_consumer_count == 0,
+      "legacy loops must not consume tagged semantic delay input directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -1159,6 +1260,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t load_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
   std::size_t finish_consume_calls = 0;
+  std::size_t delay_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -1202,6 +1304,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     finish_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticFinishCombatantEvent");
+    delay_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticDelayCombatantEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -1238,6 +1342,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
   require(finish_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticFinishCombatantEvent");
+  require(delay_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticDelayCombatantEvent");
 }
 
 } // namespace

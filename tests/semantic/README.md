@@ -51,20 +51,24 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first two bounded combat actions are covered outside this exploration
+The first three bounded combat actions are covered outside this exploration
 fixture by the presentation, runtime-bridge, semantic-boundary, top-level-loop,
-and keyboard contract tests. They verify that typed `GuardCombatantAction` and
-`FinishCombatantAction` commands each carry the stable acting-combatant ID, are
-late-validated against the fresh acting party member, and become the exact
-Classic `g` and `f` key records. The preserved Classic handlers still own the
-resulting combat-state mutations and turn advance. This is not a full combat
-replay or save-equivalence claim; every other combat command remains on the
-Classic input route.
+and keyboard contract tests. They verify that typed `GuardCombatantAction`,
+`FinishCombatantAction`, and `DelayCombatantAction` commands each carry the
+stable acting-combatant ID and are late-validated against the fresh acting
+party member with fail-closed rejection. Delay is available only before
+movement and revalidates that eligibility before becoming the exact Classic
+`d` message `0x00000264`; Guard and Finish become the exact Classic `g` and `f`
+key records. The preserved Classic handlers still own the resulting
+combat-state mutations and turn advance. This is not a full combat replay or
+save-equivalence claim; every other combat command remains on the Classic input
+route.
 
 `SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
 fixture-owned legacy globals flow through the real presentation-context and
 snapshot adapters before the semantic boundary emits those exact key records.
-It performs no Classic combat mutation and reads or writes no user data.
+It performs no Classic combat mutation, reads or writes no user data, and is
+not a full combat replay.
 
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:

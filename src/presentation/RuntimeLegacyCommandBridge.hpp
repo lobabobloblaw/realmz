@@ -58,6 +58,10 @@ using RuntimeLegacyFinishCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyDelayCombatantSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Returns the exact Classic Mac key message already consumed by the preserved
 // exploration/dungeon event loops. Unsupported command/context combinations
@@ -105,6 +109,14 @@ legacy_key_message_for_guard_combatant(
 // queued Finish can never silently change its turn-ending semantics.
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_finish_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "d" key record consumed by the preserved combat
+// switch. Delay has its own typed route and sink so it cannot be confused with
+// the adjacent Guard or Finish commands despite their identical signatures.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_delay_combatant(
     CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 
@@ -172,6 +184,17 @@ public:
       RuntimeLegacyOpenLoadGameSink open_load_game_sink,
       RuntimeLegacyGuardCombatantSink guard_combatant_sink,
       RuntimeLegacyFinishCombatantSink finish_combatant_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyOpenInventorySink open_inventory_sink,
+      RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+      RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+      RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+      RuntimeLegacyGuardCombatantSink guard_combatant_sink,
+      RuntimeLegacyFinishCombatantSink finish_combatant_sink,
+      RuntimeLegacyDelayCombatantSink delay_combatant_sink);
 
   [[nodiscard]] DispatchResult dispatch(const UIAction& action) override;
 

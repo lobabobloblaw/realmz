@@ -16,6 +16,7 @@ constexpr uint32_t kSaveGameRegion = 1102U;
 constexpr uint32_t kLoadGameRegion = 1103U;
 constexpr uint32_t kGuardCombatantRegion = 1104U;
 constexpr uint32_t kFinishCombatantRegion = 1105U;
+constexpr uint32_t kDelayCombatantRegion = 1106U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
@@ -80,18 +81,26 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.guard_combatant);
   const bool valid_finish = request.finish_combatant &&
       valid_combatant(*request.finish_combatant);
+  const bool valid_delay = request.delay_combatant &&
+      valid_combatant(*request.delay_combatant);
   const bool invalid_guard = request.guard_combatant && !valid_guard;
   const bool invalid_finish = request.finish_combatant && !valid_finish;
-  const bool mismatched_combatants = request.guard_combatant &&
-      request.finish_combatant &&
-      (*request.guard_combatant != *request.finish_combatant);
+  const bool invalid_delay = request.delay_combatant && !valid_delay;
+  const bool mismatched_combatants =
+      (request.guard_combatant && request.finish_combatant &&
+          (*request.guard_combatant != *request.finish_combatant)) ||
+      (request.guard_combatant && request.delay_combatant &&
+          (*request.guard_combatant != *request.delay_combatant)) ||
+      (request.finish_combatant && request.delay_combatant &&
+          (*request.finish_combatant != *request.delay_combatant));
   const bool combat_controls =
       (request.screen == ScreenContext::combat) &&
-      (valid_guard || valid_finish) && !invalid_guard && !invalid_finish &&
-      !mismatched_combatants;
+      (valid_guard || valid_finish || valid_delay) && !invalid_guard &&
+      !invalid_finish && !invalid_delay && !mismatched_combatants;
   if ((!world_controls && !combat_controls) ||
       (world_controls &&
-          (request.guard_combatant || request.finish_combatant)) ||
+          (request.guard_combatant || request.finish_combatant ||
+              request.delay_combatant)) ||
       (combat_controls &&
           (request.navigation_available || request.inventory_member ||
               request.spellbook_member || request.save_control_visible ||
@@ -101,7 +110,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
       (request.guard_available && !valid_guard) ||
-      (request.finish_available && !valid_finish)) {
+      (request.finish_available && !valid_finish) ||
+      (request.delay_available && !valid_delay)) {
     return {};
   }
 
@@ -111,7 +121,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.save_control_visible ? 1U : 0U) +
       (request.load_control_visible ? 1U : 0U) +
       (request.guard_combatant ? 1U : 0U) +
-      (request.finish_combatant ? 1U : 0U);
+      (request.finish_combatant ? 1U : 0U) +
+      (request.delay_combatant ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -233,6 +244,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .tab_order = 1105,
         .enabled = request.finish_available,
         .payload = FinishCombatantAction{*request.finish_combatant},
+    });
+    x += button_width + gap;
+  }
+  if (request.delay_combatant) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kDelayCombatantRegion},
+        .kind = ShellControlKind::delay_combatant,
+        .bounds = {x, y, button_width, button_height},
+        .label = "DELAY",
+        .accessibility_label = "Delay active combatant's turn",
+        .focus_identifier = "focus.action.combat.delay",
+        .tab_order = 1106,
+        .enabled = request.delay_available,
+        .payload = DelayCombatantAction{*request.delay_combatant},
     });
   }
   return result;

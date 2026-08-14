@@ -317,6 +317,14 @@ std::vector<ActionControlModel> build_actions(
     const bool can_act = acting &&
         (acting->kind == CombatantKind::party_member) && acting->active &&
         acting->targetable && (acting->stamina.current > 0);
+    const PartyMemberView* acting_party_member = nullptr;
+    if (can_act && (acting->id >= 0) && (acting->id <= 0xFF)) {
+      acting_party_member = snapshot.party.member(
+          static_cast<PartyMemberId>(acting->id));
+    }
+    const bool can_delay = acting_party_member &&
+        (acting_party_member->movement ==
+            acting_party_member->movement_maximum);
     result.emplace_back(action(
         ActionIntent::guard,
         "action.combat.guard",
@@ -342,6 +350,21 @@ std::vector<ActionControlModel> build_actions(
             ? std::optional<StateTokenModel>{engine_rules_token()}
             : std::optional<StateTokenModel>{
                   unavailable_token("Wait for an active party member")}));
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
+    result.emplace_back(action(
+        ActionIntent::delay,
+        "action.combat.delay",
+        "Delay",
+        can_delay ? ActionAvailability::deferred_to_engine
+                  : ActionAvailability::unavailable,
+        tab_order++,
+        can_delay
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{unavailable_token(
+                  can_act ? "Delay is only available before moving"
+                          : "Wait for an active party member")}));
     if (can_act) {
       result.back().combatant = acting->id;
     }

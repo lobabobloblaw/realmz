@@ -85,6 +85,9 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
     } else if constexpr (std::is_same_v<Action, FinishCombatantAction>) {
       return invoke_handler(
           this->handlers_.finish_combatant, payload, "finish_combatant");
+    } else if constexpr (std::is_same_v<Action, DelayCombatantAction>) {
+      return invoke_handler(
+          this->handlers_.delay_combatant, payload, "delay_combatant");
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return invoke_handler(this->handlers_.inventory, payload, "inventory");
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {
