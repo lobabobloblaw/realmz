@@ -1,0 +1,57 @@
+{
+  "intermediate_artifacts": [
+    {
+      "path": "assets/remastered/style-proof/generation/postprocess/08_portrait_cicn_337/attempt-1/01-resized.rgba8",
+      "sha256": "a6d3104ac1735c71a5a5fc878b41493fdd198857db2ae22d19432811d64736b7"
+    }
+  ],
+  "job_id": "08_portrait_cicn_337",
+  "output": {
+    "color_space": "sRGB",
+    "height": 352,
+    "path": "assets/remastered/style-proof/generation/outputs/08_portrait_cicn_337.png",
+    "pixel_format": "RGBA8",
+    "sha256": "3bc7ac4e0d6bb17cab9562f0f2f4db178c9eddc584f658e524ab947b59a3ec5e",
+    "width": 352
+  },
+  "post_processing": [
+    {
+      "operation": "resize_to_target",
+      "parameters": {
+        "algorithm": "decode PNG, convert fully opaque pixels to RGBA8, verify exact aspect by integer cross-product, and resize with PIL.Image.Resampling.LANCZOS; no crop or stretch",
+        "aspect_assertion": "source_width*target_height == source_height*target_width",
+        "decoder_source_mode": "RGB",
+        "input_sha256": "ff179e7ae30a020a7962cdf27e20389c67714b3252ff2028f752a4bcf0e36034",
+        "intermediate_state_format": "REALMZ-RGBA8-STATE-V1 + big-endian width/height + row-major RGBA8",
+        "output_changed": true,
+        "output_sha256": "a6d3104ac1735c71a5a5fc878b41493fdd198857db2ae22d19432811d64736b7",
+        "resampler": "PIL.Image.Resampling.LANCZOS",
+        "source_height": 1254,
+        "source_width": 1254,
+        "target_height": 352,
+        "target_width": 352
+      },
+      "tool": "Pillow",
+      "tool_version": "12.2.0"
+    },
+    {
+      "operation": "encode_srgb_png",
+      "parameters": {
+        "algorithm": "canonical RGBA8 PNG with filter type 0 rows, IHDR color type 6, sRGB rendering intent 0, zlib level 9, and no variable metadata",
+        "input_sha256": "a6d3104ac1735c71a5a5fc878b41493fdd198857db2ae22d19432811d64736b7",
+        "input_state_format": "REALMZ-RGBA8-STATE-V1",
+        "output_changed": true,
+        "output_color_space": "sRGB",
+        "output_pixel_format": "RGBA8",
+        "output_sha256": "3bc7ac4e0d6bb17cab9562f0f2f4db178c9eddc584f658e524ab947b59a3ec5e"
+      },
+      "tool": "scripts/prepare_style_proof_references.py:encode_png",
+      "tool_version": "1"
+    }
+  ],
+  "raw_output": {
+    "path": "assets/remastered/style-proof/generation/raw/08_portrait_cicn_337/attempt-1.png",
+    "sha256": "ff179e7ae30a020a7962cdf27e20389c67714b3252ff2028f752a4bcf0e36034"
+  },
+  "regeneration_ordinal": 1
+}

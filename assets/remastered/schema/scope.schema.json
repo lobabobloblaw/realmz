@@ -1,0 +1,85 @@
+{
+  "$id": "https://realmz-remastered.invalid/schema/scope.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "packs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "pack": {
+            "$ref": "#/$defs/safeRelativePath"
+          },
+          "role": {
+            "enum": [
+              "core",
+              "tutorial",
+              "city-baseline"
+            ]
+          },
+          "source": {
+            "$ref": "#/$defs/safeRelativePath"
+          },
+          "source_version": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_sha256",
+          "pack",
+          "role",
+          "source",
+          "source_version"
+        ],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "scope": {
+      "const": "phase1"
+    },
+    "selected_resource_types": {
+      "const": [
+        "PICT",
+        "cicn",
+        "crsr",
+        "ppat"
+      ]
+    }
+  },
+  "required": [
+    "description",
+    "packs",
+    "schema_version",
+    "scope",
+    "selected_resource_types"
+  ],
+  "title": "Realmz Remastered asset scope",
+  "type": "object",
+  "$defs": {
+    "safeRelativePath": {
+      "minLength": 1,
+      "not": {
+        "pattern": "(^/|\\\\|(^|/)\\.\\.?(/|$))"
+      },
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  }
+}

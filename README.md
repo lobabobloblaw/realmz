@@ -1,4 +1,42 @@
-# Realmz
+# Realmz Remastered — Unofficial
+
+This repository is an unofficial, free, noncommercial evolution of Realmz,
+forked from upstream commit `4089d550ab606172bac850ac055677c36c6ff547`.
+It preserves the native SDL3/Cocoa engine, game rules, scenario/save formats,
+and complete Classic presentation while introducing a live Classic/Remastered
+renderer boundary and an independently reviewed asset pipeline. Selected
+bitmap resources now pass through a pack-aware runtime coverage check after
+the legacy search chain chooses their source fork; Classic mode bypasses this
+check entirely.
+
+Remastered mode currently runs a responsive compatibility shell with a
+1024×768 minimum. During exploration, dungeon play, and combat, it uniformly
+fits the complete interactive 800×600 Classic framebuffer into the gameplay
+area and uses widescreen space for an interactive party rail, semantic movement
+controls, details, and event log (or compact drawer tabs). Eligible outdoor and
+dungeon movement buttons dispatch typed `MovePartyAction` commands through the
+legacy event loop. On those eligible exploration and dungeon screens, party
+cards dispatch typed, idempotent
+`SelectPartyMemberAction` commands through the same guarded top-level route;
+selecting the active member never emulates the Classic second click that opens
+the character modal. Their code-native keyboard route supports wrapping Tab and
+Shift-Tab focus plus Return or Space activation, suppresses repeat dispatch,
+and uses a high-contrast non-color focus outline. Details and log surfaces
+remain informational until their semantic mappings are complete. Pointer,
+popup, text-input, and cursor
+coordinates continue through the embedded Classic frame. Title and modal
+flows—including inventory, shop, and encounters—use an intact full-frame
+compatibility fallback. Neither route reveals additional map or combat terrain.
+
+The remaster is still under active development. In Remastered mode, the mixed
+phase-one runtime manifest now replaces 11 hash-locked, human-approved raster
+resources (four UI materials, four portraits, two world/title pictures, and one
+terrain icon) and leaves the other 1,509 covered resources as exact Classic
+passthroughs. Presentation-mode changes rehydrate cached patterns and pictures,
+so switching between Classic and Remastered does not require a restart. This is
+an integration milestone, not full-bake or release
+approval; ten attempted style-proof assets remain rejected for human art
+direction, and the broader provenance/release gates remain in force.
 
 Realmz is a classic, turn-based RPG, originally developed for early Macintosh computers. It was originally released as shareware, with additional scenarios available for purchase. Tim has graciously agreed to a release of the original code under a non-commercial license (see "License" section below).
 
@@ -8,7 +46,19 @@ Realmz is a classic, turn-based RPG, originally developed for early Macintosh co
 
 # Installing
 
-_WARNING: This is a beta release. The game may be unstable, crashes may occur, and save game and character data may become corrupted. If you have saves or character files that you care about, we strongly suggest regularly backing up your user data directory (`%AppData%\Fantasoft\Realmz` on Windows and `~/Library/Application\ Support/Fantasoft/Realmz` on Mac)._
+_WARNING: This is a development build. The game may be unstable. The fork uses
+its own `Realmz Remastered` application-support directory and does not write to
+the original Fantasoft directory. Keep independent backups of important saves._
+
+Existing characters and saves can be copied into the isolated directory with
+the hash-verifying importer. It backs up every selected source file before
+publishing any live copy, never overwrites an existing destination file, and
+leaves the source tree untouched:
+
+```sh
+Realmz --import-classic-data \
+  "$HOME/Library/Application Support/Fantasoft/Realmz"
+```
 
 Download the latest release for your system from the releases page. Scroll down to and expand the "Assets" section. Download the `.dmg` file for Mac, and the `.exe` or `.zip` files for Windows.
 
@@ -19,28 +69,43 @@ On Windows, you can either use the installer wizard for automatic installation, 
 # Reporting Bugs
 
 - Save the crash report file (if possible)
-- Zip up your Realmz userdata directory (`%AppData%\Fantasoft\Realmz` on Windows, `~/Library/Application\ Support/Fantasoft/Realmz` on Mac)
+- Zip up your remastered userdata directory (`%AppData%\Realmz Remastered` on Windows, `~/Library/Application Support/Realmz Remastered` on Mac)
 - Submit an issue to the Github repository
 - Attach the crash report and archive of your userdata directory
 - List the steps necessary to reproduce the bug
 
 # Contributing
 
-Pull requests are welcome. Please review the [Contributing Guide](https://github.com/Realmz-Castle/realmz?tab=contributing-ov-file) in full, but to summarize:
+Pull requests are welcome. Upstream's [Contributing Guide](https://github.com/Realmz-Castle/realmz?tab=contributing-ov-file) remains the guide for preservation-oriented changes inherited from the native port. This unofficial fork additionally accepts changes within its documented remaster scope, subject to the compatibility, provenance, review, and noncommercial-distribution gates in [QA_AND_RELEASE.md](docs/QA_AND_RELEASE.md) and [CONTENT_PROVENANCE.md](docs/CONTENT_PROVENANCE.md).
 
-- Only PRs that advance the project's goals of preservation and authenticity will be accepted.
 - AI-assisted code is acceptable, but must be human reviewed by you before you submit for maintainer review.
-- When modifying code under `src/realmz_org`, please include comments indicating the changes from the original
+- When modifying code under `src/realmz_orig`, please include comments indicating the changes from the original
   implementation ([example](https://github.com/Realmz-Castle/realmz/blob/fc143ecb7d54b1f7be3ff7e714fea450297b8bb9/src/realmz_orig/warn.c#L61)).
 
 ## Building on Mac
 
-- Download dependencies as git submodules
-  - `git submodule init`
-  - Download external dependencies of SDL_ttf `vendored/SDL_ttf/external/download.sh`
-- Download and install [phosg](https://github.com/fuzziqersoftware/phosg) (commit [b2e0c12edb7e274a5e20c460f44eee44f49f57ef](https://github.com/fuzziqersoftware/phosg/tree/b2e0c12edb7e274a5e20c460f44eee44f49f57ef)) and [resource_dasm](https://github.com/fuzziqersoftware/resource_dasm) (commit [27f64c89a5fed855e68c2a5e97b6c6c389d8eb19](https://github.com/fuzziqersoftware/resource_dasm/tree/27f64c89a5fed855e68c2a5e97b6c6c389d8eb19)). Make sure to compile with `-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"` in order to build Realmz as a fat binary that can run on both architectures. Also use `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.3` to make sure all dependencies and Realmz are targeting the same minimum MacOS SDK.
-- `cmake --preset macOS`
-- `cmake --build --preset macOS`
+Initialize the pinned SDL dependencies, build the two pinned external packages,
+then pass the verified installation prefix to Realmz:
+
+```sh
+git submodule update --init --recursive
+scripts/bootstrap-macos-dependencies.sh \
+  --work-dir build/dependencies \
+  --prefix build/dependencies/install
+cmake --preset macOS \
+  -DCMAKE_PREFIX_PATH="$PWD/build/dependencies/install"
+cmake --build --preset macOS
+```
+
+The bootstrap uses fresh CMake caches, rejects modified or incorrectly pinned
+dependency checkouts, and verifies universal `x86_64;arm64` libraries targeting
+macOS 13.3 before returning successfully. Its reviewed external commits are
+phosg `b2e0c12edb7e274a5e20c460f44eee44f49f57ef` and resource_dasm
+`27f64c89a5fed855e68c2a5e97b6c6c389d8eb19` (which provides resource_file).
+
+Run `scripts/run-core-tests.sh` for the dependency-free contracts. A configured
+full build additionally registers a resource-fork integration test that parses
+all five phase-one forks and verifies all 1,520 immutable selected payloads.
 
 ## Cross-compiling for Windows from Mac
 

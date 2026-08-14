@@ -1248,6 +1248,18 @@ void MainLoop(void) {
 
 /******************************** main  ************************/
 int main(int argc, char* argvp[]) {
+#if defined(REALMZ_COCOA)
+  if ((argc > 1) && (strcmp(argvp[1], "--import-classic-data") == 0)) {
+    if (argc != 3) {
+      fprintf(stderr,
+          "usage: %s --import-classic-data LEGACY_USER_DATA_DIRECTORY\n",
+          argvp[0]);
+      return 2;
+    }
+    return RealmzImportLegacyUserData(argvp[2]);
+  }
+#endif
+
   ToolBoxInit();
 
   SetPortDialogPort(background);

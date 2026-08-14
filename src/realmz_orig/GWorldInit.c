@@ -226,3 +226,35 @@ void GWorldInit(void) {
 
   SetGWorld(savedPort, savedDevice);
 }
+
+/************************* RealmzRefreshPresentationAssets ***************/
+void RealmzRefreshPresentationAssets(void) {
+  CGrafPtr previousPort;
+  GDHandle previousDevice;
+  PicHandle picture;
+  Rect pictureRect;
+
+  if (base)
+    ReloadPixPat(base, 131);
+  if (gHilite)
+    ReloadPixPat(gHilite, 128);
+  if (gNeutral)
+    ReloadPixPat(gNeutral, 129);
+  if (gShadow)
+    ReloadPixPat(gShadow, 130);
+
+  if ((!gBackWorld) || (!gFloorWorld))
+    return;
+
+  picture = GetPicture(50);
+  if (!picture)
+    return;
+  pictureRect = ((**picture).picFrame);
+
+  GetGWorld(&previousPort, &previousDevice);
+  SetGWorld(gBackWorld, NIL);
+  DrawPicture(picture, &pictureRect);
+  SetGWorld(gFloorWorld, NIL);
+  DrawPicture(picture, &pictureRect);
+  SetGWorld(previousPort, previousDevice);
+}

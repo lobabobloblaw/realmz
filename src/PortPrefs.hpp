@@ -4,6 +4,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "PortMenu.hpp"
+#include "presentation/PresentationMode.hpp"
 
 struct PortPrefs {
   int window_w = kLogicalWindowWidth;
@@ -13,6 +14,8 @@ struct PortPrefs {
   SDL_ScaleMode scale_mode = SDL_SCALEMODE_PIXELART;
   bool aspect_locked = true;
   int gamma_idx = 0; // index into kPortGammaOptions
+  realmz::presentation::PresentationMode presentation_mode =
+      realmz::presentation::PresentationMode::classic;
 };
 
 PortPrefs load_port_prefs();

@@ -1,9 +1,14 @@
 # Build products / editor files
 *.dSYM
 *.o
+__pycache__/
+*.pyc
 *.SYM
 *.xSYM
 build
+build*/
+_CPack_Packages/
+*.dmg
 cmake_install.cmake
 CMakeCache.txt
 CMakeFiles

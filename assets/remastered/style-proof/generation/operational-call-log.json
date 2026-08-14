@@ -1,0 +1,43 @@
+{
+  "approval_eligible": false,
+  "entries": [
+    {
+      "art_output_created": false,
+      "art_review_status": "not-applicable-pipeline-error",
+      "consumes_regeneration_ordinal": false,
+      "intended_job_id": "07_portrait_cicn_297",
+      "model_provenance": {
+        "completed_at": "2026-08-13T01:06:38Z",
+        "model": "built-in ImageGen",
+        "parameters": {
+          "submitted_payload_kind": "python-dataclass-traceback",
+          "tool": "image_gen.imagegen"
+        },
+        "prediction_id": null,
+        "provider": "OpenAI",
+        "seed": null,
+        "started_at": "2026-08-13T01:06:15Z",
+        "version": "service-managed; exact version not exposed"
+      },
+      "operational_status": "excluded-pipeline-error",
+      "output": {
+        "artifact_role": "pipeline-error-evidence",
+        "embedded_color_space": null,
+        "height": 1059,
+        "path": "assets/remastered/style-proof/generation/pipeline-errors/07_portrait_cicn_297/prompt-loader-error-0.png",
+        "pixel_format": "RGB8",
+        "semantic_classification": "non-art-error-explainer",
+        "sha256": "41e3c8ab4baade7cd130489d5bfb9912a776b6bb5f0913172241de659a488160",
+        "width": 1486
+      },
+      "submitted_payload": {
+        "description": "Python dataclass traceback from the local prompt loader, not the assembled immutable job prompt.",
+        "exact_payload_retained": false,
+        "kind": "python-dataclass-traceback",
+        "valid_generation_prompt": false
+      }
+    }
+  ],
+  "log_kind": "style-proof-operational-call-log",
+  "schema_version": 1
+}

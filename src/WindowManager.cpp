@@ -1,5 +1,6 @@
 #include "WindowManager.hpp"
 
+#include "AppIdentity.hpp"
 #include "PortMenu.hpp"
 #include "PortPrefs.hpp"
 
@@ -9,9 +10,15 @@
 
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_properties.h>
+#include <algorithm>
 #include <cmath>
+#include <format>
+#include <limits>
 #include <memory>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <variant>
 #include <vector>
 
 #include <SDL3/SDL.h>
@@ -32,8 +39,15 @@
 #include "QuickDraw.h"
 #include "QuickDraw.hpp"
 #include "ResourceManager.h"
+#include "ResourceManagerRemaster.hpp"
 #include "StringConvert.hpp"
 #include "Types.hpp"
+#include "presentation/LegacyGameSnapshotSource.hpp"
+#include "presentation/LegacyPresentationContext.h"
+#include "presentation/PartyRailControlLayout.hpp"
+#include "presentation/PartyRailLayout.hpp"
+#include "presentation/PartyRailModel.hpp"
+#include "presentation/SemanticInputBoundary.h"
 
 using ResourceDASM::ResourceFile;
 
@@ -41,8 +55,56 @@ using ResourceDASM::ResourceFile;
 static constexpr bool ENABLE_RECOMPOSITE_DEBUG = false;
 static constexpr bool ENABLE_DIALOG_RECOMPOSITE_DEBUG = false;
 static constexpr uint64_t TEXT_CARET_BLINK_INTERVAL_MS = 500;
+static constexpr int REMASTER_MINIMUM_WIDTH = 1024;
+static constexpr int REMASTER_MINIMUM_HEIGHT = 768;
 bool enable_translucent_window_debug = false;
 static size_t debug_number = 1;
+
+static realmz::presentation::RuntimeLegacyCommandContext
+capture_runtime_legacy_command_context() noexcept {
+  const auto legacy_context = RealmzCaptureLegacyPresentationContext();
+  realmz::presentation::RuntimeLegacyCommandContext context{
+      .screen = realmz::presentation::screen_context_from_legacy(
+          legacy_context),
+      .world_presentation =
+          realmz::presentation::WorldPresentation::none,
+      .adaptive_eligible = legacy_context.adaptive_eligible != 0,
+  };
+  if (!context.adaptive_eligible) {
+    return context;
+  }
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if (snapshot.screen != context.screen) {
+      context.adaptive_eligible = false;
+      return context;
+    }
+    context.world_presentation = snapshot.world.presentation;
+  } catch (...) {
+    // Any snapshot failure makes semantic input ineligible; the embedded
+    // Classic frame remains the complete fallback interaction route.
+    context.adaptive_eligible = false;
+  }
+  return context;
+}
+
+static std::optional<realmz::presentation::ShellKeyboardKey>
+shell_keyboard_key_for_sdl(SDL_Keycode key) noexcept {
+  using realmz::presentation::ShellKeyboardKey;
+  switch (key) {
+    case SDLK_TAB:
+      return ShellKeyboardKey::tab;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+    case SDLK_RETURN2:
+      return ShellKeyboardKey::enter;
+    case SDLK_SPACE:
+      return ShellKeyboardKey::space;
+    default:
+      return std::nullopt;
+  }
+}
 
 inline size_t unwrap_opaque_handle(Handle h) {
   static_assert(sizeof(size_t) == sizeof(Handle));
@@ -1255,28 +1317,81 @@ void WindowManager::create_sdl_window() {
   this->scale_mode = prefs.scale_mode;
   this->aspect_locked = prefs.aspect_locked;
   this->gamma_idx = prefs.gamma_idx;
+  this->presentation_host.set_mode(prefs.presentation_mode);
+  realmz::remaster::assets::setResourcePresentationMode(
+      prefs.presentation_mode);
   this->windowed_w = prefs.window_w;
   this->windowed_h = prefs.window_h;
   this->windowed_x = prefs.window_x;
   this->windowed_y = prefs.window_y;
 
+  int initial_width = prefs.window_w;
+  int initial_height = prefs.window_h;
+  if (prefs.presentation_mode ==
+      realmz::presentation::PresentationMode::remastered) {
+    initial_width = std::max(initial_width, REMASTER_MINIMUM_WIDTH);
+    initial_height = std::max(initial_height, REMASTER_MINIMUM_HEIGHT);
+    this->windowed_w = initial_width;
+    this->windowed_h = initial_height;
+  }
+
   this->sdl_window = sdl_make_shared(SDL_CreateWindow(
-      "Realmz", prefs.window_w, prefs.window_h,
+      realmz::app::kProductName.data(), initial_width, initial_height,
       SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
   if (!this->sdl_window) {
     throw std::runtime_error(std::format("Could not create SDL window: {}", SDL_GetError()));
   }
-  if (window_pos_on_screen(this->windowed_x, this->windowed_y, prefs.window_w, prefs.window_h)) {
+  if (window_pos_on_screen(this->windowed_x, this->windowed_y,
+          initial_width, initial_height)) {
     SDL_SetWindowPosition(this->sdl_window.get(), this->windowed_x, this->windowed_y);
-  }
-  if (this->aspect_locked) {
-    SDL_SetWindowAspectRatio(this->sdl_window.get(), kLogicalAspect, kLogicalAspect);
   }
   SDL_Renderer* renderer = SDL_CreateRenderer(this->sdl_window.get(), nullptr);
   if (!renderer) {
     throw std::runtime_error(std::format("Could not create window renderer: {}", SDL_GetError()));
   }
-  SDL_SetRenderLogicalPresentation(renderer, kLogicalWindowWidth, kLogicalWindowHeight, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+  this->runtime_legacy_command_bridge =
+      std::make_unique<realmz::presentation::RuntimeLegacyCommandBridge>(
+          [] { return capture_runtime_legacy_command_context(); },
+          [](realmz::presentation::MovementCommand command,
+              uint32_t,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::exploration)) ||
+                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::dungeon));
+            if (!matching_surface) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_movement_tag(
+                    command, surface);
+            return tag && PushSemanticMovementEvent(tag);
+          },
+          [](realmz::presentation::PartyMemberId member,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::exploration)) ||
+                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::dungeon));
+            if (!matching_surface) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_party_selection_tag(
+                    member, surface);
+            return tag && PushSemanticPartySelectionEvent(tag);
+          });
+  this->configure_window_for_presentation_mode();
 
   this->screen_port.resize(kLogicalWindowWidth, kLogicalWindowHeight);
   this->recomposite_all();
@@ -1426,26 +1541,7 @@ void WindowManager::on_dialog_item_focus_changed() {
 
     wm_log.info_f("Starting SDL text input");
 
-    const auto& window_rect = this->top_window->port.portRect;
-    const auto& item_rect = this->top_window->focused_item->rect;
-
-    float left = window_rect.left + item_rect.left;
-    float top = window_rect.top + item_rect.top;
-    float right = window_rect.left + item_rect.right;
-    float bottom = window_rect.top + item_rect.bottom;
-    if (auto* renderer = SDL_GetRenderer(this->sdl_window.get())) {
-      SDL_RenderCoordinatesToWindow(renderer, left, top, &left, &top);
-      SDL_RenderCoordinatesToWindow(renderer, right, bottom, &right, &bottom);
-    }
-
-    SDL_Rect rect;
-    rect.x = static_cast<int>(SDL_lroundf(left));
-    rect.y = static_cast<int>(SDL_lroundf(top));
-    rect.w = static_cast<int>(SDL_lroundf(right - left));
-    rect.h = static_cast<int>(SDL_lroundf(bottom - top));
-    if (!SDL_SetTextInputArea(this->sdl_window.get(), &rect, 0)) {
-      wm_log.error_f("Could not create text area: {}", SDL_GetError());
-    }
+    this->update_text_input_area();
 
     SDL_PropertiesID props = SDL_CreateProperties();
     SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_AUTOCORRECT_BOOLEAN, false);
@@ -1459,6 +1555,40 @@ void WindowManager::on_dialog_item_focus_changed() {
     SDL_DestroyProperties(props);
 
     this->text_editing_active = true;
+  }
+}
+
+void WindowManager::update_text_input_area() {
+  if (!this->sdl_window || !this->top_window ||
+      !this->top_window->focused_item ||
+      (this->top_window->focused_item->type != DialogItemType::EDIT_TEXT)) {
+    return;
+  }
+
+  const auto& window_rect = this->top_window->port.portRect;
+  const auto& item_rect = this->top_window->focused_item->rect;
+  float left = window_rect.left + item_rect.left;
+  float top = window_rect.top + item_rect.top;
+  float width = item_rect.right - item_rect.left;
+  float height = item_rect.bottom - item_rect.top;
+  if (!this->classic_to_render_rect(&left, &top, &width, &height)) {
+    return;
+  }
+  float right = left + width;
+  float bottom = top + height;
+  if (auto* renderer = SDL_GetRenderer(this->sdl_window.get())) {
+    SDL_RenderCoordinatesToWindow(renderer, left, top, &left, &top);
+    SDL_RenderCoordinatesToWindow(renderer, right, bottom, &right, &bottom);
+  }
+
+  const SDL_Rect rect{
+      .x = static_cast<int>(SDL_lroundf(left)),
+      .y = static_cast<int>(SDL_lroundf(top)),
+      .w = static_cast<int>(SDL_lroundf(right - left)),
+      .h = static_cast<int>(SDL_lroundf(bottom - top)),
+  };
+  if (!SDL_SetTextInputArea(this->sdl_window.get(), &rect, 0)) {
+    wm_log.error_f("Could not create text area: {}", SDL_GetError());
   }
 }
 
@@ -1514,69 +1644,1181 @@ void WindowManager::recomposite(std::shared_ptr<Window> updated_window) {
 }
 
 void WindowManager::present_screen() {
-  if (this->sdl_window) {
-    auto renderer = SDL_GetRenderer(this->sdl_window.get());
-    if (!renderer) {
-      wm_log.error_f("Could not get window renderer: {}", SDL_GetError());
-    } else {
+  static_cast<void>(this->presentation_host.present(*this));
+}
 
-      auto w = this->screen_port.data.get_width();
-      auto h = this->screen_port.data.get_height();
-      if (ENABLE_RECOMPOSITE_DEBUG) {
-        wm_log.info_f("Writing debug{}.bmp", debug_number);
-        phosg::save_file(std::format("debug{}.bmp", debug_number++), this->screen_port.data.serialize(phosg::ImageFormat::WINDOWS_BITMAP));
-      }
-      // Apply gamma correction if enabled. The correction treats Mac content as
-      // 1.8-gamma-encoded and remaps it for the chosen target display gamma. The
-      // lookup table is rebuilt only when the gamma option changes, and the pixel
-      // buffer is reused, so an enabled gamma adds only the per-pixel remap (not a
-      // table rebuild and a full-frame allocation) to each present.
-      const void* surface_data = this->screen_port.data.get_data();
-      float gdisplay = kPortGammaOptions[this->gamma_idx].display_gamma;
-      if (gdisplay > 0.0f) {
-        if (this->gamma_lut_idx != this->gamma_idx) {
-          float exp = 1.8f / gdisplay;
-          this->gamma_lut[0] = 0;
-          for (int i = 1; i < 255; i++) {
-            this->gamma_lut[i] = static_cast<uint8_t>(std::round(255.0f * std::pow(i / 255.0f, exp)));
-          }
-          this->gamma_lut[255] = 255;
-          this->gamma_lut_idx = this->gamma_idx;
-        }
-        const uint8_t* lut = this->gamma_lut;
-        size_t n = static_cast<size_t>(w) * h;
-        this->gamma_scratch.resize(n);
-        const uint32_t* src = static_cast<const uint32_t*>(surface_data);
-        for (size_t i = 0; i < n; i++) {
-          uint32_t p = src[i];
-          this->gamma_scratch[i] =
-              (static_cast<uint32_t>(lut[(p >> 24) & 0xFF]) << 24) |
-              (static_cast<uint32_t>(lut[(p >> 16) & 0xFF]) << 16) |
-              (static_cast<uint32_t>(lut[(p >>  8) & 0xFF]) <<  8) |
-              (p & 0xFF);
-        }
-        surface_data = this->gamma_scratch.data();
-      }
-      auto surface = sdl_make_unique(SDL_CreateSurfaceFrom(
-          w, h, SDL_PIXELFORMAT_RGBA8888, const_cast<void*>(surface_data), 4 * w));
-      if (!surface) {
-        wm_log.error_f("Could not create surface: {}", SDL_GetError());
-      } else {
-        auto texture = sdl_make_unique(SDL_CreateTextureFromSurface(renderer, surface.get()));
-        if (!texture) {
-          wm_log.error_f("Could not create texture: {}", SDL_GetError());
-        } else {
-          SDL_SetTextureScaleMode(texture.get(), this->scale_mode);
-          SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-          SDL_RenderClear(renderer);
-          SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr);
-        }
-      }
+namespace {
 
-      SDL_RenderPresent(renderer);
-      SDL_SyncWindow(this->sdl_window.get());
+SDL_FRect sdl_rect(const realmz::presentation::LogicalRect& rect) {
+  return {
+      static_cast<float>(rect.x),
+      static_cast<float>(rect.y),
+      static_cast<float>(rect.width),
+      static_cast<float>(rect.height),
+  };
+}
+
+struct ShellPanelColors {
+  Uint8 red;
+  Uint8 green;
+  Uint8 blue;
+};
+
+ShellPanelColors shell_panel_color(
+    realmz::presentation::ShellPanelKind panel) {
+  using realmz::presentation::ShellPanelKind;
+  switch (panel) {
+    case ShellPanelKind::party_rail:
+      return {31, 34, 43};
+    case ShellPanelKind::action_bar:
+      return {38, 34, 31};
+    case ShellPanelKind::details:
+      return {27, 32, 38};
+    case ShellPanelKind::event_log:
+      return {25, 29, 34};
+    case ShellPanelKind::drawer_tabs:
+      return {34, 31, 38};
+  }
+  return {31, 34, 43};
+}
+
+void draw_shell_text(
+    SDL_Renderer* renderer,
+    TTF_Font* font,
+    std::string_view text,
+    const realmz::presentation::LogicalRect& bounds,
+    SDL_Color color,
+    double backing_scale,
+    float logical_point_size,
+    TTF_FontStyleFlags style = TTF_STYLE_NORMAL,
+    float logical_line_height = 0.0f) {
+  if (!renderer || !font || text.empty() ||
+      (bounds.width <= 0.0) || (bounds.height <= 0.0) ||
+      !std::isfinite(backing_scale) || (backing_scale <= 0.0)) {
+    return;
+  }
+
+  const float raster_point_size = static_cast<float>(
+      logical_point_size * backing_scale);
+  if (!TTF_SetFontSize(font, raster_point_size)) {
+    return;
+  }
+  TTF_SetFontStyle(font, style);
+  const float effective_line_height = logical_line_height > 0.0f
+      ? logical_line_height
+      : logical_point_size * 1.25f;
+  TTF_SetFontLineSkip(font, std::max(
+      1, static_cast<int>(std::lround(
+             effective_line_height * static_cast<float>(backing_scale)))));
+  const int wrap_width = std::max(
+      1, static_cast<int>(std::floor(bounds.width * backing_scale)));
+  auto surface = sdl_make_unique(TTF_RenderText_Blended_Wrapped(
+      font, text.data(), text.size(), color, wrap_width));
+  if (!surface) {
+    return;
+  }
+  auto texture = sdl_make_unique(
+      SDL_CreateTextureFromSurface(renderer, surface.get()));
+  if (!texture) {
+    return;
+  }
+  SDL_SetTextureScaleMode(texture.get(), SDL_SCALEMODE_LINEAR);
+
+  const double natural_width = surface->w / backing_scale;
+  const double natural_height = surface->h / backing_scale;
+  const double visible_width = std::min(natural_width, bounds.width);
+  const double visible_height = std::min(natural_height, bounds.height);
+  const SDL_FRect source{
+      0.0f,
+      0.0f,
+      static_cast<float>(visible_width * backing_scale),
+      static_cast<float>(visible_height * backing_scale),
+  };
+  const SDL_FRect destination{
+      static_cast<float>(bounds.x),
+      static_cast<float>(bounds.y),
+      static_cast<float>(visible_width),
+      static_cast<float>(visible_height),
+  };
+  SDL_RenderTexture(renderer, texture.get(), &source, &destination);
+}
+
+void draw_shell_text(
+    SDL_Renderer* renderer,
+    TTF_Font* font,
+    std::string_view text,
+    const realmz::presentation::LogicalRect& bounds,
+    SDL_Color color,
+    double backing_scale,
+    const realmz::presentation::TextStyleModel& text_style,
+    TTF_FontStyleFlags style = TTF_STYLE_NORMAL) {
+  draw_shell_text(
+      renderer,
+      font,
+      text,
+      bounds,
+      color,
+      backing_scale,
+      static_cast<float>(text_style.point_size),
+      style,
+      static_cast<float>(text_style.line_height));
+}
+
+SDL_Color shell_state_color(
+    realmz::presentation::StateEmphasis emphasis) noexcept {
+  using realmz::presentation::StateEmphasis;
+  switch (emphasis) {
+    case StateEmphasis::neutral:
+      return {222, 222, 218, 255};
+    case StateEmphasis::information:
+      return {154, 194, 207, 255};
+    case StateEmphasis::positive:
+      return {154, 190, 131, 255};
+    case StateEmphasis::caution:
+      return {231, 188, 105, 255};
+    case StateEmphasis::critical:
+      return {221, 125, 112, 255};
+    case StateEmphasis::inactive:
+      return {164, 164, 158, 255};
+  }
+  return {222, 222, 218, 255};
+}
+
+int shell_state_emphasis_priority(
+    realmz::presentation::StateEmphasis emphasis) noexcept {
+  using realmz::presentation::StateEmphasis;
+  switch (emphasis) {
+    case StateEmphasis::neutral:
+      return 0;
+    case StateEmphasis::positive:
+      return 1;
+    case StateEmphasis::information:
+      return 2;
+    case StateEmphasis::inactive:
+      return 3;
+    case StateEmphasis::caution:
+      return 4;
+    case StateEmphasis::critical:
+      return 5;
+  }
+  return 0;
+}
+
+realmz::presentation::StateEmphasis strongest_shell_state_emphasis(
+    const std::vector<
+        realmz::presentation::PartyRailRenderableStateToken>& tokens)
+    noexcept {
+  auto strongest = realmz::presentation::StateEmphasis::neutral;
+  for (const auto& token : tokens) {
+    if (shell_state_emphasis_priority(token.emphasis) >
+        shell_state_emphasis_priority(strongest)) {
+      strongest = token.emphasis;
     }
   }
+  return strongest;
+}
+
+void draw_shell_meter(
+    SDL_Renderer* renderer,
+    const realmz::presentation::LogicalRect& bounds,
+    double fraction,
+    bool available) {
+  const SDL_FRect track = sdl_rect(bounds);
+  SDL_SetRenderDrawColor(renderer, 12, 14, 18, 255);
+  SDL_RenderFillRect(renderer, &track);
+  SDL_SetRenderDrawColor(renderer, 93, 86, 70, 255);
+  SDL_RenderRect(renderer, &track);
+  const auto clamped = std::clamp(fraction, 0.0, 1.0);
+  if (available && (clamped > 0.0)) {
+    SDL_FRect fill = track;
+    fill.x += 2.0f;
+    fill.y += 2.0f;
+    fill.w = std::max(
+        0.0f, static_cast<float>((bounds.width - 4.0) * clamped));
+    fill.h = std::max(0.0f, fill.h - 4.0f);
+    SDL_SetRenderDrawColor(renderer, 112, 132, 103, 255);
+    SDL_RenderFillRect(renderer, &fill);
+  }
+}
+
+void draw_shell_focus_corners(
+    SDL_Renderer* renderer,
+    const realmz::presentation::LogicalRect& bounds) {
+  SDL_FRect ring = sdl_rect(bounds);
+  ring.x += 3.0f;
+  ring.y += 3.0f;
+  ring.w = std::max(0.0f, ring.w - 6.0f);
+  ring.h = std::max(0.0f, ring.h - 6.0f);
+  if ((ring.w < 8.0f) || (ring.h < 8.0f)) {
+    return;
+  }
+  SDL_SetRenderDrawColor(renderer, 250, 232, 174, 255);
+  SDL_RenderRect(renderer, &ring);
+  const float left = ring.x;
+  const float top = ring.y;
+  const float right = ring.x + ring.w;
+  const float bottom = ring.y + ring.h;
+  const float arm = std::min(8.0f, std::min(ring.w, ring.h) / 3.0f);
+  SDL_RenderLine(renderer, left, top, left + arm, top);
+  SDL_RenderLine(renderer, left, top, left, top + arm);
+  SDL_RenderLine(renderer, right, top, right - arm, top);
+  SDL_RenderLine(renderer, right, top, right, top + arm);
+  SDL_RenderLine(renderer, left, bottom, left + arm, bottom);
+  SDL_RenderLine(renderer, left, bottom, left, bottom - arm);
+  SDL_RenderLine(renderer, right, bottom, right - arm, bottom);
+  SDL_RenderLine(renderer, right, bottom, right, bottom - arm);
+}
+
+void draw_shell_panel_contents(
+    SDL_Renderer* renderer,
+    TTF_Font* font,
+    realmz::presentation::ShellPanelKind kind,
+    const realmz::presentation::LogicalRect& panel,
+    const realmz::presentation::PresentationShellModel& model,
+    const std::vector<realmz::presentation::ShellControlPlacement>& controls,
+    std::optional<realmz::presentation::ShellRegionId> pressed_control,
+    std::optional<realmz::presentation::ShellRegionId> focused_control,
+    double backing_scale) {
+  using realmz::presentation::ActionAvailability;
+  using realmz::presentation::LogicalRect;
+  using realmz::presentation::ShellPanelKind;
+
+  constexpr SDL_Color kHeading{224, 205, 165, 255};
+  constexpr SDL_Color kBody{222, 222, 218, 255};
+  constexpr SDL_Color kMuted{164, 164, 158, 255};
+  constexpr SDL_Color kSelected{231, 188, 105, 255};
+  const double left = panel.x + 14.0;
+  const double width = std::max(0.0, panel.width - 28.0);
+  const float heading_size = static_cast<float>(
+      model.typography.heading.point_size);
+  const float body_size = static_cast<float>(
+      model.typography.body.point_size);
+  const float caption_size = static_cast<float>(
+      model.typography.caption.point_size);
+
+  if (kind == ShellPanelKind::party_rail) {
+    if (model.party_rail.members.empty()) {
+      draw_shell_text(renderer, font, "PARTY",
+          {left, panel.y + 11.0, width, 24.0},
+          kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
+      draw_shell_text(renderer, font,
+          "Party information appears when a group is active.",
+          {left, panel.y + 39.0, width, 46.0},
+          kMuted, backing_scale, body_size);
+      return;
+    }
+
+    const auto party_layout =
+        realmz::presentation::compute_party_rail_layout({
+            .party_panel = panel,
+            .members = model.party_rail.members,
+            .typography = model.typography,
+        });
+    draw_shell_text(renderer, font, party_layout.heading_text,
+        party_layout.heading_bounds, kHeading, backing_scale,
+        party_layout.heading_text_style, TTF_STYLE_BOLD);
+    for (const auto& placed : party_layout.members) {
+      const auto& member = model.party_rail.members[placed.member_index];
+      const auto party_control = std::ranges::find_if(
+          controls,
+          [&placed](const auto& candidate) {
+            const auto* selection =
+                std::get_if<realmz::presentation::SelectPartyMemberAction>(
+                    &candidate.payload);
+            return candidate.kind ==
+                    realmz::presentation::ShellControlKind::party_member &&
+                selection && (selection->member == placed.member_id) &&
+                (candidate.bounds == placed.card_bounds);
+          });
+      const bool pressed = party_control != controls.end() &&
+          pressed_control && (*pressed_control == party_control->region);
+      const bool focused = party_control != controls.end() &&
+          focused_control && (*focused_control == party_control->region);
+      auto card_rect = sdl_rect(placed.card_bounds);
+      SDL_SetRenderDrawColor(
+          renderer,
+          pressed ? 67 : (member.selected ? 50 : 37),
+          pressed ? 57 : (member.selected ? 48 : 40),
+          pressed ? 43 : (member.selected ? 43 : 48),
+          255);
+      SDL_RenderFillRect(renderer, &card_rect);
+      SDL_SetRenderDrawColor(
+          renderer,
+          member.selected ? 187 : 76,
+          member.selected ? 145 : 72,
+          member.selected ? 78 : 64,
+          255);
+      SDL_RenderRect(renderer, &card_rect);
+      if (pressed) {
+        SDL_FRect inner = card_rect;
+        inner.x += 2.0f;
+        inner.y += 2.0f;
+        inner.w = std::max(0.0f, inner.w - 4.0f);
+        inner.h = std::max(0.0f, inner.h - 4.0f);
+        SDL_RenderRect(renderer, &inner);
+      }
+      if (focused) {
+        draw_shell_focus_corners(renderer, placed.card_bounds);
+      }
+
+      draw_shell_text(renderer, font, placed.name_text,
+          placed.name_bounds,
+          member.selected ? kSelected : kBody,
+          backing_scale, placed.name_text_style,
+          member.selected ? TTF_STYLE_BOLD : TTF_STYLE_NORMAL);
+      draw_shell_text(renderer, font, placed.level_text,
+          placed.level_bounds, kMuted, backing_scale,
+          placed.level_text_style);
+      draw_shell_meter(renderer, placed.stamina_meter_bounds,
+          member.stamina.fill_fraction,
+          member.stamina.maximum > 0);
+      draw_shell_text(renderer, font, placed.stamina_value_text,
+          placed.stamina_value_bounds, kMuted, backing_scale,
+          placed.stamina_value_text_style);
+
+      const auto emphasis =
+          strongest_shell_state_emphasis(placed.state_tokens);
+      draw_shell_text(renderer, font, placed.state_text,
+          placed.state_bounds, shell_state_color(emphasis), backing_scale,
+          placed.state_text_style,
+          member.conscious ? TTF_STYLE_NORMAL : TTF_STYLE_BOLD);
+    }
+    return;
+  }
+
+  if (kind == ShellPanelKind::action_bar) {
+    draw_shell_text(renderer, font, "ACTIONS", {left, panel.y + 11.0, width, 22.0},
+        kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
+    const bool has_semantic_movement = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::movement;
+        });
+    draw_shell_text(renderer, font,
+        has_semantic_movement
+            ? "SEMANTIC MOVEMENT — other actions remain in the game frame"
+            : "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame",
+        {left, panel.y + 37.0, width, 24.0},
+        kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
+    if (has_semantic_movement) {
+      for (const auto& control : controls) {
+        if (control.kind !=
+            realmz::presentation::ShellControlKind::movement) {
+          continue;
+        }
+        const bool pressed = pressed_control &&
+            (*pressed_control == control.region);
+        const bool focused = focused_control &&
+            (*focused_control == control.region);
+        auto button = sdl_rect(control.bounds);
+        SDL_SetRenderDrawColor(
+            renderer,
+            pressed ? 91 : (control.enabled ? 52 : 39),
+            pressed ? 73 : (control.enabled ? 49 : 39),
+            pressed ? 46 : (control.enabled ? 43 : 42),
+            255);
+        SDL_RenderFillRect(renderer, &button);
+        SDL_SetRenderDrawColor(
+            renderer,
+            pressed ? 238 : (control.enabled ? 174 : 92),
+            pressed ? 196 : (control.enabled ? 139 : 87),
+            pressed ? 110 : (control.enabled ? 81 : 77),
+            255);
+        SDL_RenderRect(renderer, &button);
+        if (pressed) {
+          SDL_FRect inner = button;
+          inner.x += 2.0f;
+          inner.y += 2.0f;
+          inner.w = std::max(0.0f, inner.w - 4.0f);
+          inner.h = std::max(0.0f, inner.h - 4.0f);
+          SDL_RenderRect(renderer, &inner);
+        }
+        if (focused) {
+          draw_shell_focus_corners(renderer, control.bounds);
+        }
+        draw_shell_text(
+            renderer,
+            font,
+            control.label,
+            {
+                control.bounds.x + 8.0,
+                control.bounds.y + 13.0,
+                std::max(0.0, control.bounds.width - 16.0),
+                std::max(0.0, control.bounds.height - 18.0),
+            },
+            control.enabled ? kBody : kMuted,
+            backing_scale,
+            caption_size,
+            TTF_STYLE_BOLD);
+      }
+    } else {
+      std::string actions;
+      for (const auto& action : model.actions) {
+        if (!actions.empty()) {
+          actions += "  ·  ";
+        }
+        actions += action.label;
+        if (action.availability == ActionAvailability::unavailable) {
+          actions += " (unavailable)";
+        }
+      }
+      if (actions.empty()) {
+        actions = "Movement  ·  Party  ·  Inventory  ·  Spells  ·  Save / Load";
+      }
+      draw_shell_text(renderer, font, actions,
+          {left, panel.y + 65.0, width, std::max(20.0, panel.height - 75.0)},
+          kMuted, backing_scale, caption_size);
+    }
+    return;
+  }
+
+  if (kind == ShellPanelKind::details) {
+    draw_shell_text(renderer, font, "DETAILS", {left, panel.y + 11.0, width, 22.0},
+        kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
+    if (!model.selected_details.member) {
+      draw_shell_text(renderer, font, "Select a party member in the game frame.",
+          {left, panel.y + 39.0, width, 44.0},
+          kMuted, backing_scale, body_size);
+      return;
+    }
+    draw_shell_text(renderer, font,
+        model.selected_details.name.empty()
+            ? "Selected party member"
+            : model.selected_details.name,
+        {left, panel.y + 39.0, width, 22.0},
+        kBody, backing_scale, body_size, TTF_STYLE_BOLD);
+    draw_shell_text(renderer, font,
+        std::format("Level {}   ·   Armor {}\nMovement {} / {}",
+            model.selected_details.level,
+            model.selected_details.armor_class,
+            model.selected_details.movement,
+            model.selected_details.movement_maximum),
+        {left, panel.y + 69.0, width, std::max(28.0, panel.height - 79.0)},
+        kMuted, backing_scale, caption_size);
+    return;
+  }
+
+  if (kind == ShellPanelKind::event_log) {
+    draw_shell_text(renderer, font, "EVENT LOG", {left, panel.y + 11.0, width, 22.0},
+        kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
+    draw_shell_text(renderer, font,
+        model.event_log.entries.empty()
+            ? "Semantic game messages will appear here as screen migration continues."
+            : model.event_log.entries.back().text,
+        {left, panel.y + 39.0, width, std::max(24.0, panel.height - 49.0)},
+        kMuted, backing_scale, caption_size);
+    return;
+  }
+
+  if (kind == ShellPanelKind::drawer_tabs) {
+    draw_shell_text(renderer, font, "DETAILS  ·  EVENT LOG",
+        {left, panel.y + 13.0, width, 22.0},
+        kHeading, backing_scale, body_size, TTF_STYLE_BOLD);
+    draw_shell_text(renderer, font,
+        "Keyboard-accessible drawers are staged; legacy dialogs remain complete.",
+        {left, panel.y + 42.0, width, std::max(22.0, panel.height - 52.0)},
+        kMuted, backing_scale, caption_size);
+  }
+}
+
+bool classic_point_for_target(
+    const realmz::presentation::RemasteredPointerTarget& target,
+    Point* classic_point) {
+  const auto* legacy =
+      std::get_if<realmz::presentation::LegacyPointerTarget>(&target);
+  if (!legacy || !classic_point) {
+    return false;
+  }
+  constexpr double kMinimum =
+      static_cast<double>(std::numeric_limits<int16_t>::min());
+  constexpr double kMaximum =
+      static_cast<double>(std::numeric_limits<int16_t>::max());
+  // Match the legacy SDL event path's float-to-int conversion. Rounding here
+  // would shift half of the scaled subpixels into a neighboring Classic hit
+  // region, and captured negative coordinates must also truncate toward zero.
+  classic_point->h = static_cast<int16_t>(
+      std::clamp(legacy->classic_point.x, kMinimum, kMaximum));
+  classic_point->v = static_cast<int16_t>(
+      std::clamp(legacy->classic_point.y, kMinimum, kMaximum));
+  return true;
+}
+
+} // namespace
+
+sdl_texture_ptr WindowManager::create_classic_frame_texture(
+    SDL_Renderer* renderer) {
+  const auto w = this->screen_port.data.get_width();
+  const auto h = this->screen_port.data.get_height();
+  if (ENABLE_RECOMPOSITE_DEBUG) {
+    wm_log.info_f("Writing debug{}.bmp", debug_number);
+    phosg::save_file(std::format("debug{}.bmp", debug_number++),
+        this->screen_port.data.serialize(phosg::ImageFormat::WINDOWS_BITMAP));
+  }
+
+  const void* surface_data = this->screen_port.data.get_data();
+  const float gdisplay = kPortGammaOptions[this->gamma_idx].display_gamma;
+  if (gdisplay > 0.0f) {
+    if (this->gamma_lut_idx != this->gamma_idx) {
+      const float exp = 1.8f / gdisplay;
+      this->gamma_lut[0] = 0;
+      for (int i = 1; i < 255; i++) {
+        this->gamma_lut[i] = static_cast<uint8_t>(
+            std::round(255.0f * std::pow(i / 255.0f, exp)));
+      }
+      this->gamma_lut[255] = 255;
+      this->gamma_lut_idx = this->gamma_idx;
+    }
+    const uint8_t* lut = this->gamma_lut;
+    const size_t n = static_cast<size_t>(w) * h;
+    this->gamma_scratch.resize(n);
+    const uint32_t* src = static_cast<const uint32_t*>(surface_data);
+    for (size_t i = 0; i < n; i++) {
+      const uint32_t p = src[i];
+      this->gamma_scratch[i] =
+          (static_cast<uint32_t>(lut[(p >> 24) & 0xFF]) << 24) |
+          (static_cast<uint32_t>(lut[(p >> 16) & 0xFF]) << 16) |
+          (static_cast<uint32_t>(lut[(p >> 8) & 0xFF]) << 8) |
+          (p & 0xFF);
+    }
+    surface_data = this->gamma_scratch.data();
+  }
+
+  auto surface = sdl_make_unique(SDL_CreateSurfaceFrom(
+      w, h, SDL_PIXELFORMAT_RGBA8888,
+      const_cast<void*>(surface_data), 4 * w));
+  if (!surface) {
+    wm_log.error_f("Could not create surface: {}", SDL_GetError());
+    return {};
+  }
+  auto texture = sdl_make_unique(
+      SDL_CreateTextureFromSurface(renderer, surface.get()));
+  if (!texture) {
+    wm_log.error_f("Could not create texture: {}", SDL_GetError());
+    return {};
+  }
+  SDL_SetTextureScaleMode(texture.get(), this->scale_mode);
+  return texture;
+}
+
+void WindowManager::present_classic_frame() {
+  this->adaptive_shell_plan.reset();
+  this->remastered_input_mapper.reset();
+  this->remastered_shell_controls.clear();
+  this->remastered_pressed_shell_control.reset();
+  this->remastered_shell_keyboard.cancel_route();
+  if (!this->sdl_window) {
+    return;
+  }
+  auto* renderer = SDL_GetRenderer(this->sdl_window.get());
+  if (!renderer) {
+    wm_log.error_f("Could not get window renderer: {}", SDL_GetError());
+    return;
+  }
+  SDL_SetRenderLogicalPresentation(renderer, kLogicalWindowWidth,
+      kLogicalWindowHeight, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+  auto texture = this->create_classic_frame_texture(renderer);
+  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+  SDL_RenderClear(renderer);
+  if (texture) {
+    SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr);
+  }
+  SDL_RenderPresent(renderer);
+  SDL_SyncWindow(this->sdl_window.get());
+  this->update_text_input_area();
+}
+
+void WindowManager::present_remastered_frame() {
+  if (!this->sdl_window) {
+    return;
+  }
+  auto* renderer = SDL_GetRenderer(this->sdl_window.get());
+  if (!renderer) {
+    wm_log.error_f("Could not get window renderer: {}", SDL_GetError());
+    return;
+  }
+  this->remastered_shell_controls.clear();
+
+  int window_width = 0;
+  int window_height = 0;
+  SDL_GetWindowSize(this->sdl_window.get(), &window_width, &window_height);
+  window_width = std::max(window_width, REMASTER_MINIMUM_WIDTH);
+  window_height = std::max(window_height, REMASTER_MINIMUM_HEIGHT);
+  SDL_SetRenderLogicalPresentation(renderer, window_width, window_height,
+      SDL_LOGICAL_PRESENTATION_LETTERBOX);
+
+  const float reported_density = SDL_GetWindowPixelDensity(
+      this->sdl_window.get());
+  const double backing_scale =
+      std::isfinite(reported_density) && (reported_density > 0.0f)
+      ? static_cast<double>(reported_density)
+      : 1.0;
+  const auto legacy_context = RealmzCaptureLegacyPresentationContext();
+  const auto screen =
+      realmz::presentation::screen_context_from_legacy(legacy_context);
+  this->adaptive_shell_plan =
+      realmz::presentation::compute_adaptive_shell_plan({
+          .mode = realmz::presentation::PresentationMode::remastered,
+          .screen = screen,
+          .window_size = {
+              static_cast<double>(window_width),
+              static_cast<double>(window_height),
+          },
+          .backing_scale = backing_scale,
+          .legacy_full_frame_required =
+              legacy_context.requires_full_frame != 0,
+          // Keep the full Classic frame embedded until all commands needed by
+          // the active screen have typed handlers. The compatibility shell's
+          // proven movement and party-selection controls remain interactive.
+          .semantic_controls_ready = false,
+      });
+
+  std::optional<realmz::presentation::PresentationShellModel> shell_model;
+  TTF_Font* shell_font = nullptr;
+  bool shell_keyboard_route_enabled = false;
+  if (this->adaptive_shell_plan->adaptive_layout && TTF_WasInit()) {
+    try {
+      auto snapshot = realmz::presentation::LegacyGameSnapshotSource().capture();
+      const bool snapshot_context_matches = snapshot.screen == screen;
+      snapshot.screen = screen;
+      const bool panels_collapsed =
+          this->adaptive_shell_plan->adaptive_layout->layout_class ==
+          realmz::presentation::LayoutClass::compact;
+      shell_model = realmz::presentation::build_presentation_shell_model(
+          snapshot,
+          {},
+          {.panels_collapsed = panels_collapsed});
+      const bool navigation_available =
+          legacy_context.adaptive_eligible != 0 &&
+          std::ranges::any_of(
+              shell_model->actions,
+              [](const auto& action) {
+                return action.intent ==
+                        realmz::presentation::ActionIntent::navigate &&
+                    action.can_invoke();
+              });
+      this->remastered_shell_controls =
+          realmz::presentation::compute_shell_control_layout({
+              .screen = screen,
+              .world_presentation = snapshot.world.presentation,
+              .action_panel =
+                  this->adaptive_shell_plan->adaptive_layout->action_bar,
+              .navigation_available = navigation_available,
+          });
+      if (!shell_model->party_rail.members.empty()) {
+        const auto party_layout =
+            realmz::presentation::compute_party_rail_layout({
+                .party_panel =
+                    this->adaptive_shell_plan->adaptive_layout->party_rail,
+                .members = shell_model->party_rail.members,
+                .typography = shell_model->typography,
+            });
+        const bool selection_available =
+            snapshot_context_matches &&
+            legacy_context.adaptive_eligible != 0 &&
+            ((screen == realmz::presentation::ScreenContext::exploration) ||
+                (screen == realmz::presentation::ScreenContext::dungeon));
+        const auto party_controls =
+            realmz::presentation::compute_party_rail_control_layout(
+                {
+                    .screen = screen,
+                    .selection_available = selection_available,
+                },
+                shell_model->party_rail,
+                party_layout);
+        for (const auto& party_control : party_controls) {
+          this->remastered_shell_controls.emplace_back(
+              realmz::presentation::ShellControlPlacement{
+                  .region = party_control.region,
+                  .kind =
+                      realmz::presentation::ShellControlKind::party_member,
+                  .bounds = party_control.bounds,
+                  .label = party_control.label,
+                  .accessibility_label = party_control.accessibility_label,
+                  .focus_identifier = party_control.focus_identifier,
+                  .tab_order = party_control.tab_order,
+                  .enabled = party_control.enabled,
+                  .payload = party_control.payload,
+              });
+        }
+      }
+      auto font = load_font(GENEVA_FONT_ID);
+      if (auto* ttf = std::get_if<TTF_Font*>(&font)) {
+        shell_font = *ttf;
+      }
+      // Hit regions must never outlive their visible controls. If the shell
+      // font cannot be loaded, retain the informational panels but leave their
+      // otherwise invisible semantic controls noninteractive.
+      if (!shell_font) {
+        this->remastered_shell_controls.clear();
+      } else {
+        const realmz::presentation::RuntimeLegacyCommandContext context{
+            .screen = screen,
+            .world_presentation = snapshot.world.presentation,
+            .adaptive_eligible = legacy_context.adaptive_eligible != 0,
+        };
+        const bool every_enabled_control_is_live = std::ranges::all_of(
+            this->remastered_shell_controls,
+            [&context, &snapshot](const auto& control) {
+              if (!control.enabled) {
+                return true;
+              }
+              if (const auto* movement =
+                      std::get_if<realmz::presentation::MovePartyAction>(
+                          &control.payload)) {
+                return realmz::presentation::legacy_key_message_for_movement(
+                    movement->command, context)
+                    .has_value();
+              }
+              if (const auto* selection =
+                      std::get_if<
+                          realmz::presentation::SelectPartyMemberAction>(
+                          &control.payload)) {
+                return snapshot.party.member(selection->member) != nullptr;
+              }
+              return false;
+            });
+        shell_keyboard_route_enabled =
+            snapshot_context_matches && !this->text_editing_active &&
+            context.adaptive_eligible && every_enabled_control_is_live &&
+            std::ranges::any_of(
+                this->remastered_shell_controls,
+                [](const auto& control) { return control.enabled; });
+      }
+    } catch (const std::exception& e) {
+      this->remastered_shell_controls.clear();
+      static bool warned = false;
+      if (!warned) {
+        wm_log.warning_f(
+            "Could not populate Remastered shell information: {}", e.what());
+        warned = true;
+      }
+    }
+  }
+  (void)this->remastered_shell_keyboard.reconcile(
+      this->remastered_shell_controls, shell_keyboard_route_enabled);
+
+  std::optional<realmz::presentation::ShellRegionId> focused_control;
+  if (const auto& focused =
+          this->remastered_shell_keyboard.focused_identifier()) {
+    const auto control = std::ranges::find_if(
+        this->remastered_shell_controls,
+        [&focused](const auto& candidate) {
+          return candidate.enabled &&
+              (candidate.focus_identifier == *focused);
+        });
+    if (control != this->remastered_shell_controls.end()) {
+      focused_control = control->region;
+    }
+  }
+  std::optional<realmz::presentation::ShellRegionId> pressed_control =
+      this->remastered_pressed_shell_control
+      ? std::optional<realmz::presentation::ShellRegionId>{
+            this->remastered_pressed_shell_control->region}
+      : std::nullopt;
+  if (const auto pressed_identifier =
+          this->remastered_shell_keyboard.pressed_identifier()) {
+    const auto control = std::ranges::find_if(
+        this->remastered_shell_controls,
+        [pressed_identifier](const auto& candidate) {
+          return candidate.enabled &&
+              (candidate.focus_identifier == *pressed_identifier);
+        });
+    if (control != this->remastered_shell_controls.end()) {
+      pressed_control = control->region;
+    }
+  }
+
+  auto texture = this->create_classic_frame_texture(renderer);
+  if (texture) {
+    // AdaptiveShell's classic-frame command requires nearest sampling. The
+    // Classic renderer still honors the user's filter preference separately.
+    SDL_SetTextureScaleMode(texture.get(), SDL_SCALEMODE_NEAREST);
+  }
+  for (const auto& command : this->adaptive_shell_plan->commands) {
+    if (const auto* clear =
+            std::get_if<realmz::presentation::ClearShellCommand>(&command)) {
+      (void)clear;
+      SDL_SetRenderDrawColor(renderer, 12, 13, 17, 255);
+      SDL_RenderClear(renderer);
+    } else if (const auto* blit =
+                   std::get_if<realmz::presentation::BlitClassicFrameCommand>(
+                       &command)) {
+      if (texture) {
+        const auto source = sdl_rect(blit->source);
+        const auto destination = sdl_rect(blit->destination);
+        SDL_RenderTexture(renderer, texture.get(), &source, &destination);
+        SDL_SetRenderDrawColor(renderer, 144, 112, 65, 255);
+        SDL_RenderRect(renderer, &destination);
+      }
+    } else if (const auto* panel =
+                   std::get_if<realmz::presentation::DrawShellPanelCommand>(
+                       &command)) {
+      const auto destination = sdl_rect(panel->destination);
+      const auto color = shell_panel_color(panel->panel);
+      SDL_SetRenderDrawColor(
+          renderer, color.red, color.green, color.blue, 255);
+      SDL_RenderFillRect(renderer, &destination);
+      SDL_SetRenderDrawColor(renderer, 91, 76, 55, 255);
+      SDL_RenderRect(renderer, &destination);
+      if (shell_model && shell_font) {
+        draw_shell_panel_contents(
+            renderer,
+            shell_font,
+            panel->panel,
+            panel->destination,
+            *shell_model,
+            this->remastered_shell_controls,
+            pressed_control,
+            focused_control,
+            backing_scale);
+      }
+    }
+  }
+
+  std::vector<realmz::presentation::ShellHitRegion> shell_regions;
+  shell_regions.reserve(
+      this->remastered_shell_controls.size() +
+      this->adaptive_shell_plan->commands.size());
+  for (const auto& control : this->remastered_shell_controls) {
+    if (control.enabled) {
+      shell_regions.emplace_back(realmz::presentation::ShellHitRegion{
+          .id = control.region,
+          .bounds = control.bounds,
+      });
+    }
+  }
+  for (const auto& command : this->adaptive_shell_plan->commands) {
+    if (const auto* panel =
+            std::get_if<realmz::presentation::DrawShellPanelCommand>(
+                &command)) {
+      shell_regions.emplace_back(realmz::presentation::ShellHitRegion{
+          .id = {static_cast<uint32_t>(panel->panel) + 1U},
+          .bounds = panel->destination,
+      });
+    }
+  }
+  const auto& interaction =
+      this->adaptive_shell_plan->classic_interaction_regions.front();
+  this->remastered_input_mapper.emplace(
+      this->adaptive_shell_plan->window,
+      realmz::presentation::ClassicFramePlacement{
+          .destination = interaction.window_rect,
+          .source_crop = interaction.classic_rect,
+      },
+      shell_regions,
+      realmz::presentation::ShellRegionId{100U},
+      this->adaptive_shell_plan->backing_scale);
+
+  SDL_RenderPresent(renderer);
+  SDL_SyncWindow(this->sdl_window.get());
+  this->update_text_input_area();
+}
+
+bool WindowManager::map_remastered_pointer_motion(
+    float x, float y, Point* classic_point) {
+  if (!this->remastered_input_mapper) {
+    return false;
+  }
+  const realmz::presentation::LogicalPoint point{x, y};
+  const auto target = this->remastered_pointer_capture
+      ? this->remastered_input_mapper->map_captured_window_point(
+            point, *this->remastered_pointer_capture)
+      : this->remastered_input_mapper->map_window_point(point);
+  return classic_point_for_target(target, classic_point);
+}
+
+bool WindowManager::begin_remastered_pointer(
+    float x, float y, Point* classic_point) {
+  if (!this->remastered_input_mapper) {
+    (void)this->remastered_shell_keyboard.clear_focus();
+    return false;
+  }
+  this->remastered_pressed_shell_control.reset();
+  bool keyboard_visual_changed = false;
+  const realmz::presentation::LogicalPoint point{x, y};
+  this->remastered_pointer_capture =
+      this->remastered_input_mapper->begin_pointer_capture(point);
+  if (!this->remastered_pointer_capture) {
+    return false;
+  }
+  const auto target =
+      this->remastered_input_mapper->map_captured_window_point(
+          point, *this->remastered_pointer_capture);
+  if (std::holds_alternative<realmz::presentation::LegacyPointerCapture>(
+          *this->remastered_pointer_capture)) {
+    keyboard_visual_changed =
+        this->remastered_shell_keyboard.clear_focus();
+    SDL_CaptureMouse(true);
+  } else if (const auto* shell_target =
+                 std::get_if<realmz::presentation::ShellPointerTarget>(
+                     &target)) {
+    const auto control = std::ranges::find_if(
+        this->remastered_shell_controls,
+        [shell_target, point](const auto& candidate) {
+          return candidate.enabled &&
+              (candidate.region == shell_target->region) &&
+              candidate.bounds.contains(point);
+        });
+    if (control != this->remastered_shell_controls.end()) {
+      keyboard_visual_changed =
+          this->remastered_shell_keyboard.clear_focus();
+      keyboard_visual_changed =
+          this->remastered_shell_keyboard.focus_control(
+              control->focus_identifier,
+              this->remastered_shell_controls,
+              this->remastered_shell_keyboard_route_is_eligible()) ||
+          keyboard_visual_changed;
+      // Copy the complete down-time descriptor. Recomposites may replace the
+      // live model before release, but a captured press must never resolve its
+      // numeric ID against a new control list.
+      this->remastered_pressed_shell_control = *control;
+      SDL_CaptureMouse(true);
+      this->recomposite_all();
+    } else {
+      keyboard_visual_changed =
+          this->remastered_shell_keyboard.clear_focus();
+    }
+  } else {
+    keyboard_visual_changed =
+        this->remastered_shell_keyboard.clear_focus();
+  }
+  if (keyboard_visual_changed && !this->remastered_pressed_shell_control) {
+    this->recomposite_all();
+  }
+  return classic_point_for_target(target, classic_point);
+}
+
+bool WindowManager::end_remastered_pointer(
+    float x, float y, Point* classic_point) {
+  if (!this->remastered_input_mapper) {
+    this->cancel_remastered_pointer_capture();
+    return false;
+  }
+  const realmz::presentation::LogicalPoint point{x, y};
+  const auto target = this->remastered_pointer_capture
+      ? this->remastered_input_mapper->map_captured_window_point(
+            point, *this->remastered_pointer_capture)
+      : this->remastered_input_mapper->map_window_point(point);
+  const bool is_legacy = classic_point_for_target(target, classic_point);
+  const auto pressed_control = this->remastered_pressed_shell_control;
+  const auto* shell_target =
+      std::get_if<realmz::presentation::ShellPointerTarget>(&target);
+  const bool invoke_shell_control = pressed_control && shell_target &&
+      (pressed_control->region == shell_target->region) &&
+      pressed_control->bounds.contains(point);
+  this->cancel_remastered_pointer_capture();
+  if (invoke_shell_control) {
+    this->dispatch_remastered_shell_control(*pressed_control);
+    this->recomposite_all();
+  }
+  return is_legacy;
+}
+
+void WindowManager::cancel_remastered_pointer_capture() {
+  if (this->remastered_pointer_capture && this->sdl_window) {
+    SDL_CaptureMouse(false);
+  }
+  this->remastered_pointer_capture.reset();
+  this->remastered_pressed_shell_control.reset();
+}
+
+bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
+  const auto semantic_surface = RealmzCurrentSemanticInputSurface();
+  if ((this->presentation_host.mode() !=
+          realmz::presentation::PresentationMode::remastered) ||
+      (semantic_surface == REALMZ_SEMANTIC_INPUT_NONE) ||
+      this->text_editing_active || !this->adaptive_shell_plan ||
+      !this->adaptive_shell_plan->adaptive_layout ||
+      !this->remastered_input_mapper ||
+      this->remastered_shell_controls.empty()) {
+    return false;
+  }
+  const auto route = this->adaptive_shell_plan->route;
+  if ((route != realmz::presentation::AdaptiveShellRoute::
+                    remastered_compatibility_shell) &&
+      (route != realmz::presentation::AdaptiveShellRoute::
+                    remastered_adaptive)) {
+    return false;
+  }
+
+  const auto context = capture_runtime_legacy_command_context();
+  const bool surface_matches_context =
+      ((semantic_surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+          (context.screen ==
+              realmz::presentation::ScreenContext::exploration)) ||
+      ((semantic_surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+          (context.screen == realmz::presentation::ScreenContext::dungeon));
+  if (!surface_matches_context || !context.adaptive_eligible ||
+      (context.screen != this->adaptive_shell_plan->screen)) {
+    return false;
+  }
+  bool found_enabled = false;
+  std::optional<realmz::presentation::GameSnapshot> snapshot;
+  for (const auto& control : this->remastered_shell_controls) {
+    if (!control.enabled) {
+      continue;
+    }
+    found_enabled = true;
+    if (const auto* movement =
+            std::get_if<realmz::presentation::MovePartyAction>(
+                &control.payload)) {
+      if (!realmz::presentation::legacy_key_message_for_movement(
+              movement->command, context)) {
+        return false;
+      }
+      continue;
+    }
+    if (const auto* selection =
+            std::get_if<realmz::presentation::SelectPartyMemberAction>(
+                &control.payload)) {
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) ||
+          !snapshot->party.member(selection->member)) {
+        return false;
+      }
+      continue;
+    }
+    return false;
+  }
+  return found_enabled;
+}
+
+bool WindowManager::handle_remastered_shell_key(
+    const SDL_KeyboardEvent& event) {
+  using realmz::presentation::ShellKeyboardEvent;
+  using realmz::presentation::ShellKeyboardKey;
+  using realmz::presentation::ShellKeyboardPhase;
+  using realmz::presentation::ShellPhysicalKeyToken;
+
+  const ShellPhysicalKeyToken token{
+      .keyboard = static_cast<uint32_t>(event.which),
+      .scancode = static_cast<uint32_t>(event.scancode),
+  };
+  auto key = shell_keyboard_key_for_sdl(event.key);
+  const bool already_owned =
+      this->remastered_shell_keyboard.owns_token(token);
+  if (!key && !already_owned) {
+    return false;
+  }
+  if (!key) {
+    // The physical token is authoritative for release ownership. Keycode can
+    // change with keyboard layout/modifier state between down and up.
+    key = ShellKeyboardKey::tab;
+  }
+
+  constexpr SDL_Keymod kBlockedModifiers = static_cast<SDL_Keymod>(
+      SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI);
+  if (!already_owned && ((event.mod & kBlockedModifiers) != 0)) {
+    return false;
+  }
+
+  const auto result = this->remastered_shell_keyboard.handle(
+      ShellKeyboardEvent{
+          .token = token,
+          .key = *key,
+          .phase = event.type == SDL_EVENT_KEY_UP
+              ? ShellKeyboardPhase::up
+              : ShellKeyboardPhase::down,
+          .shift = (event.mod & SDL_KMOD_SHIFT) != 0,
+          .repeat = event.repeat,
+      },
+      this->remastered_shell_controls,
+      this->remastered_shell_keyboard_route_is_eligible());
+  if (result.invoked_control) {
+    this->dispatch_remastered_shell_control(*result.invoked_control);
+  }
+  if (result.visual_state_changed || result.invoked_control) {
+    this->recomposite_all();
+  }
+  return result.consumed;
+}
+
+void WindowManager::cancel_remastered_keyboard_route() {
+  this->remastered_shell_keyboard.cancel_route();
+}
+
+void WindowManager::dispatch_remastered_shell_control(
+    const realmz::presentation::ShellControlPlacement& control) {
+  if (!control.enabled || !this->runtime_legacy_command_bridge ||
+      (RealmzCurrentSemanticInputSurface() ==
+          REALMZ_SEMANTIC_INPUT_NONE) ||
+      (this->presentation_host.mode() !=
+          realmz::presentation::PresentationMode::remastered)) {
+    return;
+  }
+
+  const realmz::presentation::UIAction action{
+      .sequence = this->next_shell_action_sequence,
+      .payload = control.payload,
+  };
+  ++this->next_shell_action_sequence;
+  if (this->next_shell_action_sequence == 0) {
+    this->next_shell_action_sequence = 1;
+  }
+  const auto result = this->runtime_legacy_command_bridge->dispatch(action);
+  if (!result.was_handled()) {
+    wm_log.warning_f(
+        "Remastered shell action {} was not dispatched: {}",
+        realmz::presentation::action_name(action.payload),
+        result.detail);
+  }
+}
+
+bool WindowManager::classic_to_render_point(float* x, float* y) const {
+  if (!x || !y) {
+    return false;
+  }
+  if (this->presentation_host.mode() !=
+      realmz::presentation::PresentationMode::remastered) {
+    return true;
+  }
+  if (!this->remastered_input_mapper) {
+    return false;
+  }
+  const auto mapped =
+      this->remastered_input_mapper->classic_to_window_point({*x, *y});
+  if (!mapped) {
+    return false;
+  }
+  *x = static_cast<float>(mapped->x);
+  *y = static_cast<float>(mapped->y);
+  return true;
+}
+
+bool WindowManager::classic_to_render_rect(
+    float* x, float* y, float* w, float* h) const {
+  if (!x || !y || !w || !h || (*w < 0.0f) || (*h < 0.0f)) {
+    return false;
+  }
+  if (this->presentation_host.mode() !=
+      realmz::presentation::PresentationMode::remastered) {
+    return true;
+  }
+  if (!this->remastered_input_mapper) {
+    return false;
+  }
+  const auto mapped = this->remastered_input_mapper->classic_to_window_rect({
+      *x,
+      *y,
+      *w,
+      *h,
+  });
+  if (!mapped) {
+    return false;
+  }
+  *x = static_cast<float>(mapped->x);
+  *y = static_cast<float>(mapped->y);
+  *w = static_cast<float>(mapped->width);
+  *h = static_cast<float>(mapped->height);
+  return true;
 }
 
 bool WindowManager::set_enable_recomposite(bool enable) {
@@ -1619,9 +2861,75 @@ void WindowManager::set_scale_mode(SDL_ScaleMode mode) {
   this->save_prefs();
 }
 
+void WindowManager::configure_window_for_presentation_mode() {
+  if (!this->sdl_window) {
+    return;
+  }
+  const bool remastered = this->presentation_host.mode() ==
+      realmz::presentation::PresentationMode::remastered;
+  SDL_SetWindowMinimumSize(
+      this->sdl_window.get(),
+      remastered ? REMASTER_MINIMUM_WIDTH : kLogicalWindowWidth,
+      remastered ? REMASTER_MINIMUM_HEIGHT : kLogicalWindowHeight);
+
+  if (remastered) {
+#ifdef __APPLE__
+    MacResetWindowAspect(this->sdl_window.get());
+#else
+    SDL_SetWindowAspectRatio(this->sdl_window.get(), 0.0f, 0.0f);
+#endif
+    if (!this->is_fullscreen()) {
+      int width = 0;
+      int height = 0;
+      SDL_GetWindowSize(this->sdl_window.get(), &width, &height);
+      const int clamped_width = std::max(width, REMASTER_MINIMUM_WIDTH);
+      const int clamped_height = std::max(height, REMASTER_MINIMUM_HEIGHT);
+      if ((clamped_width != width) || (clamped_height != height)) {
+        SDL_SetWindowSize(
+            this->sdl_window.get(), clamped_width, clamped_height);
+      }
+    }
+  } else if (!this->is_fullscreen()) {
+    if (this->aspect_locked) {
+      int width = 0;
+      int height = 0;
+      SDL_GetWindowSize(this->sdl_window.get(), &width, &height);
+      const int snapped_height =
+          (width * kLogicalWindowHeight + kLogicalWindowWidth / 2) /
+          kLogicalWindowWidth;
+      if (snapped_height != height) {
+        SDL_SetWindowSize(this->sdl_window.get(), width, snapped_height);
+      }
+      SDL_SetWindowAspectRatio(
+          this->sdl_window.get(), kLogicalAspect, kLogicalAspect);
+    } else {
+#ifdef __APPLE__
+      MacResetWindowAspect(this->sdl_window.get());
+#else
+      SDL_SetWindowAspectRatio(this->sdl_window.get(), 0.0f, 0.0f);
+#endif
+    }
+  }
+
+  if (auto* renderer = SDL_GetRenderer(this->sdl_window.get())) {
+    if (remastered) {
+      int width = 0;
+      int height = 0;
+      SDL_GetWindowSize(this->sdl_window.get(), &width, &height);
+      SDL_SetRenderLogicalPresentation(renderer, width, height,
+          SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    } else {
+      SDL_SetRenderLogicalPresentation(renderer, kLogicalWindowWidth,
+          kLogicalWindowHeight, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    }
+  }
+}
+
 void WindowManager::set_aspect_locked(bool locked) {
   this->aspect_locked = locked;
-  if (this->sdl_window) {
+  if (this->sdl_window &&
+      this->presentation_host.mode() ==
+          realmz::presentation::PresentationMode::classic) {
     if (locked) {
       int w = 0, h = 0;
       SDL_GetWindowSize(this->sdl_window.get(), &w, &h);
@@ -1647,6 +2955,11 @@ void WindowManager::set_window_size(int w, int h) {
   if (!this->sdl_window) {
     return;
   }
+  if (this->presentation_host.mode() ==
+      realmz::presentation::PresentationMode::remastered) {
+    w = std::max(w, REMASTER_MINIMUM_WIDTH);
+    h = std::max(h, REMASTER_MINIMUM_HEIGHT);
+  }
   SDL_SetWindowSize(this->sdl_window.get(), w, h);
   this->recomposite_all();
   this->save_prefs();
@@ -1654,6 +2967,11 @@ void WindowManager::set_window_size(int w, int h) {
 
 bool WindowManager::size_fits(int w, int h) const {
   if (!this->sdl_window) {
+    return false;
+  }
+  if ((this->presentation_host.mode() ==
+          realmz::presentation::PresentationMode::remastered) &&
+      ((w < REMASTER_MINIMUM_WIDTH) || (h < REMASTER_MINIMUM_HEIGHT))) {
     return false;
   }
   SDL_Rect usable;
@@ -1690,6 +3008,7 @@ void WindowManager::save_prefs() {
   prefs.scale_mode = this->scale_mode;
   prefs.aspect_locked = this->aspect_locked;
   prefs.gamma_idx = this->gamma_idx;
+  prefs.presentation_mode = this->presentation_host.mode();
   if (this->sdl_window && !this->is_fullscreen()) {
     SDL_GetWindowSize(this->sdl_window.get(), &this->windowed_w, &this->windowed_h);
   }
@@ -1705,6 +3024,25 @@ void WindowManager::set_gamma_idx(int idx) {
     return;
   }
   this->gamma_idx = idx;
+  this->recomposite_all();
+  this->save_prefs();
+}
+
+void WindowManager::set_presentation_mode(
+    realmz::presentation::PresentationMode mode) {
+  if (mode == this->presentation_host.mode()) {
+    return;
+  }
+  // A mode switch can arrive while a legacy control is held. Clear both the
+  // shell capture token and EventManager's Classic button-down modifier so
+  // Button()/StillDown() cannot remain stuck after the coordinate route changes.
+  CancelSemanticGameplayInput();
+  reset_mouse_state();
+  this->remastered_shell_keyboard.cancel_route();
+  this->presentation_host.set_mode(mode);
+  realmz::remaster::assets::setResourcePresentationMode(mode);
+  RealmzRefreshPresentationAssets();
+  this->configure_window_for_presentation_mode();
   this->recomposite_all();
   this->save_prefs();
 }

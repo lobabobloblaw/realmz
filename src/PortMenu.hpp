@@ -60,7 +60,9 @@ inline constexpr int kPortFilterId = 0;
 inline constexpr int kPortScaleId = kPortFilterId + kPortFilterCount;
 inline constexpr int kPortAspectLockId = kPortScaleId + kPortScaleCount;
 inline constexpr int kPortGammaId = kPortAspectLockId + 1;
-inline constexpr int kPortItemCount = kPortGammaId + kPortGammaCount;
+inline constexpr int kPortPresentationId = kPortGammaId + kPortGammaCount;
+inline constexpr int kPortPresentationCount = 2;
+inline constexpr int kPortItemCount = kPortPresentationId + kPortPresentationCount;
 
 void PortMenu_Apply(int id);
 void PortMenu_ItemState(int id, int* checked, int* enabled);

@@ -26,6 +26,7 @@
 #include "Font.hpp"
 #include "MemoryManager.hpp"
 #include "ResourceManager.h"
+#include "ResourceManagerRemaster.hpp"
 #include "StringConvert.hpp"
 #include "Types.hpp"
 #include "WindowManager.hpp"
@@ -41,11 +42,16 @@ struct DecodedPICTHeader {
   be_uint16_t version_opcode; // 0x0011
   be_uint16_t version_arg; // 0x03FF
   be_uint16_t data_opcode; // 0xFFFF
+  be_uint16_t representation; // 'CL' (Classic) or 'RM' (Remastered override)
   // Data follows here (RGBA8888)
 };
 
+static constexpr uint16_t DECODED_PICT_CLASSIC = 0x434C;
+static constexpr uint16_t DECODED_PICT_REMASTERED = 0x524D;
+
 static std::unordered_map<int16_t, TTF_Font*> tt_fonts_by_id;
 static std::unordered_map<int16_t, ResourceDASM::BitmapFontRenderer> bm_renderers_by_id;
+static std::unordered_set<std::string> logged_approved_overrides;
 
 std::unordered_set<const CCGrafPort*> CCGrafPort::all_ports;
 
@@ -192,6 +198,70 @@ phosg::ImageRGBA8888N image_for_sdl_surface(SDL_Surface* surface) {
     }
   }
   return ret;
+}
+
+static std::optional<phosg::ImageRGBA8888N> approved_image_for_resource(
+    Handle resource) {
+  using namespace realmz::remaster::assets;
+  const auto selection = resourceAssetSelectionForHandle(resource);
+  if (!selection || selection->resolution.kind != AssetResolutionKind::Override) {
+    return std::nullopt;
+  }
+  const auto& resolution = selection->resolution;
+  if (!resolution.overridePath || !resolution.logicalDimensions) {
+    qd_log.warning_f("Approved override lacks a path or logical dimensions for {}",
+        selection->key.toString());
+    return std::nullopt;
+  }
+
+  try {
+    auto loaded = sdl_make_unique(IMG_Load(resolution.overridePath->string().c_str()));
+    if (!loaded) {
+      qd_log.warning_f("Could not load approved override {} for {}: {}",
+          resolution.overridePath->string(), selection->key.toString(), SDL_GetError());
+      return std::nullopt;
+    }
+    const auto width = static_cast<int>(resolution.logicalDimensions->width);
+    const auto height = static_cast<int>(resolution.logicalDimensions->height);
+    SDL_Surface* source = loaded.get();
+    sdl_surface_ptr scaled;
+    if (source->w != width || source->h != height) {
+      scaled = sdl_make_unique(SDL_ScaleSurface(source, width, height, SDL_SCALEMODE_LINEAR));
+      if (!scaled) {
+        qd_log.warning_f("Could not resize approved override {} for {}: {}",
+            resolution.overridePath->string(), selection->key.toString(), SDL_GetError());
+        return std::nullopt;
+      }
+      source = scaled.get();
+    }
+    auto converted = sdl_make_unique(SDL_ConvertSurface(source, SDL_PIXELFORMAT_ARGB8888));
+    if (!converted) {
+      qd_log.warning_f("Could not convert approved override {} for {}: {}",
+          resolution.overridePath->string(), selection->key.toString(), SDL_GetError());
+      return std::nullopt;
+    }
+    auto image = image_for_sdl_surface(converted.get());
+    if (logged_approved_overrides.emplace(selection->key.toString()).second) {
+      qd_log.info_f("Loaded approved override {} for {} at {}x{} Classic logical pixels",
+          resolution.overridePath->string(), selection->key.toString(), width, height);
+    }
+    return image;
+  } catch (const std::exception& error) {
+    qd_log.warning_f("Approved override failed for {}; using Classic: {}",
+        selection->key.toString(), error.what());
+    return std::nullopt;
+  }
+}
+
+static phosg::ImageRGB888 rgb_image_for_rgba(
+    const phosg::ImageRGBA8888N& source) {
+  phosg::ImageRGB888 result(source.get_width(), source.get_height());
+  for (size_t y = 0; y < source.get_height(); ++y) {
+    for (size_t x = 0; x < source.get_width(); ++x) {
+      result.write(x, y, source.read(x, y));
+    }
+  }
+  return result;
 }
 
 std::optional<phosg::ImageRGBA8888N> CCGrafPort::render_text_ttf(
@@ -679,40 +749,78 @@ PixPatHandle GetPixPat(uint16_t patID) {
   const auto& header = r.get<ResourceDASM::PixelPatternResourceHeader>();
 
   const auto& pixmap_header = r.pget<ResourceDASM::PixelMapHeader>(header.pixel_map_offset + 4);
+  ResourceDASM::ResourceFile::DecodedPattern decoded =
+      ResourceDASM::ResourceFile::decode_ppat(*data_handle, GetHandleSize(data_handle));
+  auto approved = approved_image_for_resource(data_handle);
+  phosg::ImageRGB888 pattern = approved
+      ? rgb_image_for_rgba(*approved)
+      : std::move(decoded.pattern);
+
   auto patMap = NewHandleTyped<PixMap>();
   (*patMap)->pixelSize = pixmap_header.pixel_size;
   (*patMap)->bounds.top = pixmap_header.bounds.y1;
   (*patMap)->bounds.left = pixmap_header.bounds.x1;
-  (*patMap)->bounds.bottom = pixmap_header.bounds.y2;
-  (*patMap)->bounds.right = pixmap_header.bounds.x2;
-
-  ResourceDASM::ResourceFile::DecodedPattern pattern = ResourceDASM::ResourceFile::decode_ppat(
-      *data_handle, GetHandleSize(data_handle));
+  (*patMap)->bounds.bottom = static_cast<int16_t>(
+      (*patMap)->bounds.top + pattern.get_height());
+  (*patMap)->bounds.right = static_cast<int16_t>(
+      (*patMap)->bounds.left + pattern.get_width());
 
   auto ret_handle = NewHandleTyped<PixPat>();
   auto& ret = **ret_handle;
   ret.patType = header.type;
   ret.patMap = patMap;
-  ret.patData = NewHandleWithData(pattern.pattern.get_data(), pattern.pattern.get_data_size());
+  ret.patData = NewHandleWithData(pattern.get_data(), pattern.get_data_size());
   ret.patXData = nullptr;
   ret.patXValid = 0;
   ret.patXMap = 0;
-  ret.pat1Data.pat[0] = pattern.raw_monochrome_pattern >> 56;
-  ret.pat1Data.pat[1] = pattern.raw_monochrome_pattern >> 48;
-  ret.pat1Data.pat[2] = pattern.raw_monochrome_pattern >> 40;
-  ret.pat1Data.pat[3] = pattern.raw_monochrome_pattern >> 32;
-  ret.pat1Data.pat[4] = pattern.raw_monochrome_pattern >> 24;
-  ret.pat1Data.pat[5] = pattern.raw_monochrome_pattern >> 16;
-  ret.pat1Data.pat[6] = pattern.raw_monochrome_pattern >> 8;
-  ret.pat1Data.pat[7] = pattern.raw_monochrome_pattern;
+  ret.pat1Data.pat[0] = decoded.raw_monochrome_pattern >> 56;
+  ret.pat1Data.pat[1] = decoded.raw_monochrome_pattern >> 48;
+  ret.pat1Data.pat[2] = decoded.raw_monochrome_pattern >> 40;
+  ret.pat1Data.pat[3] = decoded.raw_monochrome_pattern >> 32;
+  ret.pat1Data.pat[4] = decoded.raw_monochrome_pattern >> 24;
+  ret.pat1Data.pat[5] = decoded.raw_monochrome_pattern >> 16;
+  ret.pat1Data.pat[6] = decoded.raw_monochrome_pattern >> 8;
+  ret.pat1Data.pat[7] = decoded.raw_monochrome_pattern;
   return ret_handle;
 }
 
 void DisposePixPat(PixPatHandle ppat) {
+  if ((*ppat)->patMap) {
+    DisposeHandle(reinterpret_cast<Handle>((*ppat)->patMap));
+  }
   if ((*ppat)->patData) {
     DisposeHandle((*ppat)->patData);
   }
+  if ((*ppat)->patXData) {
+    DisposeHandle((*ppat)->patXData);
+  }
+  if ((*ppat)->patXMap) {
+    DisposeHandle((*ppat)->patXMap);
+  }
   DisposeHandleTyped(ppat);
+}
+
+void ReloadPixPat(PixPatHandle ppat, uint16_t patID) {
+  if (!ppat || !*ppat) {
+    return;
+  }
+  auto replacement = GetPixPat(patID);
+  PixPat old = **ppat;
+  **ppat = **replacement;
+  DisposeHandle(reinterpret_cast<Handle>(replacement));
+
+  if (old.patMap) {
+    DisposeHandle(reinterpret_cast<Handle>(old.patMap));
+  }
+  if (old.patData) {
+    DisposeHandle(old.patData);
+  }
+  if (old.patXData) {
+    DisposeHandle(old.patXData);
+  }
+  if (old.patXMap) {
+    DisposeHandle(old.patXMap);
+  }
 }
 
 PicHandle GetPicture(int16_t id) {
@@ -729,16 +837,44 @@ PicHandle GetPicture(int16_t id) {
     return nullptr;
   }
 
-  {
+  const auto asset_selection =
+      realmz::remaster::assets::resourceAssetSelectionForHandle(data_handle);
+  const bool wants_remastered = asset_selection &&
+      asset_selection->resolution.kind ==
+          realmz::remaster::assets::AssetResolutionKind::Override;
+  const uint16_t desired_representation = wants_remastered
+      ? DECODED_PICT_REMASTERED
+      : DECODED_PICT_CLASSIC;
+
+  if (GetHandleSize(data_handle) >= sizeof(DecodedPICTHeader)) {
     auto r = read_from_handle(data_handle);
     const auto& header = r.get<DecodedPICTHeader>();
-    if (header.version_opcode == 0x0011 && header.version_arg == 0x03FF && header.data_opcode == 0xFFFF) {
+    if (header.version_opcode == 0x0011 && header.version_arg == 0x03FF &&
+        header.data_opcode == 0xFFFF &&
+        header.representation == desired_representation) {
       return reinterpret_cast<PicHandle>(data_handle);
     }
   }
 
-  auto p = ResourceDASM::ResourceFile::decode_PICT_only(*data_handle, GetHandleSize(data_handle));
-  if (p.image.get_height() == 0 || p.image.get_width() == 0) {
+  std::optional<phosg::ImageRGBA8888N> image;
+  uint16_t representation = DECODED_PICT_CLASSIC;
+  if (wants_remastered) {
+    image = approved_image_for_resource(data_handle);
+    if (image) {
+      representation = DECODED_PICT_REMASTERED;
+    }
+  }
+  if (!image) {
+    const auto classic =
+        realmz::remaster::assets::resourceClassicPayloadForHandle(data_handle);
+    if (!classic) {
+      throw std::runtime_error(std::format("PICT {} has no immutable Classic payload", id));
+    }
+    auto decoded = ResourceDASM::ResourceFile::decode_PICT_only(
+        classic->data(), classic->size());
+    image = std::move(decoded.image);
+  }
+  if (image->get_height() == 0 || image->get_width() == 0) {
     throw std::runtime_error(std::format("Failed to decode PICT {}", id));
   }
 
@@ -747,15 +883,16 @@ PicHandle GetPicture(int16_t id) {
   header.size = 0; // This is common for Picture objects; it's ignored by QD
   header.bounds.left = 0;
   header.bounds.top = 0;
-  header.bounds.right = p.image.get_width();
-  header.bounds.bottom = p.image.get_height();
+  header.bounds.right = static_cast<int16_t>(image->get_width());
+  header.bounds.bottom = static_cast<int16_t>(image->get_height());
   header.version_opcode = 0x0011;
   header.version_arg = 0x03FF;
   header.data_opcode = 0xFFFF;
+  header.representation = representation;
 
   phosg::StringWriter w;
   w.put<DecodedPICTHeader>(header);
-  w.write(p.image.get_data(), p.image.get_data_size());
+  w.write(image->get_data(), image->get_data_size());
 
   // Now, free the original data handle buffer with the raw bytes, and change the data_handle
   // to contain the new pointer to the decoded image.
@@ -838,9 +975,13 @@ CIconHandle GetCIcon(uint16_t iconID) {
     throw std::runtime_error(std::format("cicn resource {} not found", iconID));
   }
   auto decoded_cicn = ResourceDASM::ResourceFile::decode_cicn(*data_handle, GetHandleSize(data_handle));
+  auto image = approved_image_for_resource(data_handle);
+  if (!image) {
+    image = std::move(decoded_cicn.image);
+  }
 
   CIconHandle h = NewHandleTyped<CIcon>();
-  (*h)->iconData = NewHandleWithData(decoded_cicn.image.get_data(), decoded_cicn.image.get_data_size());
+  (*h)->iconData = NewHandleWithData(image->get_data(), image->get_data_size());
   // The monochrome bitmap is optional and absent for most cicn resources; when
   // it is missing decode_cicn returns an empty bitmap. Leave bitmapData null in
   // that case so PlotCIconBitmap knows there is nothing to draw.
@@ -850,8 +991,8 @@ CIconHandle GetCIcon(uint16_t iconID) {
   (*h)->iconPMap.bounds = Rect{
       0,
       0,
-      static_cast<int16_t>(decoded_cicn.image.get_height()),
-      static_cast<int16_t>(decoded_cicn.image.get_width())};
+      static_cast<int16_t>(image->get_height()),
+      static_cast<int16_t>(image->get_width())};
   (*h)->iconPMap.pixelSize = 32;
   // iconBMap.bounds tracks the color image size because the game reads it for
   // layout; it stays valid even when there is no monochrome bitmap.
@@ -863,6 +1004,9 @@ phosg::ImageRGBA8888N DecodeCIconImage(int16_t iconID) {
   auto data_handle = GetResource(ResourceDASM::RESOURCE_TYPE_cicn, iconID);
   if (data_handle == NULL) {
     throw std::runtime_error(std::format("cicn resource {} not found", iconID));
+  }
+  if (auto approved = approved_image_for_resource(data_handle)) {
+    return std::move(*approved);
   }
   auto decoded = ResourceDASM::ResourceFile::decode_cicn(*data_handle, GetHandleSize(data_handle));
   return std::move(decoded.image);

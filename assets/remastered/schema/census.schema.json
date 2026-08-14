@@ -1,0 +1,301 @@
+{
+  "$id": "https://realmz-remastered.invalid/schema/census.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "city_baseline": {
+      "$ref": "#/$defs/cityBaseline"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "alpha_policy": {
+            "enum": [
+              "opaque_or_embedded_mask",
+              "original_mask",
+              "opaque_tile"
+            ]
+          },
+          "anchor": {
+            "$ref": "#/$defs/point"
+          },
+          "classic_payload_bytes": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "classic_payload_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "content_address": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "flags": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hotspot": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/point"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "$ref": "#/$defs/resourceKey"
+          },
+          "logical_dimensions": {
+            "$ref": "#/$defs/dimensions"
+          },
+          "master_key": {
+            "$ref": "#/$defs/resourceKey"
+          },
+          "source_file_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "source_resource_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alpha_policy",
+          "anchor",
+          "classic_payload_bytes",
+          "classic_payload_sha256",
+          "content_address",
+          "flags",
+          "hotspot",
+          "key",
+          "logical_dimensions",
+          "master_key",
+          "source_file_sha256",
+          "source_resource_name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "generated_by": {
+      "const": "scripts/remaster_asset_census.py"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "scope": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "selected_resource_types": {
+      "const": [
+        "PICT",
+        "cicn",
+        "crsr",
+        "ppat"
+      ]
+    },
+    "source_files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "pack": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "core",
+              "tutorial",
+              "city-baseline"
+            ]
+          },
+          "selected_resource_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "repository-bundled",
+              "user-supplied-sha256-gated"
+            ]
+          },
+          "source_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "source_version": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "pack",
+          "role",
+          "selected_resource_count",
+          "source",
+          "source_kind",
+          "source_sha256",
+          "source_version"
+        ],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    },
+    "statistics": {
+      "additionalProperties": false,
+      "properties": {
+        "by_pack": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "by_type": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "duplicate_resource_keys": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resource_keys": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unique_classic_payloads": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "by_pack",
+        "by_type",
+        "duplicate_resource_keys",
+        "resource_keys",
+        "unique_classic_payloads"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "city_baseline",
+    "entries",
+    "generated_by",
+    "schema_version",
+    "scope",
+    "selected_resource_types",
+    "source_files",
+    "statistics"
+  ],
+  "title": "Realmz Remastered classic asset census",
+  "type": "object",
+  "$defs": {
+    "cityBaseline": {
+      "additionalProperties": false,
+      "properties": {
+        "declared_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "repository-bundled",
+            "user-supplied-sha256-gated"
+          ]
+        },
+        "pack": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "declared_version",
+        "kind",
+        "pack",
+        "source_sha256"
+      ],
+      "type": "object"
+    },
+    "dimensions": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "width": {
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "height",
+        "width"
+      ],
+      "type": "object"
+    },
+    "point": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "resourceKey": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maximum": 32767,
+          "minimum": -32768,
+          "type": "integer"
+        },
+        "pack": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "maxLength": 4,
+          "minLength": 4,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "pack",
+        "type"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  }
+}

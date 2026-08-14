@@ -1,0 +1,103 @@
+name: Quality gates
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-release-verifiers:
+    name: Source, provenance, and release verifiers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out full source history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Check verifier syntax
+        shell: bash
+        run: |
+          bash -n scripts/verify-source-baseline.sh
+          bash -n scripts/verify-macos-artifact.sh
+          bash -n scripts/run-core-tests.sh
+          bash -n scripts/bootstrap-macos-dependencies.sh
+          bash -n scripts/build-placeholder-app-icon.sh
+
+      - name: Verify reviewed source baseline and provenance
+        shell: bash
+        run: scripts/verify-source-baseline.sh --mode development
+
+      - name: Validate phase-one asset census when present
+        shell: bash
+        run: |
+          paths=(
+            scripts/remaster_asset_census.py
+            assets/remastered/scopes/phase1.json
+            assets/remastered/scopes/phase1.census.json
+            assets/remastered/scopes/phase1.placeholder-manifest.json
+          )
+          present=0
+          for path in "${paths[@]}"; do
+            [[ -f "$path" ]] && present=$((present + 1))
+          done
+          if ((present == 0)); then
+            echo "::notice::Phase-one asset census has not landed; source verifier records this as a development warning."
+          elif ((present != ${#paths[@]})); then
+            echo "::error::Phase-one asset census is only partially present ($present/${#paths[@]} files)."
+            exit 1
+          else
+            python3 scripts/remaster_asset_census.py validate \
+              --root . \
+              --scope assets/remastered/scopes/phase1.json \
+              --census assets/remastered/scopes/phase1.census.json \
+              --manifest assets/remastered/scopes/phase1.placeholder-manifest.json
+          fi
+
+      - name: Exercise shell verifiers with synthetic artifacts
+        run: python3 -m unittest discover -s tests/release -p 'test_*.py' -v
+
+  dependency-free-cpp:
+    name: Dependency-free C++ (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: g++
+          - os: macos-14
+            compiler: clang++
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Compile and run core tests
+        shell: bash
+        env:
+          CXX: ${{ matrix.compiler }}
+          REALMZ_SKIP_PYTHON_TESTS: "1"
+        run: scripts/run-core-tests.sh
+
+  full-application-build-bootstrap:
+    name: Full application build bootstrap status
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Record intentionally deferred gate
+        run: |
+          echo "A hash-pinned universal dependency bootstrap is available."
+          echo "Keep the full artifact job non-required until its macOS runner path is proven reliable."

@@ -296,9 +296,14 @@ int32_t PopUpMenuSelect(MenuHandle menu, int16_t top, int16_t left, int16_t popU
   int16_t win_top = top;
   int16_t win_left = left;
   if (auto* renderer = SDL_GetRenderer(sdl_window.get())) {
-    float window_x = 0.0f;
-    float window_y = 0.0f;
-    if (SDL_RenderCoordinatesToWindow(renderer, left, top, &window_x, &window_y)) {
+    float render_x = left;
+    float render_y = top;
+    float window_x = render_x;
+    float window_y = render_y;
+    if (WindowManager::instance().classic_to_render_point(
+            &render_x, &render_y) &&
+        SDL_RenderCoordinatesToWindow(
+            renderer, render_x, render_y, &window_x, &window_y)) {
       win_left = static_cast<int16_t>(SDL_lroundf(window_x));
       win_top = static_cast<int16_t>(SDL_lroundf(window_y));
     }

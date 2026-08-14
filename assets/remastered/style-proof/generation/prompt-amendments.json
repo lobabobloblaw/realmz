@@ -1,0 +1,40 @@
+{
+  "amendment_set_kind": "style-proof-prompt-amendments",
+  "entries": [
+    {
+      "amendment_sha256": "00bd2fd27a3e8de6a0b2e6cc3d19e8866efd0c0da643f5955f03a837fa36ca52",
+      "job_id": "01_ui_material_ppat_128",
+      "reason": "Correct preflight interpretation of Classic UI sampling artifacts before the first model call.",
+      "recorded_at": "2026-08-13T02:55:07Z",
+      "reviewer": "Codex preflight audit",
+      "text": "Reference interpretation correction: Treat the Classic image's dither, diagonal hatch, square texels, and visible pixel grid as a 1990s sampling artifact, not as surface structure. Paint a continuous light blue-violet stone surface whose value is intrinsic material color, with organic fine mineral mottling, quiet low contrast, and no directional shine. Do not reproduce checkerboards, square texels, pixel grids, dithering, mosaics, graph-paper patterns, diagonal hatching, contour lines, or repeated cells"
+    },
+    {
+      "amendment_sha256": "ce458c4cb87590a14fdd11a399f21f145b6f1bfed77025a06b16527d61f7671a",
+      "job_id": "03_ui_material_ppat_130",
+      "reason": "Correct preflight interpretation of Classic UI sampling artifacts before the first model call.",
+      "recorded_at": "2026-08-13T02:55:07Z",
+      "reviewer": "Codex preflight audit",
+      "text": "Reference interpretation correction: Treat the Classic image's dither, diagonal hatch, square texels, and visible pixel grid as a 1990s sampling artifact, not as surface structure. Paint a continuous readable deep navy stone surface with subtle organic mineral variation and intrinsic dark color; preserve visible stone detail without crushing it to black. Do not reproduce checkerboards, square texels, pixel grids, dithering, mosaics, graph-paper patterns, diagonal hatching, contour lines, or repeated cells"
+    },
+    {
+      "amendment_sha256": "41eb468a38dfa51c4e8d1ed984dab8622ba5ca81293266e0b97c9886780089c7",
+      "job_id": "04_ui_material_ppat_131",
+      "reason": "Correct preflight interpretation of Classic UI sampling artifacts before the first model call.",
+      "recorded_at": "2026-08-13T02:55:07Z",
+      "reviewer": "Codex preflight audit",
+      "text": "Reference interpretation correction: Treat the Classic image's dither, diagonal hatch, square texels, and visible pixel grid as a 1990s sampling artifact, not as surface structure. Paint a continuous neutral-gray stone surface with organic fine mineral variation, quiet low contrast, and no blue or purple cast. Do not reproduce checkerboards, square texels, pixel grids, dithering, mosaics, graph-paper patterns, diagonal hatching, contour lines, or repeated cells"
+    },
+    {
+      "amendment_sha256": "d3ee36c26ed665a875c6415c9b8d13166b444c653ddbed50231ab48eea138854",
+      "job_id": "20_world_dungeon_cicn_m167",
+      "reason": "Correct preflight interpretation of the Classic waterfall's edge-to-edge terrain topology before the first model call.",
+      "recorded_at": "2026-08-13T02:55:07Z",
+      "reviewer": "Codex preflight audit",
+      "text": "Topology correction: Render an orthographic edge-to-edge square terrain crop, not an isolated waterfall object or landscape scene. Preserve the Classic topology exactly: pale foam enters from the left edge and dominates the bottom, while cobalt and dark-blue water descends from the top edge and along the right edge. Keep the square fully occupied by water. Do not add a cliff, rocks, horizon, sky, banks, or any isolated object. The foam brightness is intrinsic water color, not a light source or lighting gradient"
+    }
+  ],
+  "jobs_sha256": "c1d3b54becf00f5c331aa5a93bf821c0716cccfe8f61bcfe71064b7d5bcbc665",
+  "schema_version": 1,
+  "style_spec_sha256": "d4e14cf94584416529bb40ae6d67494a750758d245e25273bf0d9bfaebe729ca"
+}

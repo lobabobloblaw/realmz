@@ -1,0 +1,596 @@
+#include "PartyRailModel.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <string_view>
+#include <utility>
+
+namespace realmz::presentation {
+namespace {
+
+constexpr int32_t kPartyTabStart = 100;
+constexpr int32_t kActionTabStart = 1000;
+constexpr int32_t kDrawerTabStart = 2000;
+
+constexpr std::array<std::string_view, 40> kConditionLabels{
+    "In Retreat",
+    "Helpless",
+    "Entangled",
+    "Cursed",
+    "Magic Aura",
+    "Stupid",
+    "Moving Slowly",
+    "Shielded from Hits",
+    "Missile Shield",
+    "Poisoned",
+    "Regenerating",
+    "Fire Protection",
+    "Cold Protection",
+    "Electrical Protection",
+    "Chemical Protection",
+    "Psi Protection",
+    "First-level Spell Protection",
+    "Second-level Spell Protection",
+    "Third-level Spell Protection",
+    "Fourth-level Spell Protection",
+    "Fifth-level Spell Protection",
+    "Strong",
+    "Protection from Foe",
+    "Speedy",
+    "Invisible",
+    "Animated",
+    "Turned to Stone",
+    "Blind",
+    "Diseased",
+    "Confused",
+    "Reflecting Spells",
+    "Reflecting Attacks",
+    "Bonus Damage",
+    "Absorbing Energy",
+    "Losing Energy",
+    "Absorbing Spell Energy",
+    "Hindered Attacks",
+    "Hindered Defense",
+    "Increased Defense",
+    "Silenced",
+};
+
+std::string condition_label(int16_t condition) {
+  if ((condition >= 0) &&
+      (static_cast<size_t>(condition) < kConditionLabels.size())) {
+    return std::string(kConditionLabels[static_cast<size_t>(condition)]);
+  }
+  return "Condition " + std::to_string(condition);
+}
+
+StateTokenModel token(
+    std::string identifier,
+    std::string label,
+    StateEmphasis emphasis,
+    StateMarker marker) {
+  return {
+      .identifier = std::move(identifier),
+      .label = std::move(label),
+      .emphasis = emphasis,
+      .marker = marker,
+  };
+}
+
+StateTokenModel unavailable_token(std::string label) {
+  return token(
+      "availability.unavailable",
+      std::move(label),
+      StateEmphasis::inactive,
+      StateMarker::unavailable);
+}
+
+StateTokenModel engine_rules_token() {
+  return token(
+      "availability.engine_rules",
+      "Game rules apply",
+      StateEmphasis::information,
+      StateMarker::information);
+}
+
+MeterModel meter_model(const MeterView& meter, std::string_view prefix) {
+  MeterModel result{
+      .current = meter.current,
+      .maximum = meter.maximum,
+  };
+
+  if (meter.maximum <= 0) {
+    result.state = token(
+        std::string(prefix) + ".unavailable",
+        "Not available",
+        StateEmphasis::inactive,
+        StateMarker::unavailable);
+    return result;
+  }
+
+  result.fill_fraction = std::clamp(
+      static_cast<double>(meter.current) /
+          static_cast<double>(meter.maximum),
+      0.0,
+      1.0);
+  if (meter.current <= 0) {
+    result.state = token(
+        std::string(prefix) + ".depleted",
+        "Depleted",
+        StateEmphasis::critical,
+        StateMarker::stop);
+  } else if (result.fill_fraction <= 0.25) {
+    result.state = token(
+        std::string(prefix) + ".critical",
+        "Critical",
+        StateEmphasis::critical,
+        StateMarker::stop);
+  } else if (result.fill_fraction <= 0.5) {
+    result.state = token(
+        std::string(prefix) + ".low",
+        "Low",
+        StateEmphasis::caution,
+        StateMarker::alert);
+  } else {
+    result.state = token(
+        std::string(prefix) + ".ready",
+        "Ready",
+        StateEmphasis::positive,
+        StateMarker::check);
+  }
+  return result;
+}
+
+std::optional<PartyMemberId> resolved_selected_member(
+    const PartyView& party) {
+  if (party.selected_member && party.member(*party.selected_member)) {
+    return party.selected_member;
+  }
+  const auto selected = std::ranges::find_if(
+      party.members,
+      [](const PartyMemberView& member) { return member.selected; });
+  if (selected != party.members.end()) {
+    return selected->id;
+  }
+  return std::nullopt;
+}
+
+std::vector<StateTokenModel> member_states(
+    const PartyMemberView& member,
+    bool selected,
+    const MeterModel& stamina) {
+  std::vector<StateTokenModel> result;
+  if (selected) {
+    result.emplace_back(token(
+        "status.selected",
+        "Selected",
+        StateEmphasis::information,
+        StateMarker::selection));
+  }
+  if (!member.conscious) {
+    result.emplace_back(token(
+        "status.unconscious",
+        "Unconscious",
+        StateEmphasis::critical,
+        StateMarker::stop));
+  } else if (stamina.state.identifier != "stamina.ready") {
+    result.emplace_back(stamina.state);
+  }
+
+  auto condition_codes = member.conditions;
+  std::ranges::sort(condition_codes);
+  const auto unique_end = std::ranges::unique(condition_codes).begin();
+  condition_codes.erase(unique_end, condition_codes.end());
+  for (const auto condition : condition_codes) {
+    result.emplace_back(token(
+        "status.condition." + std::to_string(condition),
+        condition_label(condition),
+        StateEmphasis::caution,
+        StateMarker::condition));
+  }
+  return result;
+}
+
+StateTokenModel fatigue_state(int16_t fatigue) {
+  if (fatigue <= 0) {
+    return token(
+        "fatigue.rested",
+        "Rested",
+        StateEmphasis::positive,
+        StateMarker::check);
+  }
+  return token(
+      "fatigue.present",
+      "Fatigued",
+      StateEmphasis::caution,
+      StateMarker::alert);
+}
+
+bool has_world_navigation(ScreenContext screen) noexcept {
+  return (screen == ScreenContext::exploration) ||
+      (screen == ScreenContext::dungeon);
+}
+
+ActionControlModel action(
+    ActionIntent intent,
+    std::string command,
+    std::string label,
+    ActionAvailability availability,
+    int32_t tab_order,
+    std::optional<StateTokenModel> reason = std::nullopt) {
+  return {
+      .intent = intent,
+      .command = std::move(command),
+      .label = std::move(label),
+      .availability = availability,
+      .availability_reason = std::move(reason),
+      .focus_identifier = "focus.action." + std::to_string(tab_order),
+      .tab_order = tab_order,
+  };
+}
+
+std::vector<ActionControlModel> build_actions(
+    const GameSnapshot& snapshot,
+    std::optional<PartyMemberId> selected_member) {
+  std::vector<ActionControlModel> result;
+  int32_t tab_order = kActionTabStart;
+  const bool encounter_active = snapshot.encounter && snapshot.encounter->active;
+
+  const bool navigation_context = has_world_navigation(snapshot.screen) &&
+      !encounter_active;
+  result.emplace_back(action(
+      ActionIntent::navigate,
+      "action.navigate",
+      "Navigate",
+      navigation_context ? ActionAvailability::deferred_to_engine
+                         : ActionAvailability::unavailable,
+      tab_order++,
+      navigation_context
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{
+                unavailable_token("Navigation is not available here")}));
+
+  const PartyMemberView* selected = selected_member
+      ? snapshot.party.member(*selected_member)
+      : nullptr;
+  result.emplace_back(action(
+      ActionIntent::open_inventory,
+      "action.inventory.open",
+      "Inventory",
+      selected ? ActionAvailability::deferred_to_engine
+               : ActionAvailability::unavailable,
+      tab_order++,
+      selected
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{
+                unavailable_token("Select a party member first")}));
+  result.back().party_member = selected_member;
+
+  ActionAvailability cast_availability = ActionAvailability::deferred_to_engine;
+  std::optional<StateTokenModel> cast_reason = engine_rules_token();
+  if (!selected) {
+    cast_availability = ActionAvailability::unavailable;
+    cast_reason = unavailable_token("Select a party member first");
+  } else if (!selected->conscious) {
+    cast_availability = ActionAvailability::unavailable;
+    cast_reason = unavailable_token("The selected member is unconscious");
+  } else if (selected->spell_points.current <= 0) {
+    cast_availability = ActionAvailability::unavailable;
+    cast_reason = unavailable_token("No spell points remain");
+  }
+  result.emplace_back(action(
+      ActionIntent::cast_spell,
+      "action.spell.cast",
+      "Cast spell",
+      cast_availability,
+      tab_order++,
+      std::move(cast_reason)));
+  result.back().party_member = selected_member;
+
+  result.emplace_back(action(
+      ActionIntent::save_game,
+      "action.game.save",
+      "Save",
+      ActionAvailability::deferred_to_engine,
+      tab_order++,
+      engine_rules_token()));
+  result.emplace_back(action(
+      ActionIntent::load_game,
+      "action.game.load",
+      "Load",
+      ActionAvailability::deferred_to_engine,
+      tab_order++,
+      engine_rules_token()));
+
+  if (encounter_active) {
+    for (const auto& choice : snapshot.encounter->choices) {
+      auto choice_action = action(
+          ActionIntent::encounter_choice,
+          "encounter.choice." + std::to_string(choice.id),
+          choice.label,
+          choice.enabled ? ActionAvailability::available
+                         : ActionAvailability::unavailable,
+          tab_order++,
+          choice.enabled
+              ? std::nullopt
+              : std::optional<StateTokenModel>{
+                    unavailable_token("This choice is unavailable")});
+      choice_action.encounter_choice = choice.id;
+      result.emplace_back(std::move(choice_action));
+    }
+    if (snapshot.encounter->can_cancel) {
+      result.emplace_back(action(
+          ActionIntent::cancel,
+          "action.cancel",
+          "Cancel",
+          ActionAvailability::available,
+          tab_order++));
+    }
+  }
+  return result;
+}
+
+StateTokenModel message_state(MessageSeverity severity) {
+  switch (severity) {
+    case MessageSeverity::information:
+      return token(
+          "message.information",
+          "Information",
+          StateEmphasis::information,
+          StateMarker::information);
+    case MessageSeverity::success:
+      return token(
+          "message.success",
+          "Success",
+          StateEmphasis::positive,
+          StateMarker::check);
+    case MessageSeverity::warning:
+      return token(
+          "message.warning",
+          "Warning",
+          StateEmphasis::caution,
+          StateMarker::alert);
+    case MessageSeverity::error:
+      return token(
+          "message.error",
+          "Error",
+          StateEmphasis::critical,
+          StateMarker::stop);
+  }
+  return token(
+      "message.information",
+      "Information",
+      StateEmphasis::information,
+      StateMarker::information);
+}
+
+EventLogModel build_event_log(
+    std::span<const GameEvent> events,
+    size_t limit) {
+  EventLogModel result;
+  for (const auto& event : events) {
+    if (const auto* message = std::get_if<MessageEvent>(&event.payload)) {
+      result.entries.emplace_back(EventLogEntryModel{
+          .sequence = event.sequence,
+          .severity = message->severity,
+          .text = message->text,
+          .state = message_state(message->severity),
+      });
+    }
+  }
+  std::ranges::stable_sort(
+      result.entries,
+      {},
+      &EventLogEntryModel::sequence);
+  if (result.entries.size() > limit) {
+    result.entries.erase(
+        result.entries.begin(),
+        result.entries.end() - static_cast<std::ptrdiff_t>(limit));
+  }
+  for (const auto& entry : result.entries) {
+    if (entry.severity == MessageSeverity::warning) {
+      ++result.caution_count;
+    } else if (entry.severity == MessageSeverity::error) {
+      ++result.critical_count;
+    }
+  }
+  return result;
+}
+
+TypographyModel typography(double requested_scale) {
+  constexpr double kMinimumScale = 0.75;
+  constexpr double kMaximumScale = 2.0;
+  const double finite_scale = std::isfinite(requested_scale)
+      ? requested_scale
+      : 1.0;
+  const double scale = std::clamp(
+      finite_scale,
+      kMinimumScale,
+      kMaximumScale);
+  const auto style = [scale](double points, double line_height) {
+    return TextStyleModel{
+        .point_size = points * scale,
+        .line_height = line_height * scale,
+    };
+  };
+  return {
+      .scale = scale,
+      .caption = style(13.0, 17.0),
+      .body = style(16.0, 22.0),
+      .heading = style(20.0, 26.0),
+  };
+}
+
+SelectedPartyDetailsModel selected_details(
+    const GameSnapshot& snapshot,
+    std::optional<PartyMemberId> selected_member) {
+  SelectedPartyDetailsModel result;
+  if (!selected_member) {
+    return result;
+  }
+  const auto* member = snapshot.party.member(*selected_member);
+  if (!member) {
+    return result;
+  }
+  result.member = member->id;
+  result.name = member->name;
+  result.level = member->level;
+  result.armor_class = member->armor_class;
+  result.movement = member->movement;
+  result.movement_maximum = member->movement_maximum;
+  return result;
+}
+
+DrawerModel build_drawers(
+    const ShellViewPreferences& preferences,
+    const EventLogModel& event_log) {
+  DrawerModel result{
+      .collapsed = preferences.panels_collapsed,
+      .active_panel = preferences.panels_collapsed
+          ? preferences.active_drawer
+          : std::nullopt,
+  };
+  if (!result.collapsed) {
+    return result;
+  }
+  const size_t log_badge = event_log.caution_count +
+      event_log.critical_count;
+  result.tabs = {
+      DrawerTabModel{
+          .panel = DrawerPanel::details,
+          .label = "Details",
+          .command = "drawer.details.toggle",
+          .focus_identifier = "focus.drawer.details",
+          .tab_order = kDrawerTabStart,
+          .active = result.active_panel == DrawerPanel::details,
+      },
+      DrawerTabModel{
+          .panel = DrawerPanel::event_log,
+          .label = "Event log",
+          .command = "drawer.event_log.toggle",
+          .focus_identifier = "focus.drawer.event_log",
+          .tab_order = kDrawerTabStart + 1,
+          .badge_count = log_badge,
+          .active = result.active_panel == DrawerPanel::event_log,
+      },
+  };
+  return result;
+}
+
+std::vector<AnimationCueModel> build_animation_cues(
+    std::span<const GameEvent> events,
+    bool reduced_motion) {
+  std::vector<AnimationCueModel> result;
+  for (const auto& event : events) {
+    if (const auto* cue = std::get_if<AnimationCueEvent>(&event.payload)) {
+      result.emplace_back(AnimationCueModel{
+          .sequence = event.sequence,
+          .cue = cue->cue,
+          .target = cue->target,
+          .essential_motion = cue->essential_motion,
+          .should_animate = cue->essential_motion || !reduced_motion,
+      });
+    }
+  }
+  std::ranges::stable_sort(
+      result,
+      {},
+      &AnimationCueModel::sequence);
+  return result;
+}
+
+std::vector<KeyboardTargetModel> build_keyboard_order(
+    const PartyRailModel& party,
+    const std::vector<ActionControlModel>& actions,
+    const DrawerModel& drawers) {
+  std::vector<KeyboardTargetModel> result;
+  result.reserve(party.members.size() + actions.size() + drawers.tabs.size());
+  for (const auto& member : party.members) {
+    result.emplace_back(KeyboardTargetModel{
+        .focus_identifier = member.focus_identifier,
+        .tab_order = member.tab_order,
+        .command = member.select_command,
+    });
+  }
+  for (const auto& control : actions) {
+    result.emplace_back(KeyboardTargetModel{
+        .focus_identifier = control.focus_identifier,
+        .tab_order = control.tab_order,
+        .command = control.command,
+        .enabled = control.can_invoke(),
+    });
+  }
+  for (const auto& drawer : drawers.tabs) {
+    result.emplace_back(KeyboardTargetModel{
+        .focus_identifier = drawer.focus_identifier,
+        .tab_order = drawer.tab_order,
+        .command = drawer.command,
+    });
+  }
+  std::ranges::stable_sort(result, {}, &KeyboardTargetModel::tab_order);
+  return result;
+}
+
+} // namespace
+
+PartyRailModel build_party_rail_model(const GameSnapshot& snapshot) {
+  PartyRailModel result{
+      .revision = snapshot.revision,
+      .selected_member = resolved_selected_member(snapshot.party),
+      .pooled_money = snapshot.party.pooled_money,
+      .fatigue = snapshot.party.fatigue,
+      .fatigue_state = fatigue_state(snapshot.party.fatigue),
+  };
+  result.members.reserve(snapshot.party.members.size());
+  for (size_t index = 0; index < snapshot.party.members.size(); ++index) {
+    const auto& member = snapshot.party.members[index];
+    const bool selected = result.selected_member == member.id;
+    auto stamina = meter_model(member.stamina, "stamina");
+    result.members.emplace_back(PartyRailMemberModel{
+        .id = member.id,
+        .name = member.name,
+        .level = member.level,
+        .portrait_id = member.portrait_id,
+        .stamina = stamina,
+        .spell_points = meter_model(member.spell_points, "spell_points"),
+        .states = member_states(member, selected, stamina),
+        .selected = selected,
+        .conscious = member.conscious,
+        .focus_identifier = "focus.party.member." +
+            std::to_string(member.id) + "." + std::to_string(index),
+        .select_command = "party.select." + std::to_string(member.id),
+        .tab_order = kPartyTabStart + static_cast<int32_t>(index),
+    });
+  }
+  return result;
+}
+
+PresentationShellModel build_presentation_shell_model(
+    const GameSnapshot& snapshot,
+    std::span<const GameEvent> events,
+    const ShellViewPreferences& preferences) {
+  PresentationShellModel result;
+  result.revision = snapshot.revision;
+  result.screen = snapshot.screen;
+  result.party_rail = build_party_rail_model(snapshot);
+  result.selected_details = selected_details(
+      snapshot,
+      result.party_rail.selected_member);
+  result.actions = build_actions(snapshot, result.party_rail.selected_member);
+  result.event_log = build_event_log(events, preferences.event_log_limit);
+  result.drawers = build_drawers(preferences, result.event_log);
+  result.typography = typography(preferences.text_scale);
+  result.motion = {
+      .reduced_motion = preferences.reduced_motion,
+      .allow_nonessential_motion = !preferences.reduced_motion,
+  };
+  result.animation_cues = build_animation_cues(
+      events,
+      preferences.reduced_motion);
+  result.keyboard_tab_order = build_keyboard_order(
+      result.party_rail,
+      result.actions,
+      result.drawers);
+  return result;
+}
+
+} // namespace realmz::presentation

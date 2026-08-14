@@ -1,6 +1,7 @@
 #include "prototypes.h"
 #include "realmzbuild.h"
 #include "variables.h"
+#include "presentation/SemanticInputBoundary.h"
 
 /****************************** doreg5 **********************************/
 short doreg5(void) {
@@ -2039,7 +2040,10 @@ over:
 
     tickcheck();
     SystemTask();
-    a = GetNextEvent(everyEvent, &gTheEvent);
+    a = GetNextSemanticGameplayEvent(
+        everyEvent,
+        &gTheEvent,
+        REALMZ_SEMANTIC_INPUT_EXPLORATION);
 #ifdef PC // Myriad
     DoCorrectBugMADRepeat();
 #endif

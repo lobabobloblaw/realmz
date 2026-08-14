@@ -1,0 +1,224 @@
+{
+  "$defs": {
+    "alphaEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "decoded_png_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "dimensions": {
+          "additionalProperties": false,
+          "properties": {
+            "height": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "width": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "height",
+            "width"
+          ],
+          "type": "object"
+        },
+        "enclosed_transparent_component_sizes_4_connected": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "foreground_bbox": {
+          "additionalProperties": false,
+          "properties": {
+            "bottom": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "left": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "right": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "top": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "bottom",
+            "left",
+            "right",
+            "top"
+          ],
+          "type": "object"
+        },
+        "foreground_component_sizes_4_connected": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "foreground_pixels": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "decoded_png_sha256",
+        "dimensions",
+        "enclosed_transparent_component_sizes_4_connected",
+        "foreground_bbox",
+        "foreground_component_sizes_4_connected",
+        "foreground_pixels"
+      ],
+      "type": "object"
+    },
+    "entry": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "classic_alpha_evidence": {
+          "$ref": "#/$defs/alphaEvidence"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "reviewer": {
+          "const": "Codex Classic-alpha audit"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "amendment_sha256",
+        "classic_alpha_evidence",
+        "job_id",
+        "reason",
+        "recorded_at",
+        "reviewer",
+        "text"
+      ],
+      "type": "object"
+    },
+    "lockedSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "const": "assets/remastered/style-proof/generation/masked-topology-amendments.schema.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "$id": "https://realmz-remastered.invalid/schema/masked-topology-amendments.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "amendment_set_kind": {
+      "const": "style-proof-masked-topology-amendments"
+    },
+    "entries": {
+      "items": false,
+      "maxItems": 5,
+      "minItems": 5,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/entry",
+          "properties": {
+            "job_id": {
+              "const": "09_tactical_actor_cicn_9000"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/entry",
+          "properties": {
+            "job_id": {
+              "const": "10_tactical_actor_cicn_9007"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/entry",
+          "properties": {
+            "job_id": {
+              "const": "12_tactical_actor_cicn_9104"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/entry",
+          "properties": {
+            "job_id": {
+              "const": "18_world_dungeon_cicn_m189"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/entry",
+          "properties": {
+            "job_id": {
+              "const": "19_world_dungeon_cicn_m83"
+            }
+          }
+        }
+      ],
+      "type": "array"
+    },
+    "jobs_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "schema": {
+      "$ref": "#/$defs/lockedSchema"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "style_spec_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "required": [
+    "amendment_set_kind",
+    "entries",
+    "jobs_sha256",
+    "schema",
+    "schema_version",
+    "style_spec_sha256"
+  ],
+  "title": "Realmz Remastered masked style-proof topology amendments",
+  "type": "object"
+}

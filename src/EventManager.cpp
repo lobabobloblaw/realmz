@@ -2,12 +2,16 @@
 
 #include <SDL3/SDL_events.h>
 
+#include <algorithm>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <phosg/Strings.hh>
 
 #include "Types.hpp"
 #include "WindowManager.hpp"
+#include "presentation/LegacyPartySelection.h"
+#include "presentation/SemanticInputBoundary.h"
 
 static phosg::PrefixedLogger em_log("[EventManager] ", DEFAULT_LOG_LEVEL);
 
@@ -323,6 +327,25 @@ public:
 
   EventRecord get_next_event(uint32_t wait_ms) {
     this->enqueue_pending_events(wait_ms);
+    const auto active_surface = RealmzCurrentSemanticInputSurface();
+    const auto old_size = this->event_queue.size();
+    std::erase_if(
+        this->event_queue,
+        [active_surface](const EventRecord& candidate) {
+          if ((candidate.what != app1Evt) ||
+              !RealmzIsSemanticGameplayTag(candidate.message)) {
+            return false;
+          }
+          return (active_surface == REALMZ_SEMANTIC_INPUT_NONE) ||
+              (RealmzSemanticGameplayTagSurface(candidate.message) !=
+                  active_surface);
+        });
+    if (this->event_queue.size() != old_size) {
+      em_log.debug_f(
+          "Dropped {} tagged semantic gameplay event(s) outside their "
+          "originating top-level gameplay input surface",
+          old_size - this->event_queue.size());
+    }
     if (this->event_queue.empty()) {
       auto window = WindowManager::instance().front_window();
       if (window) {
@@ -343,8 +366,61 @@ public:
     em_log.debug_f("Enqueued menu event (what={}, message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), modifiers=0x{:04X})", name_for_event_type(ev.what), ev.message, ev.when, ev.where.h, ev.where.v, ev.modifiers);
   }
 
+  bool push_semantic_movement_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticMovementTag(tagged_message)) {
+      return false;
+    }
+    // Keep this command tagged until a guarded top-level gameplay loop
+    // revalidates and translates it. It must never be mistaken for physical
+    // Classic key input by a nested picker or modal loop.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic movement (what={}, message=0x{:08X}, "
+        "when=0x{:08X}, where=(h={}, v={}), modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
+  bool push_semantic_party_selection_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticPartySelectionTag(tagged_message)) {
+      return false;
+    }
+    // The selection remains tagged until the originating guarded top-level
+    // gameplay loop revalidates it. A nested picker or modal must never see a
+    // synthetic portrait click or a direct legacy-global mutation.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic party selection (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
+  void discard_semantic_gameplay_events() {
+    std::erase_if(this->event_queue, [](const EventRecord& candidate) {
+      return (candidate.what == app1Evt) &&
+          RealmzIsSemanticGameplayTag(candidate.message);
+    });
+  }
+
   void reset_mouse_state() {
     this->modifier_flags |= EVMOD_MOUSE_BUTTON_UP;
+    WindowManager::instance().cancel_remastered_pointer_capture();
   }
 
   inline const Point& get_mouse_loc() const {
@@ -371,8 +447,13 @@ public:
     auto sdl_window = WindowManager::instance().get_sdl_window();
     float window_x = pt.h;
     float window_y = pt.v;
+    if (!WindowManager::instance().classic_to_render_point(
+            &window_x, &window_y)) {
+      return;
+    }
     if (auto* renderer = SDL_GetRenderer(sdl_window.get())) {
-      SDL_RenderCoordinatesToWindow(renderer, pt.h, pt.v, &window_x, &window_y);
+      SDL_RenderCoordinatesToWindow(
+          renderer, window_x, window_y, &window_x, &window_y);
     }
     SDL_WarpMouseInWindow(sdl_window.get(), window_x, window_y);
     this->mouse_loc = pt;
@@ -436,7 +517,19 @@ protected:
         break;
       case SDL_EVENT_WINDOW_RESIZED:
       case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        this->reset_mouse_state();
+        WindowManager::instance().cancel_remastered_keyboard_route();
+        WindowManager::instance().recomposite_all();
+        break;
       case SDL_EVENT_WINDOW_EXPOSED:
+        WindowManager::instance().recomposite_all();
+        break;
+      case SDL_EVENT_WINDOW_FOCUS_LOST:
+        this->reset_mouse_state();
+        // Cancel visible/dispatch state while retaining release tombstones.
+        // Some platforms deliver the matching key-up after focus returns; it
+        // must not leak into Classic when its down belonged to the shell.
+        WindowManager::instance().cancel_remastered_keyboard_route();
         WindowManager::instance().recomposite_all();
         break;
       case SDL_EVENT_WINDOW_MOVED:
@@ -468,6 +561,14 @@ protected:
 #else
         this->set_modifier_value(EVMOD_COMMAND_KEY_DOWN, e.key.mod & SDL_KMOD_GUI);
 #endif
+
+        // Code-native shell keys own their complete physical press/release
+        // pair. A consumed event must never also reach the Classic queue.
+        // This call remains active in Classic mode so a release captured just
+        // before a mode switch can be swallowed safely.
+        if (WindowManager::instance().handle_remastered_shell_key(e.key)) {
+          break;
+        }
 
         uint32_t message = mac_message_for_sdl_key_code(e.key.key, this->modifier_flags);
         bool enqueue = true;
@@ -503,8 +604,22 @@ protected:
       case SDL_EVENT_MOUSE_MOTION:
         // Classic Mac OS doesn't have a mouse motion event, so we just track
         // the location and ignore it otherwise
-        this->mouse_loc.h = e.motion.x;
-        this->mouse_loc.v = e.motion.y;
+        if (WindowManager::instance().get_presentation_mode() ==
+            realmz::presentation::PresentationMode::remastered) {
+          Point classic_point;
+          if (WindowManager::instance().map_remastered_pointer_motion(
+                  e.motion.x, e.motion.y, &classic_point)) {
+            this->mouse_loc = classic_point;
+          } else {
+            this->mouse_loc = {
+                std::numeric_limits<int16_t>::min(),
+                std::numeric_limits<int16_t>::min(),
+            };
+          }
+        } else {
+          this->mouse_loc.h = e.motion.x;
+          this->mouse_loc.v = e.motion.y;
+        }
         break;
       case SDL_EVENT_MOUSE_BUTTON_DOWN:
       case SDL_EVENT_MOUSE_BUTTON_UP:
@@ -513,8 +628,29 @@ protected:
             e.button.button, e.button.clicks, e.button.x, e.button.y);
         // Ignore events for all mouse buttons except the primary (left) button
         if (e.button.button == 1) {
-          this->mouse_loc.h = e.button.x;
-          this->mouse_loc.v = e.button.y;
+          Point classic_point;
+          const bool remastered =
+              WindowManager::instance().get_presentation_mode() ==
+              realmz::presentation::PresentationMode::remastered;
+          const bool routes_to_legacy = !remastered ||
+              ((e.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+                      ? WindowManager::instance().begin_remastered_pointer(
+                            e.button.x, e.button.y, &classic_point)
+                      : WindowManager::instance().end_remastered_pointer(
+                            e.button.x, e.button.y, &classic_point));
+          if (!routes_to_legacy) {
+            this->mouse_loc = {
+                std::numeric_limits<int16_t>::min(),
+                std::numeric_limits<int16_t>::min(),
+            };
+            break;
+          }
+          if (remastered) {
+            this->mouse_loc = classic_point;
+          } else {
+            this->mouse_loc.h = e.button.x;
+            this->mouse_loc.v = e.button.y;
+          }
           this->set_modifier_value(EVMOD_MOUSE_BUTTON_UP, (e.type == SDL_EVENT_MOUSE_BUTTON_UP));
           auto window = WindowManager::instance().window_for_point(this->mouse_loc.h, this->mouse_loc.v);
           this->enqueue_event((e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? mouseDown : mouseUp, 0, window ? &window->get_port() : nullptr, "");
@@ -596,6 +732,88 @@ Boolean GetNextEvent(int16_t which_mask, EventRecord* ret) {
   return (ret->what != nullEvent);
 }
 
+Boolean GetNextSemanticGameplayEvent(
+    int16_t which_mask,
+    EventRecord* ret,
+    RealmzSemanticInputSurface surface) {
+  if (which_mask != everyEvent) {
+    throw std::logic_error(std::format(
+        "which_mask ({:04X}) masks out some events in "
+        "GetNextSemanticGameplayEvent",
+        which_mask));
+  }
+  if ((surface != REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+      (surface != REALMZ_SEMANTIC_INPUT_DUNGEON)) {
+    throw std::logic_error(
+        "GetNextSemanticGameplayEvent requires a gameplay surface");
+  }
+
+  const bool remastered =
+      WindowManager::instance().get_presentation_mode() ==
+      realmz::presentation::PresentationMode::remastered;
+  if (!remastered) {
+    // With no active semantic scope, EventManager drops any stale tagged
+    // command before returning the next ordinary Classic event.
+    *ret = em.get_next_event(0);
+    return (ret->what != nullEvent);
+  }
+
+  struct SemanticInputScope {
+    explicit SemanticInputScope(RealmzSemanticInputSurface value) {
+      RealmzBeginSemanticInputSurface(value);
+    }
+    ~SemanticInputScope() {
+      RealmzEndSemanticInputSurface();
+    }
+  };
+
+  {
+    const SemanticInputScope semantic_scope(surface);
+    *ret = em.get_next_event(0);
+  }
+  const bool still_remastered =
+      WindowManager::instance().get_presentation_mode() ==
+      realmz::presentation::PresentationMode::remastered;
+  if ((ret->what == app1Evt) &&
+      RealmzIsSemanticMovementTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticMovementEvent(
+            surface, ret->message, &classic_key_message)) {
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      // A tagged presentation event is inert unless late validation succeeds.
+      // Never expose a rejected command to an unmodified Classic switch.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticPartySelectionTag(ret->message)) {
+    uint8_t party_member = 0;
+    const bool validated = still_remastered &&
+        RealmzConsumeSemanticPartySelectionEvent(
+            surface, ret->message, &party_member);
+    const RealmzPartySelectionApplyResult applied = validated
+        ? RealmzApplyPartyMemberSelection(party_member)
+        : REALMZ_PARTY_SELECTION_REJECTED;
+    if (validated && (applied == REALMZ_PARTY_SELECTION_REJECTED)) {
+      em_log.warning_f(
+          "Late-validated semantic party member {} was rejected by the "
+          "legacy selection adapter",
+          party_member);
+    }
+    // Selection is applied by the narrow adapter, not exposed to the preserved
+    // legacy switch as a repeated portrait click or application-defined event.
+    ret->what = nullEvent;
+    ret->message = 0;
+  } else {
+    // Authorization belongs only to the event returned by this wrapper. Do
+    // not leave a completed scope available after an ordinary Classic event.
+    RealmzInvalidateSemanticInputBoundary();
+  }
+  return (ret->what != nullEvent);
+}
+
 Boolean WaitNextEvent(int16_t which_mask, EventRecord* ret, uint32_t sleep, RgnHandle mouse_rgn) {
   // Realmz doesn't use mask, sleep, or mouse_rgn (thankfully, since mouse_rgn
   // would be annoying to implement!)
@@ -640,6 +858,23 @@ Boolean StillDown(void) {
 
 void PushMenuEvent(int16_t menu_id, int16_t item_id) {
   em.push_menu_event(menu_id, item_id);
+}
+
+Boolean PushSemanticMovementEvent(uint32_t tagged_message) {
+  return em.push_semantic_movement_event(tagged_message);
+}
+
+Boolean PushSemanticPartySelectionEvent(uint32_t tagged_message) {
+  return em.push_semantic_party_selection_event(tagged_message);
+}
+
+void CancelSemanticGameplayInput(void) {
+  RealmzInvalidateSemanticInputBoundary();
+  em.discard_semantic_gameplay_events();
+}
+
+void CancelSemanticMovementInput(void) {
+  CancelSemanticGameplayInput();
 }
 
 void reset_mouse_state() {

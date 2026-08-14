@@ -26,6 +26,7 @@
 #include "ResourceManager.h"
 #include "SoundManager.h"
 #include "Types.h"
+#include "UserDataImport.h"
 #include "WindowManager.h"
 #include "convert.h"
 

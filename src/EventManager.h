@@ -3,6 +3,7 @@
 #include "QuickDraw.h"
 #include "SDL3/SDL.h"
 #include "Types.h"
+#include "presentation/SemanticInputBoundary.h"
 
 // See Event Manager chapter in Inside Macintosh volume 1, starting on page 241
 
@@ -81,8 +82,27 @@ void SystemTask(void);
 // GetCaretTime (IM1-260) not used by Realmz
 
 Boolean GetNextEvent(int16_t mask, EventRecord* ev); // IM1-257
+// Top-level exploration/dungeon receive boundary for Remastered semantic
+// input. In Classic mode this is exactly the ordinary GetNextEvent route.
+Boolean GetNextSemanticGameplayEvent(
+    int16_t mask,
+    EventRecord* ev,
+    RealmzSemanticInputSurface surface);
 // EventAvail (IM1-258) not used by Realmz
 void PushMenuEvent(int16_t menu_id, int16_t item_id);
+
+// Queues tagged presentation commands. They remain distinguishable from
+// physical Classic input until a guarded top-level gameplay loop revalidates
+// them at consumption time.
+Boolean PushSemanticMovementEvent(uint32_t tagged_message);
+Boolean PushSemanticPartySelectionEvent(uint32_t tagged_message);
+
+// Cancels active authorization and removes every queued presentation command.
+// Used by presentation-mode transitions, including native-menu callbacks.
+void CancelSemanticGameplayInput(void);
+// Compatibility name retained for existing movement-only callers. It now
+// cancels the complete tagged gameplay stream.
+void CancelSemanticMovementInput(void);
 
 void GetMouse(Point* mouseLoc); // IM1-259
 void GetMouseGlobal(Point* mouseLoc); // extension (not part of original API)

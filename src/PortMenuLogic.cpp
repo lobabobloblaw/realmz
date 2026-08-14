@@ -1,5 +1,6 @@
 #include "PortMenu.hpp"
 #include "WindowManager.hpp"
+#include "presentation/PresentationMode.hpp"
 
 void PortMenu_Apply(int id) {
   WindowManager& wm = WindowManager::instance();
@@ -10,8 +11,13 @@ void PortMenu_Apply(int id) {
     wm.set_window_size(scale.width, scale.height);
   } else if (id < kPortGammaId) {
     wm.set_aspect_locked(!wm.get_aspect_locked());
-  } else {
+  } else if (id < kPortPresentationId) {
     wm.set_gamma_idx(id - kPortGammaId);
+  } else {
+    wm.set_presentation_mode(
+        id == kPortPresentationId
+            ? realmz::presentation::PresentationMode::classic
+            : realmz::presentation::PresentationMode::remastered);
   }
 }
 
@@ -31,8 +37,13 @@ void PortMenu_ItemState(int id, int* checked, int* enabled) {
   } else if (id < kPortGammaId) {
     is_enabled = !fullscreen;
     is_checked = wm.get_aspect_locked();
-  } else {
+  } else if (id < kPortPresentationId) {
     is_checked = (id - kPortGammaId) == wm.get_gamma_idx();
+  } else {
+    const auto mode = id == kPortPresentationId
+        ? realmz::presentation::PresentationMode::classic
+        : realmz::presentation::PresentationMode::remastered;
+    is_checked = wm.get_presentation_mode() == mode;
   }
   if (checked) {
     *checked = is_checked;

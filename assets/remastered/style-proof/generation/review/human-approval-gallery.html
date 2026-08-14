@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Realmz Remastered — Human Asset Approval</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #ece7dc;
+      --muted: #aaa49a;
+      --panel: #18191d;
+      --panel-2: #22242a;
+      --line: #4d4538;
+      --gold: #d4ac64;
+      --green: #83ba83;
+      --red: #d8867c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #101115;
+      color: var(--ink);
+      font: 16px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header, main { width: min(1440px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 32px 0 20px; }
+    h1, h2, h3 { margin: 0; font-family: Georgia, serif; }
+    h1 { color: var(--gold); font-size: clamp(28px, 4vw, 48px); }
+    .lede { max-width: 920px; color: var(--muted); }
+    .status {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 7px 11px;
+      border: 1px solid var(--gold);
+      border-radius: 999px;
+      color: var(--gold);
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .toolbar, article {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .toolbar { padding: 16px; margin: 8px 0 24px; }
+    .toolbar p { margin: 0 0 12px; }
+    button {
+      border: 1px solid var(--gold);
+      border-radius: 7px;
+      background: #2b251c;
+      color: var(--ink);
+      padding: 9px 13px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:hover, button:focus-visible { background: #443722; outline: 2px solid #fff; }
+    #copy-state { color: var(--green); margin-left: 10px; }
+    .gallery { display: grid; gap: 24px; padding-bottom: 48px; }
+    article { padding: 18px; scroll-margin-top: 12px; }
+    article h2 { color: var(--gold); font-size: 26px; }
+    .meta { color: var(--muted); margin: 3px 0 14px; overflow-wrap: anywhere; }
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    figure { margin: 0; padding: 12px; background: var(--panel-2); border-radius: 8px; }
+    figcaption { margin-bottom: 8px; color: var(--muted); font-weight: 700; }
+    .image-stage {
+      min-height: 320px;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+      background-color: #14151a;
+      background-image:
+        linear-gradient(45deg, #24262c 25%, transparent 25%),
+        linear-gradient(-45deg, #24262c 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #24262c 75%),
+        linear-gradient(-45deg, transparent 75%, #24262c 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    }
+    .classic { image-rendering: pixelated; width: min(100%, 384px); height: auto; }
+    .new { max-width: 100%; max-height: 540px; height: auto; }
+    .criteria { margin: 16px 0 8px; }
+    .criteria strong { color: var(--gold); }
+    .evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+    .evidence img { width: 100%; height: auto; }
+    fieldset { border: 1px solid var(--line); border-radius: 8px; margin-top: 16px; }
+    legend { color: var(--gold); font-weight: 700; }
+    label { margin-right: 16px; }
+    textarea {
+      width: 100%; min-height: 64px; margin-top: 10px; resize: vertical;
+      background: #101115; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+    }
+    .native-note { font-size: 14px; color: var(--muted); }
+    a { color: #b9d7ff; }
+    @media (max-width: 780px) {
+      .comparison, .evidence { grid-template-columns: 1fr; }
+      .image-stage { min-height: 240px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Realmz Remastered — Human Asset Approval</h1>
+    <p class="lede">The 11 deterministic candidates below were approved by human review on 2026-08-13. Compare identity, composition, palette, readability, and lighting against the locked Classic reference. UI materials also include 2×2 repetition and half-roll evidence.</p>
+    <span class="status">REVIEW COPY — 0 APPROVALS RECORDED</span>
+  </header>
+  <main>
+    <section class="toolbar" aria-label="Review instructions">
+      <p><strong>Approval recorded.</strong> All 11 displayed candidates are now individually approved in the canonical receipt ledger. The 10 rejected jobs and three blocked City references remain outside this gallery, so the overall style proof is still incomplete.</p>
+      <button id="copy-summary" type="button">Copy review summary</button><span id="copy-state" role="status"></span>
+      <p><a href="classic-new-contact-sheet.png">Open the complete contact sheet</a> · <a href="../generation-receipts.json">Open the canonical receipt ledger</a></p>
+    </section>
+
+    <section class="gallery" id="gallery">
+      <article id="01_ui_material_ppat_128" data-job="01_ui_material_ppat_128" data-label="Blue stone highlight">
+        <h2>01 · Blue stone highlight</h2>
+        <p class="meta">ui_material · output SHA-256 3b3a30342aef0e49b0b43a04bec3592abda5d629963bc8a68c8cb296eef1961e</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/01_ui_material_ppat_128.png" alt="Classic blue stone highlight"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/01_ui_material_ppat_128.png" alt="Generated blue stone highlight"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> clearly the brightest blue-stone state; quiet fine mineral texture; no focal mark, bevel, grid, vignette, or directional light; repetition feels continuous.</p>
+        <div class="evidence"><figure><figcaption>2×2 repetition</figcaption><img src="ui-material-evidence/01_ui_material_ppat_128-2x2.png" alt="Blue stone highlight tiled two by two"></figure><figure><figcaption>Half-roll seam inspection</figcaption><img src="ui-material-evidence/01_ui_material_ppat_128-half-roll.png" alt="Blue stone highlight half-roll"></figure></div>
+        <div class="decision"></div>
+      </article>
+
+      <article id="02_ui_material_ppat_129" data-job="02_ui_material_ppat_129" data-label="Blue stone base">
+        <h2>02 · Blue stone base</h2>
+        <p class="meta">ui_material · output SHA-256 dfe2dadfa74ef37ee4d6de5f8e607eb082285f6e1a994a5e0e26ba2463d7f52f</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/02_ui_material_ppat_129.png" alt="Classic blue stone base"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/02_ui_material_ppat_129.png" alt="Generated blue stone base"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> mid-value slate-blue between states 01 and 03; organic low-contrast grain; no checkerboard, masonry, cracks, focal motif, or baked light; repetition feels continuous.</p>
+        <div class="evidence"><figure><figcaption>2×2 repetition</figcaption><img src="ui-material-evidence/02_ui_material_ppat_129-2x2.png" alt="Blue stone base tiled two by two"></figure><figure><figcaption>Half-roll seam inspection</figcaption><img src="ui-material-evidence/02_ui_material_ppat_129-half-roll.png" alt="Blue stone base half-roll"></figure></div>
+        <div class="decision"></div>
+      </article>
+
+      <article id="03_ui_material_ppat_130" data-job="03_ui_material_ppat_130" data-label="Dark blue stone">
+        <h2>03 · Dark blue stone</h2>
+        <p class="meta">ui_material · output SHA-256 df44c09cef3bd20e1c8de43e39c6c88573942a9f17ab5f4f3968f4c04ab72504</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/03_ui_material_ppat_130.png" alt="Classic dark blue stone"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/03_ui_material_ppat_130.png" alt="Generated dark blue stone"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> unmistakably the darkest blue state while detail remains readable; continuous navy stone with no black void, slab network, cracks, focal mark, or directional light.</p>
+        <div class="evidence"><figure><figcaption>2×2 repetition</figcaption><img src="ui-material-evidence/03_ui_material_ppat_130-2x2.png" alt="Dark blue stone tiled two by two"></figure><figure><figcaption>Half-roll seam inspection</figcaption><img src="ui-material-evidence/03_ui_material_ppat_130-half-roll.png" alt="Dark blue stone half-roll"></figure></div>
+        <div class="decision"></div>
+      </article>
+
+      <article id="04_ui_material_ppat_131" data-job="04_ui_material_ppat_131" data-label="Gray stone panel">
+        <h2>04 · Gray stone panel</h2>
+        <p class="meta">ui_material · output SHA-256 7081f60b8a7ea247fb5d181e6d8b2dfcaaf7a12046a58c31fef318c21f5fc3f9</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/04_ui_material_ppat_131.png" alt="Classic gray stone panel"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/04_ui_material_ppat_131.png" alt="Generated gray stone panel"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> neutral cool gray rather than blue; evenly distributed fine mineral grain; no arcs, grooves, landmark, border, gradient, or repeated cadence.</p>
+        <div class="evidence"><figure><figcaption>2×2 repetition</figcaption><img src="ui-material-evidence/04_ui_material_ppat_131-2x2.png" alt="Gray stone panel tiled two by two"></figure><figure><figcaption>Half-roll seam inspection</figcaption><img src="ui-material-evidence/04_ui_material_ppat_131-half-roll.png" alt="Gray stone panel half-roll"></figure></div>
+        <div class="decision"></div>
+      </article>
+
+      <article id="05_portrait_cicn_257" data-job="05_portrait_cicn_257" data-label="Human adventurer">
+        <h2>05 · Human adventurer</h2>
+        <p class="meta">portrait · output SHA-256 8eae998f6e9d745911ed518f7ad2629abd95a72d5c66c5ba0e9655663e0f2cc1</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/05_portrait_cicn_257.png" alt="Classic human adventurer portrait"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/05_portrait_cicn_257.png" alt="Generated human adventurer portrait"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> same young human identity, narrow face, serious side-gaze, dark auburn hair, cream collar, rust clothing, and cool dark backdrop; no glamour, elf traits, props, text, or modern studio lighting.</p>
+        <p class="native-note">Also judge facial expression and eye direction at the final 44×44 logical display size.</p>
+        <div class="decision"></div>
+      </article>
+
+      <article id="06_portrait_cicn_267" data-job="06_portrait_cicn_267" data-label="White-haired adventurer">
+        <h2>06 · White-haired adventurer</h2>
+        <p class="meta">portrait · output SHA-256 5786f9cbf6901739f34acaa72f603cdc62a53423d94b31956fbe90f1af9be281</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/06_portrait_cicn_267.png" alt="Classic white-haired red-skinned adventurer"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/06_portrait_cicn_267.png" alt="Generated white-haired red-skinned adventurer"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> intrinsic red skin, high white/cyan hair, stern frontal identity, source-supported ears/facial hair, violet/cyan shoulders, and green-black field remain coherent; no invented horns, sigils, props, text, or glossy armor.</p>
+        <p class="native-note">At 44×44, confirm the ears still read as ears—not horns—and the face remains legible.</p>
+        <div class="decision"></div>
+      </article>
+
+      <article id="07_portrait_cicn_297" data-job="07_portrait_cicn_297" data-label="Elf adventurer">
+        <h2>07 · Elf adventurer</h2>
+        <p class="meta">portrait · output SHA-256 c5bc0a5c315cfc115d6d1a806f9396670e59734a84102dc492d547cced78aca0</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/07_portrait_cicn_297.png" alt="Classic elf adventurer portrait"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/07_portrait_cicn_297.png" alt="Generated elf adventurer portrait"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> copper/tan young elf, short golden-auburn hair, visible pointed ear, green eyes, calm gaze, black/silver collar, and lavender field preserve the identity; no generic human, stereotype, anime gloss, props, or text.</p>
+        <p class="native-note">Identity/gender fidelity is the primary judgment call for this candidate.</p>
+        <div class="decision"></div>
+      </article>
+
+      <article id="08_portrait_cicn_337" data-job="08_portrait_cicn_337" data-label="Reptilian adventurer">
+        <h2>08 · Reptilian adventurer</h2>
+        <p class="meta">portrait · output SHA-256 3bc7ac4e0d6bb17cab9562f0f2f4db178c9eddc584f658e524ab947b59a3ec5e</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/08_portrait_cicn_337.png" alt="Classic reptilian adventurer portrait"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/08_portrait_cicn_337.png" alt="Generated reptilian adventurer portrait"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> narrow elongated green-scaled face, one tall red crest, closed mouth, stern frontal gaze, dark shoulders/red insets, and abstract pink-violet field remain faithful; no broad dragonborn skull, extra spikes, scenery, or text.</p>
+        <div class="decision"></div>
+      </article>
+
+      <article id="17_world_dungeon_PICT_50" data-job="17_world_dungeon_PICT_50" data-label="Dungeon floor and depth">
+        <h2>17 · Dungeon floor and depth</h2>
+        <p class="meta">world_dungeon · output SHA-256 86e0607e8092710896fc07a1fab3c034cbd2c10340de7bec09eee0aecfd2d899</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/17_world_dungeon_PICT_50.png" alt="Classic dungeon depth scene"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/17_world_dungeon_PICT_50.png" alt="Generated dungeon depth scene"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> 4:3 camera and converging floor seams, pale near floor, central dark recess, and dim upper depth preserve first-person readability; no props, walls, doors, figures, FOV change, vignette, or baked torchlight.</p>
+        <div class="decision"></div>
+      </article>
+
+      <article id="20_world_dungeon_cicn_m167" data-job="20_world_dungeon_cicn_m167" data-label="Waterfall terrain feature">
+        <h2>20 · Waterfall terrain feature</h2>
+        <p class="meta">world_dungeon · output SHA-256 44ba9ea12d1afee69d5ed23ff2032cd0d553b3cfd04aad8300076bb140d07578</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/20_world_dungeon_cicn_m167.png" alt="Classic waterfall terrain feature"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/20_world_dungeon_cicn_m167.png" alt="Generated waterfall terrain feature"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> the whole square remains water; bright foam enters left and dominates bottom while deep flow enters top/right; no cliff, rocks, bank, horizon, scenery, warm light, text, frame, or transparency.</p>
+        <div class="decision"></div>
+      </article>
+
+      <article id="21_tutorial_city_PICT_32128" data-job="21_tutorial_city_PICT_32128" data-label="Tutorial title illustration">
+        <h2>21 · Tutorial title illustration</h2>
+        <p class="meta">tutorial_city · output SHA-256 b3ad37374ae9b92a0bf745627c4db0d5022b53e16fa9d106bc4b5b4ecc032bba</p>
+        <div class="comparison"><figure><figcaption>Locked Classic reference</figcaption><div class="image-stage"><img class="classic" src="../../classic-references/references/21_tutorial_city_PICT_32128.png" alt="Classic Tutorial title illustration"></div></figure><figure><figcaption>Generated candidate</figcaption><div class="image-stage"><img class="new" src="../outputs/21_tutorial_city_PICT_32128.png" alt="Generated Tutorial title illustration"></div></figure></div>
+        <p class="criteria"><strong>Approve if:</strong> blank orange-gold plaque; one archer, one clearly one-eyed ogre, one purple spellcaster with blank parchment, one smaller horned dwarf with axe/shield, and one non-creature orb; no pseudo-text, extra eyes, figures, limbs, or weapons.</p>
+        <div class="decision"></div>
+      </article>
+    </section>
+  </main>
+  <script>
+    for (const article of document.querySelectorAll("article[data-job]")) {
+      const job = article.dataset.job;
+      article.querySelector(".decision").innerHTML = `
+        <fieldset>
+          <legend>Human decision — not persisted</legend>
+          <label><input type="radio" name="${job}" value="approve"> Approve</label>
+          <label><input type="radio" name="${job}" value="reject"> Reject</label>
+          <label><input type="radio" name="${job}" value="needs-changes"> Needs changes</label>
+          <textarea aria-label="Review notes for ${article.dataset.label}" placeholder="Required for rejection/changes; optional approval notes"></textarea>
+        </fieldset>`;
+    }
+
+    document.getElementById("copy-summary").addEventListener("click", async () => {
+      const lines = ["Realmz Remastered human asset review", "No ledger changes have been made.", ""];
+      for (const article of document.querySelectorAll("article[data-job]")) {
+        const selected = article.querySelector("input:checked");
+        const notes = article.querySelector("textarea").value.trim();
+        lines.push(`${article.dataset.job}: ${selected ? selected.value : "unreviewed"}${notes ? ` — ${notes}` : ""}`);
+      }
+      try {
+        await navigator.clipboard.writeText(lines.join("\n"));
+        document.getElementById("copy-state").textContent = "Review summary copied; ledger unchanged.";
+      } catch {
+        document.getElementById("copy-state").textContent = "Clipboard unavailable; selections remain visible in this tab.";
+      }
+    });
+  </script>
+</body>
+</html>

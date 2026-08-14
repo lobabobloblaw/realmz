@@ -1,5 +1,6 @@
 #include "prototypes.h"
 #include "variables.h"
+#include "presentation/SemanticInputBoundary.h"
 
 /************************** threed *********************/
 void threed(int32_t id, short gox, short goy, short dir) {
@@ -73,7 +74,10 @@ move:
 
     SystemTask();
 
-    a = GetNextEvent(everyEvent, &gTheEvent);
+    a = GetNextSemanticGameplayEvent(
+        everyEvent,
+        &gTheEvent,
+        REALMZ_SEMANTIC_INPUT_DUNGEON);
 #ifdef PC // Myriad
     DoCorrectBugMADRepeat();
 #endif
@@ -318,6 +322,9 @@ move:
               goto update;
               break;
           }
+          break;
+
+        case app1Evt:
           break;
 
         case autoKey:

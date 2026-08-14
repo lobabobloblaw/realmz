@@ -1,0 +1,38 @@
+{
+  "known_relationships": [
+    {
+      "base_resource_key": {
+        "id": 6100,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "evidence": {
+        "kind": "engine_display_alias_and_visual_review",
+        "source": "src/realmz_orig/lookupicon.c",
+        "status": "candidate_requires_human_family_approval"
+      },
+      "geometry_policy": "base_plus_effect",
+      "variant_resource_key": {
+        "id": 6106,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      }
+    }
+  ],
+  "policy_kind": "realmz-item-variant-reference-policy",
+  "rules": {
+    "animation_sequences_are_variants": false,
+    "base_approval_required_before_variant_call": true,
+    "city_relationships_require_authorized_baseline": true,
+    "current_style_proof_job_13_status": "historical_rejected_attempts_only",
+    "display_alias_implies_visual_variant": false,
+    "model_call_must_use_every_emitted_reference_path": true,
+    "ordered_reference_roles": [
+      "own_locked_classic",
+      "approved_base_master"
+    ],
+    "receipt_reference_set_sha256_required": true,
+    "unclassified_item_generation_allowed": false
+  },
+  "schema_version": 1
+}

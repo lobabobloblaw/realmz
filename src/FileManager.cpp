@@ -6,38 +6,31 @@
 #include <phosg/Strings.hh>
 
 #include "StringConvert.hpp"
+#include "UserDataPaths.hpp"
+#include "userdata/UserDataPathPolicy.hpp"
 
 static phosg::PrefixedLogger fm_log("[FileManager] ");
 
-const static std::string user_basepath = SDL_GetPrefPath("Fantasoft", "Realmz");
+static const std::string& user_basepath() {
+  static const std::string path = [] {
+    const auto root = realmz::app::remastered_user_data_root();
+    if (!root.has_value()) {
+      throw std::runtime_error(
+          "Could not resolve the Realmz Remastered user-data directory");
+    }
+    return root->string();
+  }();
+  return path;
+}
 
 std::string normalize_mac_path(const std::string& mac_path, bool implicitly_local) {
-  std::string ret = mac_path;
-
-  // If the path begins with ':', it's a relative path. On modern systems,
-  // paths starting with / are absolute instead, so remove the : before
-  // replacing : with /
-  bool explicitly_local = ret.starts_with(":");
-  if (explicitly_local) {
-    ret = ret.substr(1);
-  }
-
-  if (explicitly_local || implicitly_local) {
-    for (size_t z = 0; z < ret.size(); z++) {
-      if (ret[z] == ':') {
-        ret[z] = '/';
-      }
-    }
-  } else {
-    // Don't allow absolute paths
-    throw std::runtime_error("absolute path not supported: " + ret);
-  }
-
-  return ret;
+  return realmz::userdata::safe_relative_path_for_classic_path(
+      mac_path, implicitly_local).string();
 }
 
 std::string userdata_filename_for_mac_filename(const std::string& mac_path, bool implicitly_local = false) {
-  return user_basepath + normalize_mac_path(mac_path, implicitly_local);
+  return realmz::userdata::confined_path_below_root(
+      user_basepath(), normalize_mac_path(mac_path, implicitly_local)).string();
 }
 
 std::string
@@ -50,7 +43,7 @@ host_filename_for_mac_filename(const std::string& mac_path, bool implicitly_loca
     return "";
   }
 
-  return base_path + ret;
+  return realmz::userdata::confined_path_below_root(base_path, ret).string();
 }
 
 std::string host_filename_for_FSSpec(const FSSpec* fsp) {
@@ -147,22 +140,66 @@ OSErr FindFolder(int16_t vRefNum, OSType folderType, Boolean createFolder, int16
 FILE* mac_fopen(const char* filename, const char* mode) {
   // It seems some codepath in pref.c calls fopen(""). This is never valid (a
   // file cannot have an empty name) so just immediately fail in that case.
-  if (filename[0] == '\0') {
+  if (!filename || !mode || (filename[0] == '\0') || (mode[0] == '\0')) {
     return nullptr;
   }
 
   std::string user_filename = userdata_filename_for_mac_filename(filename);
   std::string host_filename{};
 
-  // When writing, we should always write to the userdata folder. When
-  // reading, we should first check to see if the file exists in the user's directory,
-  // which allows users to override the data and resource files.
-  if (mode[0] == 'w' || std::filesystem::exists(user_filename)) {
+  std::error_code status_error;
+  const auto user_status = std::filesystem::symlink_status(
+      user_filename, status_error);
+  if (status_error &&
+      (status_error != std::errc::no_such_file_or_directory)) {
+    fm_log.error_f("Could not inspect user file {}: {}", user_filename,
+        status_error.message());
+    return nullptr;
+  }
+  const bool user_file_exists =
+      !status_error && std::filesystem::exists(user_status);
+  if (user_file_exists && std::filesystem::is_symlink(user_status)) {
+    fm_log.error_f("Refusing user-data symlink {}", user_filename);
+    return nullptr;
+  }
+
+  const bool write_capable = realmz::userdata::fopen_mode_can_write(mode);
+
+  // Every write-capable mode is confined to user storage. Read-only opens use
+  // a user override when present and otherwise fall back to bundled data.
+  if (realmz::userdata::should_open_from_user_storage(
+          mode, user_file_exists)) {
     host_filename = user_filename;
 
     // Ensure all parent directories exist
     std::filesystem::path host_path{host_filename};
-    SDL_CreateDirectory(host_path.parent_path().string().c_str());
+    if (!SDL_CreateDirectory(host_path.parent_path().string().c_str())) {
+      fm_log.error_f("Could not create user-data directory {}: {}",
+          host_path.parent_path().string(), SDL_GetError());
+      return nullptr;
+    }
+
+    // Modes that preserve existing content need a private copy when the file
+    // currently exists only in the read-only application resources. A mode
+    // beginning with 'w' truncates or creates instead and must not be seeded.
+    if (write_capable && !user_file_exists && (mode[0] != 'w')) {
+      const std::string bundled_filename =
+          host_filename_for_mac_filename(filename, false);
+      std::error_code bundled_error;
+      if (std::filesystem::is_regular_file(
+              bundled_filename, bundled_error) && !bundled_error) {
+        std::error_code copy_error;
+        std::filesystem::copy_file(
+            bundled_filename, user_filename,
+            std::filesystem::copy_options::none, copy_error);
+        if (copy_error &&
+            !std::filesystem::is_regular_file(user_filename)) {
+          fm_log.error_f("Could not seed writable user copy {} from {}: {}",
+              user_filename, bundled_filename, copy_error.message());
+          return nullptr;
+        }
+      }
+    }
   } else {
     // Otherwise, fall back to reading the file from the Realmz application directory
     host_filename = host_filename_for_mac_filename(filename, false);

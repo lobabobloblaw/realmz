@@ -1,0 +1,57 @@
+{
+  "intermediate_artifacts": [
+    {
+      "path": "assets/remastered/style-proof/generation/postprocess/21_tutorial_city_PICT_32128/attempt-1/01-resized.rgba8",
+      "sha256": "04b335418d1bed74595474ab49687635815974658314b24e9f3f7c256c4a322e"
+    }
+  ],
+  "job_id": "21_tutorial_city_PICT_32128",
+  "output": {
+    "color_space": "sRGB",
+    "height": 1280,
+    "path": "assets/remastered/style-proof/generation/outputs/21_tutorial_city_PICT_32128.png",
+    "pixel_format": "RGBA8",
+    "sha256": "b3ad37374ae9b92a0bf745627c4db0d5022b53e16fa9d106bc4b5b4ecc032bba",
+    "width": 1280
+  },
+  "post_processing": [
+    {
+      "operation": "resize_to_target",
+      "parameters": {
+        "algorithm": "decode PNG, convert fully opaque pixels to RGBA8, verify exact aspect by integer cross-product, and resize with PIL.Image.Resampling.LANCZOS; no crop or stretch",
+        "aspect_assertion": "source_width*target_height == source_height*target_width",
+        "decoder_source_mode": "RGB",
+        "input_sha256": "567023c06bc5ac6af7e33c63870f730f224ee9f4809b4a5661ca56f7d4b708e2",
+        "intermediate_state_format": "REALMZ-RGBA8-STATE-V1 + big-endian width/height + row-major RGBA8",
+        "output_changed": true,
+        "output_sha256": "04b335418d1bed74595474ab49687635815974658314b24e9f3f7c256c4a322e",
+        "resampler": "PIL.Image.Resampling.LANCZOS",
+        "source_height": 1254,
+        "source_width": 1254,
+        "target_height": 1280,
+        "target_width": 1280
+      },
+      "tool": "Pillow",
+      "tool_version": "12.2.0"
+    },
+    {
+      "operation": "encode_srgb_png",
+      "parameters": {
+        "algorithm": "canonical RGBA8 PNG with filter type 0 rows, IHDR color type 6, sRGB rendering intent 0, zlib level 9, and no variable metadata",
+        "input_sha256": "04b335418d1bed74595474ab49687635815974658314b24e9f3f7c256c4a322e",
+        "input_state_format": "REALMZ-RGBA8-STATE-V1",
+        "output_changed": true,
+        "output_color_space": "sRGB",
+        "output_pixel_format": "RGBA8",
+        "output_sha256": "b3ad37374ae9b92a0bf745627c4db0d5022b53e16fa9d106bc4b5b4ecc032bba"
+      },
+      "tool": "scripts/prepare_style_proof_references.py:encode_png",
+      "tool_version": "1"
+    }
+  ],
+  "raw_output": {
+    "path": "assets/remastered/style-proof/generation/raw/21_tutorial_city_PICT_32128/attempt-1.png",
+    "sha256": "567023c06bc5ac6af7e33c63870f730f224ee9f4809b4a5661ca56f7d4b708e2"
+  },
+  "regeneration_ordinal": 1
+}

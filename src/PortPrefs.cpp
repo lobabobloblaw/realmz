@@ -9,6 +9,7 @@
 #include <string>
 
 #include "PortMenu.hpp"
+#include "UserDataPaths.hpp"
 
 #include <phosg/Filesystem.hh>
 #include <phosg/JSON.hh>
@@ -24,13 +25,11 @@ static constexpr int MAX_W = kLogicalWindowWidth * 4;
 static constexpr int MAX_H = kLogicalWindowHeight * 4;
 
 static std::string prefs_path() {
-  char* base = SDL_GetPrefPath("Fantasoft", "Realmz");
-  if (!base) {
+  const auto base = realmz::app::remastered_user_data_root();
+  if (!base.has_value()) {
     return std::string();
   }
-  std::string path = std::string(base) + "port_settings.json";
-  SDL_free(base);
-  return path;
+  return (*base / "port_settings.json").string();
 }
 
 static const char* name_for_scale_mode(SDL_ScaleMode mode) {
@@ -71,6 +70,11 @@ static int gamma_idx_for_value(double value) {
   return best;
 }
 
+static const char* name_for_presentation_mode(
+    realmz::presentation::PresentationMode mode) {
+  return realmz::presentation::to_string(mode).data();
+}
+
 PortPrefs load_port_prefs() {
   PortPrefs prefs;
 
@@ -97,6 +101,12 @@ PortPrefs load_port_prefs() {
     prefs.scale_mode = scale_mode_for_name(root.get_string("filter", name_for_scale_mode(prefs.scale_mode)));
     prefs.aspect_locked = root.get_bool("aspect_locked", prefs.aspect_locked);
     prefs.gamma_idx = gamma_idx_for_value(root.get_float("gamma", gamma_value_for_idx(prefs.gamma_idx)));
+    const auto presentation_mode = realmz::presentation::presentation_mode_from_string(
+        root.get_string("presentation_mode", name_for_presentation_mode(prefs.presentation_mode)));
+    if (!presentation_mode.has_value()) {
+      throw std::runtime_error("unknown presentation mode");
+    }
+    prefs.presentation_mode = *presentation_mode;
   } catch (const std::exception& e) {
     prefs_log.warning_f("Could not parse {} ({}); using defaults", path, e.what());
     return PortPrefs{};
@@ -124,6 +134,7 @@ void save_port_prefs(const PortPrefs& prefs) {
   root.emplace("filter", name_for_scale_mode(prefs.scale_mode));
   root.emplace("aspect_locked", prefs.aspect_locked);
   root.emplace("gamma", gamma_value_for_idx(prefs.gamma_idx));
+  root.emplace("presentation_mode", name_for_presentation_mode(prefs.presentation_mode));
 
   std::string tmp_path = path + ".tmp";
   try {

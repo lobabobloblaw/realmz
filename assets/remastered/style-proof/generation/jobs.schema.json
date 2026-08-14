@@ -1,0 +1,455 @@
+{
+  "$defs": {
+    "alpha": {
+      "additionalProperties": false,
+      "properties": {
+        "chroma_key": {
+          "oneOf": [
+            {
+              "const": "#FF00FF"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_alpha": {
+          "enum": [
+            "binary_mask",
+            "fully_opaque"
+          ]
+        },
+        "mask_constraint": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "chroma_key_then_original_mask",
+            "opaque"
+          ]
+        },
+        "removal": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "chroma_key",
+        "input_alpha",
+        "mask_constraint",
+        "mode",
+        "removal"
+      ],
+      "type": "object"
+    },
+    "job": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha": {
+          "$ref": "#/$defs/alpha"
+        },
+        "expected_output_path": {
+          "pattern": "^assets/remastered/style-proof/generation/outputs/[A-Za-z0-9_-]+\\.png$",
+          "type": "string"
+        },
+        "family": {
+          "enum": [
+            "item_spell",
+            "portrait",
+            "tactical_actor",
+            "tutorial_city",
+            "ui_material",
+            "world_dungeon"
+          ]
+        },
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "classic_payload_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "decoded_png_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "path": {
+              "pattern": "^references/[0-9]{2}_[A-Za-z0-9_-]+\\.png$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "classic_payload_sha256",
+            "decoded_png_sha256",
+            "path"
+          ],
+          "type": "object"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "label": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "model_provenance": {
+          "type": "null"
+        },
+        "order": {
+          "maximum": 21,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "policies": {
+          "additionalProperties": false,
+          "properties": {
+            "baked_lighting": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "seams": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "text": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "baked_lighting",
+            "seams",
+            "text"
+          ],
+          "type": "object"
+        },
+        "prompt_components": {
+          "additionalProperties": false,
+          "properties": {
+            "background": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "composition": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "negative": {
+              "minLength": 1,
+              "pattern": "^(Do not include|Avoid)\\b",
+              "type": "string"
+            },
+            "subject": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "background",
+            "composition",
+            "negative",
+            "subject"
+          ],
+          "type": "object"
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        },
+        "semantic_preservation": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 2,
+          "type": "array"
+        },
+        "status": {
+          "const": "pending"
+        },
+        "target_master": {
+          "additionalProperties": false,
+          "properties": {
+            "color_space": {
+              "const": "sRGB"
+            },
+            "format": {
+              "const": "PNG"
+            },
+            "height": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "scale_factor": {
+              "enum": [
+                4,
+                8
+              ]
+            },
+            "width": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "color_space",
+            "format",
+            "height",
+            "scale_factor",
+            "width"
+          ],
+          "type": "object"
+        },
+        "variant_of": {
+          "$ref": "#/$defs/variantRelation"
+        }
+      },
+      "required": [
+        "alpha",
+        "expected_output_path",
+        "family",
+        "input",
+        "job_id",
+        "label",
+        "model_provenance",
+        "order",
+        "policies",
+        "prompt_components",
+        "resource_key",
+        "semantic_preservation",
+        "status",
+        "target_master"
+      ],
+      "type": "object"
+    },
+    "lockedSource": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "refusal": {
+      "additionalProperties": false,
+      "properties": {
+        "audit_reference": {
+          "additionalProperties": false,
+          "properties": {
+            "decoded_png_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "path": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "decoded_png_sha256",
+            "path"
+          ],
+          "type": "object"
+        },
+        "reason": {
+          "const": "repository City is version-unverified and generation-ineligible; replace with the authorized Mac 7.1.2 baseline"
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        },
+        "status": {
+          "const": "refused"
+        }
+      },
+      "required": [
+        "audit_reference",
+        "reason",
+        "resource_key",
+        "status"
+      ],
+      "type": "object"
+    },
+    "resourceKey": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "pack": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "PICT",
+            "cicn",
+            "ppat"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "pack",
+        "type"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "variantRelation": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        }
+      },
+      "required": [
+        "job_id",
+        "resource_key"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://realmz-remastered.invalid/schema/style-proof-generation-jobs.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approval_eligible": {
+      "const": false
+    },
+    "authorization_blocker": {
+      "const": "authorized Mac 7.1.2 City references are not yet available"
+    },
+    "complete_style_proof": {
+      "const": false
+    },
+    "generation_state": {
+      "additionalProperties": false,
+      "properties": {
+        "generated_outputs": {
+          "const": 0
+        },
+        "model_calls": {
+          "const": 0
+        }
+      },
+      "required": [
+        "generated_outputs",
+        "model_calls"
+      ],
+      "type": "object"
+    },
+    "input_handoff": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_filename": {
+          "const": "generation-input-manifest.json"
+        },
+        "manifest_kind": {
+          "const": "style-proof-generation-inputs"
+        },
+        "required_preflight": {
+          "const": "python3 scripts/prepare_style_proof_references.py --root . verify-generation-inputs --output INPUT_DIRECTORY"
+        }
+      },
+      "required": [
+        "manifest_filename",
+        "manifest_kind",
+        "required_preflight"
+      ],
+      "type": "object"
+    },
+    "job_set_kind": {
+      "const": "style-proof-generation-jobs"
+    },
+    "jobs": {
+      "items": {
+        "$ref": "#/$defs/job"
+      },
+      "maxItems": 21,
+      "minItems": 21,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "output_receipt_contract": {
+      "additionalProperties": false,
+      "properties": {
+        "jobs_are_immutable": {
+          "const": true
+        },
+        "path": {
+          "const": "assets/remastered/style-proof/generation/generation-receipts.json"
+        }
+      },
+      "required": [
+        "jobs_are_immutable",
+        "path"
+      ],
+      "type": "object"
+    },
+    "refused_references": {
+      "items": {
+        "$ref": "#/$defs/refusal"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "shared_style": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "const": "assets/remastered/style-proof/generation/style-spec.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "source_reference_manifest": {
+      "$ref": "#/$defs/lockedSource"
+    },
+    "source_selection": {
+      "$ref": "#/$defs/lockedSource"
+    }
+  },
+  "required": [
+    "approval_eligible",
+    "authorization_blocker",
+    "complete_style_proof",
+    "generation_state",
+    "input_handoff",
+    "job_set_kind",
+    "jobs",
+    "output_receipt_contract",
+    "refused_references",
+    "schema_version",
+    "shared_style",
+    "source_reference_manifest",
+    "source_selection"
+  ],
+  "title": "Realmz Remastered style-proof generation jobs",
+  "type": "object"
+}

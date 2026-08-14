@@ -1,0 +1,415 @@
+{
+  "$defs": {
+    "animationFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "const": "animation_frame"
+        },
+        "generation_allowed": {
+          "const": true
+        },
+        "historical_attempts": {
+          "$ref": "#/$defs/historicalAttempts"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "reference_roles": {
+          "const": [
+            "own_locked_classic"
+          ]
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        },
+        "sequence": {
+          "$ref": "#/$defs/sequence"
+        }
+      },
+      "required": [
+        "classification",
+        "generation_allowed",
+        "historical_attempts",
+        "job_id",
+        "reference_roles",
+        "resource_key",
+        "sequence"
+      ],
+      "type": "object"
+    },
+    "base": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "const": "base"
+        },
+        "generation_allowed": {
+          "const": true
+        },
+        "historical_attempts": {
+          "$ref": "#/$defs/historicalAttempts"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "reference_roles": {
+          "const": [
+            "own_locked_classic"
+          ]
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        }
+      },
+      "required": [
+        "classification",
+        "generation_allowed",
+        "job_id",
+        "reference_roles",
+        "resource_key"
+      ],
+      "type": "object"
+    },
+    "classification": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/knownVariantCandidate"
+        },
+        {
+          "$ref": "#/$defs/standalone"
+        },
+        {
+          "$ref": "#/$defs/animationFrame"
+        },
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "$ref": "#/$defs/variant"
+        }
+      ]
+    },
+    "classificationCommon": {
+      "properties": {
+        "historical_attempts": {
+          "$ref": "#/$defs/historicalAttempts"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        }
+      },
+      "required": [
+        "job_id",
+        "resource_key"
+      ],
+      "type": "object"
+    },
+    "historicalAttempts": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_ordinals": {
+          "items": {
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "status": {
+          "const": "rejected_provenance_incomplete_do_not_backfill"
+        }
+      },
+      "required": [
+        "attempt_ordinals",
+        "status"
+      ],
+      "type": "object"
+    },
+    "knownVariantCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "blocked_reason": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "candidate_base_resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        },
+        "classification": {
+          "const": "known_variant_candidate"
+        },
+        "generation_allowed": {
+          "const": false
+        },
+        "historical_attempts": {
+          "$ref": "#/$defs/historicalAttempts"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        }
+      },
+      "required": [
+        "blocked_reason",
+        "candidate_base_resource_key",
+        "classification",
+        "generation_allowed",
+        "historical_attempts",
+        "job_id",
+        "resource_key"
+      ],
+      "type": "object"
+    },
+    "resourceKey": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "pack": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "PICT",
+            "cicn",
+            "ppat"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "pack",
+        "type"
+      ],
+      "type": "object"
+    },
+    "sequence": {
+      "additionalProperties": false,
+      "properties": {
+        "base_resource_id": {
+          "type": "integer"
+        },
+        "frame_count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "frame_index": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resource_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "spelllook1": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "base_resource_id",
+        "frame_count",
+        "frame_index",
+        "resource_ids",
+        "spelllook1",
+        "source"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "excerpt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "first_line": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "formula": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "last_line": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "excerpt_sha256",
+        "file_sha256",
+        "first_line",
+        "formula",
+        "last_line",
+        "path"
+      ],
+      "type": "object"
+    },
+    "standalone": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/classificationCommon"
+        }
+      ],
+      "properties": {
+        "classification": {
+          "const": "standalone"
+        },
+        "generation_allowed": {
+          "const": true
+        },
+        "historical_attempts": {
+          "$ref": "#/$defs/historicalAttempts"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "reference_roles": {
+          "const": [
+            "own_locked_classic"
+          ]
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        }
+      },
+      "required": [
+        "classification",
+        "generation_allowed",
+        "historical_attempts",
+        "job_id",
+        "reference_roles",
+        "resource_key"
+      ],
+      "type": "object"
+    },
+    "variant": {
+      "additionalProperties": false,
+      "properties": {
+        "base_job_id": {
+          "type": "string"
+        },
+        "base_resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        },
+        "classification": {
+          "const": "variant"
+        },
+        "generation_allowed": {
+          "const": true
+        },
+        "historical_attempts": {
+          "$ref": "#/$defs/historicalAttempts"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "reference_roles": {
+          "const": [
+            "own_locked_classic",
+            "approved_base_master"
+          ]
+        },
+        "resource_key": {
+          "$ref": "#/$defs/resourceKey"
+        }
+      },
+      "required": [
+        "base_job_id",
+        "base_resource_key",
+        "classification",
+        "generation_allowed",
+        "job_id",
+        "reference_roles",
+        "resource_key"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "classification_set_kind": {
+      "const": "style-proof-item-generation-classifications"
+    },
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/classification"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "jobs_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "rules": {
+      "additionalProperties": false,
+      "properties": {
+        "classification_manifest_sha256_required_in_call_record": {
+          "const": true
+        },
+        "classification_required_before_item_call": {
+          "const": true
+        },
+        "generation_reference_set_required_in_call_record": {
+          "const": true
+        },
+        "historical_rejected_attempts_may_not_be_backfilled": {
+          "const": true
+        },
+        "known_variant_candidate_generation_allowed": {
+          "const": false
+        }
+      },
+      "required": [
+        "classification_manifest_sha256_required_in_call_record",
+        "classification_required_before_item_call",
+        "generation_reference_set_required_in_call_record",
+        "historical_rejected_attempts_may_not_be_backfilled",
+        "known_variant_candidate_generation_allowed"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "classification_set_kind",
+    "entries",
+    "jobs_sha256",
+    "rules",
+    "schema_version"
+  ],
+  "type": "object"
+}

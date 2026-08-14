@@ -2,6 +2,7 @@
 #include <deque>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <stddef.h>
 #include <stdexcept>
 #include <string>
@@ -9,6 +10,7 @@
 #include "FileManager.hpp"
 #include "MemoryManager.hpp"
 #include "ResourceManager.h"
+#include "ResourceManagerRemaster.hpp"
 #include "StringConvert.hpp"
 #include "structs.h"
 #include <phosg/Filesystem.hh>
@@ -35,6 +37,11 @@ public:
     // the data contained in source_res. If this is true, the data is copied
     // into source_res when the file is saved.
     bool data_modified;
+    // Populated only in Remastered mode, after the legacy search chain has
+    // selected source_res. The pointer guards the cache if a writable resource
+    // is replaced during UpdateResFile.
+    std::optional<realmz::remaster::assets::PostSelectionResult> asset_selection;
+    const ResourceDASM::ResourceFile::Resource* asset_selection_source = nullptr;
 
     ~Resource() {
       if (this->data_handle) {
@@ -50,6 +57,9 @@ public:
       MODIFIED,
     };
     std::string host_filename; // Filename on host system (e.g. "Data Files/Scenario.rsrc")
+    // Stable identity derived from the FSSpec request, never from an absolute
+    // bundle/user-data path. Empty for non-content requests such as prefs.
+    std::optional<std::string> logical_pack;
     State state;
     int16_t refnum = 0;
     std::shared_ptr<ResourceDASM::ResourceFile> rf;
@@ -186,6 +196,8 @@ public:
           this->rf->add(new_res);
           it.second->source_res = new_res;
           it.second->data_modified = false;
+          it.second->asset_selection.reset();
+          it.second->asset_selection_source = nullptr;
         }
       }
       phosg::save_file(this->host_filename, ResourceDASM::serialize_resource_fork(*this->rf));
@@ -209,10 +221,12 @@ public:
 
   int16_t use(
       const std::string& host_filename,
+      std::optional<std::string> logical_pack,
       std::shared_ptr<ResourceDASM::ResourceFile> rf,
       bool writable) {
     auto file = std::make_shared<File>();
     file->host_filename = host_filename;
+    file->logical_pack = std::move(logical_pack);
     file->refnum = this->next_refnum++;
     file->state = writable ? File::State::NOT_MODIFIED : File::State::READ_ONLY;
     file->rf = rf;
@@ -289,6 +303,75 @@ public:
     throw std::out_of_range("resource not found by handle");
   }
 
+  void set_presentation_mode(
+      realmz::presentation::PresentationMode mode) {
+    if (mode == this->presentation_mode) {
+      return;
+    }
+    this->presentation_mode = mode;
+    this->last_asset_diagnostic.clear();
+    if (this->asset_hook) {
+      this->asset_hook->setPresentationMode(mode);
+    }
+  }
+
+  realmz::presentation::PresentationMode get_presentation_mode() const noexcept {
+    return this->presentation_mode;
+  }
+
+  std::optional<realmz::remaster::assets::PostSelectionResult>
+  inspect_selected_resource(const std::shared_ptr<Resource>& res) {
+    using namespace realmz::remaster::assets;
+
+    // This branch is the entire Classic-mode integration cost. No manifest is
+    // opened, no ResourceKey is constructed, and no source payload is hashed.
+    if (this->presentation_mode ==
+            realmz::presentation::PresentationMode::classic ||
+        !isPhaseOneRasterResourceType(res->source_res->type)) {
+      return std::nullopt;
+    }
+
+    if (res->asset_selection.has_value() &&
+        res->asset_selection_source == res->source_res.get()) {
+      return res->asset_selection;
+    }
+
+    const auto file = this->get_file(res->file_refnum);
+    if (!file->logical_pack.has_value()) {
+      const auto type = resourceTypeString(res->source_res->type);
+      this->last_asset_diagnostic =
+          "Selected raster resource has no application-relative pack identity: " +
+          type + ":" + std::to_string(res->source_res->id);
+      rm_log.warning_f("{}", this->last_asset_diagnostic);
+      return std::nullopt;
+    }
+
+    auto& hook = this->asset_selection_hook();
+    auto selection = hook.inspect(
+        *file->logical_pack, res->source_res->type, res->source_res->id,
+        res->source_res->data);
+    res->asset_selection_source = res->source_res.get();
+    res->asset_selection = std::move(selection);
+    if (!res->asset_selection->resolution.covered()) {
+      this->last_asset_diagnostic =
+          res->asset_selection->resolution.diagnostic;
+      rm_log.warning_f("{}", this->last_asset_diagnostic);
+    }
+    return res->asset_selection;
+  }
+
+  std::string get_last_asset_diagnostic() const {
+    return this->last_asset_diagnostic;
+  }
+
+  std::optional<std::string> classic_payload_for_handle(Handle data_handle) {
+    try {
+      return this->get_resource(data_handle)->source_res->data;
+    } catch (const std::out_of_range&) {
+      return std::nullopt;
+    }
+  }
+
   void mark_modified(int16_t refnum) {
     this->get_file(refnum)->mark_modified(nullptr);
   }
@@ -332,12 +415,59 @@ public:
   }
 
 private:
+  realmz::remaster::assets::ResourceSelectionHook& asset_selection_hook() {
+    if (!this->asset_hook) {
+      const auto root = std::filesystem::path(
+          host_filename_for_mac_filename(":Remastered", false));
+      this->asset_hook =
+          std::make_unique<realmz::remaster::assets::ResourceSelectionHook>(
+              root / "phase1.runtime-manifest.json",
+              root / "phase1.census.json", root);
+      this->asset_hook->setPresentationMode(this->presentation_mode);
+    }
+    return *this->asset_hook;
+  }
+
   int16_t next_refnum = 1;
   std::vector<std::shared_ptr<File>> files;
   size_t search_start_index = 0;
+  realmz::presentation::PresentationMode presentation_mode =
+      realmz::presentation::PresentationMode::classic;
+  std::unique_ptr<realmz::remaster::assets::ResourceSelectionHook> asset_hook;
+  std::string last_asset_diagnostic;
 };
 
 static ResourceManager rm;
+
+namespace realmz::remaster::assets {
+
+void setResourcePresentationMode(presentation::PresentationMode mode) {
+  rm.set_presentation_mode(mode);
+}
+
+presentation::PresentationMode resourcePresentationMode() noexcept {
+  return rm.get_presentation_mode();
+}
+
+std::optional<PostSelectionResult> resourceAssetSelectionForHandle(
+    Handle selectedResource) {
+  try {
+    return rm.inspect_selected_resource(rm.get_resource(selectedResource));
+  } catch (const std::out_of_range&) {
+    return std::nullopt;
+  }
+}
+
+std::optional<std::string> resourceClassicPayloadForHandle(
+    Handle selectedResource) {
+  return rm.classic_payload_for_handle(selectedResource);
+}
+
+std::string lastResourceAssetDiagnostic() {
+  return rm.get_last_asset_diagnostic();
+}
+
+} // namespace realmz::remaster::assets
 
 ////////////////////////////////////////////////////////////////////////////////
 // Classic Mac OS API implementation
@@ -391,6 +521,9 @@ void FSpCreateResFile(const FSSpec* spec, OSType creator, OSType fileType, Scrip
 int16_t FSpOpenResFile(const FSSpec* spec, SInt8 permission) {
   std::string host_filename;
   try {
+    const auto logical_pack =
+        realmz::remaster::assets::logicalPackForOpenRequest(
+            string_for_pstr<64>(spec->name), spec->parID == 0);
     host_filename = host_resource_filename_for_FSSpec(spec);
     if (host_filename.empty()) {
       auto filename = string_for_pstr<64>(spec->name);
@@ -415,7 +548,7 @@ int16_t FSpOpenResFile(const FSSpec* spec, SInt8 permission) {
       rf = std::make_shared<ResourceDASM::ResourceFile>(ResourceDASM::parse_resource_fork(data));
     }
     bool writable = (permission == fsCurPerm) || (permission > fsRdPerm);
-    int16_t ret = rm.use(host_filename, rf, writable);
+    int16_t ret = rm.use(host_filename, logical_pack, rf, writable);
     rm_log.info_f("Loaded {} with reference number {} ({} with permission {})",
         host_filename.c_str(), ret, writable ? "writable" : "read-only", permission);
     rm.print_chain();
@@ -568,6 +701,8 @@ Handle GetResource(ResType type, int16_t id) {
     return nullptr;
   }
 
+  (void)rm.inspect_selected_resource(res);
+
   resError = noErr;
   return res->data_handle;
 }
@@ -575,6 +710,7 @@ Handle GetResource(ResType type, int16_t id) {
 Handle Get1Resource(ResType type, int16_t id) {
   auto res = rm.current_file()->get_resource(type, id);
   if (res != nullptr) {
+    (void)rm.inspect_selected_resource(res);
     resError = noErr;
 
     // The default PRFN resource included with Realmz is 64 bytes long. Its data handle is cast

@@ -1,0 +1,76 @@
+{
+  "intermediate_artifacts": [
+    {
+      "path": "assets/remastered/style-proof/generation/postprocess/02_ui_material_ppat_129/attempt-1/01-resized.rgba8",
+      "sha256": "72a532a1dccae440cf096fdf05aad68e33330dc29fa965903a1f838f14c2450b"
+    },
+    {
+      "path": "assets/remastered/style-proof/generation/postprocess/02_ui_material_ppat_129/attempt-1/02-tileable.rgba8",
+      "sha256": "701f2a9b240b93e0dc3ddb985411f283312232849eed3e74f441a275652fc32d"
+    }
+  ],
+  "job_id": "02_ui_material_ppat_129",
+  "output": {
+    "color_space": "sRGB",
+    "height": 512,
+    "path": "assets/remastered/style-proof/generation/outputs/02_ui_material_ppat_129.png",
+    "pixel_format": "RGBA8",
+    "sha256": "dfe2dadfa74ef37ee4d6de5f8e607eb082285f6e1a994a5e0e26ba2463d7f52f",
+    "width": 512
+  },
+  "post_processing": [
+    {
+      "operation": "resize_to_target",
+      "parameters": {
+        "algorithm": "decode PNG, convert fully opaque pixels to RGBA8, verify exact aspect by integer cross-product, and resize with PIL.Image.Resampling.LANCZOS; no crop or stretch",
+        "aspect_assertion": "source_width*target_height == source_height*target_width",
+        "decoder_source_mode": "RGB",
+        "input_sha256": "68d495b4e3c35257b9a4c7aa9578f3fa497997e2a79f3937903c3f5efcc958bc",
+        "intermediate_state_format": "REALMZ-RGBA8-STATE-V1 + big-endian width/height + row-major RGBA8",
+        "output_changed": true,
+        "output_sha256": "72a532a1dccae440cf096fdf05aad68e33330dc29fa965903a1f838f14c2450b",
+        "resampler": "PIL.Image.Resampling.LANCZOS",
+        "source_height": 1254,
+        "source_width": 1254,
+        "target_height": 512,
+        "target_width": 512
+      },
+      "tool": "Pillow",
+      "tool_version": "12.2.0"
+    },
+    {
+      "operation": "make_tileable_opposite_edges",
+      "parameters": {
+        "algorithm": "blend symmetric opposing samples across an edge band using Q16 integer cubic smoothstep t^2(3-2t); each terminal pair receives the same rounded half-sum; horizontal axis then vertical axis; assert exact opposing RGBA8 boundaries",
+        "axis_order": "horizontal_then_vertical",
+        "boundary_color": "rounded_half_sum_of_opposing_samples",
+        "edge_band_pixels": 64,
+        "input_sha256": "72a532a1dccae440cf096fdf05aad68e33330dc29fa965903a1f838f14c2450b",
+        "output_changed": true,
+        "output_sha256": "701f2a9b240b93e0dc3ddb985411f283312232849eed3e74f441a275652fc32d",
+        "smoothstep": "Q16 integer cubic t^2(3-2t)"
+      },
+      "tool": "scripts/process_style_proof_output.py",
+      "tool_version": "1"
+    },
+    {
+      "operation": "encode_srgb_png",
+      "parameters": {
+        "algorithm": "canonical RGBA8 PNG with filter type 0 rows, IHDR color type 6, sRGB rendering intent 0, zlib level 9, and no variable metadata",
+        "input_sha256": "701f2a9b240b93e0dc3ddb985411f283312232849eed3e74f441a275652fc32d",
+        "input_state_format": "REALMZ-RGBA8-STATE-V1",
+        "output_changed": true,
+        "output_color_space": "sRGB",
+        "output_pixel_format": "RGBA8",
+        "output_sha256": "dfe2dadfa74ef37ee4d6de5f8e607eb082285f6e1a994a5e0e26ba2463d7f52f"
+      },
+      "tool": "scripts/prepare_style_proof_references.py:encode_png",
+      "tool_version": "1"
+    }
+  ],
+  "raw_output": {
+    "path": "assets/remastered/style-proof/generation/raw/02_ui_material_ppat_129/attempt-1.png",
+    "sha256": "68d495b4e3c35257b9a4c7aa9578f3fa497997e2a79f3937903c3f5efcc958bc"
+  },
+  "regeneration_ordinal": 1
+}

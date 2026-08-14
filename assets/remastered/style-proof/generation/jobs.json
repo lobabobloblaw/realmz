@@ -1,0 +1,1083 @@
+{
+  "approval_eligible": false,
+  "authorization_blocker": "authorized Mac 7.1.2 City references are not yet available",
+  "complete_style_proof": false,
+  "generation_state": {
+    "generated_outputs": 0,
+    "model_calls": 0
+  },
+  "input_handoff": {
+    "manifest_filename": "generation-input-manifest.json",
+    "manifest_kind": "style-proof-generation-inputs",
+    "required_preflight": "python3 scripts/prepare_style_proof_references.py --root . verify-generation-inputs --output INPUT_DIRECTORY"
+  },
+  "job_set_kind": "style-proof-generation-jobs",
+  "jobs": [
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire rectangular master opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/01_ui_material_ppat_128.png",
+      "family": "ui_material",
+      "input": {
+        "classic_payload_sha256": "60f3460bacbae82e45ebe2ac25dcf9fcad4fc5f4094c0c9bd0822082d4aa8bee",
+        "decoded_png_sha256": "6108508fb15d1d6d020d5881c6a962431a47b7cc951c101ea36aef10b326241a",
+        "path": "references/01_ui_material_ppat_128.png"
+      },
+      "job_id": "01_ui_material_ppat_128",
+      "label": "Blue stone highlight",
+      "model_provenance": null,
+      "order": 1,
+      "policies": {
+        "baked_lighting": "No directional highlight, shadow, bevel, vignette, or screen-space gradient; the lighter value is a material role, not a light source.",
+        "seams": "Must tile seamlessly on both axes; opposite edges and corners must match without a visible line or repeated landmark.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Fill the entire opaque square with the stone surface; no border, frame, panel edge, or empty margin",
+        "composition": "Orthographic evenly distributed material swatch with seamless opposing edges and no unique focal object",
+        "negative": "Do not include large cracks, masonry blocks, gemstones, metal trim, directional shine, a vignette, or an isolated central motif",
+        "subject": "Cool blue-violet weathered stone texture serving as the lightest highlight member of a related four-material UI set"
+      },
+      "resource_key": {
+        "id": 128,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "semantic_preservation": [
+        "Preserve the cool blue-violet hue and the lightest-value role relative to resources 129 and 130.",
+        "Preserve the fine mottled stone scale and quiet low-contrast readability of the Classic swatch."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 512,
+        "scale_factor": 8,
+        "width": 512
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire rectangular master opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/02_ui_material_ppat_129.png",
+      "family": "ui_material",
+      "input": {
+        "classic_payload_sha256": "965007935d5701f5493f57c5b7029342b7865ca5c384a55d6344ed0b50ec960b",
+        "decoded_png_sha256": "3b1098705d5450e098f4eeb797532f080188e322ea97af6de111ee4ba4932c91",
+        "path": "references/02_ui_material_ppat_129.png"
+      },
+      "job_id": "02_ui_material_ppat_129",
+      "label": "Blue stone base",
+      "model_provenance": null,
+      "order": 2,
+      "policies": {
+        "baked_lighting": "No directional highlight, shadow, bevel, vignette, or screen-space gradient; its middle value is intrinsic material color.",
+        "seams": "Must tile seamlessly on both axes; opposite edges and corners must match without a visible line or repeated landmark.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Fill the entire opaque square with the stone surface; no border, frame, panel edge, or empty margin",
+        "composition": "Orthographic evenly distributed material swatch with seamless opposing edges and no unique focal object",
+        "negative": "Do not include large cracks, masonry blocks, gemstones, metal trim, directional shine, a vignette, or an isolated central motif",
+        "subject": "Weathered slate-blue stone texture serving as the medium-value base member of a related four-material UI set"
+      },
+      "resource_key": {
+        "id": 129,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "semantic_preservation": [
+        "Preserve the slate-blue base hue and the middle-value role between resources 128 and 130.",
+        "Preserve the fine horizontal mineral variation without turning it into discrete masonry."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 512,
+        "scale_factor": 8,
+        "width": 512
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire rectangular master opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/03_ui_material_ppat_130.png",
+      "family": "ui_material",
+      "input": {
+        "classic_payload_sha256": "3585574c44318da60187253ecc7be3231872675a82ec8c306c73d129a7618761",
+        "decoded_png_sha256": "146ee07cf2525c1e1a25ae496b803fae843cd3b3fd04b80eac34fa3302f55ca9",
+        "path": "references/03_ui_material_ppat_130.png"
+      },
+      "job_id": "03_ui_material_ppat_130",
+      "label": "Dark blue stone",
+      "model_provenance": null,
+      "order": 3,
+      "policies": {
+        "baked_lighting": "No directional highlight, shadow, bevel, vignette, or screen-space gradient; the dark value is a material role, not a shadow.",
+        "seams": "Must tile seamlessly on both axes; opposite edges and corners must match without a visible line or repeated landmark.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Fill the entire opaque square with the stone surface; no border, frame, panel edge, or empty margin",
+        "composition": "Orthographic evenly distributed material swatch with seamless opposing edges and no unique focal object",
+        "negative": "Do not include a black void, large cracks, masonry blocks, gemstones, metal trim, directional shine, a vignette, or an isolated central motif",
+        "subject": "Deep navy and charcoal-blue weathered stone texture serving as the darkest member of a related four-material UI set"
+      },
+      "resource_key": {
+        "id": 130,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "semantic_preservation": [
+        "Preserve the deep navy hue and darkest-value role relative to resources 128 and 129.",
+        "Preserve enough subtle mineral variation to remain stone rather than a flat black fill."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 512,
+        "scale_factor": 8,
+        "width": 512
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire rectangular master opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/04_ui_material_ppat_131.png",
+      "family": "ui_material",
+      "input": {
+        "classic_payload_sha256": "d6491e77c64a95fb68c64fabe6cc374f97077e4c979111c4a92f4522698795a7",
+        "decoded_png_sha256": "399fbf9c0e719fafb58331cd70aac96144e5a1b4ee54dd74b61dcb7483477cba",
+        "path": "references/04_ui_material_ppat_131.png"
+      },
+      "job_id": "04_ui_material_ppat_131",
+      "label": "Gray stone panel",
+      "model_provenance": null,
+      "order": 4,
+      "policies": {
+        "baked_lighting": "No directional highlight, shadow, bevel, vignette, or screen-space gradient; retain neutral reusable surface lighting.",
+        "seams": "Must tile seamlessly on both axes; opposite edges and corners must match without a visible line or repeated landmark.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Fill the entire opaque square with the stone surface; no border, frame, panel edge, or empty margin",
+        "composition": "Orthographic evenly distributed material swatch with seamless opposing edges and no unique focal object",
+        "negative": "Do not include blue saturation, large cracks, masonry blocks, metal trim, directional shine, a vignette, or an isolated central motif",
+        "subject": "Neutral cool-gray weathered stone texture for a subdued interface panel material"
+      },
+      "resource_key": {
+        "id": 131,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "semantic_preservation": [
+        "Preserve the neutral gray palette role that separates this swatch from the three blue stones.",
+        "Preserve the dense fine-grain texture and low contrast needed behind code-rendered controls and text."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 512,
+        "scale_factor": 8,
+        "width": 512
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire square portrait, including its background, opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/05_portrait_cicn_257.png",
+      "family": "portrait",
+      "input": {
+        "classic_payload_sha256": "37c97669cc29f3366d06158e674e0d781ca7660e5ede33fc05325368f25a2c6d",
+        "decoded_png_sha256": "391bdb4625c39091dc8699041a756299b19988a3aa0424e1ee794746c98810d1",
+        "path": "references/05_portrait_cicn_257.png"
+      },
+      "job_id": "05_portrait_cicn_257",
+      "label": "Human adventurer",
+      "model_provenance": null,
+      "order": 5,
+      "policies": {
+        "baked_lighting": "Scene-local portrait modeling is allowed, but avoid glossy rim light, modern studio lighting, and highlights that obscure face readability.",
+        "seams": "Not tileable; preserve a clean square crop with no decorative frame or border.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Subdued dark atmospheric portrait background derived from the reference palette, filling the square with no transparency",
+        "composition": "Tight head-and-shoulders fantasy character portrait matching the reference head angle, gaze, crop, and silhouette",
+        "negative": "Do not include a full body, helmet, extra jewelry, modern clothing, glamour photography, or altered age or gender presentation",
+        "subject": "Young human adventurer with long dark auburn-brown hair and a serious alert expression, retaining the Classic facial identity and warm clothing accents"
+      },
+      "resource_key": {
+        "id": 257,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the human subject, apparent age, dark auburn-brown hair, facial identity, gaze, and head-and-shoulders pose.",
+        "Preserve the warm foreground palette against the darker cool background and the serious adventuring mood."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 352,
+        "scale_factor": 8,
+        "width": 352
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire square portrait, including its background, opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/06_portrait_cicn_267.png",
+      "family": "portrait",
+      "input": {
+        "classic_payload_sha256": "c6b9a296b819c1fc4df139f564efaf1c5c8b0650a5abfd542d559d62dca71479",
+        "decoded_png_sha256": "5a4beeb0402ac9d50897d336e00fd6f946d08a55f1bda7dbbdef69fe41353b64",
+        "path": "references/06_portrait_cicn_267.png"
+      },
+      "job_id": "06_portrait_cicn_267",
+      "label": "White-haired adventurer",
+      "model_provenance": null,
+      "order": 6,
+      "policies": {
+        "baked_lighting": "Scene-local portrait modeling is allowed, but avoid glossy rim light, modern studio lighting, and highlights that obscure face readability.",
+        "seams": "Not tileable; preserve a clean square crop with no decorative frame or border.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Subdued dark green-black atmospheric portrait background, filling the square with no transparency",
+        "composition": "Tight frontal head-and-shoulders fantasy character portrait matching the reference gaze, crop, and silhouette",
+        "negative": "Do not include a full body, helmet, pale human skin, extra jewelry, modern clothing, glamour photography, or altered age or gender presentation",
+        "subject": "Red-skinned white-haired adventurer with a stern frontal expression, pale swept-up hair, cool violet clothing, and the distinctive Classic facial identity"
+      },
+      "resource_key": {
+        "id": 267,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the red skin, high white hair, frontal gaze, facial identity, and head-and-shoulders pose.",
+        "Preserve the violet-and-cyan foreground accents against the deep green-black background."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 352,
+        "scale_factor": 8,
+        "width": 352
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire square portrait, including its background, opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/07_portrait_cicn_297.png",
+      "family": "portrait",
+      "input": {
+        "classic_payload_sha256": "09874978f4424d6b1d6311b90b5125d79a2cf18a185f76b3aec3b2b54f5d3e08",
+        "decoded_png_sha256": "729a2dc2555e08ca1c5666606f48cf9ee0db4057404fdf34047ffcb827c7fda8",
+        "path": "references/07_portrait_cicn_297.png"
+      },
+      "job_id": "07_portrait_cicn_297",
+      "label": "Elf adventurer",
+      "model_provenance": null,
+      "order": 7,
+      "policies": {
+        "baked_lighting": "Scene-local portrait modeling is allowed, but avoid glossy rim light, modern studio lighting, and highlights that obscure face readability.",
+        "seams": "Not tileable; preserve a clean square crop with no decorative frame or border.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Soft pale lavender and blue atmospheric portrait background, filling the square with no transparency",
+        "composition": "Tight head-and-shoulders fantasy character portrait matching the reference three-quarter head angle, gaze, crop, and silhouette",
+        "negative": "Do not include a full body, helmet, hidden ears, long blond hair, extra jewelry, modern clothing, glamour photography, or altered age or gender presentation",
+        "subject": "Copper-tan elf adventurer with short swept auburn-orange hair, vivid green eyes, a visible pointed ear, composed expression, and a black-and-silver segmented high collar"
+      },
+      "resource_key": {
+        "id": 297,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the elven subject, copper-tan skin, short swept auburn-orange hair, vivid green eyes, visible pointed ear, facial identity, gaze, and three-quarter pose.",
+        "Preserve the warm face and hair against the pale lavender-blue background and the black-and-silver segmented high collar."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 352,
+        "scale_factor": 8,
+        "width": 352
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire square portrait, including its background, opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/08_portrait_cicn_337.png",
+      "family": "portrait",
+      "input": {
+        "classic_payload_sha256": "9d7bfacdf07175ccdfb43084e165fd63160b45903b894079a1f6cb5009a73c5c",
+        "decoded_png_sha256": "552bc5a10e394d26ddf458b69954f7900084902183fbbe0e02a20f1b80210f6d",
+        "path": "references/08_portrait_cicn_337.png"
+      },
+      "job_id": "08_portrait_cicn_337",
+      "label": "Reptilian adventurer",
+      "model_provenance": null,
+      "order": 8,
+      "policies": {
+        "baked_lighting": "Scene-local portrait modeling is allowed, but avoid glossy rim light, modern studio lighting, and highlights that obscure face readability.",
+        "seams": "Not tileable; preserve a clean square crop with no decorative frame or border.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Muted pink-violet dusk atmosphere, filling the square with no transparency",
+        "composition": "Tight frontal head-and-shoulders fantasy character portrait matching the reference gaze, crop, tall crest, and silhouette",
+        "negative": "Do not include a human face, mammalian features, a full body, a helmet hiding the crest, modern clothing, or glamour photography",
+        "subject": "Green-scaled reptilian adventurer with a tall red crest, long narrow face, dark shoulder armor, and the distinctive Classic identity"
+      },
+      "resource_key": {
+        "id": 337,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the reptilian anatomy, green scales, tall red crest, long facial silhouette, frontal gaze, and shoulder crop.",
+        "Preserve the green-and-red subject contrast against the muted pink-violet background."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 352,
+        "scale_factor": 8,
+        "width": 352
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve contact point and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/09_tactical_actor_cicn_9000.png",
+      "family": "tactical_actor",
+      "input": {
+        "classic_payload_sha256": "0a2d665b1bf29cf45a2ebb5a58b1408cbcc3995a6e2edddff12c4767b6c4719e",
+        "decoded_png_sha256": "8b8f31b5406b072ffe006a0eb57fc880bc32aa5b7a9847e1752405b14534dcb3",
+        "path": "references/09_tactical_actor_cicn_9000.png"
+      },
+      "job_id": "09_tactical_actor_cicn_9000",
+      "label": "Archer stance",
+      "model_provenance": null,
+      "order": 9,
+      "policies": {
+        "baked_lighting": "Use neutral form shading only; no cast ground shadow, directional scene light, glow, or rim light may be baked into the actor.",
+        "seams": "Not tileable; keep all painted subject pixels inside the original masked footprint and away from canvas edges except where the source mask touches them.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single full-body tactical sprite at the same side-facing angle, upright archer pose, bow direction, limb placement, ground contact, and canvas occupancy as the reference",
+        "negative": "Do not include a second character, changed facing, an arrow in flight, scenery, a floor, a cast shadow, an aura, a cropped weapon, or an oversized head",
+        "subject": "Human archer in earthy brown and green clothing holding a pale curved bow in a ready stance"
+      },
+      "resource_key": {
+        "id": 9000,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single human archer, side-facing ready pose, bow angle, limb placement, silhouette, and tile contact point.",
+        "Preserve the earthy brown-green palette and pale weapon contrast at tactical scale."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve contact point and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/10_tactical_actor_cicn_9007.png",
+      "family": "tactical_actor",
+      "input": {
+        "classic_payload_sha256": "34c188ea3d305279fbaed6b481741e54348e52843faf9c15d0a002550ec17612",
+        "decoded_png_sha256": "b56553d1e6bfa633ee88c1c258821ff798d3da4459f7a56a1204f2f86333ffac",
+        "path": "references/10_tactical_actor_cicn_9007.png"
+      },
+      "job_id": "10_tactical_actor_cicn_9007",
+      "label": "Winged actor stance",
+      "model_provenance": null,
+      "order": 10,
+      "policies": {
+        "baked_lighting": "Use neutral form shading only; no cast ground shadow, directional scene light, glow, or rim light may be baked into the actor.",
+        "seams": "Not tileable; keep all painted subject pixels inside the original masked footprint and away from canvas edges except where the source mask touches them.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single full-body tactical sprite in the same frontal upright stance, with symmetric spread wings, limb placement, ground contact, and canvas occupancy as the reference",
+        "negative": "Do not include a second character, folded wings, extra wings, changed facing, a flying pose, scenery, a floor, a cast shadow, an aura, or an oversized head",
+        "subject": "Slender winged humanoid actor with vivid pale pink-violet wings, a dark torso, and red lower-body accents"
+      },
+      "resource_key": {
+        "id": 9007,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single winged humanoid, upright frontal stance, symmetric spread-wing silhouette, limb placement, and tile contact point.",
+        "Preserve the luminous pink-violet wing palette and narrow dark-red body silhouette without adding a glow field."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve contact point and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/11_tactical_actor_cicn_9060.png",
+      "family": "tactical_actor",
+      "input": {
+        "classic_payload_sha256": "27492d32836cfdbd0e024acd65a2f349ed83ca70f9845fbcf6bca79514328dde",
+        "decoded_png_sha256": "d4aa3b087db3932c5994c2f92295a4fb0d3cb01e3c947a6b316adeae30bf9b7f",
+        "path": "references/11_tactical_actor_cicn_9060.png"
+      },
+      "job_id": "11_tactical_actor_cicn_9060",
+      "label": "Armored dual wield",
+      "model_provenance": null,
+      "order": 11,
+      "policies": {
+        "baked_lighting": "Use neutral form shading only; no cast ground shadow, directional scene light, glow, or rim light may be baked into the actor.",
+        "seams": "Not tileable; keep all painted subject pixels inside the original masked footprint and away from canvas edges except where the source mask touches them.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single full-body tactical sprite in the same wide braced pose, one weapon extended to each side, matching limb placement, ground contact, and canvas occupancy",
+        "negative": "Do not include a second character, a shield, a missing or extra weapon, straight swords, changed facing, scenery, a floor, a cast shadow, an aura, or an oversized head",
+        "subject": "Blue-armored dual-wielding warrior with paired tall pale-gold horns or plumes rising above a blue helmet and two curved blades held outward"
+      },
+      "resource_key": {
+        "id": 9060,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single armored warrior, exactly two curved blades, wide braced stance, limb placement, silhouette, and tile contact point.",
+        "Preserve the dark blue armor, paired tall pale-gold horns or plumes above the helmet, and both curved blade tips at tactical scale."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve contact point and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/12_tactical_actor_cicn_9104.png",
+      "family": "tactical_actor",
+      "input": {
+        "classic_payload_sha256": "3bc9d206477de75e0dda6785eef5adc160a87854263b3180f0e675c919af2746",
+        "decoded_png_sha256": "1ad2723e99f271373a5eb0e5d660c73d93726172c49522f672876ac84ff99a74",
+        "path": "references/12_tactical_actor_cicn_9104.png"
+      },
+      "job_id": "12_tactical_actor_cicn_9104",
+      "label": "Large armored actor",
+      "model_provenance": null,
+      "order": 12,
+      "policies": {
+        "baked_lighting": "Use neutral form shading only; no cast ground shadow, directional scene light, glow, or rim light may be baked into the actor.",
+        "seams": "Not tileable; keep all painted subject pixels inside the original masked footprint and away from canvas edges except where the source mask touches them.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single bulky full-body tactical sprite in the same crouched wide stance, matching arm spread, facing, ground contact, and canvas occupancy",
+        "negative": "Do not include a human-sized slender body, a second character, missing or extra arms, changed facing, scenery, a floor, a cast shadow, an aura, or a cropped silhouette",
+        "subject": "Large hulking armored fantasy actor with broad shoulders, heavy orange-brown armor, an animal-like pale head, and wide weapon-bearing arms"
+      },
+      "resource_key": {
+        "id": 9104,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single large actor, bulky proportions, crouched wide stance, broad arm silhouette, facing, and tile contact point.",
+        "Preserve the orange-brown armor mass, pale head, and strong size read within the unchanged tactical footprint."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve center, orientation, and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/13_item_spell_cicn_6106.png",
+      "family": "item_spell",
+      "input": {
+        "classic_payload_sha256": "b5615a03f2fe21e5063d8c2d5fa6271b51e62a21dd403df9c9bbe43c95d63ccb",
+        "decoded_png_sha256": "85a5ba2f441638ca03d0ea9906de626430523568dccda0e50a739da8a6f8e602",
+        "path": "references/13_item_spell_cicn_6106.png"
+      },
+      "job_id": "13_item_spell_cicn_6106",
+      "label": "Flaming sword item",
+      "model_provenance": null,
+      "order": 13,
+      "policies": {
+        "baked_lighting": "Warm self-emission may exist inside the flame silhouette, but no cast light, ground shadow, screen-space glow field, or directional scene lighting may extend beyond it.",
+        "seams": "Not tileable; keep all painted item and flame pixels inside the original masked footprint and preserve clear margins.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single upright centered item icon matching the reference blade direction, handle placement, flame envelope, and canvas occupancy",
+        "negative": "Do not include a hand holding the sword, a scabbard, a second weapon, a horizontal blade, scenery, a floor, a cast shadow, detached sparks, or a glow field",
+        "subject": "Dark-hilted vertical fantasy sword whose straight red-orange blade is wrapped in a compact golden flame silhouette"
+      },
+      "resource_key": {
+        "id": 6106,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single upright sword, straight blade, dark hilt, centered orientation, compact flame silhouette, and item footprint.",
+        "Preserve the black, crimson, orange, and yellow value hierarchy that reads as a flaming weapon at inventory scale."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve center, orientation, and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/14_item_spell_cicn_566.png",
+      "family": "item_spell",
+      "input": {
+        "classic_payload_sha256": "328273a1d4a4c1717f383b336b8ec7ad89b8a6c66795532d8e87d88ec6bb5194",
+        "decoded_png_sha256": "376f79ce50bdf0d03208b308a574a4132e70c5960192de238495ccf4a504d29a",
+        "path": "references/14_item_spell_cicn_566.png"
+      },
+      "job_id": "14_item_spell_cicn_566",
+      "label": "Blue flame item",
+      "model_provenance": null,
+      "order": 14,
+      "policies": {
+        "baked_lighting": "Cyan self-emission may exist inside the flame silhouette, but no cast light, ground shadow, screen-space glow field, or directional scene lighting may extend beyond it.",
+        "seams": "Not tileable; keep all painted item and flame pixels inside the original masked footprint and preserve clear margins.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single centered item icon matching the reference faceted gray body, encircling flame direction, base contact, and canvas occupancy",
+        "negative": "Do not include a weapon, hand, extra object, orange fire, scenery, a floor, a cast shadow, detached sparks, or an oversized glow field",
+        "subject": "Faceted pale gray magical vessel or stone wrapped by distinct curling cyan-blue flames"
+      },
+      "resource_key": {
+        "id": 566,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single faceted gray central object, its compact mass, encircling blue flame directions, and centered item footprint.",
+        "Preserve the pale neutral core against saturated cyan-blue magical fire for inventory-scale recognition."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve center and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/15_item_spell_cicn_12044.png",
+      "family": "item_spell",
+      "input": {
+        "classic_payload_sha256": "6b9f81f768747e5edf13a46e569494282e23e674007550d7f17a75de7342c05a",
+        "decoded_png_sha256": "63a55f969dd73ed822863b164a64cd64ae20d67cbce55b0e850ced4ef7d9c8ce",
+        "path": "references/15_item_spell_cicn_12044.png"
+      },
+      "job_id": "15_item_spell_cicn_12044",
+      "label": "Fire spell burst",
+      "model_provenance": null,
+      "order": 15,
+      "policies": {
+        "baked_lighting": "The effect is self-emissive within its original silhouette, but no cast light, screen-space glow field, smoke backdrop, or directional scene lighting may extend beyond it.",
+        "seams": "Not tileable; keep all painted effect pixels inside the original masked footprint and preserve transparent corners.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single centered radial spell burst matching the reference circular extent, bright core, irregular flame edge, and canvas occupancy",
+        "negative": "Do not include a fireball projectile with a tail, caster, explosion debris, smoke cloud, scenery, ground, cast shadow, or oversized glow field",
+        "subject": "Compact radial fire spell burst with a white-yellow core, concentric yellow-orange heat, and an irregular deep-red flame perimeter"
+      },
+      "resource_key": {
+        "id": 12044,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single centered radial burst, white-hot core, concentric heat hierarchy, irregular perimeter, and effect footprint.",
+        "Preserve the white, yellow, orange, and red progression that identifies fire magic at tactical scale."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve center, swirl directions, and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it, including magenta subject hues. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/16_item_spell_cicn_12100.png",
+      "family": "item_spell",
+      "input": {
+        "classic_payload_sha256": "9be9ad2b5912e2066c209a97a379e917e85ed0c192b947ccf23095f70662d8df",
+        "decoded_png_sha256": "fea62c343941a3a885bc1af44581ebfb89cf38ac1ab9ecd759534d268e5b0c8c",
+        "path": "references/16_item_spell_cicn_12100.png"
+      },
+      "job_id": "16_item_spell_cicn_12100",
+      "label": "Elemental spell vortex",
+      "model_provenance": null,
+      "order": 16,
+      "policies": {
+        "baked_lighting": "The effect is self-emissive within its original silhouette, but no cast light, screen-space glow field, smoke backdrop, or directional scene lighting may extend beyond it.",
+        "seams": "Not tileable; keep all painted effect pixels inside the original masked footprint and preserve transparent corners.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo; chroma removal must be border-connected so magenta inside the subject survives",
+        "composition": "Single centered circular elemental vortex matching the reference rotation, four color lobes, central opening, irregular perimeter, and canvas occupancy",
+        "negative": "Do not include a single-color whirlpool, caster, landscape, smoke cloud, scenery, ground, cast shadow, or oversized glow field",
+        "subject": "Compact four-element magical vortex with distinct cyan-blue, violet-magenta, red-orange, and green-yellow curling arms around a pale central opening"
+      },
+      "resource_key": {
+        "id": 12100,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the single circular vortex, rotation direction, four distinct curling elemental lobes, pale center, and effect footprint.",
+        "Preserve the cyan, violet-magenta, red-orange, and green-yellow quadrant roles without merging them into a generic rainbow."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire rectangular first-person scene opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/17_world_dungeon_PICT_50.png",
+      "family": "world_dungeon",
+      "input": {
+        "classic_payload_sha256": "f46d3a0b718e86811c01e8e1470759526ddb79a5b242ac683f7b38c84aec6e67",
+        "decoded_png_sha256": "e5ec681a593a2acdebb30b4e2b54e66de41cd0736d213fe6e4636036973ff231",
+        "path": "references/17_world_dungeon_PICT_50.png"
+      },
+      "job_id": "17_world_dungeon_PICT_50",
+      "label": "Dungeon floor and depth",
+      "model_provenance": null,
+      "order": 17,
+      "policies": {
+        "baked_lighting": "Preserve the scene's low ambient depth cue, but do not add torches, visible light sources, directional highlights, pools of light, or a vignette.",
+        "seams": "Not a tileable texture; preserve every perspective boundary and the exact 4:3 scene crop without exposing additional floor or distance.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Opaque black-green dungeon depth occupying the upper field and meeting the floor at the same horizon as the reference",
+        "composition": "Empty first-person dungeon view with a shallow tiled stone floor receding toward a centered dark horizon, matching the reference perspective, horizon height, and visible extent",
+        "negative": "Do not include walls, a doorway, arch, gate, furniture, characters, treasure, torches, mist, additional visible distance, a dramatic light beam, or a vignette",
+        "subject": "Somber olive-gray dungeon floor of large worn slabs fading into deep black-green distance"
+      },
+      "resource_key": {
+        "id": 50,
+        "pack": "Data Files/The Family Jewels",
+        "type": "PICT"
+      },
+      "semantic_preservation": [
+        "Preserve the empty first-person composition, floor perspective, tile boundaries, centered horizon, darkness, and exact visible depth.",
+        "Preserve the muted olive-gray floor and black-green distance without inventing walls, landmarks, or light sources."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 768,
+        "scale_factor": 4,
+        "width": 1024
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve base contact and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/18_world_dungeon_cicn_m189.png",
+      "family": "world_dungeon",
+      "input": {
+        "classic_payload_sha256": "1c20d15f96705789ce25d3c4a3b0ce26a4c3063ceaddedc196e6f0984e20ff93",
+        "decoded_png_sha256": "ab1765cd6471e25772001d26831d6f5a9b18c9a22f7b906aa0930ed059fe28a8",
+        "path": "references/18_world_dungeon_cicn_m189.png"
+      },
+      "job_id": "18_world_dungeon_cicn_m189",
+      "label": "Forest terrain feature",
+      "model_provenance": null,
+      "order": 18,
+      "policies": {
+        "baked_lighting": "Use neutral material shading only; no cast shadow, sun direction, glow, atmosphere, or screen-space gradient may be baked into this reusable terrain feature.",
+        "seams": "Not tileable; keep all painted terrain pixels inside the original masked footprint and preserve the bottom contact edge.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field with no texture, gradient, shadow, scenery, or halo",
+        "composition": "Single compact side-view forest terrain sprite matching the reference irregular vertical silhouette, root or earth base, lean, and canvas occupancy",
+        "negative": "Do not include a full forest scene, multiple separated trees, sky, a distant landscape, characters, a path, a cast shadow, an oversized canopy, or an added landmark",
+        "subject": "Gnarled mossy forest terrain feature with a compact olive-brown trunk or stump mass, dark branch accents, and a low root-and-earth base"
+      },
+      "resource_key": {
+        "id": -189,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the compact gnarled forest silhouette, dark upper branch accent, low root-and-earth base, lean, and tile contact point.",
+        "Preserve the subdued olive, moss, bark-brown, and earth palette used for terrain recognition."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": "#FF00FF",
+        "input_alpha": "binary_mask",
+        "mask_constraint": "Use the upscaled original binary alpha silhouette as a hard extent constraint; preserve base contact and occupied footprint.",
+        "mode": "chroma_key_then_original_mask",
+        "removal": "Treat the upscaled original binary mask as authoritative. Remove chroma deterministically only outside that mask; never remove or tolerance-key pixels inside it. Preserve source-defined openings and verify transparent corners and alpha coverage."
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/19_world_dungeon_cicn_m83.png",
+      "family": "world_dungeon",
+      "input": {
+        "classic_payload_sha256": "51852654dd21b9ada57b667d0e655916d8970a98b1c11c6bc484d216c25a650c",
+        "decoded_png_sha256": "9b79570e74c8f640a9f70afbe3afa41b10bcf90552a919af6f092741a984f623",
+        "path": "references/19_world_dungeon_cicn_m83.png"
+      },
+      "job_id": "19_world_dungeon_cicn_m83",
+      "label": "Iron dungeon gate",
+      "model_provenance": null,
+      "order": 19,
+      "policies": {
+        "baked_lighting": "Use neutral material shading only; no cast shadow, torch light, glow, atmosphere, or screen-space gradient may be baked into this reusable gate.",
+        "seams": "Not tileable; keep all painted gate pixels inside the original masked footprint and preserve transparent openings between bars.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Perfectly flat solid #FF00FF chroma-key field visible around and through the gate, with no texture, gradient, wall, shadow, scenery, or halo",
+        "composition": "Single frontal arched dungeon gate matching the reference outer silhouette, bar spacing, lower footing, openings, and canvas occupancy",
+        "negative": "Do not include a door panel, solid black interior, stone doorway, surrounding wall, lock text, characters, a torch, a cast shadow, or an angled perspective",
+        "subject": "Heavy weathered dark-iron arched dungeon gate with a rounded frame, vertical bars, cross braces, and visible open gaps"
+      },
+      "resource_key": {
+        "id": -83,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the frontal arched silhouette, bar layout, visible openings, metal frame, lower footing, and tile contact point.",
+        "Preserve the dark iron and muted rust-gray palette without filling the negative space behind the bars."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire square terrain master opaque; do not infer transparency from the source manifest label.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/20_world_dungeon_cicn_m167.png",
+      "family": "world_dungeon",
+      "input": {
+        "classic_payload_sha256": "b2c968153066ff2425b06b70f1f662ba5e30cbda5e323f8d3262a477bd1b399b",
+        "decoded_png_sha256": "fa38056c53e2eb46e786bcc78a7b4e6bdbca4045961ceadbae21ea2fc78348c1",
+        "path": "references/20_world_dungeon_cicn_m167.png"
+      },
+      "job_id": "20_world_dungeon_cicn_m167",
+      "label": "Waterfall terrain feature",
+      "model_provenance": null,
+      "order": 20,
+      "policies": {
+        "baked_lighting": "Water may retain intrinsic pale foam and blue depth variation, but no sun direction, cast shadow, bloom, or screen-space light gradient may be baked into the terrain master.",
+        "seams": "Not tileable; preserve the exact square crop and contained terrain extent without adding adjacent landscape or exposing extra map area.",
+        "text": "No text-like marks, glyphs, numerals, logos, signatures, or watermarks; OCR rejection is mandatory."
+      },
+      "prompt_components": {
+        "background": "Fill the entire opaque square with the waterfall terrain composition; no transparency, frame, border, or empty margin",
+        "composition": "Compact blue-white waterfall terrain feature matching the reference cascade angle, dark vertical rock or water streaks, foam distribution, and square occupancy",
+        "negative": "Do not include a wide landscape, horizon, sky, bridge, characters, buildings, added riverbank landmarks, a sunlight beam, bloom, or a vignette",
+        "subject": "Cold cyan and cobalt waterfall terrain with pale foaming water and dark descending streaks in a compact map-scale composition"
+      },
+      "resource_key": {
+        "id": -167,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "semantic_preservation": [
+        "Preserve the waterfall identity, cascade direction, pale foam zones, dark descending streaks, contained terrain extent, and square footprint.",
+        "Preserve the high-value white-cyan water against deeper cobalt-blue structure without adding landscape landmarks."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 256,
+        "scale_factor": 8,
+        "width": 256
+      }
+    },
+    {
+      "alpha": {
+        "chroma_key": null,
+        "input_alpha": "fully_opaque",
+        "mask_constraint": "Keep the entire square illustration opaque.",
+        "mode": "opaque",
+        "removal": "none"
+      },
+      "expected_output_path": "assets/remastered/style-proof/generation/outputs/21_tutorial_city_PICT_32128.png",
+      "family": "tutorial_city",
+      "input": {
+        "classic_payload_sha256": "44a37fbd12719698c8457d109105b61b93304e259318aa969b6afc7a8cf02eef",
+        "decoded_png_sha256": "2dd80a809a1007e7afcf1e2e4bc9433ce6bf5658324e7ab08fb8394ca2732de7",
+        "path": "references/21_tutorial_city_PICT_32128.png"
+      },
+      "job_id": "21_tutorial_city_PICT_32128",
+      "label": "Tutorial title illustration",
+      "model_provenance": null,
+      "order": 21,
+      "policies": {
+        "baked_lighting": "Scene-local magical light from the characters' held effects is allowed, but no unrelated lens flare, bloom wash, screen-space vignette, or added light source may be baked in.",
+        "seams": "Not tileable; preserve the exact square composition, figure count, landmark placement, and crop.",
+        "text": "Remove the reference Tutorial word and every glyph-like mark while preserving its empty orange-gold framed title plaque as a landmark and code-native title-safe surface; require OCR rejection."
+      },
+      "prompt_components": {
+        "background": "Opaque dark stone-and-shadow fantasy setting filling the square, preserving the empty orange-gold framed plaque at the top as a clean text-free title-safe surface",
+        "composition": "Square ensemble illustration matching the reference placement and scale of the hulking central monster and three surrounding adventurers: lower-right armored dwarf, left red-haired archer, and upper-right purple-robed spellcaster; preserve the small glowing orb near the upper center",
+        "negative": "Do not include any written title, lettering, runes or glyphs on the plaque or parchment; do not remove the orange-gold plaque or small glowing orb; do not include extra or missing characters, altered figure placement, a generic two-eyed monster, modern objects, photoreal faces, lens flare, or a logo",
+        "subject": "Tutorial adventure tableau with a red-haired bow-wielding woman at left, a hulking one-eyed toothy green ogre in the center, a purple-robed spellcaster raising green magic and holding a blank unmarked parchment at upper right, a small glowing orb above, and a compact armored dwarf at lower right"
+      },
+      "resource_key": {
+        "id": 32128,
+        "pack": "Scenarios/Tutorial/Scenario",
+        "type": "PICT"
+      },
+      "semantic_preservation": [
+        "Preserve the central one-eyed toothy ogre and three adventurers, their identities, poses, relative sizes, positions, weapon or magic cues, central overlap, small glowing orb, blank parchment, and dark-fantasy mood.",
+        "Preserve the saturated green, purple, red, and steel palette roles plus the empty orange-gold framed title plaque while removing all reference typography and every glyph from the parchment, reserving the plaque for code-rendered text."
+      ],
+      "status": "pending",
+      "target_master": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "height": 1280,
+        "scale_factor": 4,
+        "width": 1280
+      }
+    }
+  ],
+  "output_receipt_contract": {
+    "jobs_are_immutable": true,
+    "path": "assets/remastered/style-proof/generation/generation-receipts.json"
+  },
+  "refused_references": [
+    {
+      "audit_reference": {
+        "decoded_png_sha256": "e576eae69954b40023f4bc6ca7edab81cf7741f09f83486ae937545d58e1fa84",
+        "path": "assets/remastered/style-proof/classic-references/references/22_tutorial_city_PICT_32128.png"
+      },
+      "reason": "repository City is version-unverified and generation-ineligible; replace with the authorized Mac 7.1.2 baseline",
+      "resource_key": {
+        "id": 32128,
+        "pack": "Scenarios/City of Bywater/Scenario",
+        "type": "PICT"
+      },
+      "status": "refused"
+    },
+    {
+      "audit_reference": {
+        "decoded_png_sha256": "3d81eda990b2cc315a04c37da7bfc1869704cbb0cce6700dbb36691e36cbc556",
+        "path": "assets/remastered/style-proof/classic-references/references/23_tutorial_city_cicn_479.png"
+      },
+      "reason": "repository City is version-unverified and generation-ineligible; replace with the authorized Mac 7.1.2 baseline",
+      "resource_key": {
+        "id": 479,
+        "pack": "Scenarios/City of Bywater/Scenario",
+        "type": "cicn"
+      },
+      "status": "refused"
+    },
+    {
+      "audit_reference": {
+        "decoded_png_sha256": "45c6c59f458eb2802e5fc7990b80c12ba4bf1fb93a2fd198acc1a2fdd0e93297",
+        "path": "assets/remastered/style-proof/classic-references/references/24_tutorial_city_cicn_787.png"
+      },
+      "reason": "repository City is version-unverified and generation-ineligible; replace with the authorized Mac 7.1.2 baseline",
+      "resource_key": {
+        "id": 787,
+        "pack": "Scenarios/City of Bywater/Scenario",
+        "type": "cicn"
+      },
+      "status": "refused"
+    }
+  ],
+  "schema_version": 1,
+  "shared_style": {
+    "path": "assets/remastered/style-proof/generation/style-spec.json",
+    "sha256": "d4e14cf94584416529bb40ae6d67494a750758d245e25273bf0d9bfaebe729ca"
+  },
+  "source_reference_manifest": {
+    "path": "assets/remastered/style-proof/classic-references/classic-reference-manifest.json",
+    "sha256": "c7fa32903b7587b26a9201194b3601736eecb8148bd54bc168a52988222e4dd6"
+  },
+  "source_selection": {
+    "path": "assets/remastered/style-proof/classic-selection.json",
+    "sha256": "1c3d66ba4c53b3726c4352b8ca418d0b92ade622066365be359eb5dab5023a5b"
+  }
+}

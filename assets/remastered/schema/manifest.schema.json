@@ -1,0 +1,225 @@
+{
+  "$id": "https://realmz-remastered.invalid/schema/manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "census_sha256": {
+      "$ref": "census.schema.json#/$defs/sha256"
+    },
+    "city_baseline": {
+      "$ref": "census.schema.json#/$defs/cityBaseline"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "classic_passthrough"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "asset_path": {
+                  "type": "null"
+                },
+                "prompt_sha256": {
+                  "type": "null"
+                },
+                "reviewer": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "approved"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "asset_path": {
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+\\.png$",
+                  "type": "string"
+                },
+                "prompt_sha256": {
+                  "$ref": "census.schema.json#/$defs/sha256"
+                },
+                "reviewer": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "alpha_policy": {
+            "enum": [
+              "opaque_or_embedded_mask",
+              "original_mask",
+              "opaque_tile"
+            ]
+          },
+          "anchor": {
+            "$ref": "census.schema.json#/$defs/point"
+          },
+          "asset_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "atlas_order": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "classic_payload_sha256": {
+            "$ref": "census.schema.json#/$defs/sha256"
+          },
+          "generation_provenance": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "none",
+                  "imagegen"
+                ]
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "model",
+              "provider"
+            ],
+            "type": "object"
+          },
+          "hotspot": {
+            "oneOf": [
+              {
+                "$ref": "census.schema.json#/$defs/point"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "input_sha256": {
+            "$ref": "census.schema.json#/$defs/sha256"
+          },
+          "key": {
+            "$ref": "census.schema.json#/$defs/resourceKey"
+          },
+          "logical_dimensions": {
+            "$ref": "census.schema.json#/$defs/dimensions"
+          },
+          "master_key": {
+            "$ref": "census.schema.json#/$defs/resourceKey"
+          },
+          "post_processing": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "prompt_sha256": {
+            "oneOf": [
+              {
+                "$ref": "census.schema.json#/$defs/sha256"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "semantic_family": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "shared_master_sha256": {
+            "$ref": "census.schema.json#/$defs/sha256"
+          },
+          "status": {
+            "enum": [
+              "classic_passthrough",
+              "approved"
+            ]
+          }
+        },
+        "required": [
+          "alpha_policy",
+          "anchor",
+          "asset_path",
+          "atlas_order",
+          "classic_payload_sha256",
+          "generation_provenance",
+          "hotspot",
+          "input_sha256",
+          "key",
+          "logical_dimensions",
+          "master_key",
+          "post_processing",
+          "prompt_sha256",
+          "reviewer",
+          "semantic_family",
+          "shared_master_sha256",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "manifest_kind": {
+      "enum": [
+        "zero-cost-placeholder",
+        "production"
+      ]
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "scope": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "census_sha256",
+    "city_baseline",
+    "entries",
+    "manifest_kind",
+    "schema_version",
+    "scope"
+  ],
+  "title": "Realmz Remastered approved-asset manifest",
+  "type": "object"
+}

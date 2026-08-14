@@ -1,0 +1,208 @@
+{
+  "$id": "https://realmz-remastered.invalid/schema/style-proof-selection.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "city_reference_notice": {
+      "const": "Repository-bundled City of Bywater, version unverified; not the Mac 7.1.2 baseline."
+    },
+    "city_reference_policy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_use": {
+          "const": "classic-contact-sheet-and-audit-only"
+        },
+        "generation_eligible": {
+          "const": false
+        },
+        "required_replacement": {
+          "const": "authorized Mac 7.1.2 user-supplied-sha256-gated baseline"
+        }
+      },
+      "required": [
+        "allowed_use",
+        "generation_eligible",
+        "required_replacement"
+      ],
+      "type": "object"
+    },
+    "decoder": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_executable_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_source_commit": {
+          "const": "27f64c89a5fed855e68c2a5e97b6c6c389d8eb19"
+        },
+        "name": {
+          "const": "resource_dasm"
+        }
+      },
+      "required": [
+        "expected_executable_sha256",
+        "expected_source_commit",
+        "name"
+      ],
+      "type": "object"
+    },
+    "description": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "classic_payload_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "expected_decoded_png_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "expected_raw_decoder_png_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "family": {
+            "enum": [
+              "item_spell",
+              "portrait",
+              "tactical_actor",
+              "tutorial_city",
+              "ui_material",
+              "world_dungeon"
+            ]
+          },
+          "key": {
+            "$ref": "#/$defs/resourceKey"
+          },
+          "label": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[ -~]+$",
+            "type": "string"
+          },
+          "order": {
+            "maximum": 24,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "source_role": {
+            "enum": [
+              "city-repository-bundled-unverified",
+              "core-repository-bundled",
+              "tutorial-repository-bundled"
+            ]
+          }
+        },
+        "required": [
+          "classic_payload_sha256",
+          "expected_decoded_png_sha256",
+          "expected_raw_decoder_png_sha256",
+          "family",
+          "key",
+          "label",
+          "order",
+          "source_role"
+        ],
+        "type": "object"
+      },
+      "maxItems": 24,
+      "minItems": 24,
+      "type": "array"
+    },
+    "family_counts": {
+      "const": {
+        "item_spell": 4,
+        "portrait": 4,
+        "tactical_actor": 4,
+        "tutorial_city": 4,
+        "ui_material": 4,
+        "world_dungeon": 4
+      }
+    },
+    "generated_assets": {
+      "const": false
+    },
+    "reference_text_policy": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "$ref": "#/$defs/resourceKey"
+          },
+          "policy": {
+            "const": "remove_reference_text-and-render-code-native"
+          }
+        },
+        "required": [
+          "key",
+          "policy"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "selection_kind": {
+      "const": "classic-style-proof-reference-selection"
+    },
+    "source_census": {
+      "const": "assets/remastered/scopes/phase1.census.json"
+    },
+    "source_census_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "required": [
+    "city_reference_notice",
+    "city_reference_policy",
+    "decoder",
+    "description",
+    "entries",
+    "family_counts",
+    "generated_assets",
+    "reference_text_policy",
+    "schema_version",
+    "selection_kind",
+    "source_census",
+    "source_census_sha256"
+  ],
+  "title": "Realmz Remastered Classic style-proof reference selection",
+  "type": "object",
+  "$defs": {
+    "resourceKey": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maximum": 32767,
+          "minimum": -32768,
+          "type": "integer"
+        },
+        "pack": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "maxLength": 4,
+          "minLength": 4,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "pack",
+        "type"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  }
+}

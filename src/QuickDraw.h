@@ -154,6 +154,7 @@ void InitGraf(QuickDrawGlobals* globalPtr);
 void SetPort(CGrafPtr port);
 void GetPort(GrafPtr* port);
 PixPatHandle GetPixPat(uint16_t patID);
+void ReloadPixPat(PixPatHandle ppat, uint16_t patID);
 void DisposePixPat(PixPatHandle ppat);
 PicHandle GetPicture(int16_t picID);
 void ForeColor(int32_t color);
@@ -209,6 +210,10 @@ void HideCursor(void);
 void ShowCursor(void);
 
 void DebugSavePortContents(const CGrafPort* port, const char* filename);
+
+// Rehydrates presentation-sensitive legacy pattern and dungeon-background
+// caches after Classic/Remastered mode changes.
+void RealmzRefreshPresentationAssets(void);
 
 #ifdef __cplusplus
 } // extern "C"

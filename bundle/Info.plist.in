@@ -5,21 +5,21 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>English</string>
     <key>CFBundleExecutable</key>
-    <string>@PROJECT_NAME@</string>
+    <string>@REALMZ_PRODUCT_NAME@</string>
     <key>CFBundleDisplayName</key>
-    <string>@PROJECT_NAME@</string>
+    <string>@REALMZ_PRODUCT_NAME@</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.fantasoft.@PROJECT_NAME@</string>
+    <string>@REALMZ_BUNDLE_IDENTIFIER@</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>@PROJECT_NAME@</string>
+    <string>@REALMZ_PRODUCT_NAME@</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
-    <string>RLMZ</string>
+    <string>RLMR</string>
     <key>CFBundleVersion</key>
     <string>@PROJECT_VERSION@</string>
     <key>CSResourcesFileMapped</key>

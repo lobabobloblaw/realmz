@@ -1,5 +1,6 @@
 #import "../MenuController.h"
 #import "../PortMenu.hpp"
+#include "../AppIdentity.hpp"
 #import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
 #include <cstddef>
@@ -116,7 +117,9 @@ static NSImage* MCImageForCicn(int16_t cicnID) {
 }
 
 - (void)MCCreateMenu:(const MenuList&)menuList {
-  _menuObject = [[NSMenu alloc] initWithTitle:@"Realmz"];
+  _menuObject = [[NSMenu alloc]
+      initWithTitle:[NSString stringWithUTF8String:
+                        realmz::app::kProductName.data()]];
   [_menuObject setAutoenablesItems:NO];
 
   for (auto menu : menuList.menus) {
@@ -188,6 +191,22 @@ static NSImage* MCImageForCicn(int16_t cicnID) {
     [item setTag:(NSInteger)(kPortGammaId + i)];
   }
   [portMenu setSubmenu:gammaMenu forItem:gammaItem];
+
+  [portMenu addItem:[NSMenuItem separatorItem]];
+  NSMenuItem* presentationItem = [[NSMenuItem alloc] initWithTitle:@"Presentation" action:NULL keyEquivalent:@""];
+  [portMenu addItem:presentationItem];
+  NSMenu* presentationMenu = [[NSMenu alloc] initWithTitle:@"Presentation"];
+  [presentationMenu setAutoenablesItems:NO];
+  presentationMenu.delegate = self;
+  NSArray<NSString*>* presentationTitles = @[@"Classic", @"Remastered"];
+  for (int i = 0; i < kPortPresentationCount; i++) {
+    NSMenuItem* item = [presentationMenu addItemWithTitle:presentationTitles[i]
+                                                   action:@selector(MCHandlePortItem:)
+                                            keyEquivalent:@""];
+    [item setTarget:self];
+    [item setTag:(NSInteger)(kPortPresentationId + i)];
+  }
+  [portMenu setSubmenu:presentationMenu forItem:presentationItem];
 
   [_menuObject setSubmenu:portMenu forItem:portItem];
 }

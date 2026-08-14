@@ -43,7 +43,7 @@ static bool IsPortCommand(WORD cmd) {
 
 // Builds the Port menu and appends it to the given menu bar. Mirrors the layout of
 // the macOS Port menu (filters, a Scale submenu, an aspect-lock toggle, and a
-// Color Correction submenu).
+// Color Correction and Presentation submenus).
 static void BuildPortMenu(HMENU menubar) {
   HMENU port_menu = CreatePopupMenu();
 
@@ -67,6 +67,12 @@ static void BuildPortMenu(HMENU menubar) {
 
   AppendMenu(port_menu, MF_SEPARATOR, 0, nullptr);
   AppendMenu(port_menu, MF_POPUP | MF_STRING, reinterpret_cast<UINT_PTR>(gamma_menu), "Color Correction");
+
+  HMENU presentation_menu = CreatePopupMenu();
+  AppendMenu(presentation_menu, MF_STRING, PORT_CMD_BASE + kPortPresentationId, "Classic");
+  AppendMenu(presentation_menu, MF_STRING, PORT_CMD_BASE + kPortPresentationId + 1, "Remastered");
+  AppendMenu(port_menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenu(port_menu, MF_POPUP | MF_STRING, reinterpret_cast<UINT_PTR>(presentation_menu), "Presentation");
 
   AppendMenu(menubar, MF_POPUP | MF_STRING, reinterpret_cast<UINT_PTR>(port_menu), "Port");
 }

@@ -1,0 +1,383 @@
+{
+  "city_reference_notice": "Repository-bundled City of Bywater, version unverified; not the Mac 7.1.2 baseline.",
+  "city_reference_policy": {
+    "allowed_use": "classic-contact-sheet-and-audit-only",
+    "generation_eligible": false,
+    "required_replacement": "authorized Mac 7.1.2 user-supplied-sha256-gated baseline"
+  },
+  "decoder": {
+    "expected_executable_sha256": "b53083b0be69eae684e7e8b77b88a169fbd3878c6cdeca0b317bf775ea91a079",
+    "expected_source_commit": "27f64c89a5fed855e68c2a5e97b6c6c389d8eb19",
+    "name": "resource_dasm"
+  },
+  "description": "Exactly 24 Classic references for the pre-generation style proof; four visibly varied assets in each approved proof family.",
+  "entries": [
+    {
+      "classic_payload_sha256": "60f3460bacbae82e45ebe2ac25dcf9fcad4fc5f4094c0c9bd0822082d4aa8bee",
+      "expected_decoded_png_sha256": "6108508fb15d1d6d020d5881c6a962431a47b7cc951c101ea36aef10b326241a",
+      "expected_raw_decoder_png_sha256": "393fba577378c3a1fe4952c44c7378c488e52014c5e07f4431868ed757f0df4f",
+      "family": "ui_material",
+      "key": {
+        "id": 128,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "label": "Blue stone highlight",
+      "order": 1,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "965007935d5701f5493f57c5b7029342b7865ca5c384a55d6344ed0b50ec960b",
+      "expected_decoded_png_sha256": "3b1098705d5450e098f4eeb797532f080188e322ea97af6de111ee4ba4932c91",
+      "expected_raw_decoder_png_sha256": "fdbb0bcd13a593a5f2276276295b9da1252f01a75be9c52ae3c0d539db933200",
+      "family": "ui_material",
+      "key": {
+        "id": 129,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "label": "Blue stone base",
+      "order": 2,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "3585574c44318da60187253ecc7be3231872675a82ec8c306c73d129a7618761",
+      "expected_decoded_png_sha256": "146ee07cf2525c1e1a25ae496b803fae843cd3b3fd04b80eac34fa3302f55ca9",
+      "expected_raw_decoder_png_sha256": "c9f5c7055aceb55d72b06cbb0d2e786349da18611222f3493543897f8c4af4f3",
+      "family": "ui_material",
+      "key": {
+        "id": 130,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "label": "Dark blue stone",
+      "order": 3,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "d6491e77c64a95fb68c64fabe6cc374f97077e4c979111c4a92f4522698795a7",
+      "expected_decoded_png_sha256": "399fbf9c0e719fafb58331cd70aac96144e5a1b4ee54dd74b61dcb7483477cba",
+      "expected_raw_decoder_png_sha256": "2539263d458e3fb30da4a5b95ab717c42058e574f41ef695e3146dcfd6fc0ce7",
+      "family": "ui_material",
+      "key": {
+        "id": 131,
+        "pack": "Data Files/The Family Jewels",
+        "type": "ppat"
+      },
+      "label": "Gray stone panel",
+      "order": 4,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "37c97669cc29f3366d06158e674e0d781ca7660e5ede33fc05325368f25a2c6d",
+      "expected_decoded_png_sha256": "391bdb4625c39091dc8699041a756299b19988a3aa0424e1ee794746c98810d1",
+      "expected_raw_decoder_png_sha256": "38c4fc2c5deff5fab0a14c7830e8ce5714f1d56dea88914233f09f959261e80b",
+      "family": "portrait",
+      "key": {
+        "id": 257,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "label": "Human adventurer",
+      "order": 5,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "c6b9a296b819c1fc4df139f564efaf1c5c8b0650a5abfd542d559d62dca71479",
+      "expected_decoded_png_sha256": "5a4beeb0402ac9d50897d336e00fd6f946d08a55f1bda7dbbdef69fe41353b64",
+      "expected_raw_decoder_png_sha256": "c8196c917286293f8d1abc051b9108dab8526c47737aef8f8927b4530d3c65a2",
+      "family": "portrait",
+      "key": {
+        "id": 267,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "label": "White-haired adventurer",
+      "order": 6,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "09874978f4424d6b1d6311b90b5125d79a2cf18a185f76b3aec3b2b54f5d3e08",
+      "expected_decoded_png_sha256": "729a2dc2555e08ca1c5666606f48cf9ee0db4057404fdf34047ffcb827c7fda8",
+      "expected_raw_decoder_png_sha256": "1361b66448ac5b79e777c5359168cabd7f752fade2568ebc6f1b0268dfc40292",
+      "family": "portrait",
+      "key": {
+        "id": 297,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "label": "Elf adventurer",
+      "order": 7,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "9d7bfacdf07175ccdfb43084e165fd63160b45903b894079a1f6cb5009a73c5c",
+      "expected_decoded_png_sha256": "552bc5a10e394d26ddf458b69954f7900084902183fbbe0e02a20f1b80210f6d",
+      "expected_raw_decoder_png_sha256": "78820696d9f44dddd79651388b24204840a232e1694fb168792f1b84b498410f",
+      "family": "portrait",
+      "key": {
+        "id": 337,
+        "pack": "Data Files/Portraits",
+        "type": "cicn"
+      },
+      "label": "Reptilian adventurer",
+      "order": 8,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "0a2d665b1bf29cf45a2ebb5a58b1408cbcc3995a6e2edddff12c4767b6c4719e",
+      "expected_decoded_png_sha256": "8b8f31b5406b072ffe006a0eb57fc880bc32aa5b7a9847e1752405b14534dcb3",
+      "expected_raw_decoder_png_sha256": "d6f80c17204ef52e7ea76f377a8729c1842e37e9507d178e5bb45faa5f24958d",
+      "family": "tactical_actor",
+      "key": {
+        "id": 9000,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "label": "Archer stance",
+      "order": 9,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "34c188ea3d305279fbaed6b481741e54348e52843faf9c15d0a002550ec17612",
+      "expected_decoded_png_sha256": "b56553d1e6bfa633ee88c1c258821ff798d3da4459f7a56a1204f2f86333ffac",
+      "expected_raw_decoder_png_sha256": "e961a19c3f28b55866ba6c172a03b73f1ce8df7671c7a0a818f412e966754a0d",
+      "family": "tactical_actor",
+      "key": {
+        "id": 9007,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "label": "Winged actor stance",
+      "order": 10,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "27492d32836cfdbd0e024acd65a2f349ed83ca70f9845fbcf6bca79514328dde",
+      "expected_decoded_png_sha256": "d4aa3b087db3932c5994c2f92295a4fb0d3cb01e3c947a6b316adeae30bf9b7f",
+      "expected_raw_decoder_png_sha256": "2ffb9ce42e6e94f03761378c4b957873d68f2ed0128038726885c6167ceae2c5",
+      "family": "tactical_actor",
+      "key": {
+        "id": 9060,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "label": "Armored dual wield",
+      "order": 11,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "3bc9d206477de75e0dda6785eef5adc160a87854263b3180f0e675c919af2746",
+      "expected_decoded_png_sha256": "1ad2723e99f271373a5eb0e5d660c73d93726172c49522f672876ac84ff99a74",
+      "expected_raw_decoder_png_sha256": "75e57878895954d0f4764fd1d8494c7b8d277f9002175e31e7b20e1078b5cbc4",
+      "family": "tactical_actor",
+      "key": {
+        "id": 9104,
+        "pack": "Data Files/Tacticals",
+        "type": "cicn"
+      },
+      "label": "Large armored actor",
+      "order": 12,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "b5615a03f2fe21e5063d8c2d5fa6271b51e62a21dd403df9c9bbe43c95d63ccb",
+      "expected_decoded_png_sha256": "85a5ba2f441638ca03d0ea9906de626430523568dccda0e50a739da8a6f8e602",
+      "expected_raw_decoder_png_sha256": "9fcb65c09771cfb637a56230f453fd57856db1dc711c13d899d57eb83ab32511",
+      "family": "item_spell",
+      "key": {
+        "id": 6106,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "label": "Flaming sword item",
+      "order": 13,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "328273a1d4a4c1717f383b336b8ec7ad89b8a6c66795532d8e87d88ec6bb5194",
+      "expected_decoded_png_sha256": "376f79ce50bdf0d03208b308a574a4132e70c5960192de238495ccf4a504d29a",
+      "expected_raw_decoder_png_sha256": "003e60e67af6929e6fdf0ee8f312063b4e910b623661c7a017e4abfb22b3c3db",
+      "family": "item_spell",
+      "key": {
+        "id": 566,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "label": "Blue flame item",
+      "order": 14,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "6b9f81f768747e5edf13a46e569494282e23e674007550d7f17a75de7342c05a",
+      "expected_decoded_png_sha256": "63a55f969dd73ed822863b164a64cd64ae20d67cbce55b0e850ced4ef7d9c8ce",
+      "expected_raw_decoder_png_sha256": "d91f5f96a5ebd79b348ef60a8c88cc4094c56635c9689d224cd6cf6446a203a8",
+      "family": "item_spell",
+      "key": {
+        "id": 12044,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "label": "Fire spell burst",
+      "order": 15,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "9be9ad2b5912e2066c209a97a379e917e85ed0c192b947ccf23095f70662d8df",
+      "expected_decoded_png_sha256": "fea62c343941a3a885bc1af44581ebfb89cf38ac1ab9ecd759534d268e5b0c8c",
+      "expected_raw_decoder_png_sha256": "4d3a60ce5525dad187eb4e7606b2d8bd361d528fc92ef58d051608b36b545f72",
+      "family": "item_spell",
+      "key": {
+        "id": 12100,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "label": "Elemental spell vortex",
+      "order": 16,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "f46d3a0b718e86811c01e8e1470759526ddb79a5b242ac683f7b38c84aec6e67",
+      "expected_decoded_png_sha256": "e5ec681a593a2acdebb30b4e2b54e66de41cd0736d213fe6e4636036973ff231",
+      "expected_raw_decoder_png_sha256": "5eb74cad9e94b3cfd44673fa7fc80270c61bd3e2c63ce6544ccb7f7292442351",
+      "family": "world_dungeon",
+      "key": {
+        "id": 50,
+        "pack": "Data Files/The Family Jewels",
+        "type": "PICT"
+      },
+      "label": "Dungeon floor and depth",
+      "order": 17,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "1c20d15f96705789ce25d3c4a3b0ce26a4c3063ceaddedc196e6f0984e20ff93",
+      "expected_decoded_png_sha256": "ab1765cd6471e25772001d26831d6f5a9b18c9a22f7b906aa0930ed059fe28a8",
+      "expected_raw_decoder_png_sha256": "0a720e0c1472fec133639cc091ff600043c95b139131b5108ec7e70f625dc1fd",
+      "family": "world_dungeon",
+      "key": {
+        "id": -189,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "label": "Forest terrain feature",
+      "order": 18,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "51852654dd21b9ada57b667d0e655916d8970a98b1c11c6bc484d216c25a650c",
+      "expected_decoded_png_sha256": "9b79570e74c8f640a9f70afbe3afa41b10bcf90552a919af6f092741a984f623",
+      "expected_raw_decoder_png_sha256": "a11b0f13aa4506779a751a3e30c3a102a2b2fd7562c22ae3d463b48da02cda4d",
+      "family": "world_dungeon",
+      "key": {
+        "id": -83,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "label": "Iron dungeon gate",
+      "order": 19,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "b2c968153066ff2425b06b70f1f662ba5e30cbda5e323f8d3262a477bd1b399b",
+      "expected_decoded_png_sha256": "fa38056c53e2eb46e786bcc78a7b4e6bdbca4045961ceadbae21ea2fc78348c1",
+      "expected_raw_decoder_png_sha256": "f532de2d95c25ce03aec38cd7f1363c42b8c232863f6eed102e00363287e4b5f",
+      "family": "world_dungeon",
+      "key": {
+        "id": -167,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "label": "Waterfall terrain feature",
+      "order": 20,
+      "source_role": "core-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "44a37fbd12719698c8457d109105b61b93304e259318aa969b6afc7a8cf02eef",
+      "expected_decoded_png_sha256": "2dd80a809a1007e7afcf1e2e4bc9433ce6bf5658324e7ab08fb8394ca2732de7",
+      "expected_raw_decoder_png_sha256": "5305ddbe58acf7e7afb44ca89ff9b4904187894aca37b77a1a8f5089a1b3d212",
+      "family": "tutorial_city",
+      "key": {
+        "id": 32128,
+        "pack": "Scenarios/Tutorial/Scenario",
+        "type": "PICT"
+      },
+      "label": "Tutorial title illustration",
+      "order": 21,
+      "source_role": "tutorial-repository-bundled"
+    },
+    {
+      "classic_payload_sha256": "33a9990cf7ee1697f7ece66203e875eda22f06e4d45bdaad2959903f246c9a22",
+      "expected_decoded_png_sha256": "e576eae69954b40023f4bc6ca7edab81cf7741f09f83486ae937545d58e1fa84",
+      "expected_raw_decoder_png_sha256": "96a577062d2ca7385402757f0acac555c342d8a60bcde11ea3bd42853c3c9554",
+      "family": "tutorial_city",
+      "key": {
+        "id": 32128,
+        "pack": "Scenarios/City of Bywater/Scenario",
+        "type": "PICT"
+      },
+      "label": "City title illustration",
+      "order": 22,
+      "source_role": "city-repository-bundled-unverified"
+    },
+    {
+      "classic_payload_sha256": "03680eabb40d88b6b510ea313198070fa318a21b5419eab76e3608b801743279",
+      "expected_decoded_png_sha256": "3d81eda990b2cc315a04c37da7bfc1869704cbb0cce6700dbb36691e36cbc556",
+      "expected_raw_decoder_png_sha256": "c5cdf52e463ffe4529e19f793e27ebab7e4144a458f140366876aeb4f50f294e",
+      "family": "tutorial_city",
+      "key": {
+        "id": 479,
+        "pack": "Scenarios/City of Bywater/Scenario",
+        "type": "cicn"
+      },
+      "label": "City hydra facing left",
+      "order": 23,
+      "source_role": "city-repository-bundled-unverified"
+    },
+    {
+      "classic_payload_sha256": "09316f297115aee6fdcc9f87397113970d494f49a94a66459bcc33405d497f5f",
+      "expected_decoded_png_sha256": "45c6c59f458eb2802e5fc7990b80c12ba4bf1fb93a2fd198acc1a2fdd0e93297",
+      "expected_raw_decoder_png_sha256": "c3ba883746679935baa89c9ba8c3e2de4ced63b9e678d8abc8645c6e3014f2be",
+      "family": "tutorial_city",
+      "key": {
+        "id": 787,
+        "pack": "Scenarios/City of Bywater/Scenario",
+        "type": "cicn"
+      },
+      "label": "City hydra facing right",
+      "order": 24,
+      "source_role": "city-repository-bundled-unverified"
+    }
+  ],
+  "family_counts": {
+    "item_spell": 4,
+    "portrait": 4,
+    "tactical_actor": 4,
+    "tutorial_city": 4,
+    "ui_material": 4,
+    "world_dungeon": 4
+  },
+  "generated_assets": false,
+  "reference_text_policy": [
+    {
+      "key": {
+        "id": 32128,
+        "pack": "Scenarios/Tutorial/Scenario",
+        "type": "PICT"
+      },
+      "policy": "remove_reference_text-and-render-code-native"
+    },
+    {
+      "key": {
+        "id": 32128,
+        "pack": "Scenarios/City of Bywater/Scenario",
+        "type": "PICT"
+      },
+      "policy": "remove_reference_text-and-render-code-native"
+    }
+  ],
+  "schema_version": 1,
+  "selection_kind": "classic-style-proof-reference-selection",
+  "source_census": "assets/remastered/scopes/phase1.census.json",
+  "source_census_sha256": "6b36712959bf9222f874576c47ae26f6f001ee1d9d70f6e13aa39f89cd4e7493"
+}

@@ -1,0 +1,145 @@
+{
+  "classification_set_kind": "style-proof-item-generation-classifications",
+  "entries": [
+    {
+      "blocked_reason": "Candidate base-plus-effect relationship requires human family approval, an explicit variant_of job declaration, and an approved remastered cicn:6100 base master.",
+      "candidate_base_resource_key": {
+        "id": 6100,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "classification": "known_variant_candidate",
+      "generation_allowed": false,
+      "historical_attempts": {
+        "attempt_ordinals": [
+          0,
+          1
+        ],
+        "status": "rejected_provenance_incomplete_do_not_backfill"
+      },
+      "job_id": "13_item_spell_cicn_6106",
+      "resource_key": {
+        "id": 6106,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      }
+    },
+    {
+      "classification": "standalone",
+      "generation_allowed": true,
+      "historical_attempts": {
+        "attempt_ordinals": [
+          0,
+          1
+        ],
+        "status": "rejected_provenance_incomplete_do_not_backfill"
+      },
+      "job_id": "14_item_spell_cicn_566",
+      "reference_roles": [
+        "own_locked_classic"
+      ],
+      "resource_key": {
+        "id": 566,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      }
+    },
+    {
+      "classification": "animation_frame",
+      "generation_allowed": true,
+      "historical_attempts": {
+        "attempt_ordinals": [
+          0,
+          1
+        ],
+        "status": "rejected_provenance_incomplete_do_not_backfill"
+      },
+      "job_id": "15_item_spell_cicn_12044",
+      "reference_roles": [
+        "own_locked_classic"
+      ],
+      "resource_key": {
+        "id": 12044,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "sequence": {
+        "base_resource_id": 12040,
+        "frame_count": 8,
+        "frame_index": 4,
+        "resource_ids": [
+          12040,
+          12041,
+          12042,
+          12043,
+          12044,
+          12045,
+          12046,
+          12047
+        ],
+        "source": {
+          "excerpt_sha256": "879302e891685372bcf035a2b9561e7b903f6c02df1dab1e2e1911674b4ffb6c",
+          "file_sha256": "5231e273aba91131c6ad08bfc526e99156af95a97c07e9ba09672def6c4bfe70",
+          "first_line": 771,
+          "formula": "11992 + spellinfo.spelllook1 * 8 + spellindex; spellindex cycles 0..7",
+          "last_line": 773,
+          "path": "src/realmz_orig/combatinfo-combatchoice.c"
+        },
+        "spelllook1": 6
+      }
+    },
+    {
+      "classification": "animation_frame",
+      "generation_allowed": true,
+      "historical_attempts": {
+        "attempt_ordinals": [
+          0,
+          1
+        ],
+        "status": "rejected_provenance_incomplete_do_not_backfill"
+      },
+      "job_id": "16_item_spell_cicn_12100",
+      "reference_roles": [
+        "own_locked_classic"
+      ],
+      "resource_key": {
+        "id": 12100,
+        "pack": "Data Files/The Family Jewels",
+        "type": "cicn"
+      },
+      "sequence": {
+        "base_resource_id": 12096,
+        "frame_count": 8,
+        "frame_index": 4,
+        "resource_ids": [
+          12096,
+          12097,
+          12098,
+          12099,
+          12100,
+          12101,
+          12102,
+          12103
+        ],
+        "source": {
+          "excerpt_sha256": "879302e891685372bcf035a2b9561e7b903f6c02df1dab1e2e1911674b4ffb6c",
+          "file_sha256": "5231e273aba91131c6ad08bfc526e99156af95a97c07e9ba09672def6c4bfe70",
+          "first_line": 771,
+          "formula": "11992 + spellinfo.spelllook1 * 8 + spellindex; spellindex cycles 0..7",
+          "last_line": 773,
+          "path": "src/realmz_orig/combatinfo-combatchoice.c"
+        },
+        "spelllook1": 13
+      }
+    }
+  ],
+  "jobs_sha256": "c1d3b54becf00f5c331aa5a93bf821c0716cccfe8f61bcfe71064b7d5bcbc665",
+  "rules": {
+    "classification_manifest_sha256_required_in_call_record": true,
+    "classification_required_before_item_call": true,
+    "generation_reference_set_required_in_call_record": true,
+    "historical_rejected_attempts_may_not_be_backfilled": true,
+    "known_variant_candidate_generation_allowed": false
+  },
+  "schema_version": 1
+}

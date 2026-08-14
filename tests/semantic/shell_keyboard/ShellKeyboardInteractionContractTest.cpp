@@ -1,0 +1,551 @@
+#include <algorithm>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "presentation/LegacyCommandBridge.hpp"
+#include "presentation/ShellKeyboardInteraction.hpp"
+
+using namespace realmz::presentation;
+
+namespace {
+
+int checks_run = 0;
+
+void check(bool condition, const char* expression, int line) {
+  ++checks_run;
+  if (!condition) {
+    throw std::runtime_error(
+        "check failed at line " + std::to_string(line) + ": " + expression);
+  }
+}
+
+#define CHECK(expression) check(static_cast<bool>(expression), #expression, __LINE__)
+
+class RecordingBridge final : public LegacyCommandBridge {
+public:
+  RecordingBridge()
+      : delegate_(make_handlers()) {}
+
+  [[nodiscard]] DispatchResult dispatch(const UIAction& action) override {
+    actions_.emplace_back(action);
+    return delegate_.dispatch(action);
+  }
+
+  [[nodiscard]] const std::vector<UIAction>& actions() const noexcept {
+    return actions_;
+  }
+
+private:
+  [[nodiscard]] static LegacyActionHandlers make_handlers() {
+    LegacyActionHandlers handlers;
+    handlers.move_party = [](const MovePartyAction&) {
+      return DispatchResult::handled();
+    };
+    return handlers;
+  }
+
+  InjectedLegacyCommandBridge delegate_;
+  std::vector<UIAction> actions_;
+};
+
+[[nodiscard]] ShellControlPlacement movement_control(
+    uint32_t region,
+    std::string identifier,
+    int32_t tab_order,
+    MovementCommand command,
+    bool enabled = true) {
+  return ShellControlPlacement{
+      .region = ShellRegionId{region},
+      .kind = ShellControlKind::movement,
+      .bounds = {static_cast<double>(region), 10.0, 48.0, 48.0},
+      .label = identifier,
+      .accessibility_label = "Activate " + identifier,
+      .focus_identifier = std::move(identifier),
+      .tab_order = tab_order,
+      .enabled = enabled,
+      .payload = MovePartyAction{command},
+  };
+}
+
+[[nodiscard]] std::vector<ShellControlPlacement> canonical_controls() {
+  return {
+      movement_control(10, "move.west", 30, MovementCommand::west),
+      movement_control(11, "move.north", 10, MovementCommand::north),
+      movement_control(12, "move.east", 20, MovementCommand::east),
+      movement_control(
+          13, "move.disabled", 5, MovementCommand::south, false),
+      // Equal order deliberately proves stable insertion ordering.
+      movement_control(
+          14, "move.forward", 30, MovementCommand::step_forward),
+  };
+}
+
+constexpr ShellPhysicalKeyToken kTabToken{7, 43};
+constexpr ShellPhysicalKeyToken kEnterToken{7, 40};
+constexpr ShellPhysicalKeyToken kSpaceToken{7, 44};
+constexpr ShellPhysicalKeyToken kOtherToken{7, 41};
+// Same scancode as Enter, but a distinct physical keyboard.
+constexpr ShellPhysicalKeyToken kSecondKeyboardToken{8, 40};
+
+[[nodiscard]] ShellKeyboardEvent key_down(
+    ShellKeyboardKey key,
+    ShellPhysicalKeyToken token,
+    bool shift = false,
+    bool repeat = false) {
+  return ShellKeyboardEvent{
+      .token = token,
+      .key = key,
+      .phase = ShellKeyboardPhase::down,
+      .shift = shift,
+      .repeat = repeat,
+  };
+}
+
+[[nodiscard]] ShellKeyboardEvent key_up(
+    ShellKeyboardKey key,
+    ShellPhysicalKeyToken token) {
+  return ShellKeyboardEvent{
+      .token = token,
+      .key = key,
+      .phase = ShellKeyboardPhase::up,
+  };
+}
+
+struct RoutedKeyResult {
+  ShellKeyboardResult shell;
+  std::optional<DispatchResult> dispatch;
+};
+
+// This is only an observation harness. All keyboard ownership, traversal,
+// capture, cancellation, and release decisions are made by the production
+// ShellKeyboardInteraction instance.
+class ProductionKeyboardHarness {
+public:
+  explicit ProductionKeyboardHarness(RecordingBridge& bridge)
+      : bridge_(bridge), controls_(canonical_controls()) {
+    (void)keyboard_.reconcile(controls_, route_enabled_);
+  }
+
+  [[nodiscard]] RoutedKeyResult handle(const ShellKeyboardEvent& event) {
+    RoutedKeyResult routed{
+        .shell = keyboard_.handle(event, controls_, route_enabled_),
+        .dispatch = std::nullopt,
+    };
+    if (routed.shell.invoked_control) {
+      routed.dispatch = bridge_.dispatch(UIAction{
+          .sequence = next_sequence_++,
+          .payload = routed.shell.invoked_control->payload,
+      });
+    }
+    return routed;
+  }
+
+  [[nodiscard]] bool recompose(
+      std::vector<ShellControlPlacement> controls,
+      bool route_enabled = true) {
+    controls_ = std::move(controls);
+    route_enabled_ = route_enabled;
+    return keyboard_.reconcile(controls_, route_enabled_);
+  }
+
+  [[nodiscard]] bool set_route_enabled(bool enabled) {
+    route_enabled_ = enabled;
+    return keyboard_.reconcile(controls_, route_enabled_);
+  }
+
+  [[nodiscard]] bool focus(std::string_view identifier) {
+    return keyboard_.focus_control(
+        identifier, controls_, route_enabled_);
+  }
+
+  [[nodiscard]] ShellKeyboardInteraction& keyboard() noexcept {
+    return keyboard_;
+  }
+
+  [[nodiscard]] const std::vector<ShellControlPlacement>& controls()
+      const noexcept {
+    return controls_;
+  }
+
+private:
+  RecordingBridge& bridge_;
+  ShellKeyboardInteraction keyboard_;
+  std::vector<ShellControlPlacement> controls_;
+  bool route_enabled_ = true;
+  ActionSequence next_sequence_ = 1;
+};
+
+void release_tab(ProductionKeyboardHarness& harness) {
+  const auto release = harness.handle(
+      key_up(ShellKeyboardKey::tab, kTabToken));
+  CHECK(release.shell.consumed);
+  CHECK(!release.shell.invoked_control);
+  CHECK(!release.dispatch);
+}
+
+void test_forward_reverse_traversal_and_disabled_skipping() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  CHECK(!harness.keyboard().focused_identifier());
+
+  for (const char* const expected : {
+           "move.north", "move.east", "move.west", "move.forward",
+           "move.north"}) {
+    const auto down = harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken));
+    CHECK(down.shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() == expected);
+    release_tab(harness);
+  }
+
+  CHECK(harness.keyboard().clear_focus());
+  for (const char* const expected : {
+           "move.forward", "move.west", "move.east", "move.north",
+           "move.forward"}) {
+    const auto down = harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken, true));
+    CHECK(down.shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() == expected);
+    release_tab(harness);
+  }
+  CHECK(bridge.actions().empty());
+}
+
+void test_tab_repeat_and_release_ownership() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == "move.north");
+  for (int repeat = 0; repeat < 5; ++repeat) {
+    const auto result = harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken, false, true));
+    CHECK(result.shell.consumed);
+    CHECK(!result.shell.invoked_control);
+    CHECK(harness.keyboard().focused_identifier() == "move.north");
+  }
+  CHECK(harness.keyboard().owns_token(kTabToken));
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kOtherToken)).shell.consumed);
+  release_tab(harness);
+  CHECK(!harness.keyboard().owns_token(kTabToken));
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(bridge.actions().empty());
+}
+
+void test_focus_survives_nonsemantic_recomposition_by_identifier() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  CHECK(harness.focus("move.west"));
+
+  auto rebuilt = harness.controls();
+  std::ranges::reverse(rebuilt);
+  const auto west = std::ranges::find_if(rebuilt, [](const auto& control) {
+    return control.focus_identifier == "move.west";
+  });
+  west->tab_order = 500;
+  west->bounds = {900.0, 700.0, 80.0, 52.0};
+  west->label = "WEST";
+  west->accessibility_label = "Move west now";
+  CHECK(!harness.recompose(std::move(rebuilt)));
+  CHECK(harness.keyboard().focused_identifier() == "move.west");
+
+  const auto next = harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken));
+  CHECK(next.shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == "move.north");
+  release_tab(harness);
+  CHECK(bridge.actions().empty());
+}
+
+void test_enter_space_exactly_once_and_physical_release_pairing() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  CHECK(harness.focus("move.east"));
+
+  const auto enter_down = harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(enter_down.shell.consumed);
+  CHECK(!enter_down.shell.invoked_control);
+  CHECK(!enter_down.dispatch);
+  CHECK(bridge.actions().empty());
+  for (int repeat = 0; repeat < 8; ++repeat) {
+    const auto result = harness.handle(key_down(
+        ShellKeyboardKey::enter, kEnterToken, false, true));
+    CHECK(result.shell.consumed);
+    CHECK(!result.shell.invoked_control);
+    CHECK(bridge.actions().empty());
+  }
+
+  // A different physical token cannot release the capture.
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kOtherToken)).shell.consumed);
+  CHECK(bridge.actions().empty());
+
+  // Physical token is authoritative: a layout/keycode remap between down and
+  // up must still consume and complete the original Enter activation.
+  const auto remapped_release = harness.handle(
+      key_up(ShellKeyboardKey::tab, kEnterToken));
+  CHECK(remapped_release.shell.consumed);
+  CHECK(remapped_release.shell.invoked_control.has_value());
+  CHECK(remapped_release.dispatch.has_value());
+  CHECK(remapped_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1);
+  CHECK(bridge.actions()[0].sequence == 1);
+  CHECK(std::get<MovePartyAction>(bridge.actions()[0].payload).command ==
+      MovementCommand::east);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1);
+
+  const auto space_down = harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(space_down.shell.consumed);
+  CHECK(!space_down.dispatch);
+  CHECK(harness.handle(key_down(
+      ShellKeyboardKey::space, kSpaceToken, false, true)).shell.consumed);
+  const auto space_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(space_release.shell.consumed);
+  CHECK(space_release.shell.invoked_control.has_value());
+  CHECK(space_release.dispatch.has_value());
+  CHECK(bridge.actions().size() == 2);
+  CHECK(bridge.actions()[1].sequence == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+}
+
+void test_first_activation_wins_across_simultaneous_physical_keys() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  CHECK(harness.focus("move.north"));
+
+  const auto first = harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(first.shell.consumed);
+  CHECK(harness.keyboard().pressed_identifier() == "move.north");
+  CHECK(harness.keyboard().owns_token(kEnterToken));
+
+  const auto candidate = harness.handle(key_down(
+      ShellKeyboardKey::space, kSecondKeyboardToken));
+  CHECK(candidate.shell.consumed);
+  CHECK(!candidate.shell.invoked_control);
+  CHECK(!candidate.dispatch);
+  CHECK(harness.keyboard().pressed_identifier() == "move.north");
+  CHECK(harness.keyboard().owns_token(kSecondKeyboardToken));
+  CHECK(harness.keyboard().owns_key(ShellKeyboardKey::enter));
+  CHECK(harness.keyboard().owns_key(ShellKeyboardKey::space));
+
+  CHECK(harness.handle(key_down(
+      ShellKeyboardKey::space, kSecondKeyboardToken, false, true))
+      .shell.consumed);
+  const auto candidate_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSecondKeyboardToken));
+  CHECK(candidate_release.shell.consumed);
+  CHECK(!candidate_release.shell.invoked_control);
+  CHECK(!candidate_release.dispatch);
+  CHECK(!harness.keyboard().owns_token(kSecondKeyboardToken));
+  CHECK(harness.keyboard().owns_token(kEnterToken));
+  CHECK(harness.keyboard().pressed_identifier() == "move.north");
+  CHECK(bridge.actions().empty());
+
+  const auto first_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(first_release.shell.consumed);
+  CHECK(first_release.shell.invoked_control.has_value());
+  CHECK(first_release.dispatch.has_value());
+  CHECK(bridge.actions().size() == 1);
+  CHECK(std::get<MovePartyAction>(bridge.actions()[0].payload).command ==
+      MovementCommand::north);
+  CHECK(!harness.keyboard().owns_token(kEnterToken));
+}
+
+using DescriptorMutation =
+    std::function<void(std::vector<ShellControlPlacement>&)>;
+
+void verify_descriptor_change_cancels(const DescriptorMutation& mutate) {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  CHECK(harness.focus("move.north"));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.keyboard().pressed_identifier() == "move.north");
+
+  const auto original = harness.controls();
+  auto changed = original;
+  mutate(changed);
+  CHECK(harness.recompose(std::move(changed)));
+  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.keyboard().pressed_identifier());
+  CHECK(harness.keyboard().owns_token(kEnterToken));
+
+  // Cancellation is sticky. Restoring and refocusing the original descriptor
+  // before release must not resurrect the held activation.
+  (void)harness.recompose(original);
+  CHECK(harness.focus("move.north"));
+  const auto release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(release.shell.consumed);
+  CHECK(!release.shell.invoked_control);
+  CHECK(!release.dispatch);
+  CHECK(bridge.actions().empty());
+  CHECK(!harness.keyboard().owns_token(kEnterToken));
+}
+
+void test_descriptor_identity_is_strict_and_fail_closed() {
+  verify_descriptor_change_cancels([](auto& controls) {
+    const auto north = std::ranges::find_if(controls, [](const auto& control) {
+      return control.focus_identifier == "move.north";
+    });
+    north->payload = MovePartyAction{MovementCommand::south};
+  });
+  verify_descriptor_change_cancels([](auto& controls) {
+    const auto north = std::ranges::find_if(controls, [](const auto& control) {
+      return control.focus_identifier == "move.north";
+    });
+    north->region = ShellRegionId{999};
+  });
+  verify_descriptor_change_cancels([](auto& controls) {
+    const auto north = std::ranges::find_if(controls, [](const auto& control) {
+      return control.focus_identifier == "move.north";
+    });
+    north->kind = static_cast<ShellControlKind>(99);
+  });
+  verify_descriptor_change_cancels([](auto& controls) {
+    const auto north = std::ranges::find_if(controls, [](const auto& control) {
+      return control.focus_identifier == "move.north";
+    });
+    north->focus_identifier = "move.reused-identity";
+  });
+  verify_descriptor_change_cancels([](auto& controls) {
+    const auto north = std::ranges::find_if(controls, [](const auto& control) {
+      return control.focus_identifier == "move.north";
+    });
+    north->enabled = false;
+  });
+  verify_descriptor_change_cancels([](auto& controls) {
+    std::erase_if(controls, [](const auto& control) {
+      return control.focus_identifier == "move.north";
+    });
+  });
+}
+
+void test_focus_change_clear_and_route_transition_cancel_activation() {
+  {
+    RecordingBridge bridge;
+    ProductionKeyboardHarness harness(bridge);
+    CHECK(harness.focus("move.north"));
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+    CHECK(harness.focus("move.east"));
+    const auto release = harness.handle(
+        key_up(ShellKeyboardKey::enter, kEnterToken));
+    CHECK(release.shell.consumed);
+    CHECK(!release.shell.invoked_control);
+    CHECK(bridge.actions().empty());
+  }
+  {
+    RecordingBridge bridge;
+    ProductionKeyboardHarness harness(bridge);
+    CHECK(harness.focus("move.north"));
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+    CHECK(harness.keyboard().clear_focus());
+    const auto release = harness.handle(
+        key_up(ShellKeyboardKey::space, kSpaceToken));
+    CHECK(release.shell.consumed);
+    CHECK(!release.shell.invoked_control);
+    CHECK(bridge.actions().empty());
+  }
+  {
+    RecordingBridge bridge;
+    ProductionKeyboardHarness harness(bridge);
+    CHECK(harness.focus("move.north"));
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+    CHECK(harness.set_route_enabled(false));
+    CHECK(!harness.keyboard().focused_identifier());
+    CHECK(!harness.keyboard().pressed_identifier());
+    CHECK(harness.keyboard().owns_token(kEnterToken));
+    CHECK(!harness.set_route_enabled(true));
+    CHECK(harness.focus("move.north"));
+    CHECK(harness.handle(key_down(
+        ShellKeyboardKey::enter, kEnterToken, false, true)).shell.consumed);
+    const auto release = harness.handle(
+        key_up(ShellKeyboardKey::enter, kEnterToken));
+    CHECK(release.shell.consumed);
+    CHECK(!release.shell.invoked_control);
+    CHECK(bridge.actions().empty());
+  }
+}
+
+void test_tab_route_cancellation_retains_release_ownership() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().owns_token(kTabToken));
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.set_route_enabled(true));
+  const auto release = harness.handle(
+      key_up(ShellKeyboardKey::tab, kTabToken));
+  CHECK(release.shell.consumed);
+  CHECK(!release.shell.invoked_control);
+  CHECK(!harness.keyboard().owns_token(kTabToken));
+  CHECK(bridge.actions().empty());
+}
+
+void test_duplicate_identity_and_unowned_events_fail_closed() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  auto duplicates = harness.controls();
+  duplicates.emplace_back(movement_control(
+      99, "move.north", 15, MovementCommand::south));
+  CHECK(!harness.recompose(std::move(duplicates)));
+  CHECK(!harness.focus("move.north"));
+
+  const auto tab = harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken));
+  CHECK(tab.shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == "move.east");
+  release_tab(harness);
+
+  CHECK(!harness.handle(key_down(
+      ShellKeyboardKey::enter, kOtherToken, false, true)).shell.consumed);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kOtherToken)).shell.consumed);
+  CHECK(bridge.actions().empty());
+}
+
+} // namespace
+
+int main() {
+  try {
+    test_forward_reverse_traversal_and_disabled_skipping();
+    test_tab_repeat_and_release_ownership();
+    test_focus_survives_nonsemantic_recomposition_by_identifier();
+    test_enter_space_exactly_once_and_physical_release_pairing();
+    test_first_activation_wins_across_simultaneous_physical_keys();
+    test_descriptor_identity_is_strict_and_fail_closed();
+    test_focus_change_clear_and_route_transition_cancel_activation();
+    test_tab_route_cancellation_retains_release_ownership();
+    test_duplicate_identity_and_unowned_events_fail_closed();
+    std::cout << "ShellKeyboardInteractionContractTest passed ("
+              << checks_run << " checks)\n";
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << "ShellKeyboardInteractionContractTest failed after "
+              << checks_run << " checks: " << error.what() << '\n';
+    return 1;
+  }
+}

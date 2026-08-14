@@ -1,0 +1,157 @@
+{
+  "amendment_set_kind": "style-proof-masked-topology-amendments",
+  "entries": [
+    {
+      "amendment_sha256": "3f9d50ada4cfabad7076b658440e73b0b98fb93127d2801555193bbd5ff78af7",
+      "classic_alpha_evidence": {
+        "decoded_png_sha256": "8b8f31b5406b072ffe006a0eb57fc880bc32aa5b7a9847e1752405b14534dcb3",
+        "dimensions": {
+          "height": 32,
+          "width": 32
+        },
+        "enclosed_transparent_component_sizes_4_connected": [
+          32,
+          1
+        ],
+        "foreground_bbox": {
+          "bottom": 31,
+          "left": 0,
+          "right": 30,
+          "top": 0
+        },
+        "foreground_component_sizes_4_connected": [
+          310,
+          3,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "foreground_pixels": 319
+      },
+      "job_id": "09_tactical_actor_cicn_9000",
+      "reason": "Bind the uncalled archer prompt to measured Classic edge contacts, transparent openings, and complete binary-mask coverage before the first model call.",
+      "recorded_at": "2026-08-13T04:14:00Z",
+      "reviewer": "Codex Classic-alpha audit",
+      "text": "Mask topology correction: Treat the upscaled Classic binary alpha as the exact topology, not as a loose silhouette suggestion. Preserve the archer footprint touching the top, left, and bottom canvas edges plus every source-defined transparent opening around the bow and limbs. Paint non-key subject color over every opaque Classic-mask cell, including thin bow, weapon, limb, edge-contact, and isolated source details; #FF00FF may occupy only source-transparent cells. Do not introduce any new magenta hole, slit, outline, halo, or margin inside the opaque footprint, and do not shrink, crop, recenter, or detach the silhouette"
+    },
+    {
+      "amendment_sha256": "b2dd49237fab17d9af84b811f661c9c126b5b488817fee74e90744b2ff3166b1",
+      "classic_alpha_evidence": {
+        "decoded_png_sha256": "b56553d1e6bfa633ee88c1c258821ff798d3da4459f7a56a1204f2f86333ffac",
+        "dimensions": {
+          "height": 32,
+          "width": 32
+        },
+        "enclosed_transparent_component_sizes_4_connected": [],
+        "foreground_bbox": {
+          "bottom": 31,
+          "left": 0,
+          "right": 31,
+          "top": 0
+        },
+        "foreground_component_sizes_4_connected": [
+          473
+        ],
+        "foreground_pixels": 473
+      },
+      "job_id": "10_tactical_actor_cicn_9007",
+      "reason": "Bind the uncalled winged-actor prompt to measured all-edge contact, one connected Classic footprint, and non-key magenta subject paint before the first model call.",
+      "recorded_at": "2026-08-13T04:14:00Z",
+      "reviewer": "Codex Classic-alpha audit",
+      "text": "Mask topology correction: Treat the upscaled Classic binary alpha as the exact topology, not as a loose silhouette suggestion. Preserve the one connected winged-actor footprint touching all four canvas edges and every source-transparent exterior cut-in around the spread wings and narrow body. Paint non-key subject color over every opaque Classic-mask cell, including wing tips, narrow limbs, top and side edge contacts, and the bottom contact; #FF00FF may occupy only source-transparent cells. Keep pink-violet subject paint measurably distinct from the exact chroma key. Do not introduce any new magenta hole, slit, outline, halo, or margin inside the opaque footprint, and do not shrink, crop, recenter, or fold the wings"
+    },
+    {
+      "amendment_sha256": "384a8554d7ed0a3a94590779ebfaa5bb3113b643b5a72ccc0339d2255b8a058b",
+      "classic_alpha_evidence": {
+        "decoded_png_sha256": "1ad2723e99f271373a5eb0e5d660c73d93726172c49522f672876ac84ff99a74",
+        "dimensions": {
+          "height": 32,
+          "width": 32
+        },
+        "enclosed_transparent_component_sizes_4_connected": [
+          41,
+          1
+        ],
+        "foreground_bbox": {
+          "bottom": 31,
+          "left": 0,
+          "right": 31,
+          "top": 0
+        },
+        "foreground_component_sizes_4_connected": [
+          506,
+          1,
+          1
+        ],
+        "foreground_pixels": 508
+      },
+      "job_id": "12_tactical_actor_cicn_9104",
+      "reason": "Bind the uncalled large-actor prompt to measured all-edge contacts, source openings, and complete binary-mask coverage before the first model call.",
+      "recorded_at": "2026-08-13T04:14:00Z",
+      "reviewer": "Codex Classic-alpha audit",
+      "text": "Mask topology correction: Treat the upscaled Classic binary alpha as the exact topology, not as a loose silhouette suggestion. Preserve the bulky actor footprint touching all four canvas edges and every source-defined transparent opening around the arms and legs. Paint non-key subject color over every opaque Classic-mask cell, including horn or head tips, both broad weapon-bearing arms, narrow extremities, and bottom contacts; #FF00FF may occupy only source-transparent cells. Do not introduce any new magenta hole, slit, outline, halo, or margin inside the opaque footprint, and do not shrink, crop, recenter, narrow, or detach the silhouette"
+    },
+    {
+      "amendment_sha256": "264f7ab88c2f48b49c32c905dc2a90cd20d1c645b71bd789a703270f5aedd194",
+      "classic_alpha_evidence": {
+        "decoded_png_sha256": "ab1765cd6471e25772001d26831d6f5a9b18c9a22f7b906aa0930ed059fe28a8",
+        "dimensions": {
+          "height": 32,
+          "width": 32
+        },
+        "enclosed_transparent_component_sizes_4_connected": [],
+        "foreground_bbox": {
+          "bottom": 31,
+          "left": 9,
+          "right": 31,
+          "top": 2
+        },
+        "foreground_component_sizes_4_connected": [
+          437
+        ],
+        "foreground_pixels": 437
+      },
+      "job_id": "18_world_dungeon_cicn_m189",
+      "reason": "Bind the uncalled forest-feature prompt to its measured off-center connected footprint and opaque interior before the first model call.",
+      "recorded_at": "2026-08-13T04:14:00Z",
+      "reviewer": "Codex Classic-alpha audit",
+      "text": "Mask topology correction: Treat the upscaled Classic binary alpha as the exact topology, not as a loose silhouette suggestion. Preserve the one connected forest-feature footprint, including its substantial clear left margin, small top margin, right-edge contact, bottom contact, irregular upper contour, and compact root-and-earth base. Paint non-key forest, bark, moss, or recess color over every opaque Classic-mask cell; #FF00FF may occupy only source-transparent cells outside that connected footprint. Any apparent cavities within the mass must be opaque dark recess paint, not chroma or transparency. Do not add an internal magenta hole, slit, outline, halo, or margin, and do not center, shrink, crop, or separate the feature"
+    },
+    {
+      "amendment_sha256": "57695985436caf0c2d72fe9649e4e2df78be349d1a69ab93f83ebfcc6b2db908",
+      "classic_alpha_evidence": {
+        "decoded_png_sha256": "9b79570e74c8f640a9f70afbe3afa41b10bcf90552a919af6f092741a984f623",
+        "dimensions": {
+          "height": 32,
+          "width": 32
+        },
+        "enclosed_transparent_component_sizes_4_connected": [],
+        "foreground_bbox": {
+          "bottom": 31,
+          "left": 4,
+          "right": 26,
+          "top": 0
+        },
+        "foreground_component_sizes_4_connected": [
+          681
+        ],
+        "foreground_pixels": 681
+      },
+      "job_id": "19_world_dungeon_cicn_m83",
+      "reason": "Resolve the uncalled iron-gate contract contradiction from the locked Classic binary alpha: the footprint is solid and contains no internal transparent opening.",
+      "recorded_at": "2026-08-13T04:14:00Z",
+      "reviewer": "Codex Classic-alpha audit",
+      "text": "Mask topology contract correction: Although the immutable descriptive prompt calls this an open gate, the locked Classic alpha proves that the entire arched gate-or-door footprint is one connected opaque silhouette with zero enclosed transparent holes. Preserve that binary alpha exactly. Render bars, cross braces, inset openings, and depth as opaque dark-iron and near-black recess paint inside the silhouette; none is see-through. #FF00FF may appear only outside the Classic mask around the outer arch and side margins, never between bars, inside the arch, or anywhere else within the opaque footprint. Preserve the top and bottom edge contacts and source-sized side margins. Do not introduce internal chroma, transparency, a magenta slit, outline, or halo, and do not shrink, crop, recenter, or detach the silhouette"
+    }
+  ],
+  "jobs_sha256": "c1d3b54becf00f5c331aa5a93bf821c0716cccfe8f61bcfe71064b7d5bcbc665",
+  "schema": {
+    "path": "assets/remastered/style-proof/generation/masked-topology-amendments.schema.json",
+    "sha256": "db4e3d91ec9308f24e53184225b7746b842b079e7a63fcc91635f960ed79db9c"
+  },
+  "schema_version": 1,
+  "style_spec_sha256": "d4e14cf94584416529bb40ae6d67494a750758d245e25273bf0d9bfaebe729ca"
+}

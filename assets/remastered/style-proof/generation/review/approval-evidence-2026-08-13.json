@@ -1,0 +1,154 @@
+{
+  "asset_set": "Realmz Remastered style-proof candidates",
+  "decisions": [
+    {
+      "decision": "approve",
+      "job_id": "01_ui_material_ppat_128",
+      "output_sha256": "3b3a30342aef0e49b0b43a04bec3592abda5d629963bc8a68c8cb296eef1961e"
+    },
+    {
+      "decision": "approve",
+      "job_id": "02_ui_material_ppat_129",
+      "output_sha256": "dfe2dadfa74ef37ee4d6de5f8e607eb082285f6e1a994a5e0e26ba2463d7f52f"
+    },
+    {
+      "decision": "approve",
+      "job_id": "03_ui_material_ppat_130",
+      "output_sha256": "df44c09cef3bd20e1c8de43e39c6c88573942a9f17ab5f4f3968f4c04ab72504"
+    },
+    {
+      "decision": "approve",
+      "job_id": "04_ui_material_ppat_131",
+      "output_sha256": "7081f60b8a7ea247fb5d181e6d8b2dfcaaf7a12046a58c31fef318c21f5fc3f9"
+    },
+    {
+      "decision": "approve",
+      "job_id": "05_portrait_cicn_257",
+      "output_sha256": "8eae998f6e9d745911ed518f7ad2629abd95a72d5c66c5ba0e9655663e0f2cc1"
+    },
+    {
+      "decision": "approve",
+      "job_id": "06_portrait_cicn_267",
+      "output_sha256": "5786f9cbf6901739f34acaa72f603cdc62a53423d94b31956fbe90f1af9be281"
+    },
+    {
+      "decision": "approve",
+      "job_id": "07_portrait_cicn_297",
+      "output_sha256": "c5bc0a5c315cfc115d6d1a806f9396670e59734a84102dc492d547cced78aca0"
+    },
+    {
+      "decision": "approve",
+      "job_id": "08_portrait_cicn_337",
+      "output_sha256": "3bc7ac4e0d6bb17cab9562f0f2f4db178c9eddc584f658e524ab947b59a3ec5e"
+    },
+    {
+      "decision": "approve",
+      "job_id": "17_world_dungeon_PICT_50",
+      "output_sha256": "86e0607e8092710896fc07a1fab3c034cbd2c10340de7bec09eee0aecfd2d899"
+    },
+    {
+      "decision": "approve",
+      "job_id": "20_world_dungeon_cicn_m167",
+      "output_sha256": "44ba9ea12d1afee69d5ed23ff2032cd0d553b3cfd04aad8300076bb140d07578"
+    },
+    {
+      "decision": "approve",
+      "job_id": "21_tutorial_city_PICT_32128",
+      "output_sha256": "b3ad37374ae9b92a0bf745627c4db0d5022b53e16fa9d106bc4b5b4ecc032bba"
+    }
+  ],
+  "human_review": {
+    "baked_lighting_result": "no-unintended-baked-lighting",
+    "method": "Human comparison of each hash-identified candidate against its locked Classic reference and job-specific acceptance criteria in the prepared local browser gallery",
+    "recorded_at": "2026-08-14T00:09:35Z",
+    "reviewer": "Human reviewer via Codex session"
+  },
+  "kind": "realmz-remastered-human-approval-evidence",
+  "ledger_sha256_before_approval": "fa3bbd5e7afb51fd66ee45cb983135ab1e0083bc466e3f136a9577cfb114b6f3",
+  "ocr": {
+    "acceptance_rule": "For each exact output PNG, Tesseract PSM 6, 11, and 12 TSV output contains no alphanumeric token of length at least 3 with confidence at least 70",
+    "command_template": "tesseract OUTPUT stdout --psm PSM tsv",
+    "engine": "Tesseract 5.5.1 with Leptonica 1.85.0",
+    "outputs": [
+      {
+        "job_id": "01_ui_material_ppat_128",
+        "output_sha256": "3b3a30342aef0e49b0b43a04bec3592abda5d629963bc8a68c8cb296eef1961e",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "02_ui_material_ppat_129",
+        "output_sha256": "dfe2dadfa74ef37ee4d6de5f8e607eb082285f6e1a994a5e0e26ba2463d7f52f",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "03_ui_material_ppat_130",
+        "output_sha256": "df44c09cef3bd20e1c8de43e39c6c88573942a9f17ab5f4f3968f4c04ab72504",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "04_ui_material_ppat_131",
+        "output_sha256": "7081f60b8a7ea247fb5d181e6d8b2dfcaaf7a12046a58c31fef318c21f5fc3f9",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "05_portrait_cicn_257",
+        "output_sha256": "8eae998f6e9d745911ed518f7ad2629abd95a72d5c66c5ba0e9655663e0f2cc1",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "06_portrait_cicn_267",
+        "output_sha256": "5786f9cbf6901739f34acaa72f603cdc62a53423d94b31956fbe90f1af9be281",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "07_portrait_cicn_297",
+        "output_sha256": "c5bc0a5c315cfc115d6d1a806f9396670e59734a84102dc492d547cced78aca0",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "08_portrait_cicn_337",
+        "output_sha256": "3bc7ac4e0d6bb17cab9562f0f2f4db178c9eddc584f658e524ab947b59a3ec5e",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "17_world_dungeon_PICT_50",
+        "output_sha256": "86e0607e8092710896fc07a1fab3c034cbd2c10340de7bec09eee0aecfd2d899",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "20_world_dungeon_cicn_m167",
+        "output_sha256": "44ba9ea12d1afee69d5ed23ff2032cd0d553b3cfd04aad8300076bb140d07578",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      },
+      {
+        "job_id": "21_tutorial_city_PICT_32128",
+        "output_sha256": "b3ad37374ae9b92a0bf745627c4db0d5022b53e16fa9d106bc4b5b4ecc032bba",
+        "psm_11_tokens": [],
+        "psm_12_tokens": [],
+        "psm_6_tokens": []
+      }
+    ],
+    "result": "no-text-detected"
+  },
+  "scope_note": "These decisions approve the 11 surviving generated masters individually. They do not approve the 10 rejected jobs, supply the three blocked City references, or make the overall style proof complete or approval-eligible."
+}

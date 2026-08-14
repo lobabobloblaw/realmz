@@ -1,0 +1,48 @@
+{
+  "description": "Shared core artwork plus Tutorial and repository City of Bywater; gameplay bitmap types only",
+  "packs": [
+    {
+      "expected_sha256": "8dbae6c6a418c82250dca93937c5958dacea9874d654c62da4e4dafa184dc85c",
+      "pack": "Data Files/The Family Jewels",
+      "role": "core",
+      "source": "base/Realmz/Data Files/The Family Jewels.rsrc",
+      "source_version": "repository-bundled"
+    },
+    {
+      "expected_sha256": "b627417cac3e213f6a651a479e5caebb5cebff3bc0f0217e73b84911e37cf4b7",
+      "pack": "Data Files/Portraits",
+      "role": "core",
+      "source": "base/Realmz/Data Files/Portraits.rsrc",
+      "source_version": "repository-bundled"
+    },
+    {
+      "expected_sha256": "f2f2ef053107895c3fbd7e26b0f92ae3bfeb685d698858c14e260c168b319f50",
+      "pack": "Data Files/Tacticals",
+      "role": "core",
+      "source": "base/Realmz/Data Files/Tacticals.rsrc",
+      "source_version": "repository-bundled"
+    },
+    {
+      "expected_sha256": "c04660bfc7d35470d9ad989116a03199670a8f460e1b49da32c5306124e50402",
+      "pack": "Scenarios/Tutorial/Scenario",
+      "role": "tutorial",
+      "source": "base/Realmz/Scenarios/Tutorial/Scenario.rsrc",
+      "source_version": "repository-bundled"
+    },
+    {
+      "expected_sha256": "d1b530968d5c189b05778b7b2abbf7d89b5491a960b872b6e419f6b9b502f8ec",
+      "pack": "Scenarios/City of Bywater/Scenario",
+      "role": "city-baseline",
+      "source": "base/Realmz/Scenarios/City of Bywater/Scenario.rsrc",
+      "source_version": "repository-bundled-unverified-version"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "phase1",
+  "selected_resource_types": [
+    "PICT",
+    "cicn",
+    "crsr",
+    "ppat"
+  ]
+}

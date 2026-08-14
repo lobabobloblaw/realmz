@@ -1,0 +1,55 @@
+{
+  "deterministic_prompt_assembly": {
+    "component_order": [
+      "style_prompt",
+      "subject",
+      "composition",
+      "background",
+      "semantic_preservation",
+      "policies",
+      "global_negative_prompt",
+      "negative"
+    ],
+    "separator": ". "
+  },
+  "global_negative_prompt": [
+    "Do not include photorealism",
+    "Do not include modern objects or clothing",
+    "Do not include clean vector art",
+    "Do not include pixel-art imitation",
+    "Do not include anime styling",
+    "Do not include comedic caricature",
+    "Do not include letters, words, numerals, captions, logos, signatures, or watermarks",
+    "Do not include an unrequested frame, unrequested border, user-interface control, or baked typography",
+    "Do not include unrequested objects, limbs, weapons, architecture, or terrain",
+    "Do not include camera-facing highlights or a directional light gradient that conflicts with runtime lighting"
+  ],
+  "name": "Realmz Remastered painterly dark-fantasy style proof",
+  "preservation_contract": [
+    "Treat the individual decoded Classic PNG as the sole visual reference for its job; never use the combined contact sheet as model input.",
+    "Preserve subject identity, pose, facing, silhouette, count, gameplay function, palette role, landmarks, and mood.",
+    "Preserve the original logical footprint, anchor, mask intent, and visible-tile behavior; increased master resolution must not reveal more terrain.",
+    "Do not add text. Typography, controls, focus rings, hit regions, masks, hotspots, sprite order, and nine-slice assembly remain code-native.",
+    "Do not copy pixel noise or invent detail that changes gameplay readability."
+  ],
+  "production_constraints": {
+    "generated_text_allowed": false,
+    "max_targeted_regenerations_per_rejected_master": 1,
+    "native_transparency_generation_allowed": false,
+    "opaque_chroma_key": "#FF00FF",
+    "output_color_space": "sRGB",
+    "output_format": "PNG",
+    "review_required_before_manifest_adoption": true
+  },
+  "schema_version": 1,
+  "scope": "Twenty-one generation-eligible core and Tutorial references in the pre-generation style proof; authorized City replacements are not present and are outside this spec.",
+  "style_prompt": "A cohesive painterly dark-fantasy game illustration, hand-painted in appearance with confident brushwork, weathered natural materials, restrained detail, strong readable silhouettes at gameplay scale, a somber medieval atmosphere, and selective jewel-toned accents against charcoal, slate, earth, and aged-metal neutrals. Preserve the reference's functional color hierarchy and late-1990s fantasy-adventure mood while increasing clarity and material richness for a modern high-density macOS display.",
+  "style_spec_kind": "realmz-remastered-painterly-dark-fantasy-v1",
+  "visual_language": {
+    "edges": "Painterly and controlled; crisp enough at the silhouette and gameplay-significant internal boundaries, softer only in nonfunctional interior detail.",
+    "lighting": "Low-key ambient fantasy lighting. No global directional highlight or shadow may be baked into reusable UI, terrain, actor, item, or spell masters; only semantically emitted flame, magic, and scene-local illustration light are allowed.",
+    "materials": "Weathered stone, dark iron, worn leather, cloth, wood, earth, water, and magical energy should remain distinguishable without photoreal surface noise.",
+    "palette": "Charcoal, slate blue, deep umber, muted moss, cold steel, parchment, and restrained violet, cyan, amber, and crimson accents keyed to the Classic source.",
+    "tone": "Serious, mysterious, adventurous, and slightly ominous; never glossy, whimsical, cute, or heroic-poster bombastic."
+  }
+}
