@@ -58,6 +58,13 @@ struct OpenSpellbookAction {
   bool operator==(const OpenSpellbookAction&) const = default;
 };
 
+// Opens the preserved Classic save-slot chooser. Selecting a slot and writing
+// data remain separate SaveGameAction concerns owned by the compatibility
+// flow.
+struct OpenSaveGameAction {
+  bool operator==(const OpenSaveGameAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -176,6 +183,7 @@ using UIActionPayload = std::variant<
     SelectPartyMemberAction,
     OpenInventoryAction,
     OpenSpellbookAction,
+    OpenSaveGameAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -204,6 +212,8 @@ struct UIAction {
       return "open_inventory";
     } else if constexpr (std::is_same_v<Action, OpenSpellbookAction>) {
       return "open_spellbook";
+    } else if constexpr (std::is_same_v<Action, OpenSaveGameAction>) {
+      return "open_save_game";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

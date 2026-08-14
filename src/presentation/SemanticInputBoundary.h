@@ -49,6 +49,12 @@ uint8_t RealmzIsSemanticOpenSpellbookTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenSpellbookTagSurface(
     uint32_t tagged_message);
 
+// Open-save-game tags request only the preserved slot chooser. They do not
+// identify a slot and cannot write save data at this boundary.
+uint8_t RealmzIsSemanticOpenSaveGameTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenSaveGameTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -87,6 +93,14 @@ uint8_t RealmzConsumeSemanticOpenSpellbookEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the originating gameplay surface, then returns the preserved
+// File-menu selection that opens the Classic save-slot chooser.
+uint8_t RealmzConsumeSemanticOpenSaveGameEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    int16_t* menu_id,
+    int16_t* item_id);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -110,6 +124,9 @@ enum class MovementCommand;
 
 [[nodiscard]] uint32_t semantic_open_spellbook_tag(
     PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_save_game_tag(
     RealmzSemanticInputSurface surface) noexcept;
 
 } // namespace realmz::presentation

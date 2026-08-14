@@ -455,6 +455,29 @@ public:
     return true;
   }
 
+  bool push_semantic_open_save_game_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticOpenSaveGameTag(tagged_message)) {
+      return false;
+    }
+    // Keep this as an application-defined event until the guarded top-level
+    // loop confirms the originating surface is still active. A nested modal
+    // must never mistake it for a native File-menu click.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic open save game (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   void discard_semantic_gameplay_events() {
     std::erase_if(this->event_queue, [](const EventRecord& candidate) {
       return (candidate.what == app1Evt) &&
@@ -876,6 +899,23 @@ Boolean GetNextSemanticGameplayEvent(
       ret->what = nullEvent;
       ret->message = 0;
     }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticOpenSaveGameTag(ret->message)) {
+    int16_t menu_id = 0;
+    int16_t item_id = 0;
+    if (still_remastered && RealmzConsumeSemanticOpenSaveGameEvent(
+            surface, ret->message, &menu_id, &item_id)) {
+      // Native menu callbacks already use this exact negative-coordinate
+      // mouseDown representation. The preserved loop will call MenuSelect and
+      // HandleMenuChoice normally, which opens the Classic slot chooser.
+      ret->what = mouseDown;
+      ret->message = 0;
+      ret->where.v = static_cast<int16_t>(-menu_id);
+      ret->where.h = static_cast<int16_t>(-item_id);
+    } else {
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
   } else {
     // Authorization belongs only to the event returned by this wrapper. Do
     // not leave a completed scope available after an ordinary Classic event.
@@ -944,6 +984,10 @@ Boolean PushSemanticOpenInventoryEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticOpenSpellbookEvent(uint32_t tagged_message) {
   return em.push_semantic_open_spellbook_event(tagged_message);
+}
+
+Boolean PushSemanticOpenSaveGameEvent(uint32_t tagged_message) {
+  return em.push_semantic_open_save_game_event(tagged_message);
 }
 
 void CancelSemanticGameplayInput(void) {

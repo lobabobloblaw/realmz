@@ -244,6 +244,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticOpenSpellbookEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic spellbook input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenSaveGameEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic save input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -371,6 +375,30 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(spellbook_wrapper, "mouseDown") == 0,
       "public semantic open spellbook enqueue must not synthesize Classic input");
 
+  const std::string push_save = function_body(
+      source, "push_semantic_open_save_game_event");
+  const std::string compact_push_save = without_whitespace(push_save);
+  require(count_identifier(
+              push_save, "RealmzIsSemanticOpenSaveGameTag") == 1,
+      "semantic open save enqueue must validate exactly one tag");
+  require(count_identifier(push_save, "app1Evt") == 1,
+      "semantic open save enqueue must use app1Evt exactly once");
+  require(count_identifier(push_save, "keyDown") == 0 &&
+          count_identifier(push_save, "mouseDown") == 0,
+      "semantic open save enqueue must not synthesize Classic input");
+  require(compact_push_save.contains("ev.what=app1Evt;") &&
+          compact_push_save.contains("ev.message=tagged_message;"),
+      "semantic open save must retain its tagged app1Evt payload");
+
+  const std::string save_wrapper = function_body(
+      source, "PushSemanticOpenSaveGameEvent");
+  require(without_whitespace(save_wrapper).contains(
+              "returnem.push_semantic_open_save_game_event(tagged_message);"),
+      "public semantic open save enqueue must delegate to tagged queue");
+  require(count_identifier(save_wrapper, "keyDown") == 0 &&
+          count_identifier(save_wrapper, "mouseDown") == 0,
+      "public semantic open save enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -435,20 +463,27 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticOpenSpellbookEvent") == 1,
       "semantic gameplay wrapper must have one late spellbook consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticOpenSaveGameEvent") == 1,
+      "semantic gameplay wrapper must have one late save consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 4,
-      "semantic gameplay wrapper must recognize all four tagged paths");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 5,
+      "semantic gameplay wrapper must recognize all five tagged paths");
   require(count_identifier(semantic_wrapper, "keyDown") == 3,
       "only late movement, inventory, and spellbook validation may produce keyDown");
-  require(count_identifier(semantic_wrapper, "mouseDown") == 0 &&
+  require(count_identifier(semantic_wrapper, "mouseDown") == 1,
+      "only late save validation may produce one menu mouseDown");
+  require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
+          count_identifier(semantic_wrapper, "HandleMenuChoice") == 0 &&
           count_identifier(semantic_wrapper, "viewcharacter") == 0 &&
           count_identifier(semantic_wrapper, "buttonchoice") == 0 &&
           count_identifier(semantic_wrapper, "updatemain") == 0 &&
           count_identifier(semantic_wrapper, "updatecontrols") == 0,
-      "EventManager selection must not emulate a Classic portrait click or modal");
+      "EventManager must not invoke a Classic menu, portrait click, or modal");
   require(count_identifier(source, "RealmzBeginSemanticInputSurface") == 1,
       "EventManager may begin semantic scope only inside its gameplay wrapper");
   require(count_identifier(source, "RealmzEndSemanticInputSurface") == 1,
@@ -464,6 +499,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenSpellbookEvent") == 1,
       "EventManager may consume semantic spellbook input only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticOpenSaveGameEvent") == 1,
+      "EventManager may consume semantic save input only inside its gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
 
@@ -520,6 +558,22 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", spellbook_keydown);
   const std::size_t spellbook_message = compact_semantic.find(
       "ret->message=0", spellbook_null);
+  const std::size_t save_branch = compact_semantic.find(
+      "RealmzIsSemanticOpenSaveGameTag(ret->message)", spellbook_message);
+  const std::size_t save_consume = compact_semantic.find(
+      "RealmzConsumeSemanticOpenSaveGameEvent(", save_branch);
+  const std::size_t save_mousedown = compact_semantic.find(
+      "ret->what=mouseDown", save_consume);
+  const std::size_t save_message = compact_semantic.find(
+      "ret->message=0", save_mousedown);
+  const std::size_t save_menu_id = compact_semantic.find(
+      "ret->where.v=static_cast<int16_t>(-menu_id)", save_message);
+  const std::size_t save_item_id = compact_semantic.find(
+      "ret->where.h=static_cast<int16_t>(-item_id)", save_menu_id);
+  const std::size_t save_null = compact_semantic.find(
+      "ret->what=nullEvent", save_item_id);
+  const std::size_t save_rejected_message = compact_semantic.find(
+      "ret->message=0", save_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -546,7 +600,15 @@ void verify_event_manager(const fs::path& repository_root) {
           spellbook_consume != std::string::npos &&
           spellbook_keydown != std::string::npos &&
           spellbook_null != std::string::npos &&
-          spellbook_message != std::string::npos,
+          spellbook_message != std::string::npos &&
+          save_branch != std::string::npos &&
+          save_consume != std::string::npos &&
+          save_mousedown != std::string::npos &&
+          save_message != std::string::npos &&
+          save_menu_id != std::string::npos &&
+          save_item_id != std::string::npos &&
+          save_null != std::string::npos &&
+          save_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -568,7 +630,15 @@ void verify_event_manager(const fs::path& repository_root) {
           spellbook_branch < spellbook_consume &&
           spellbook_consume < spellbook_keydown &&
           spellbook_keydown < spellbook_null &&
-          spellbook_null < spellbook_message,
+          spellbook_null < spellbook_message &&
+          spellbook_message < save_branch &&
+          save_branch < save_consume &&
+          save_consume < save_mousedown &&
+          save_mousedown < save_message &&
+          save_message < save_menu_id &&
+          save_menu_id < save_item_id &&
+          save_item_id < save_null &&
+          save_null < save_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
@@ -713,6 +783,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticOpenSpellbookEvent") == 0,
       std::string(function_name) +
           " must leave tagged spellbook consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenSaveGameEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged save consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -763,6 +837,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_selection_consumer_count = 0;
   std::size_t global_inventory_consumer_count = 0;
   std::size_t global_spellbook_consumer_count = 0;
+  std::size_t global_save_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -787,6 +862,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenInventoryEvent");
     global_spellbook_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenSpellbookEvent");
+    global_save_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticOpenSaveGameEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -804,6 +881,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic inventory directly");
   require(global_spellbook_consumer_count == 0,
       "legacy loops must not consume tagged semantic spellbook input directly");
+  require(global_save_consumer_count == 0,
+      "legacy loops must not consume tagged semantic save input directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -831,6 +910,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t selection_consume_calls = 0;
   std::size_t inventory_consume_calls = 0;
   std::size_t spellbook_consume_calls = 0;
+  std::size_t save_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -866,6 +946,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenInventoryEvent");
     spellbook_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenSpellbookEvent");
+    save_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticOpenSaveGameEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -891,6 +973,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticOpenInventoryEvent");
   require(spellbook_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticOpenSpellbookEvent");
+  require(save_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticOpenSaveGameEvent");
 }
 
 } // namespace

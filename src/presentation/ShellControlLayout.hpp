@@ -14,6 +14,7 @@ enum class ShellControlKind {
   party_member,
   open_inventory,
   open_spellbook,
+  open_save_game,
   drawer_tab,
 };
 
@@ -40,6 +41,8 @@ struct ShellControlLayoutRequest {
   bool inventory_available = false;
   std::optional<PartyMemberId> spellbook_member;
   bool spellbook_available = false;
+  bool save_control_visible = false;
+  bool save_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

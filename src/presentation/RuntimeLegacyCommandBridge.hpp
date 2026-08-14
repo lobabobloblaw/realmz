@@ -19,6 +19,13 @@ struct RuntimeLegacyCommandContext {
   bool operator==(const RuntimeLegacyCommandContext&) const = default;
 };
 
+struct RuntimeLegacyMenuCommand {
+  int16_t menu_id = 0;
+  int16_t item_id = 0;
+
+  bool operator==(const RuntimeLegacyMenuCommand&) const = default;
+};
+
 using RuntimeLegacyContextProvider =
     std::function<RuntimeLegacyCommandContext()>;
 using RuntimeLegacyKeySink = std::function<bool(uint32_t)>;
@@ -36,6 +43,9 @@ using RuntimeLegacyOpenInventorySink = std::function<bool(
 using RuntimeLegacyOpenSpellbookSink = std::function<bool(
     PartyMemberId,
     uint32_t,
+    const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenSaveGameSink = std::function<bool(
+    RuntimeLegacyMenuCommand,
     const RuntimeLegacyCommandContext&)>;
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -55,6 +65,13 @@ using RuntimeLegacyOpenSpellbookSink = std::function<bool(
 // chooser. The command is exposed only on guarded exploration/dungeon
 // surfaces; spell selection and targeting stay in the Classic flow.
 [[nodiscard]] std::optional<uint32_t> legacy_key_message_for_open_spellbook(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact File > Save Current Game menu selection consumed by the
+// existing top-level gameplay loops. The save-slot chooser and all writes stay
+// inside the preserved Classic flow.
+[[nodiscard]] std::optional<RuntimeLegacyMenuCommand>
+legacy_menu_command_for_open_save_game(
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Live UIAction boundary for the migrated command subset. The bridge queues
@@ -87,6 +104,13 @@ public:
       RuntimeLegacyPartySelectionSink party_selection_sink,
       RuntimeLegacyOpenInventorySink open_inventory_sink,
       RuntimeLegacyOpenSpellbookSink open_spellbook_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyOpenInventorySink open_inventory_sink,
+      RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+      RuntimeLegacyOpenSaveGameSink open_save_game_sink);
 
   [[nodiscard]] DispatchResult dispatch(const UIAction& action) override;
 

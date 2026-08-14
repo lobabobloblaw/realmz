@@ -12,6 +12,7 @@ namespace {
 constexpr uint32_t kMovementRegionBase = 1000U;
 constexpr uint32_t kInventoryRegion = 1100U;
 constexpr uint32_t kSpellbookRegion = 1101U;
+constexpr uint32_t kSaveGameRegion = 1102U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
@@ -70,13 +71,15 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const auto descriptors = descriptors_for(request);
   if (descriptors.empty() ||
       (request.inventory_available && !request.inventory_member) ||
-      (request.spellbook_available && !request.spellbook_member)) {
+      (request.spellbook_available && !request.spellbook_member) ||
+      (request.save_available && !request.save_control_visible)) {
     return {};
   }
 
   const size_t control_count = descriptors.size() +
       (request.inventory_member ? 1U : 0U) +
-      (request.spellbook_member ? 1U : 0U);
+      (request.spellbook_member ? 1U : 0U) +
+      (request.save_control_visible ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -139,6 +142,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .tab_order = 1101,
         .enabled = request.spellbook_available,
         .payload = OpenSpellbookAction{*request.spellbook_member},
+    });
+    x += button_width + gap;
+  }
+  if (request.save_control_visible) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kSaveGameRegion},
+        .kind = ShellControlKind::open_save_game,
+        .bounds = {x, y, button_width, button_height},
+        .label = "SAVE",
+        .accessibility_label = "Open save dialog",
+        .focus_identifier = "focus.action.save.open",
+        .tab_order = 1102,
+        .enabled = request.save_available,
+        .payload = OpenSaveGameAction{},
     });
   }
   return result;

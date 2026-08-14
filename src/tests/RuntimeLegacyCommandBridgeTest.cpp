@@ -583,6 +583,128 @@ void test_open_spellbook_mapping_and_dispatch() {
   }).status == DispatchStatus::unsupported);
 }
 
+void test_open_save_game_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  constexpr RuntimeLegacyMenuCommand expected{
+      .menu_id = 129,
+      .item_id = 3,
+  };
+  int save_calls = 0;
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [&save_calls, &context, expected](
+          RuntimeLegacyMenuCommand command,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++save_calls;
+        CHECK(command == expected);
+        CHECK(captured_context == context);
+        return true;
+      });
+
+  ActionSequence sequence = 100;
+  CHECK(legacy_menu_command_for_open_save_game(context) == expected);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenSaveGameAction{},
+  }).status == DispatchStatus::handled);
+  CHECK(save_calls == 1);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    CHECK(legacy_menu_command_for_open_save_game(context) == expected);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenSaveGameAction{},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(save_calls == 3);
+
+  context.adaptive_eligible = false;
+  CHECK(!legacy_menu_command_for_open_save_game(context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenSaveGameAction{},
+  }).status == DispatchStatus::rejected);
+  CHECK(save_calls == 3);
+
+  context.adaptive_eligible = true;
+  for (const auto invalid : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+           },
+       }) {
+    context = invalid;
+    CHECK(!legacy_menu_command_for_open_save_game(context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenSaveGameAction{},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(save_calls == 3);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  RuntimeLegacyCommandBridge rejecting_sink(
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](RuntimeLegacyMenuCommand,
+          const RuntimeLegacyCommandContext&) { return false; });
+  CHECK(rejecting_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenSaveGameAction{},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = OpenSaveGameAction{},
+  }).status == DispatchStatus::unsupported);
+}
+
 void test_exception_boundary() {
   RuntimeLegacyCommandBridge provider_throws(
       []() -> RuntimeLegacyCommandContext {
@@ -687,6 +809,33 @@ void test_exception_boundary() {
       .sequence = 6,
       .payload = OpenSpellbookAction{1},
   }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge save_sink_throws(
+      [] {
+        return RuntimeLegacyCommandContext{
+            .screen = ScreenContext::exploration,
+            .world_presentation = WorldPresentation::outdoor,
+            .adaptive_eligible = true,
+        };
+      },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](RuntimeLegacyMenuCommand,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("save chooser sink failure");
+      });
+  CHECK(save_sink_throws.dispatch(UIAction{
+      .sequence = 7,
+      .payload = OpenSaveGameAction{},
+  }).status == DispatchStatus::failed);
 }
 
 } // namespace
@@ -702,6 +851,7 @@ int main() {
     test_party_selection_is_opt_in_and_preserves_movement();
     test_open_inventory_mapping_and_dispatch();
     test_open_spellbook_mapping_and_dispatch();
+    test_open_save_game_mapping_and_dispatch();
     test_exception_boundary();
     std::cout << "RuntimeLegacyCommandBridgeTest passed ("
               << checks_run << " checks)\n";

@@ -1431,6 +1431,26 @@ void WindowManager::create_sdl_window() {
                 realmz::presentation::semantic_open_spellbook_tag(
                     member, surface);
             return tag && PushSemanticOpenSpellbookEvent(tag);
+          },
+          [](realmz::presentation::RuntimeLegacyMenuCommand command,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::exploration)) ||
+                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::dungeon));
+            const auto expected = realmz::presentation::
+                legacy_menu_command_for_open_save_game(context);
+            if (!matching_surface || !expected || command != *expected) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_open_save_game_tag(surface);
+            return tag && PushSemanticOpenSaveGameEvent(tag);
           });
   this->configure_window_for_presentation_mode();
 
@@ -2048,21 +2068,26 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::open_spellbook;
         });
-    const char* action_summary =
+    const bool has_semantic_save = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::open_save_game;
+        });
+    std::string action_summary =
         "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
-    if (has_semantic_movement && has_semantic_inventory &&
-        has_semantic_spellbook) {
-      action_summary =
-          "SEMANTIC MOVEMENT + ITEMS + SPELLS — other actions remain in the game frame";
-    } else if (has_semantic_movement && has_semantic_inventory) {
-      action_summary =
-          "SEMANTIC MOVEMENT + ITEMS — other actions remain in the game frame";
-    } else if (has_semantic_movement && has_semantic_spellbook) {
-      action_summary =
-          "SEMANTIC MOVEMENT + SPELLS — other actions remain in the game frame";
-    } else if (has_semantic_movement) {
-      action_summary =
-          "SEMANTIC MOVEMENT — other actions remain in the game frame";
+    if (has_semantic_movement) {
+      action_summary = "SEMANTIC MOVEMENT";
+      if (has_semantic_inventory) {
+        action_summary += " + ITEMS";
+      }
+      if (has_semantic_spellbook) {
+        action_summary += " + SPELLS";
+      }
+      if (has_semantic_save) {
+        action_summary += " + SAVE";
+      }
+      action_summary += " — other actions remain in the game frame";
     }
     draw_shell_text(renderer, font, action_summary,
         {left, panel.y + 37.0, width, 24.0},
@@ -2074,7 +2099,9 @@ void draw_shell_panel_contents(
             (control.kind !=
                 realmz::presentation::ShellControlKind::open_inventory) &&
             (control.kind !=
-                realmz::presentation::ShellControlKind::open_spellbook)) {
+                realmz::presentation::ShellControlKind::open_spellbook) &&
+            (control.kind !=
+                realmz::presentation::ShellControlKind::open_save_game)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -2492,6 +2519,22 @@ void WindowManager::present_remastered_frame() {
           (spellbook_action != shell_model->actions.end()) &&
           spellbook_action->can_invoke() && snapshot_context_matches &&
           legacy_context.adaptive_eligible != 0;
+      const auto save_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::save_game;
+          });
+      const bool save_control_visible =
+          save_action != shell_model->actions.end();
+      const bool save_available = save_control_visible &&
+          save_action->can_invoke() && snapshot_context_matches &&
+          realmz::presentation::legacy_menu_command_for_open_save_game({
+              .screen = screen,
+              .world_presentation = snapshot.world.presentation,
+              .adaptive_eligible =
+                  legacy_context.adaptive_eligible != 0,
+          }).has_value();
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -2503,6 +2546,8 @@ void WindowManager::present_remastered_frame() {
               .inventory_available = inventory_available,
               .spellbook_member = spellbook_member,
               .spellbook_available = spellbook_available,
+              .save_control_visible = save_control_visible,
+              .save_available = save_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -2618,6 +2663,16 @@ void WindowManager::present_remastered_frame() {
                     snapshot.party.selected_member == spellbook->member &&
                     realmz::presentation::
                         legacy_key_message_for_open_spellbook(context)
+                        .has_value();
+              }
+              if (std::holds_alternative<
+                      realmz::presentation::OpenSaveGameAction>(
+                      control.payload)) {
+                return control.kind == realmz::presentation::
+                        ShellControlKind::open_save_game &&
+                    snapshot.screen == context.screen &&
+                    realmz::presentation::
+                        legacy_menu_command_for_open_save_game(context)
                         .has_value();
               }
               if (std::holds_alternative<
@@ -3008,6 +3063,17 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
           !member->selected || !member->conscious ||
           (member->spell_points.current <= 0) ||
           snapshot->party.selected_member != spellbook->member) {
+        return false;
+      }
+      continue;
+    }
+    if (std::holds_alternative<
+            realmz::presentation::OpenSaveGameAction>(control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::open_save_game ||
+          !realmz::presentation::legacy_menu_command_for_open_save_game(
+              context)) {
         return false;
       }
       continue;

@@ -25,15 +25,20 @@ for a conscious selected member with spell points and carries that member in a
 typed `OpenSpellbookAction`. The guarded top-level route revalidates either
 selection before translating it to the preserved Classic `i` or `s` key, so the
 inventory and spell-selection screens remain intact compatibility flows. Their
-code-native keyboard route supports wrapping Tab and Shift-Tab focus plus
+neighboring Save control carries a distinct typed `OpenSaveGameAction`. After
+late surface validation, it becomes the exact preserved File > Save Current
+Game menu choice and opens the Classic slot chooser; the semantic action does
+not choose a slot or write save data itself. The code-native controls share a
+keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a
 high-contrast non-color focus outline. In compact layouts the
 read-only Details and Event Log surfaces open and close through pointer or the
 same keyboard route; their tabs expose an explicit open-state label in addition
 to color. Pointer, popup, text-input, and cursor
 coordinates continue through the embedded Classic frame. Title and modal
-flows—including inventory and spell selection after they open, shop, and
-encounters—use an intact full-frame compatibility fallback. Neither route
+flows—including inventory, spell selection, and the save chooser after they
+open, plus shop and encounters—use an intact full-frame compatibility
+fallback. Neither route
 reveals additional map or combat terrain.
 
 The remaster is still under active development. In Remastered mode, the mixed

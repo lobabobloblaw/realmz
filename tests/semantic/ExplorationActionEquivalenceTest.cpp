@@ -67,12 +67,20 @@ struct ClassicOpenSpellbookKey {
   bool operator==(const ClassicOpenSpellbookKey&) const = default;
 };
 
+struct ClassicOpenSaveMenu {
+  std::int16_t menu_id = 129;
+  std::int16_t item_id = 3;
+
+  bool operator==(const ClassicOpenSaveMenu&) const = default;
+};
+
 using ClassicExplorationInput = std::variant<
     ClassicOutdoorScanCode,
     ClassicDungeonKey,
     ClassicPortraitClick,
     ClassicOpenInventoryKey,
-    ClassicOpenSpellbookKey>;
+    ClassicOpenSpellbookKey,
+    ClassicOpenSaveMenu>;
 
 struct ReplayStep {
   std::string_view label;
@@ -158,13 +166,21 @@ struct ReplayStep {
           .sequence = sequence,
           .payload = OpenInventoryAction{*selected_member},
       };
-    } else {
+    } else if constexpr (std::is_same_v<Input, ClassicOpenSpellbookKey>) {
       if ((concrete.value != 's') || !selected_member) {
         return std::nullopt;
       }
       return UIAction{
           .sequence = sequence,
           .payload = OpenSpellbookAction{*selected_member},
+      };
+    } else {
+      if ((concrete.menu_id != 129) || (concrete.item_id != 3)) {
+        return std::nullopt;
+      }
+      return UIAction{
+          .sequence = sequence,
+          .payload = OpenSaveGameAction{},
       };
     }
   }, input);
@@ -397,6 +413,18 @@ public:
     }});
   }
 
+  [[nodiscard]] DispatchResult open_save_game(
+      const OpenSaveGameAction&) const {
+    return DispatchResult::handled({GameEvent{
+        .sequence = snapshot_.revision,
+        .payload = ModalRequestEvent{
+            .request_id = snapshot_.revision,
+            .title = "Save game",
+            .body = "Choose a Classic save slot",
+        },
+    }});
+  }
+
 private:
   static void write_u16(
       SaveFacingBytes& bytes,
@@ -475,6 +503,9 @@ private:
   };
   handlers.open_spellbook = [&fixture](const OpenSpellbookAction& action) {
     return fixture.open_spellbook(action);
+  };
+  handlers.open_save_game = [&fixture](const OpenSaveGameAction& action) {
+    return fixture.open_save_game(action);
   };
   return handlers;
 }
@@ -615,6 +646,8 @@ enum class ReplayRoute {
           OpenInventoryAction{2}},
       {"open selected spellbook", ClassicOpenSpellbookKey{'s'},
           OpenSpellbookAction{2}},
+      {"open Classic save chooser", ClassicOpenSaveMenu{129, 3},
+          OpenSaveGameAction{}},
   };
 }
 
@@ -651,6 +684,8 @@ void test_classic_adapter_matches_semantic_payloads() {
   CHECK(!adapt_classic_input(ClassicOpenSpellbookKey{'?'}, 1, 0));
   CHECK(!adapt_classic_input(
       ClassicOpenSpellbookKey{'s'}, 1, std::nullopt));
+  CHECK(!adapt_classic_input(ClassicOpenSaveMenu{128, 3}, 1, 0));
+  CHECK(!adapt_classic_input(ClassicOpenSaveMenu{129, 4}, 1, 0));
 }
 
 void test_equivalent_replay_and_determinism() {
@@ -706,6 +741,14 @@ void test_equivalent_replay_and_determinism() {
         CHECK(modal != nullptr);
         CHECK(modal->title == "Cast spell");
         CHECK(modal->body == "Cerys");
+      } else if (std::holds_alternative<OpenSaveGameAction>(
+                     steps[index].remastered_payload)) {
+        CHECK(observed.events.size() == 1);
+        const auto* modal =
+            std::get_if<ModalRequestEvent>(&observed.events[0].payload);
+        CHECK(modal != nullptr);
+        CHECK(modal->title == "Save game");
+        CHECK(modal->body == "Choose a Classic save slot");
       } else {
         CHECK(observed.events.empty());
       }
@@ -725,7 +768,14 @@ void test_equivalent_replay_and_determinism() {
   CHECK(final.snapshot.party.members[1].selected == false);
   CHECK(final.snapshot.party.members[2].selected == true);
   CHECK(final.events.size() == 1);
-  CHECK(std::holds_alternative<ModalRequestEvent>(final.events[0].payload));
+  const auto* save_modal =
+      std::get_if<ModalRequestEvent>(&final.events[0].payload);
+  CHECK(save_modal != nullptr);
+  CHECK(save_modal->title == "Save game");
+  const auto& before_save_chooser =
+      classic_first.steps[classic_first.steps.size() - 2U];
+  CHECK(final.snapshot == before_save_chooser.snapshot);
+  CHECK(final.save_facing_bytes == before_save_chooser.save_facing_bytes);
 }
 
 void test_selection_bounds_reject_without_mutation() {

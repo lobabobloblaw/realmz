@@ -158,8 +158,16 @@ void test_actions_and_events() {
   CHECK(action_name(open_spellbook.payload) == "open_spellbook");
   CHECK(std::get<OpenSpellbookAction>(open_spellbook.payload).member == 2);
 
-  UIAction casting{
+  UIAction open_save_game{
       .sequence = 11,
+      .payload = OpenSaveGameAction{},
+  };
+  CHECK(action_name(open_save_game.payload) == "open_save_game");
+  CHECK(std::holds_alternative<OpenSaveGameAction>(
+      open_save_game.payload));
+
+  UIAction casting{
+      .sequence = 12,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -173,7 +181,7 @@ void test_actions_and_events() {
   CHECK(cast.target.secondary == 5);
 
   UIAction drawer{
-      .sequence = 12,
+      .sequence = 13,
       .payload = SetDrawerPanelAction{DrawerPanel::event_log},
   };
   CHECK(action_name(drawer.payload) == "set_drawer_panel");
@@ -251,6 +259,14 @@ void test_command_bridge() {
   });
   CHECK(spellbook_unsupported.status == DispatchStatus::unsupported);
   CHECK(spellbook_unsupported.detail.find("open_spellbook") !=
+      std::string::npos);
+
+  const auto save_chooser_unsupported = bridge.dispatch(UIAction{
+      .sequence = 8,
+      .payload = OpenSaveGameAction{},
+  });
+  CHECK(save_chooser_unsupported.status == DispatchStatus::unsupported);
+  CHECK(save_chooser_unsupported.detail.find("open_save_game") !=
       std::string::npos);
 
   const auto failed = bridge.dispatch(UIAction{

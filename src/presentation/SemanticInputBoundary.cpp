@@ -25,6 +25,10 @@ constexpr uint32_t kSemanticOpenSpellbookSignature = 0x52500000U;
 constexpr uint32_t kSemanticOpenSpellbookMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenSpellbookSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenSpellbookMemberMask = 0x000000FFU;
+constexpr uint32_t kSemanticOpenSaveGameSignature = 0x52560000U;
+constexpr uint32_t kSemanticOpenSaveGameMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticOpenSaveGameSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticOpenSaveGameReservedMask = 0x000000FFU;
 uint32_t scope_depth = 0;
 bool scope_invalid = false;
 RealmzSemanticInputSurface scope_surface = REALMZ_SEMANTIC_INPUT_NONE;
@@ -47,6 +51,10 @@ struct DecodedOpenInventory {
 
 struct DecodedOpenSpellbook {
   realmz::presentation::PartyMemberId member;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedOpenSaveGame {
   RealmzSemanticInputSurface surface;
 };
 
@@ -135,6 +143,22 @@ std::optional<DecodedOpenSpellbook> decode_open_spellbook(
   };
 }
 
+std::optional<DecodedOpenSaveGame> decode_open_save_game(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticOpenSaveGameMask) !=
+          kSemanticOpenSaveGameSignature ||
+      (tagged_message & kSemanticOpenSaveGameReservedMask) != 0) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticOpenSaveGameSurfaceMask) >> 8U;
+  if ((surface_value != REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+      (surface_value != REALMZ_SEMANTIC_INPUT_DUNGEON)) {
+    return std::nullopt;
+  }
+  return DecodedOpenSaveGame{.surface = surface_value};
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -209,6 +233,15 @@ uint32_t semantic_open_spellbook_tag(
   return kSemanticOpenSpellbookSignature |
       (static_cast<uint32_t>(surface) << 8U) |
       static_cast<uint32_t>(member);
+}
+
+uint32_t semantic_open_save_game_tag(
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_gameplay_surface(surface)) {
+    return 0;
+  }
+  return kSemanticOpenSaveGameSignature |
+      (static_cast<uint32_t>(surface) << 8U);
 }
 
 } // namespace realmz::presentation
@@ -303,12 +336,24 @@ RealmzSemanticOpenSpellbookTagSurface(uint32_t tagged_message) {
   return spellbook ? spellbook->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticOpenSaveGameTag(
+    uint32_t tagged_message) {
+  return decode_open_save_game(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticOpenSaveGameTagSurface(uint32_t tagged_message) {
+  const auto save_game = decode_open_save_game(tagged_message);
+  return save_game ? save_game->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
           decode_party_selection(tagged_message) ||
           decode_open_inventory(tagged_message) ||
-          decode_open_spellbook(tagged_message))
+          decode_open_spellbook(tagged_message) ||
+          decode_open_save_game(tagged_message))
       ? 1
       : 0;
 }
@@ -326,6 +371,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto spellbook = decode_open_spellbook(tagged_message)) {
     return spellbook->surface;
+  }
+  if (const auto save_game = decode_open_save_game(tagged_message)) {
+    return save_game->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -491,6 +539,50 @@ extern "C" uint8_t RealmzConsumeSemanticOpenSpellbookEvent(
       return 0;
     }
     *classic_key_message = *message;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticOpenSaveGameEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    int16_t* menu_id,
+    int16_t* item_id) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!menu_id || !item_id || !authorized) {
+    return 0;
+  }
+  const auto save_game = decode_open_save_game(tagged_message);
+  if (!save_game || (save_game->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if (snapshot.screen != screen) {
+      return 0;
+    }
+    const auto command =
+        realmz::presentation::legacy_menu_command_for_open_save_game({
+            .screen = screen,
+            .world_presentation = snapshot.world.presentation,
+            .adaptive_eligible = true,
+        });
+    if (!command) {
+      return 0;
+    }
+    *menu_id = command->menu_id;
+    *item_id = command->item_id;
     return 1;
   } catch (...) {
     return 0;
