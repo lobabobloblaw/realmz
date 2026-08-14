@@ -153,6 +153,15 @@ struct AutoCombatantAction {
   bool operator==(const AutoCombatantAction&) const = default;
 };
 
+// Requests the preserved Classic combat-range overlay for the explicitly
+// identified acting party combatant. The stable actor prevents a queued view
+// command from revealing ranges relative to whichever combatant acts later.
+struct ShowCombatRangeAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const ShowCombatRangeAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -313,6 +322,7 @@ using UIActionPayload = std::variant<
     CycleCombatFocusAction,
     OpenCombatItemsAction,
     AutoCombatantAction,
+    ShowCombatRangeAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -363,6 +373,8 @@ struct UIAction {
       return "open_combat_items";
     } else if constexpr (std::is_same_v<Action, AutoCombatantAction>) {
       return "auto_combatant";
+    } else if constexpr (std::is_same_v<Action, ShowCombatRangeAction>) {
+      return "show_combat_range";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

@@ -50,6 +50,7 @@ enum class CombatCommand {
   previous,
   next,
   auto_combatant,
+  show_combat_range,
   items,
 };
 
@@ -112,6 +113,12 @@ constexpr std::array kCombatCases{
         .label = "Auto",
         .expected_classic_message = 0x00000061U,
         .expected_semantic_tag = 0x52410302U,
+    },
+    CombatCase{
+        .command = CombatCommand::show_combat_range,
+        .label = "Range",
+        .expected_classic_message = 0x00000F72U,
+        .expected_semantic_tag = 0x52520302U,
     },
     CombatCase{
         .command = CombatCommand::items,
@@ -310,6 +317,9 @@ void reset_fixture_state() {
     case CombatCommand::auto_combatant:
       return legacy_key_message_for_auto_combatant(
           kActingCombatant, kRuntimeContext);
+    case CombatCommand::show_combat_range:
+      return legacy_key_message_for_show_combat_range(
+          kActingCombatant, kRuntimeContext);
     case CombatCommand::items:
       if (!action_case.selected_member) {
         return std::nullopt;
@@ -362,6 +372,8 @@ void reset_fixture_state() {
       };
     case CombatCommand::auto_combatant:
       return AutoCombatantAction{kActingCombatant};
+    case CombatCommand::show_combat_range:
+      return ShowCombatRangeAction{kActingCombatant};
     case CombatCommand::items:
       if (!action_case.selected_member) {
         throw std::logic_error("Combat Items case has no selected member");
@@ -541,6 +553,23 @@ void append_trace(
             tag);
         return tag != 0;
       },
+      .show_combat_range = [&traces](
+          CombatantId actor,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& context) {
+        const uint32_t tag = semantic_show_combat_range_tag(
+            actor, REALMZ_SEMANTIC_INPUT_COMBAT);
+        append_trace(
+            traces,
+            CombatCommand::show_combat_range,
+            actor,
+            std::nullopt,
+            std::nullopt,
+            message,
+            context,
+            tag);
+        return tag != 0;
+      },
   };
 
   return RuntimeLegacyCommandBridge(
@@ -608,6 +637,11 @@ void append_trace(
                  &classic_message) != 0;
     case CombatCommand::auto_combatant:
       return RealmzConsumeSemanticAutoCombatantEvent(
+                 REALMZ_SEMANTIC_INPUT_COMBAT,
+                 tag,
+                 &classic_message) != 0;
+    case CombatCommand::show_combat_range:
+      return RealmzConsumeSemanticShowCombatRangeEvent(
                  REALMZ_SEMANTIC_INPUT_COMBAT,
                  tag,
                  &classic_message) != 0;
@@ -784,6 +818,27 @@ void test_combat_items_stops_at_modal_request_handoff() {
   // mutation, turn effect, or save equivalence is simulated here.
 }
 
+void test_combat_range_stops_at_classic_modal_handoff() {
+  const CombatCase& show_range =
+      kCombatCases[kCombatCases.size() - 2];
+  CHECK(show_range.command == CombatCommand::show_combat_range);
+
+  reset_fixture_state();
+  const PreClassicStateBytes initial_state = pre_classic_state;
+  const QueuedSemanticTrace queued = dispatch_semantic_action(show_range, 400);
+
+  complete_combat_input_scope();
+  uint32_t output = kUnchangedClassicMessage;
+  CHECK(consume_semantic_request(
+      CombatCommand::show_combat_range, queued.semantic_tag, output));
+  CHECK(output == 0x00000F72U);
+  CHECK(pre_classic_state == initial_state);
+
+  // The fixture ends at the preserved lowercase "r" request. Classic owns
+  // drawing, the raw dismissal wait, recentering, and later input; none of
+  // those modal effects are simulated by this pre-Classic state image.
+}
+
 } // namespace
 
 extern "C" RealmzLegacyPresentationContext
@@ -807,6 +862,7 @@ int main() {
     test_stale_actor_rejection_is_single_use_for_every_action();
     test_combat_items_stale_selected_member_is_single_use();
     test_combat_items_stops_at_modal_request_handoff();
+    test_combat_range_stops_at_classic_modal_handoff();
     RealmzInvalidateSemanticInputBoundary();
     std::cout << "CombatActionEquivalenceTest passed ("
               << checks_run << " checks)\n";

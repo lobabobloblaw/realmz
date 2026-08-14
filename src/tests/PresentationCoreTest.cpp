@@ -243,8 +243,16 @@ void test_actions_and_events() {
   CHECK(action_name(auto_combatant.payload) == "auto_combatant");
   CHECK(std::get<AutoCombatantAction>(auto_combatant.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction show_combat_range{
       .sequence = 21,
+      .payload = ShowCombatRangeAction{2},
+  };
+  CHECK(action_name(show_combat_range.payload) == "show_combat_range");
+  CHECK(std::get<ShowCombatRangeAction>(
+            show_combat_range.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 22,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -325,6 +333,7 @@ void test_command_bridge() {
   CombatantId items_combatant = -1;
   PartyMemberId items_member = 0;
   CombatantId auto_combatant = -1;
+  CombatantId range_combatant = -1;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -357,6 +366,11 @@ void test_command_bridge() {
   handlers.auto_combatant =
       [&auto_combatant](const AutoCombatantAction& action) {
         auto_combatant = action.combatant;
+        return DispatchResult::handled();
+      };
+  handlers.show_combat_range =
+      [&range_combatant](const ShowCombatRangeAction& action) {
+        range_combatant = action.combatant;
         return DispatchResult::handled();
       };
 
@@ -503,6 +517,13 @@ void test_command_bridge() {
   });
   CHECK(auto_combatant_handled.was_handled());
   CHECK(auto_combatant == 9);
+
+  const auto range_handled = bridge.dispatch(UIAction{
+      .sequence = 18,
+      .payload = ShowCombatRangeAction{10},
+  });
+  CHECK(range_handled.was_handled());
+  CHECK(range_combatant == 10);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

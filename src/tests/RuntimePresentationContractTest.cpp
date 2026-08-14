@@ -288,6 +288,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.switch_weapon_set = mutateEngine;
   handlers.cycle_combat_focus = mutateEngine;
   handlers.auto_combatant = mutateEngine;
+  handlers.show_combat_range = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -489,6 +490,19 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(autoCombatantUnsupported.status == DispatchStatus::unsupported);
   CHECK(autoCombatantUnsupported.detail ==
       "No legacy handler registered for auto_combatant");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction showCombatRangeAction{
+      .sequence = sequence++,
+      .payload = ShowCombatRangeAction{1},
+  };
+  CHECK(action_name(showCombatRangeAction.payload) == "show_combat_range");
+  const auto showCombatRangeUnsupported =
+      unsupportedBridge.dispatch(showCombatRangeAction);
+  CHECK(showCombatRangeUnsupported.status == DispatchStatus::unsupported);
+  CHECK(showCombatRangeUnsupported.detail ==
+      "No legacy handler registered for show_combat_range");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

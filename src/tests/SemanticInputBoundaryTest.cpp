@@ -200,6 +200,14 @@ bool consume_auto_combatant(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_show_combat_range(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticShowCombatRangeEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 uint32_t semantic_cycle_previous_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept {
@@ -268,6 +276,11 @@ constexpr std::array kCombatActionCases{
         .tag = semantic_auto_combatant_tag,
         .consume = consume_auto_combatant,
         .classic_message = 0x00000061U,
+    },
+    CombatActionCase{
+        .tag = semantic_show_combat_range_tag,
+        .consume = consume_show_combat_range,
+        .classic_message = 0x00000F72U,
     },
 };
 
@@ -472,7 +485,7 @@ void test_tag_encoding_and_validation() {
             0, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
   for (const uint32_t malformed : {
            0U,
-           0x52520000U,
+           0x52540000U,
            0x52530000U,
            0x52530300U,
            0x5253FF00U,
@@ -1219,6 +1232,101 @@ void test_tag_encoding_and_validation() {
                1, 0, REALMZ_SEMANTIC_INPUT_COMBAT),
        }) {
     CHECK(RealmzIsSemanticAutoCombatantTag(other_tag) == 0);
+  }
+
+  std::set<uint32_t> show_combat_range_tags;
+  for (const CombatantId combatant : {0, 1, 10, 109, 255}) {
+    const uint32_t tag = semantic_show_combat_range_tag(
+        combatant, REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK((tag & 0xFFFF0000U) == 0x52520000U);
+    CHECK(((tag >> 8U) & 0xFFU) == REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK((tag & 0xFFU) == static_cast<uint32_t>(combatant));
+    CHECK(RealmzIsSemanticShowCombatRangeTag(tag) != 0);
+    CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+    CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+    CHECK(RealmzIsSemanticGuardCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticFinishCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
+    CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenCombatItemsTag(tag) == 0);
+    CHECK(RealmzIsSemanticAutoCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+    CHECK(RealmzSemanticShowCombatRangeTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(RealmzSemanticGameplayTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(show_combat_range_tags.emplace(tag).second);
+    CHECK(!tags.contains(tag));
+    CHECK(!selection_tags.contains(tag));
+    CHECK(!inventory_tags.contains(tag));
+    CHECK(!spellbook_tags.contains(tag));
+    CHECK(!save_game_tags.contains(tag));
+    CHECK(!load_game_tags.contains(tag));
+    CHECK(!guard_tags.contains(tag));
+    CHECK(!finish_tags.contains(tag));
+    CHECK(!delay_tags.contains(tag));
+    CHECK(!center_active_tags.contains(tag));
+    CHECK(!switch_weapon_tags.contains(tag));
+    CHECK(!cycle_focus_tags.contains(tag));
+    CHECK(!combat_items_tags.contains(tag));
+    CHECK(!auto_combatant_tags.contains(tag));
+  }
+  CHECK(show_combat_range_tags.size() == 5);
+  CHECK(semantic_show_combat_range_tag(
+            -1, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_show_combat_range_tag(
+            256, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_show_combat_range_tag(
+            1, REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_show_combat_range_tag(
+            1, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  CHECK(semantic_show_combat_range_tag(
+            1, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0);
+  for (const uint32_t malformed : {
+           0U,
+           0x52510000U,
+           0x52520000U,
+           0x52520101U,
+           0x52520201U,
+           0x52520401U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticShowCombatRangeTag(malformed) == 0);
+    CHECK(RealmzSemanticShowCombatRangeTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+  for (const uint32_t other_tag : {
+           semantic_movement_tag(
+               MovementCommand::north, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_party_selection_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_inventory_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_spellbook_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_save_game_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_load_game_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_guard_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_finish_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_delay_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_center_active_combatant_tag(
+               1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_switch_weapon_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_cycle_combat_focus_tag(
+               1,
+               CombatFocusDirection::next,
+               REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_open_combat_items_tag(
+               1, 0, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_auto_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+       }) {
+    CHECK(RealmzIsSemanticShowCombatRangeTag(other_tag) == 0);
   }
 }
 
@@ -2067,6 +2175,37 @@ void test_shared_combat_late_validation_matrix() {
   }
 }
 
+void test_show_combat_range_route_boundaries() {
+  reset_valid_shared_combat();
+  const uint32_t show_range = semantic_show_combat_range_tag(
+      1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(show_range != 0);
+
+  uint32_t classic_message = kUnchangedClassicMessage;
+  CHECK(!consume_show_combat_range(
+      REALMZ_SEMANTIC_INPUT_COMBAT, show_range, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(RealmzConsumeSemanticShowCombatRangeEvent(
+            REALMZ_SEMANTIC_INPUT_COMBAT, show_range, nullptr) == 0);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  // A same-shaped actor tag from another command family cannot enter the
+  // Range consumer or change its output sentinel.
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(!consume_show_combat_range(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      semantic_auto_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+      classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+}
+
 void test_open_combat_items_late_validation_and_exact_translation() {
   reset_valid_shared_combat();
   const uint32_t open_items = semantic_open_combat_items_tag(
@@ -2806,6 +2945,7 @@ int main() {
     test_open_save_game_late_validation_and_exact_menu_translation();
     test_open_load_game_late_validation_and_exact_menu_translation();
     test_shared_combat_late_validation_matrix();
+    test_show_combat_range_route_boundaries();
     test_open_combat_items_late_validation_and_exact_translation();
     test_guard_combatant_late_validation_and_exact_translation();
     test_finish_combatant_late_validation_and_exact_translation();

@@ -85,6 +85,9 @@ private:
     handlers.auto_combatant = [](const AutoCombatantAction&) {
       return DispatchResult::handled();
     };
+    handlers.show_combat_range = [](const ShowCombatRangeAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1060,10 +1063,21 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = AutoCombatantAction{2},
   };
+  const ShellControlPlacement combat_range{
+      .region = ShellRegionId{1115},
+      .kind = ShellControlKind::show_combat_range,
+      .bounds = {188.0, 72.0, 160.0, 48.0},
+      .label = "RANGE",
+      .accessibility_label = "Show combat ranges; press any key to close",
+      .focus_identifier = "focus.action.combat.range",
+      .tab_order = 1115,
+      .enabled = true,
+      .payload = ShowCombatRangeAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
-  const std::vector utility{utility_back, auto_combatant};
+  const std::vector utility{utility_back, auto_combatant, combat_range};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1317,10 +1331,10 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(is_valid_combat_action_page_transition(
       CombatActionPage::secondary, utility_page));
   CHECK(bridge.actions().size() == 4U);
-  CHECK(harness.recompose({auto_combatant, utility_back}));
+  CHECK(harness.recompose({combat_range, auto_combatant, utility_back}));
   CHECK(!harness.keyboard().focused_identifier());
 
-  // Utility traversal is BACK then AUTO regardless of insertion order.
+  // Utility traversal is BACK, AUTO, RANGE regardless of insertion order.
   for (const auto& expected : utility) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -1329,6 +1343,7 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
     release_tab(harness);
   }
 
+  CHECK(harness.focus(auto_combatant.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
   for (int repeat = 0; repeat < 3; ++repeat) {
@@ -1425,6 +1440,89 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!auto_route_release.shell.invoked_control);
   CHECK(!auto_route_release.dispatch);
   CHECK(bridge.actions().size() == 5U);
+
+  // Range dispatches once with its stable actor identity.
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(combat_range.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto range_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(range_release.shell.consumed);
+  CHECK(range_release.shell.invoked_control.has_value());
+  CHECK(range_release.shell.invoked_control->kind ==
+      ShellControlKind::show_combat_range);
+  CHECK(range_release.dispatch.has_value());
+  CHECK(range_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 6U);
+  CHECK(std::get<ShowCombatRangeAction>(
+      bridge.actions()[5].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 6U);
+
+  // Actor, enabled state, page, and route changes cancel a held Range
+  // activation while the physical release remains owned.
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.keyboard().focused_identifier() ==
+      combat_range.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[2].payload = ShowCombatRangeAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_range_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_range_release.shell.consumed);
+  CHECK(!stale_range_release.shell.invoked_control);
+  CHECK(!stale_range_release.dispatch);
+  CHECK(bridge.actions().size() == 6U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(combat_range.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[2].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_range_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_range_release.shell.consumed);
+  CHECK(!disabled_range_release.shell.invoked_control);
+  CHECK(!disabled_range_release.dispatch);
+  CHECK(bridge.actions().size() == 6U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(combat_range.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(secondary));
+  const auto range_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(range_page_release.shell.consumed);
+  CHECK(!range_page_release.shell.invoked_control);
+  CHECK(!range_page_release.dispatch);
+  CHECK(bridge.actions().size() == 6U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(combat_range.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto range_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(range_route_release.shell.consumed);
+  CHECK(!range_route_release.shell.invoked_control);
+  CHECK(!range_route_release.dispatch);
+  CHECK(bridge.actions().size() == 6U);
 }
 
 using DescriptorMutation =

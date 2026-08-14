@@ -312,6 +312,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticAutoCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic Auto input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticShowCombatRangeEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic range input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -684,6 +688,31 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(auto_wrapper, "mouseDown") == 0,
       "public semantic Auto enqueue must not synthesize Classic input");
 
+  const std::string push_range = function_body(
+      source, "push_semantic_show_combat_range_event");
+  const std::string compact_push_range = without_whitespace(push_range);
+  require(count_identifier(
+              push_range, "RealmzIsSemanticShowCombatRangeTag") == 1,
+      "semantic Range enqueue must validate exactly one tag");
+  require(count_identifier(push_range, "app1Evt") == 1,
+      "semantic Range enqueue must use app1Evt exactly once");
+  require(count_identifier(push_range, "keyDown") == 0 &&
+          count_identifier(push_range, "mouseDown") == 0,
+      "semantic Range enqueue must not synthesize Classic input");
+  require(compact_push_range.contains("ev.what=app1Evt;") &&
+          compact_push_range.contains("ev.message=tagged_message;"),
+      "semantic Range must retain its tagged app1Evt payload");
+
+  const std::string range_wrapper = function_body(
+      source, "PushSemanticShowCombatRangeEvent");
+  require(without_whitespace(range_wrapper).contains(
+              "returnem.push_semantic_show_combat_range_event("
+              "tagged_message);"),
+      "public semantic Range enqueue must delegate to tagged queue");
+  require(count_identifier(range_wrapper, "keyDown") == 0 &&
+          count_identifier(range_wrapper, "mouseDown") == 0,
+      "public semantic Range enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -788,15 +817,19 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticAutoCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late Auto consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticShowCombatRangeEvent") == 1,
+      "semantic gameplay wrapper must have one late Range consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 14,
-      "semantic gameplay wrapper must recognize all fourteen tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 11,
+  require(count_identifier(semantic_wrapper, "app1Evt") == 15,
+      "semantic gameplay wrapper must recognize all fifteen tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 12,
       "only late movement, inventory, spellbook, guard, finish, delay, center, "
-      "switch-weapon, cycle-focus, combat-items, or Auto validation may "
+      "switch-weapon, cycle-focus, combat-items, Auto, or Range validation may "
       "produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
@@ -856,6 +889,10 @@ void verify_event_manager(const fs::path& repository_root) {
               source, "RealmzConsumeSemanticAutoCombatantEvent") == 1,
       "EventManager may consume semantic Auto input only inside its gameplay "
       "wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticShowCombatRangeEvent") == 1,
+      "EventManager may consume semantic Range input only inside its gameplay "
+      "wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
 
@@ -872,6 +909,8 @@ void verify_event_manager(const fs::path& repository_root) {
       "constSemanticInputScopesemantic_scope(surface)", end_scope);
   const std::size_t scoped_poll = compact_semantic.find(
       "*ret=em.get_next_event(0)", scope_instance);
+  const std::size_t scope_block_close = compact_semantic.find(
+      ";}constboolstill_remastered=", scoped_poll);
   const std::size_t tagged_branch = compact_semantic.find(
       "ret->what==app1Evt", scoped_poll);
   const std::size_t late_consume = compact_semantic.find(
@@ -1033,6 +1072,17 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", auto_keydown);
   const std::size_t auto_rejected_message = compact_semantic.find(
       "ret->message=0", auto_null);
+  const std::size_t range_branch = compact_semantic.find(
+      "RealmzIsSemanticShowCombatRangeTag(ret->message)",
+      auto_rejected_message);
+  const std::size_t range_consume = compact_semantic.find(
+      "RealmzConsumeSemanticShowCombatRangeEvent(", range_branch);
+  const std::size_t range_keydown = compact_semantic.find(
+      "ret->what=keyDown", range_consume);
+  const std::size_t range_null = compact_semantic.find(
+      "ret->what=nullEvent", range_keydown);
+  const std::size_t range_rejected_message = compact_semantic.find(
+      "ret->message=0", range_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -1040,6 +1090,7 @@ void verify_event_manager(const fs::path& repository_root) {
           end_scope != std::string::npos &&
           scope_instance != std::string::npos &&
           scoped_poll != std::string::npos &&
+          scope_block_close != std::string::npos &&
           tagged_branch != std::string::npos &&
           late_consume != std::string::npos &&
           late_keydown != std::string::npos &&
@@ -1115,12 +1166,18 @@ void verify_event_manager(const fs::path& repository_root) {
           auto_consume != std::string::npos &&
           auto_keydown != std::string::npos &&
           auto_null != std::string::npos &&
-          auto_rejected_message != std::string::npos,
+          auto_rejected_message != std::string::npos &&
+          range_branch != std::string::npos &&
+          range_consume != std::string::npos &&
+          range_keydown != std::string::npos &&
+          range_null != std::string::npos &&
+          range_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
           end_scope < scope_instance && scope_instance < scoped_poll &&
-          scoped_poll < tagged_branch && tagged_branch < late_consume &&
+          scoped_poll < scope_block_close &&
+          scope_block_close < tagged_branch && tagged_branch < late_consume &&
           late_consume < late_keydown && late_keydown < rejected_null &&
           rejected_null < rejected_message &&
           rejected_message < selection_branch &&
@@ -1193,8 +1250,18 @@ void verify_event_manager(const fs::path& repository_root) {
           auto_branch < auto_consume &&
           auto_consume < auto_keydown &&
           auto_keydown < auto_null &&
-          auto_null < auto_rejected_message,
+          auto_null < auto_rejected_message &&
+          auto_rejected_message < range_branch &&
+          range_branch < range_consume &&
+          range_consume < range_keydown &&
+          range_keydown < range_null &&
+          range_null < range_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
+  require(scope_block_close < range_branch && range_branch < range_consume &&
+          range_consume < range_keydown,
+      "Range must leave semantic gameplay scope before its late Classic key "
+      "handoff, so showrange's later raw WaitNextEvent cannot inherit shell "
+      "route eligibility");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
               "return(ret->what!=nullEvent);}"),
@@ -1364,6 +1431,9 @@ void verify_window_manager_named_combat_sinks(
            "legacy_key_message_for_auto_combatant",
            "semantic_auto_combatant_tag",
            "PushSemanticAutoCombatantEvent",
+           "legacy_key_message_for_show_combat_range",
+           "semantic_show_combat_range_tag",
+           "PushSemanticShowCombatRangeEvent",
        }) {
     require(count_identifier(invocation, identifier) == 1,
         std::string("runtime legacy bridge construction must contain exactly ") +
@@ -1422,6 +1492,11 @@ void verify_window_manager_named_combat_sinks(
       "legacy_key_message_for_auto_combatant",
       "semantic_auto_combatant_tag",
       "PushSemanticAutoCombatantEvent");
+  verify_field(
+      "show_combat_range",
+      "legacy_key_message_for_show_combat_range",
+      "semantic_show_combat_range_tag",
+      "PushSemanticShowCombatRangeEvent");
 }
 
 void verify_window_manager_shell_dispatch_freshness(
@@ -1447,9 +1522,13 @@ void verify_window_manager_shell_dispatch_freshness(
       "std::get_if<realmz::presentation::AutoCombatantAction>"
       "(&control.payload)",
       combat_items_payload);
+  const std::size_t range_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::ShowCombatRangeAction>"
+      "(&control.payload)",
+      auto_payload);
   const std::size_t ordinary_branch = compact_dispatch.find(
       "}else{constautolive_control=std::ranges::find_if(",
-      auto_payload);
+      range_payload);
   const std::size_t current_controls = compact_dispatch.find(
       "this->remastered_shell_controls,", ordinary_branch);
   const std::size_t exact_enabled_descriptor = compact_dispatch.find(
@@ -1489,16 +1568,24 @@ void verify_window_manager_shell_dispatch_freshness(
       "this->adaptive_shell_plan->adaptive_layout->action_bar"
       ".contains(control.bounds)",
       secondary_page);
+  const std::size_t utility_action_guard = compact_dispatch.find(
+      "((auto_combatant||show_combat_range)&&", secondary_layout);
   const std::size_t auto_guard = compact_dispatch.find(
-      "(auto_combatant&&", secondary_layout);
+      "(auto_combatant&&", utility_action_guard);
   const std::size_t auto_kind = compact_dispatch.find(
       "control.kind!=realmz::presentation::ShellControlKind::"
       "auto_combatant",
       auto_guard);
+  const std::size_t range_guard = compact_dispatch.find(
+      "(show_combat_range&&", auto_kind);
+  const std::size_t range_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "show_combat_range",
+      range_guard);
   const std::size_t utility_page = compact_dispatch.find(
       "this->remastered_combat_action_page!="
       "realmz::presentation::CombatActionPage::utility",
-      auto_kind);
+      range_kind);
   const std::size_t utility_layout = compact_dispatch.find(
       "this->adaptive_shell_plan->adaptive_layout->action_bar"
       ".contains(control.bounds)",
@@ -1513,6 +1600,7 @@ void verify_window_manager_shell_dispatch_freshness(
           cycle_payload != std::string::npos &&
           combat_items_payload != std::string::npos &&
           auto_payload != std::string::npos &&
+          range_payload != std::string::npos &&
           ordinary_branch != std::string::npos &&
           current_controls != std::string::npos &&
           exact_enabled_descriptor != std::string::npos &&
@@ -1528,20 +1616,24 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_items_kind != std::string::npos &&
           secondary_page != std::string::npos &&
           secondary_layout != std::string::npos &&
+          utility_action_guard != std::string::npos &&
           auto_guard != std::string::npos &&
           auto_kind != std::string::npos &&
+          range_guard != std::string::npos &&
+          range_kind != std::string::npos &&
           utility_page != std::string::npos &&
           utility_layout != std::string::npos &&
           reject != std::string::npos &&
           action != std::string::npos &&
           bridge_dispatch != std::string::npos,
       "bridge-bound shell dispatch must retain its live descriptor, fresh "
-      "route, and Weapon/Cycle Focus/Combat Items/Auto page-layout rejection "
-      "gate");
+      "route, and Weapon/Cycle Focus/Combat Items/Auto/Range page-layout "
+      "rejection gate");
   require(switch_payload < cycle_payload &&
           cycle_payload < combat_items_payload &&
           combat_items_payload < auto_payload &&
-          auto_payload < ordinary_branch &&
+          auto_payload < range_payload &&
+          range_payload < ordinary_branch &&
           ordinary_branch < current_controls &&
           current_controls < exact_enabled_descriptor &&
           exact_enabled_descriptor < fresh_route &&
@@ -1554,12 +1646,15 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_items_guard < combat_items_kind &&
           combat_items_kind < secondary_page &&
           secondary_page < secondary_layout &&
-          secondary_layout < auto_guard && auto_guard < auto_kind &&
-          auto_kind < utility_page && utility_page < utility_layout &&
+          secondary_layout < utility_action_guard &&
+          utility_action_guard < auto_guard && auto_guard < auto_kind &&
+          auto_kind < range_guard && range_guard < range_kind &&
+          range_kind < utility_page && utility_page < utility_layout &&
           utility_layout < reject &&
           reject < action && action < bridge_dispatch,
       "cached shell descriptors and stale Weapon/Cycle Focus/Combat Items/"
-      "Auto routes must be rejected before any runtime legacy bridge dispatch");
+      "Auto/Range routes must be rejected before any runtime legacy bridge "
+      "dispatch");
 
   const std::string action_source = code_only(read_file(
       repository_root / "src/presentation/UIAction.hpp"));
@@ -1620,9 +1715,15 @@ void verify_window_manager_shell_dispatch_freshness(
       ".auto_combatant=auto_combatant", composed_page);
   const std::size_t composed_auto_available = compact_composition.find(
       ".auto_combatant_available=auto_combatant_available", composed_auto);
+  const std::size_t composed_range = compact_composition.find(
+      ".show_combat_range_combatant=show_combat_range_combatant",
+      composed_auto_available);
+  const std::size_t composed_range_available = compact_composition.find(
+      ".show_combat_range_available=show_combat_range_available",
+      composed_range);
   const std::size_t live_controls = compact_composition.find(
       "constboolevery_enabled_control_is_live=std::ranges::all_of(",
-      composed_auto_available);
+      composed_range_available);
   const std::size_t live_page = compact_composition.find(
       "std::get_if<realmz::presentation::SetCombatActionPageAction>"
       "(&control.payload)",
@@ -1657,9 +1758,39 @@ void verify_window_manager_shell_dispatch_freshness(
       live_auto_member);
   const std::size_t live_auto_stamina = compact_composition.find(
       "combatant->stamina.current>0", live_auto_party_kind);
+  const std::size_t live_range = compact_composition.find(
+      "std::get_if<realmz::presentation::ShowCombatRangeAction>"
+      "(&control.payload)",
+      live_auto_stamina);
+  const std::size_t live_range_kind = compact_composition.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "show_combat_range",
+      live_range);
+  const std::size_t live_range_actor = compact_composition.find(
+      "snapshot.combat->acting_combatant!="
+      "show_combat_range->combatant",
+      live_range_kind);
+  const std::size_t live_range_mapper = compact_composition.find(
+      "legacy_key_message_for_show_combat_range(", live_range_actor);
+  const std::size_t live_range_combatant = compact_composition.find(
+      "std::ranges::find(snapshot.combat->combatants,"
+      "show_combat_range->combatant,",
+      live_range_mapper);
+  const std::size_t live_range_member = compact_composition.find(
+      "snapshot.party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(show_combat_range->combatant))",
+      live_range_combatant);
+  const std::size_t live_range_party_kind = compact_composition.find(
+      "combatant->kind=="
+      "realmz::presentation::CombatantKind::party_member",
+      live_range_member);
+  const std::size_t live_range_stamina = compact_composition.find(
+      "combatant->stamina.current>0", live_range_party_kind);
   require(composed_page != std::string::npos &&
           composed_auto != std::string::npos &&
           composed_auto_available != std::string::npos &&
+          composed_range != std::string::npos &&
+          composed_range_available != std::string::npos &&
           live_controls != std::string::npos &&
           live_page != std::string::npos &&
           live_page_transition != std::string::npos &&
@@ -1670,12 +1801,22 @@ void verify_window_manager_shell_dispatch_freshness(
           live_auto_combatant != std::string::npos &&
           live_auto_member != std::string::npos &&
           live_auto_party_kind != std::string::npos &&
-          live_auto_stamina != std::string::npos,
-      "Auto composition must retain its utility-page request and first live "
-      "actor/membership validation");
+          live_auto_stamina != std::string::npos &&
+          live_range != std::string::npos &&
+          live_range_kind != std::string::npos &&
+          live_range_actor != std::string::npos &&
+          live_range_mapper != std::string::npos &&
+          live_range_combatant != std::string::npos &&
+          live_range_member != std::string::npos &&
+          live_range_party_kind != std::string::npos &&
+          live_range_stamina != std::string::npos,
+      "Auto and Range composition must retain their utility-page requests "
+      "and first live actor/membership validation");
   require(composed_page < composed_auto &&
           composed_auto < composed_auto_available &&
-          composed_auto_available < live_controls &&
+          composed_auto_available < composed_range &&
+          composed_range < composed_range_available &&
+          composed_range_available < live_controls &&
           live_controls < live_page && live_page < live_page_transition &&
           live_page_transition < live_auto && live_auto < live_auto_kind &&
           live_auto_kind < live_auto_actor &&
@@ -1683,9 +1824,18 @@ void verify_window_manager_shell_dispatch_freshness(
           live_auto_mapper < live_auto_combatant &&
           live_auto_combatant < live_auto_member &&
           live_auto_member < live_auto_party_kind &&
-          live_auto_party_kind < live_auto_stamina,
-      "Auto controls must compose with the current combat page and validate "
-      "through the shared transition and live snapshot before interaction");
+          live_auto_party_kind < live_auto_stamina &&
+          live_auto_stamina < live_range &&
+          live_range < live_range_kind &&
+          live_range_kind < live_range_actor &&
+          live_range_actor < live_range_mapper &&
+          live_range_mapper < live_range_combatant &&
+          live_range_combatant < live_range_member &&
+          live_range_member < live_range_party_kind &&
+          live_range_party_kind < live_range_stamina,
+      "Auto and Range controls must compose with the current combat page and "
+      "validate through the shared transition and live snapshot before "
+      "interaction");
 
   const std::string compact_source = without_whitespace(source);
   const std::size_t eligibility_signature = compact_source.find(
@@ -1701,8 +1851,34 @@ void verify_window_manager_shell_dispatch_freshness(
       compact_source, eligibility_open, '{', '}');
   const std::string compact_eligibility = compact_source.substr(
       eligibility_open, eligibility_close - eligibility_open + 1);
+  const std::size_t semantic_surface = compact_eligibility.find(
+      "constautosemantic_surface=RealmzCurrentSemanticInputSurface()");
   const std::size_t fresh_context = compact_eligibility.find(
       "capture_runtime_legacy_command_context()");
+  const std::size_t surface_match = compact_eligibility.find(
+      "constboolsurface_matches_context=", fresh_context);
+  const std::size_t context_guard = compact_eligibility.find(
+      "if(!context.adaptive_eligible||", surface_match);
+  require(semantic_surface != std::string::npos &&
+          fresh_context != std::string::npos &&
+          surface_match != std::string::npos &&
+          context_guard != std::string::npos &&
+          semantic_surface < fresh_context && fresh_context < surface_match &&
+          surface_match < context_guard,
+      "fresh shell eligibility must compare the active semantic scope with "
+      "the current legacy context before accepting controls");
+  const std::string surface_match_expression = compact_eligibility.substr(
+      surface_match, context_guard - surface_match);
+  require(count_identifier(
+              surface_match_expression, "REALMZ_SEMANTIC_INPUT_NONE") == 0 &&
+          count_identifier(surface_match_expression,
+              "REALMZ_SEMANTIC_INPUT_EXPLORATION") == 1 &&
+          count_identifier(surface_match_expression,
+              "REALMZ_SEMANTIC_INPUT_DUNGEON") == 1 &&
+          count_identifier(surface_match_expression,
+              "REALMZ_SEMANTIC_INPUT_COMBAT") == 1,
+      "shell route eligibility must fail closed when no semantic gameplay "
+      "scope is active");
   const std::size_t switch_route = compact_eligibility.find(
       "std::get_if<realmz::presentation::SwitchWeaponSetAction>"
       "(&control.payload)");
@@ -1720,8 +1896,6 @@ void verify_window_manager_shell_dispatch_freshness(
       party_member);
   const std::size_t route_accept = compact_eligibility.find(
       "continue;", combatant_view);
-  require(fresh_context != std::string::npos,
-      "fresh shell route eligibility must capture current legacy context");
   require(switch_route != std::string::npos,
       "fresh shell route eligibility must inspect Weapon controls");
   require(fresh_snapshot != std::string::npos,
@@ -1941,6 +2115,75 @@ void verify_window_manager_shell_dispatch_freshness(
           auto_stamina < auto_route_accept,
       "Auto route eligibility must revalidate its fresh acting party "
       "combatant before accepting the current utility control");
+
+  const std::size_t range_route = compact_eligibility.find(
+      "std::get_if<realmz::presentation::ShowCombatRangeAction>"
+      "(&control.payload)",
+      auto_route_accept);
+  const std::size_t range_mapper = compact_eligibility.find(
+      "legacy_key_message_for_show_combat_range(", range_route);
+  const std::size_t range_surface_guard = compact_eligibility.find(
+      "if(!surface_matches_context||", range_route);
+  const std::size_t range_snapshot = compact_eligibility.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      range_mapper);
+  const std::size_t range_acting_actor = compact_eligibility.find(
+      "snapshot->combat->acting_combatant!="
+      "show_combat_range->combatant",
+      range_snapshot);
+  const std::size_t range_party_member = compact_eligibility.find(
+      "snapshot->party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(show_combat_range->combatant))",
+      range_acting_actor);
+  const std::size_t range_combatant_view = compact_eligibility.find(
+      "std::ranges::find(snapshot->combat->combatants,"
+      "show_combat_range->combatant,",
+      range_party_member);
+  const std::size_t range_membership_rejection = compact_eligibility.find(
+      "if((combatant==snapshot->combat->combatants.end())||!member||",
+      range_combatant_view);
+  const std::size_t range_party_kind = compact_eligibility.find(
+      "combatant->kind!="
+      "realmz::presentation::CombatantKind::party_member",
+      range_membership_rejection);
+  const std::size_t range_active = compact_eligibility.find(
+      "!combatant->active", range_party_kind);
+  const std::size_t range_targetable = compact_eligibility.find(
+      "!combatant->targetable", range_active);
+  const std::size_t range_stamina = compact_eligibility.find(
+      "combatant->stamina.current<=0", range_targetable);
+  const std::size_t range_route_accept = compact_eligibility.find(
+      "continue;", range_stamina);
+  require(range_route != std::string::npos &&
+          range_surface_guard != std::string::npos &&
+          range_mapper != std::string::npos &&
+          range_snapshot != std::string::npos &&
+          range_acting_actor != std::string::npos &&
+          range_party_member != std::string::npos &&
+          range_combatant_view != std::string::npos &&
+          range_membership_rejection != std::string::npos &&
+          range_party_kind != std::string::npos &&
+          range_active != std::string::npos &&
+          range_targetable != std::string::npos &&
+          range_stamina != std::string::npos &&
+          range_route_accept != std::string::npos,
+      "fresh Range eligibility must retain mapper, acting actor, PartyView, "
+      "and CombatView validation");
+  require(auto_route_accept < range_route &&
+          range_route < range_surface_guard &&
+          range_surface_guard < range_mapper &&
+          range_mapper < range_snapshot &&
+          range_snapshot < range_acting_actor &&
+          range_acting_actor < range_party_member &&
+          range_party_member < range_combatant_view &&
+          range_combatant_view < range_membership_rejection &&
+          range_membership_rejection < range_party_kind &&
+          range_party_kind < range_active && range_active < range_targetable &&
+          range_targetable < range_stamina &&
+          range_stamina < range_route_accept,
+      "Range route eligibility must require an active matching combat scope "
+      "and revalidate its fresh acting party combatant before accepting the "
+      "current utility control");
 }
 
 void verify_top_level_loop(
@@ -2017,6 +2260,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticAutoCombatantEvent") == 0,
       std::string(function_name) +
           " must leave tagged Auto consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticShowCombatRangeEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged Range consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -2054,6 +2301,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       legacy_root / "items.c"));
   const std::string centerstage_source = code_only(read_file(
       legacy_root / "centerstage.c"));
+  const std::string showrange_source = code_only(read_file(
+      legacy_root / "showrange.c"));
   const std::string getchoice_source = code_only(
       read_file(legacy_root / "getchoice.c"));
   const std::string presentation_context_source = code_only(read_file(
@@ -2068,6 +2317,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const std::string items = function_body(items_source, "items");
   const std::string centerstage = function_body(
       centerstage_source, "centerstage");
+  const std::string showrange = function_body(
+      showrange_source, "showrange");
   verify_top_level_loop(
       mainscreen,
       "mainscreen",
@@ -2128,6 +2379,89 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           count_identifier(auto_case_branch, "Rand") == 0,
       "combat Auto key branch must only select the shared Classic command "
       "route");
+  const std::size_t range_case = compact_combat.find("case'r':");
+  const std::size_t range_next_case = compact_combat.find(
+      "case'd':", range_case);
+  const std::size_t range_top = compact_combat.find(
+      "buttonrect.top=346+downshift;", range_case);
+  const std::size_t range_bottom = compact_combat.find(
+      "buttonrect.bottom=buttonrect.top+18;", range_top);
+  const std::size_t range_left = compact_combat.find(
+      "buttonrect.left=364+leftshift;", range_bottom);
+  const std::size_t range_right = compact_combat.find(
+      "buttonrect.right=buttonrect.left+102;", range_left);
+  const std::size_t range_button_down = compact_combat.find(
+      "downbutton(TRUE);", range_right);
+  const std::size_t range_modal = compact_combat.find(
+      "showrange(0);", range_button_down);
+  const std::size_t range_recenter = compact_combat.find(
+      "centerfield(5+(2*screensize),5+screensize);", range_modal);
+  const std::size_t range_flush = compact_combat.find(
+      "FlushEvents(everyEvent,0);", range_recenter);
+  const std::size_t range_button_up = compact_combat.find(
+      "upbutton(TRUE);", range_flush);
+  const std::size_t range_return = compact_combat.find(
+      "gotobackfromrange;", range_button_up);
+  const std::size_t range_break = compact_combat.find(
+      "break;", range_return);
+  require(range_case != std::string::npos &&
+          range_next_case != std::string::npos &&
+          range_top != std::string::npos &&
+          range_bottom != std::string::npos &&
+          range_left != std::string::npos &&
+          range_right != std::string::npos &&
+          range_button_down != std::string::npos &&
+          range_modal != std::string::npos &&
+          range_recenter != std::string::npos &&
+          range_flush != std::string::npos &&
+          range_button_up != std::string::npos &&
+          range_return != std::string::npos &&
+          range_break != std::string::npos,
+      "combat must retain the exact bounded Classic Range handoff, raw modal, "
+      "recenter, flush, and return sequence");
+  require(range_case < range_top && range_top < range_bottom &&
+          range_bottom < range_left && range_left < range_right &&
+          range_right < range_button_down &&
+          range_button_down < range_modal && range_modal < range_recenter &&
+          range_recenter < range_flush && range_flush < range_button_up &&
+          range_button_up < range_return && range_return < range_break &&
+          range_break < range_next_case,
+      "combat Range must preserve its exact Classic sequence before Delay");
+  const std::string range_case_branch = compact_combat.substr(
+      range_case, range_next_case - range_case);
+  require(count_identifier(range_case_branch, "showrange") == 1 &&
+          count_identifier(range_case_branch, "GetNextEvent") == 0 &&
+          count_identifier(range_case_branch, "WaitNextEvent") == 0 &&
+          count_identifier(range_case_branch, "GetNextSemanticGameplayEvent") ==
+              0 &&
+          count_identifier(range_case_branch, "Rand") == 0,
+      "combat Range key branch must delegate its raw dismissal loop to "
+      "showrange without adding another semantic route or random choice");
+
+  const std::string compact_showrange = without_whitespace(showrange);
+  const std::size_t range_modal_flush = compact_showrange.find(
+      "FlushEvents(everyEvent,0);");
+  const std::size_t range_raw_wait = compact_showrange.find(
+      "WaitNextEvent(everyEvent,&gTheEvent,0L,NIL);", range_modal_flush);
+  const std::size_t range_dismissal = compact_showrange.find(
+      "if((gTheEvent.what!=mouseDown)&&(gTheEvent.what!=keyDown))"
+      "gotobackup;",
+      range_raw_wait);
+  require(range_modal_flush != std::string::npos &&
+          range_raw_wait != std::string::npos &&
+          range_dismissal != std::string::npos &&
+          range_modal_flush < range_raw_wait &&
+          range_raw_wait < range_dismissal,
+      "showrange must flush before its one raw WaitNextEvent dismissal loop "
+      "and accept only mouseDown or keyDown");
+  require(count_identifier(showrange, "FlushEvents") == 1 &&
+          count_identifier(showrange, "WaitNextEvent") == 1 &&
+          count_identifier(showrange, "GetNextEvent") == 0 &&
+          count_identifier(showrange, "GetNextSemanticGameplayEvent") == 0 &&
+          count_identifier(showrange, "Rand") == 0,
+      "showrange must remain a deterministic Classic-owned raw modal without "
+      "a semantic gameplay poll or random choice");
+  require_no_semantic_scope_or_consumer(showrange, "showrange");
   const std::size_t guard_case = compact_combat.find("case'g':");
   const std::size_t guard_mutation = compact_combat.find(
       "c[charup].guarding=TRUE;", guard_case);
@@ -2737,6 +3071,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_cycle_focus_consumer_count = 0;
   std::size_t global_combat_items_consumer_count = 0;
   std::size_t global_auto_consumer_count = 0;
+  std::size_t global_range_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -2781,6 +3116,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenCombatItemsEvent");
     global_auto_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticAutoCombatantEvent");
+    global_range_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticShowCombatRangeEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -2822,6 +3159,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "directly");
   require(global_auto_consumer_count == 0,
       "legacy loops must not consume tagged semantic Auto input directly");
+  require(global_range_consumer_count == 0,
+      "legacy loops must not consume tagged semantic Range input directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -2859,6 +3198,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t cycle_focus_consume_calls = 0;
   std::size_t combat_items_consume_calls = 0;
   std::size_t auto_consume_calls = 0;
+  std::size_t range_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -2914,6 +3254,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenCombatItemsEvent");
     auto_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticAutoCombatantEvent");
+    range_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticShowCombatRangeEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -2965,6 +3307,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "RealmzConsumeSemanticOpenCombatItemsEvent");
   require(auto_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticAutoCombatantEvent");
+  require(range_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticShowCombatRangeEvent");
 }
 
 } // namespace

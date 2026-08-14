@@ -27,6 +27,7 @@ constexpr uint32_t kCenterNextCombatantRegion = 1111U;
 constexpr uint32_t kOpenCombatItemsRegion = 1112U;
 constexpr uint32_t kCombatUtilityPageRegion = 1113U;
 constexpr uint32_t kAutoCombatantRegion = 1114U;
+constexpr uint32_t kShowCombatRangeRegion = 1115U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -120,6 +121,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(request.combat_items->combatant);
   const bool valid_auto_combatant = request.auto_combatant &&
       valid_combatant(*request.auto_combatant);
+  const bool valid_show_combat_range = request.show_combat_range_combatant &&
+      valid_combatant(*request.show_combat_range_combatant);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -130,6 +133,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.center_next_combatant,
       combat_items_combatant,
       request.auto_combatant,
+      request.show_combat_range_combatant,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -159,14 +163,16 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.center_next_combatant ? 1U : 0U) +
       (request.combat_items ? 1U : 0U);
   const size_t utility_combat_control_count =
-      request.auto_combatant ? 1U : 0U;
+      (request.auto_combatant ? 1U : 0U) +
+      (request.show_combat_range_combatant ? 1U : 0U);
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
                                : utility_combat_control_count);
   const bool has_valid_secondary_action = valid_switch_weapon ||
       valid_center_previous || valid_center_next || valid_combat_items;
-  const bool has_valid_utility_action = valid_auto_combatant;
+  const bool has_valid_utility_action =
+      valid_auto_combatant || valid_show_combat_range;
   const size_t combat_page_control_count = primary_combat_page
       ? ((has_valid_secondary_action || has_valid_utility_action) ? 1U : 0U)
       : (secondary_combat_page
@@ -195,7 +201,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.switch_weapon_available || request.center_previous_available ||
       request.center_next_available || request.combat_items ||
       request.combat_items_available || request.auto_combatant ||
-      request.auto_combatant_available || secondary_combat_page ||
+      request.auto_combatant_available ||
+      request.show_combat_range_combatant ||
+      request.show_combat_range_available || secondary_combat_page ||
       utility_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
@@ -216,7 +224,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.center_next_available && !valid_center_next) ||
       (request.combat_items && !valid_combat_items) ||
       (request.combat_items_available && !valid_combat_items) ||
-      (request.auto_combatant_available && !valid_auto_combatant)) {
+      (request.auto_combatant_available && !valid_auto_combatant) ||
+      (request.show_combat_range_available && !valid_show_combat_range)) {
     return {};
   }
 
@@ -385,17 +394,34 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             0U)) {
       return {};
     }
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{kAutoCombatantRegion},
-        .kind = ShellControlKind::auto_combatant,
-        .bounds = {x, y, button_width, button_height},
-        .label = "AUTO",
-        .accessibility_label = "Auto-play active combatant's turn",
-        .focus_identifier = "focus.action.combat.auto",
-        .tab_order = 1114,
-        .enabled = request.auto_combatant_available,
-        .payload = AutoCombatantAction{*request.auto_combatant},
-    });
+    if (request.auto_combatant) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kAutoCombatantRegion},
+          .kind = ShellControlKind::auto_combatant,
+          .bounds = {x, y, button_width, button_height},
+          .label = "AUTO",
+          .accessibility_label = "Auto-play active combatant's turn",
+          .focus_identifier = "focus.action.combat.auto",
+          .tab_order = 1114,
+          .enabled = request.auto_combatant_available,
+          .payload = AutoCombatantAction{*request.auto_combatant},
+      });
+      x += button_width + gap;
+    }
+    if (request.show_combat_range_combatant) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kShowCombatRangeRegion},
+          .kind = ShellControlKind::show_combat_range,
+          .bounds = {x, y, button_width, button_height},
+          .label = "RANGE",
+          .accessibility_label = "Show combat ranges; press any key to close",
+          .focus_identifier = "focus.action.combat.range",
+          .tab_order = 1115,
+          .enabled = request.show_combat_range_available,
+          .payload = ShowCombatRangeAction{
+              *request.show_combat_range_combatant},
+      });
+    }
     return result;
   }
 
@@ -470,7 +496,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .payload = *request.combat_items,
       });
     }
-    if (valid_auto_combatant &&
+    if (has_valid_utility_action &&
         !append_page_control(
             CombatActionPage::utility,
             kCombatUtilityPageRegion,

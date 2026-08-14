@@ -84,6 +84,10 @@ using RuntimeLegacyAutoCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyShowCombatRangeSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Combat sinks are named because several callable signatures are intentionally
 // identical even though their commands are not interchangeable. The focus
@@ -101,6 +105,7 @@ struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacyCycleCombatFocusSink> cycle_combat_focus;
   std::optional<RuntimeLegacyOpenCombatItemsSink> open_combat_items;
   std::optional<RuntimeLegacyAutoCombatantSink> auto_combatant;
+  std::optional<RuntimeLegacyShowCombatRangeSink> show_combat_range;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -199,6 +204,14 @@ legacy_key_message_for_open_combat_items(
 // from crossing a turn before EventManager performs its late validation.
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_auto_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "r" key record consumed by combat's preserved
+// range-overlay branch. The actor is carried so a queued presentation command
+// cannot cross a turn; Classic owns drawing, dismissal, and recentring.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_show_combat_range(
     CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 
