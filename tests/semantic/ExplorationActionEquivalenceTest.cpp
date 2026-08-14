@@ -55,10 +55,17 @@ struct ClassicPortraitClick {
   bool operator==(const ClassicPortraitClick&) const = default;
 };
 
+struct ClassicOpenInventoryKey {
+  char value = 'i';
+
+  bool operator==(const ClassicOpenInventoryKey&) const = default;
+};
+
 using ClassicExplorationInput = std::variant<
     ClassicOutdoorScanCode,
     ClassicDungeonKey,
-    ClassicPortraitClick>;
+    ClassicPortraitClick,
+    ClassicOpenInventoryKey>;
 
 struct ReplayStep {
   std::string_view label;
@@ -108,8 +115,10 @@ struct ReplayStep {
 
 [[nodiscard]] std::optional<UIAction> adapt_classic_input(
     const ClassicExplorationInput& input,
-    ActionSequence sequence) {
-  return std::visit([sequence](const auto& concrete) -> std::optional<UIAction> {
+    ActionSequence sequence,
+    std::optional<PartyMemberId> selected_member) {
+  return std::visit([sequence, selected_member](
+                        const auto& concrete) -> std::optional<UIAction> {
     using Input = std::decay_t<decltype(concrete)>;
     if constexpr (std::is_same_v<Input, ClassicOutdoorScanCode>) {
       const auto movement = movement_for_outdoor_scan_code(concrete.value);
@@ -129,10 +138,18 @@ struct ReplayStep {
           .sequence = sequence,
           .payload = MovePartyAction{*movement},
       };
-    } else {
+    } else if constexpr (std::is_same_v<Input, ClassicPortraitClick>) {
       return UIAction{
           .sequence = sequence,
           .payload = SelectPartyMemberAction{concrete.member},
+      };
+    } else {
+      if ((concrete.value != 'i') || !selected_member) {
+        return std::nullopt;
+      }
+      return UIAction{
+          .sequence = sequence,
+          .payload = OpenInventoryAction{*selected_member},
       };
     }
   }, input);
@@ -329,6 +346,20 @@ public:
     }});
   }
 
+  [[nodiscard]] DispatchResult open_inventory(
+      const OpenInventoryAction& action) const {
+    const auto* member = snapshot_.party.member(action.member);
+    if (!member || !member->selected ||
+        snapshot_.party.selected_member != action.member) {
+      return DispatchResult::rejected(
+          "inventory target is not the selected party member");
+    }
+    return DispatchResult::handled({GameEvent{
+        .sequence = snapshot_.revision,
+        .payload = ScreenTransitionEvent{ScreenContext::inventory},
+    }});
+  }
+
 private:
   static void write_u16(
       SaveFacingBytes& bytes,
@@ -402,6 +433,9 @@ private:
       [&fixture](const SelectPartyMemberAction& action) {
         return fixture.select(action);
       };
+  handlers.open_inventory = [&fixture](const OpenInventoryAction& action) {
+    return fixture.open_inventory(action);
+  };
   return handlers;
 }
 
@@ -444,7 +478,10 @@ enum class ReplayRoute {
   for (const auto& step : steps) {
     UIAction action;
     if (route == ReplayRoute::classic_adapter) {
-      const auto adapted = adapt_classic_input(step.classic_input, sequence);
+      const auto adapted = adapt_classic_input(
+          step.classic_input,
+          sequence,
+          fixture.capture().party.selected_member);
       if (!adapted) {
         throw std::runtime_error(
             "Classic adapter rejected replay step: " + std::string(step.label));
@@ -534,15 +571,19 @@ enum class ReplayRoute {
           SelectPartyMemberAction{2}},
       {"idempotent selection", ClassicPortraitClick{2},
           SelectPartyMemberAction{2}},
+      {"open selected inventory", ClassicOpenInventoryKey{'i'},
+          OpenInventoryAction{2}},
   };
 }
 
 void test_classic_adapter_matches_semantic_payloads() {
   const auto steps = complete_exploration_replay();
   std::array<bool, 12> movement_coverage{};
+  std::optional<PartyMemberId> selected_member = 0;
   ActionSequence sequence = 1;
   for (const auto& step : steps) {
-    const auto adapted = adapt_classic_input(step.classic_input, sequence);
+    const auto adapted = adapt_classic_input(
+        step.classic_input, sequence, selected_member);
     CHECK(adapted.has_value());
     CHECK(adapted->sequence == sequence);
     CHECK(adapted->payload == step.remastered_payload);
@@ -550,14 +591,21 @@ void test_classic_adapter_matches_semantic_payloads() {
             std::get_if<MovePartyAction>(&step.remastered_payload)) {
       movement_coverage[movement_index(movement->command)] = true;
     }
+    if (const auto* selection =
+            std::get_if<SelectPartyMemberAction>(&step.remastered_payload)) {
+      selected_member = selection->member;
+    }
     ++sequence;
   }
   CHECK(std::all_of(
       movement_coverage.begin(), movement_coverage.end(),
       [](bool covered) { return covered; }));
 
-  CHECK(!adapt_classic_input(ClassicOutdoorScanCode{0x00}, 1));
-  CHECK(!adapt_classic_input(ClassicDungeonKey{'?'}, 1));
+  CHECK(!adapt_classic_input(ClassicOutdoorScanCode{0x00}, 1, 0));
+  CHECK(!adapt_classic_input(ClassicDungeonKey{'?'}, 1, 0));
+  CHECK(!adapt_classic_input(ClassicOpenInventoryKey{'?'}, 1, 0));
+  CHECK(!adapt_classic_input(
+      ClassicOpenInventoryKey{'i'}, 1, std::nullopt));
 }
 
 void test_equivalent_replay_and_determinism() {
@@ -598,7 +646,15 @@ void test_equivalent_replay_and_determinism() {
     } else {
       CHECK(observed.snapshot == previous_snapshot);
       CHECK(observed.save_facing_bytes == previous_save_facing_bytes);
-      CHECK(observed.events.empty());
+      if (index + 1U == classic_first.steps.size()) {
+        CHECK(observed.events.size() == 1);
+        const auto* transition =
+            std::get_if<ScreenTransitionEvent>(&observed.events[0].payload);
+        CHECK(transition != nullptr);
+        CHECK(transition->destination == ScreenContext::inventory);
+      } else {
+        CHECK(observed.events.empty());
+      }
     }
     previous_snapshot = observed.snapshot;
     previous_save_facing_bytes = observed.save_facing_bytes;
@@ -614,7 +670,7 @@ void test_equivalent_replay_and_determinism() {
   CHECK(final.snapshot.party.members[0].selected == false);
   CHECK(final.snapshot.party.members[1].selected == false);
   CHECK(final.snapshot.party.members[2].selected == true);
-  CHECK(final.events.empty());
+  CHECK(final.events.size() == 1);
 }
 
 void test_selection_bounds_reject_without_mutation() {

@@ -29,12 +29,22 @@ using RuntimeLegacyMovementSink = std::function<bool(
 using RuntimeLegacyPartySelectionSink = std::function<bool(
     PartyMemberId,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenInventorySink = std::function<bool(
+    PartyMemberId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Returns the exact Classic Mac key message already consumed by the preserved
 // exploration/dungeon event loops. Unsupported command/context combinations
 // return nullopt instead of reaching into engine globals directly.
 [[nodiscard]] std::optional<uint32_t> legacy_key_message_for_movement(
     MovementCommand command,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Opening inventory is intentionally distinct from item-level InventoryAction
+// commands. The returned message is the preserved Classic "i" key record and
+// is available only on the two guarded top-level gameplay surfaces.
+[[nodiscard]] std::optional<uint32_t> legacy_key_message_for_open_inventory(
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Live UIAction boundary for the migrated command subset. The bridge queues
@@ -56,6 +66,11 @@ public:
       RuntimeLegacyContextProvider context_provider,
       RuntimeLegacyMovementSink movement_sink,
       RuntimeLegacyPartySelectionSink party_selection_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyOpenInventorySink open_inventory_sink);
 
   [[nodiscard]] DispatchResult dispatch(const UIAction& action) override;
 

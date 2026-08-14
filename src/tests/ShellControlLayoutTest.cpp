@@ -164,6 +164,80 @@ void test_payload_order_and_disabled_state() {
   CHECK(all_semantic_regions.size() == 12);
 }
 
+void test_open_inventory_control() {
+  constexpr std::array sizes{
+      LogicalSize{1024.0, 768.0},
+      LogicalSize{1359.0, 900.0},
+      LogicalSize{1360.0, 768.0},
+      LogicalSize{1920.0, 1080.0},
+      LogicalSize{3440.0, 1440.0},
+  };
+  for (const auto size : sizes) {
+    const auto panel = action_panel_for(size);
+    for (const auto request : {
+             ShellControlLayoutRequest{
+                 .screen = ScreenContext::exploration,
+                 .world_presentation = WorldPresentation::outdoor,
+                 .action_panel = panel,
+                 .navigation_available = true,
+                 .inventory_member = PartyMemberId{2},
+                 .inventory_available = true,
+             },
+             ShellControlLayoutRequest{
+                 .screen = ScreenContext::dungeon,
+                 .world_presentation = WorldPresentation::dungeon_map,
+                 .action_panel = panel,
+                 .navigation_available = true,
+                 .inventory_member = PartyMemberId{2},
+                 .inventory_available = true,
+             },
+         }) {
+      const auto controls = compute_shell_control_layout(request);
+      const size_t expected_count =
+          request.screen == ScreenContext::exploration ? 9U : 5U;
+      CHECK(controls.size() == expected_count);
+      const auto& inventory = controls.back();
+      CHECK(inventory.region.value == 1100U);
+      CHECK(inventory.kind == ShellControlKind::open_inventory);
+      CHECK(inventory.label == "ITEMS");
+      CHECK(inventory.accessibility_label == "Open inventory");
+      CHECK(inventory.focus_identifier == "focus.action.inventory.open");
+      CHECK(inventory.tab_order == 1100);
+      CHECK(inventory.enabled);
+      CHECK(std::holds_alternative<OpenInventoryAction>(inventory.payload));
+      CHECK(std::get<OpenInventoryAction>(inventory.payload).member == 2);
+      CHECK(request.action_panel.contains(inventory.bounds));
+      CHECK(inventory.bounds.width >= 44.0);
+      CHECK(inventory.bounds.height >= 44.0);
+      for (size_t index = 0; index + 1U < controls.size(); ++index) {
+        CHECK(controls[index].kind == ShellControlKind::movement);
+        CHECK(!interiors_overlap(controls[index].bounds, inventory.bounds));
+      }
+    }
+  }
+
+  const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
+  const auto disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .inventory_member = PartyMemberId{4},
+      .inventory_available = false,
+  });
+  CHECK(disabled.size() == 9U);
+  CHECK(!disabled.back().enabled);
+  CHECK(std::get<OpenInventoryAction>(disabled.back().payload).member == 4);
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .inventory_available = true,
+  }).empty());
+}
+
 void test_fail_closed_inputs() {
   const LogicalRect usable{0.0, 0.0, 800.0, 150.0};
   for (const auto screen : {
@@ -215,6 +289,7 @@ int main() {
   try {
     test_canonical_sizes();
     test_payload_order_and_disabled_state();
+    test_open_inventory_control();
     test_fail_closed_inputs();
     std::cout << "ShellControlLayoutTest passed ("
               << checks_run << " checks)\n";

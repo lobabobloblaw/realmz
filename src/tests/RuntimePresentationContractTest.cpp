@@ -46,6 +46,9 @@ static_assert(std::is_same_v<decltype(SetPresentationModeAction::mode), Presenta
 static_assert(std::is_same_v<
     decltype(SetDrawerPanelAction::panel),
     std::optional<DrawerPanel>>);
+static_assert(std::is_same_v<
+    decltype(OpenInventoryAction::member),
+    PartyMemberId>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -247,6 +250,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   };
   handlers.move_party = mutateEngine;
   handlers.select_party_member = mutateEngine;
+  handlers.open_inventory = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -308,6 +312,16 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(unsupported.status == DispatchStatus::unsupported);
   CHECK(unsupported.detail ==
       "No legacy handler registered for set_presentation_mode");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const auto openInventoryUnsupported = unsupportedBridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenInventoryAction{1},
+  });
+  CHECK(openInventoryUnsupported.status == DispatchStatus::unsupported);
+  CHECK(openInventoryUnsupported.detail ==
+      "No legacy handler registered for open_inventory");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

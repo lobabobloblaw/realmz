@@ -64,6 +64,7 @@ using LegacyActionHandler = std::function<DispatchResult(const Action&)>;
 struct LegacyActionHandlers {
   LegacyActionHandler<MovePartyAction> move_party;
   LegacyActionHandler<SelectPartyMemberAction> select_party_member;
+  LegacyActionHandler<OpenInventoryAction> open_inventory;
   LegacyActionHandler<InventoryAction> inventory;
   LegacyActionHandler<CastSpellAction> cast_spell;
   LegacyActionHandler<TradeAction> trade;

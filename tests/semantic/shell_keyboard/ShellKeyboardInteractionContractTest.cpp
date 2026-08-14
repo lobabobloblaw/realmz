@@ -48,6 +48,9 @@ private:
     handlers.move_party = [](const MovePartyAction&) {
       return DispatchResult::handled();
     };
+    handlers.open_inventory = [](const OpenInventoryAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -369,6 +372,45 @@ void test_first_activation_wins_across_simultaneous_physical_keys() {
   CHECK(!harness.keyboard().owns_token(kEnterToken));
 }
 
+void test_open_inventory_payload_activates_exactly_once() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  const ShellControlPlacement inventory{
+      .region = ShellRegionId{1100},
+      .kind = ShellControlKind::open_inventory,
+      .bounds = {20.0, 20.0, 80.0, 48.0},
+      .label = "ITEMS",
+      .accessibility_label = "Open inventory",
+      .focus_identifier = "focus.action.inventory.open",
+      .tab_order = 1100,
+      .enabled = true,
+      .payload = OpenInventoryAction{2},
+  };
+  CHECK(!harness.recompose({inventory}));
+  CHECK(harness.focus(inventory.focus_identifier));
+
+  const auto down = harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(down.shell.consumed);
+  CHECK(!down.shell.invoked_control);
+  CHECK(bridge.actions().empty());
+
+  const auto up = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(up.shell.consumed);
+  CHECK(up.shell.invoked_control.has_value());
+  CHECK(up.shell.invoked_control->kind ==
+      ShellControlKind::open_inventory);
+  CHECK(up.dispatch.has_value());
+  CHECK(up.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1);
+  CHECK(std::get<OpenInventoryAction>(bridge.actions()[0].payload).member == 2);
+
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1);
+}
+
 using DescriptorMutation =
     std::function<void(std::vector<ShellControlPlacement>&)>;
 
@@ -536,6 +578,7 @@ int main() {
     test_focus_survives_nonsemantic_recomposition_by_identifier();
     test_enter_space_exactly_once_and_physical_release_pairing();
     test_first_activation_wins_across_simultaneous_physical_keys();
+    test_open_inventory_payload_activates_exactly_once();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();

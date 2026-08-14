@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,7 @@ namespace realmz::presentation {
 enum class ShellControlKind {
   movement,
   party_member,
+  open_inventory,
   drawer_tab,
 };
 
@@ -33,6 +35,8 @@ struct ShellControlLayoutRequest {
   WorldPresentation world_presentation = WorldPresentation::none;
   LogicalRect action_panel;
   bool navigation_available = false;
+  std::optional<PartyMemberId> inventory_member;
+  bool inventory_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

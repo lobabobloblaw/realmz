@@ -10,6 +10,7 @@ namespace realmz::presentation {
 namespace {
 
 constexpr uint32_t kMovementRegionBase = 1000U;
+constexpr uint32_t kInventoryRegion = 1100U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
@@ -66,9 +67,13 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
     return {};
   }
   const auto descriptors = descriptors_for(request);
-  if (descriptors.empty()) {
+  if (descriptors.empty() ||
+      (request.inventory_available && !request.inventory_member)) {
     return {};
   }
+
+  const size_t control_count = descriptors.size() +
+      (request.inventory_member ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -76,8 +81,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       kControlsTopInset - kBottomInset;
   const double gap = std::clamp(available_width * 0.008, 6.0, 10.0);
   const double button_width =
-      (available_width - gap * (descriptors.size() - 1U)) /
-      descriptors.size();
+      (available_width - gap * (control_count - 1U)) /
+      control_count;
   const double button_height = std::min(52.0, available_height);
   if (!std::isfinite(button_width) || !std::isfinite(button_height) ||
       (button_width < kMinimumTargetExtent) ||
@@ -86,7 +91,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   }
 
   std::vector<ShellControlPlacement> result;
-  result.reserve(descriptors.size());
+  result.reserve(control_count);
   double x = request.action_panel.x + kHorizontalInset;
   const double y = request.action_panel.y + kControlsTopInset;
   for (size_t index = 0; index < descriptors.size(); ++index) {
@@ -105,6 +110,19 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .payload = MovePartyAction{descriptor.command},
     });
     x += button_width + gap;
+  }
+  if (request.inventory_member) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kInventoryRegion},
+        .kind = ShellControlKind::open_inventory,
+        .bounds = {x, y, button_width, button_height},
+        .label = "ITEMS",
+        .accessibility_label = "Open inventory",
+        .focus_identifier = "focus.action.inventory.open",
+        .tab_order = 1100,
+        .enabled = request.inventory_available,
+        .payload = OpenInventoryAction{*request.inventory_member},
+    });
   }
   return result;
 }

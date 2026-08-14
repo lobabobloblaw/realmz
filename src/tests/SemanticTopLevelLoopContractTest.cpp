@@ -236,6 +236,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticPartySelectionEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic party selection");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenInventoryEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic inventory");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -313,6 +317,31 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(selection_wrapper, "mouseDown") == 0,
       "public semantic party selection enqueue must not synthesize Classic input");
 
+  const std::string push_inventory = function_body(
+      source, "push_semantic_open_inventory_event");
+  const std::string compact_push_inventory =
+      without_whitespace(push_inventory);
+  require(count_identifier(
+              push_inventory, "RealmzIsSemanticOpenInventoryTag") == 1,
+      "semantic open inventory enqueue must validate exactly one tag");
+  require(count_identifier(push_inventory, "app1Evt") == 1,
+      "semantic open inventory enqueue must use app1Evt exactly once");
+  require(count_identifier(push_inventory, "keyDown") == 0 &&
+          count_identifier(push_inventory, "mouseDown") == 0,
+      "semantic open inventory enqueue must not synthesize Classic input");
+  require(compact_push_inventory.contains("ev.what=app1Evt;") &&
+          compact_push_inventory.contains("ev.message=tagged_message;"),
+      "semantic open inventory must retain its tagged app1Evt payload");
+
+  const std::string inventory_wrapper = function_body(
+      source, "PushSemanticOpenInventoryEvent");
+  require(without_whitespace(inventory_wrapper).contains(
+              "returnem.push_semantic_open_inventory_event(tagged_message);"),
+      "public semantic open inventory enqueue must delegate to tagged queue");
+  require(count_identifier(inventory_wrapper, "keyDown") == 0 &&
+          count_identifier(inventory_wrapper, "mouseDown") == 0,
+      "public semantic open inventory enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -369,14 +398,18 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticPartySelectionEvent") == 1,
       "semantic gameplay wrapper must have one late selection consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticOpenInventoryEvent") == 1,
+      "semantic gameplay wrapper must have one late inventory consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 2,
-      "semantic gameplay wrapper must recognize movement and selection paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 1,
-      "only late semantic validation may translate the wrapper result to keyDown");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 3,
+      "semantic gameplay wrapper must recognize all three tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 2,
+      "only late movement and inventory validation may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 0 &&
           count_identifier(semantic_wrapper, "viewcharacter") == 0 &&
           count_identifier(semantic_wrapper, "buttonchoice") == 0 &&
@@ -392,6 +425,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticPartySelectionEvent") == 1,
       "EventManager may consume semantic selection only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticOpenInventoryEvent") == 1,
+      "EventManager may consume semantic inventory only inside its gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
 
@@ -428,6 +464,16 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", selection_apply);
   const std::size_t selection_message = compact_semantic.find(
       "ret->message=0", selection_null);
+  const std::size_t inventory_branch = compact_semantic.find(
+      "RealmzIsSemanticOpenInventoryTag(ret->message)", selection_message);
+  const std::size_t inventory_consume = compact_semantic.find(
+      "RealmzConsumeSemanticOpenInventoryEvent(", inventory_branch);
+  const std::size_t inventory_keydown = compact_semantic.find(
+      "ret->what=keyDown", inventory_consume);
+  const std::size_t inventory_null = compact_semantic.find(
+      "ret->what=nullEvent", inventory_keydown);
+  const std::size_t inventory_message = compact_semantic.find(
+      "ret->message=0", inventory_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -444,7 +490,12 @@ void verify_event_manager(const fs::path& repository_root) {
           selection_consume != std::string::npos &&
           selection_apply != std::string::npos &&
           selection_null != std::string::npos &&
-          selection_message != std::string::npos,
+          selection_message != std::string::npos &&
+          inventory_branch != std::string::npos &&
+          inventory_consume != std::string::npos &&
+          inventory_keydown != std::string::npos &&
+          inventory_null != std::string::npos &&
+          inventory_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -456,7 +507,12 @@ void verify_event_manager(const fs::path& repository_root) {
           selection_branch < selection_consume &&
           selection_consume < selection_apply &&
           selection_apply < selection_null &&
-          selection_null < selection_message,
+          selection_null < selection_message &&
+          selection_message < inventory_branch &&
+          inventory_branch < inventory_consume &&
+          inventory_consume < inventory_keydown &&
+          inventory_keydown < inventory_null &&
+          inventory_null < inventory_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
@@ -593,6 +649,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticPartySelectionEvent") == 0,
       std::string(function_name) +
           " must leave tagged selection consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenInventoryEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged inventory consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -641,6 +701,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_end_count = 0;
   std::size_t global_consumer_count = 0;
   std::size_t global_selection_consumer_count = 0;
+  std::size_t global_inventory_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -661,6 +722,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticMovementEvent");
     global_selection_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticPartySelectionEvent");
+    global_inventory_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticOpenInventoryEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -674,6 +737,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic movement directly");
   require(global_selection_consumer_count == 0,
       "legacy loops must not consume tagged semantic selection directly");
+  require(global_inventory_consumer_count == 0,
+      "legacy loops must not consume tagged semantic inventory directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -699,6 +764,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t end_calls = 0;
   std::size_t consume_calls = 0;
   std::size_t selection_consume_calls = 0;
+  std::size_t inventory_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -730,6 +796,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticMovementEvent");
     selection_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticPartySelectionEvent");
+    inventory_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticOpenInventoryEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -751,6 +819,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticMovementEvent");
   require(selection_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticPartySelectionEvent");
+  require(inventory_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticOpenInventoryEvent");
 }
 
 } // namespace

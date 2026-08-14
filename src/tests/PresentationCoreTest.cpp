@@ -144,8 +144,15 @@ void test_actions_and_events() {
   CHECK(std::get<MovePartyAction>(movement.payload).command ==
       MovementCommand::turn_left);
 
-  UIAction casting{
+  UIAction open_inventory{
       .sequence = 9,
+      .payload = OpenInventoryAction{2},
+  };
+  CHECK(action_name(open_inventory.payload) == "open_inventory");
+  CHECK(std::get<OpenInventoryAction>(open_inventory.payload).member == 2);
+
+  UIAction casting{
+      .sequence = 10,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -159,7 +166,7 @@ void test_actions_and_events() {
   CHECK(cast.target.secondary == 5);
 
   UIAction drawer{
-      .sequence = 10,
+      .sequence = 11,
       .payload = SetDrawerPanelAction{DrawerPanel::event_log},
   };
   CHECK(action_name(drawer.payload) == "set_drawer_panel");
@@ -222,6 +229,14 @@ void test_command_bridge() {
   });
   CHECK(local_only.status == DispatchStatus::unsupported);
   CHECK(local_only.detail.find("set_drawer_panel") != std::string::npos);
+
+  const auto inventory_unsupported = bridge.dispatch(UIAction{
+      .sequence = 6,
+      .payload = OpenInventoryAction{1},
+  });
+  CHECK(inventory_unsupported.status == DispatchStatus::unsupported);
+  CHECK(inventory_unsupported.detail.find("open_inventory") !=
+      std::string::npos);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

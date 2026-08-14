@@ -72,7 +72,11 @@ On eligible exploration and dungeon screens, party cards expose typed
 late-validated against a fresh party snapshot, then a narrow
 legacy adapter changes `charselectnew` exactly once or performs an idempotent
 no-op for the selected member; it never synthesizes a portrait click or opens a
-modal. Details and log surfaces stay informational, and the complete
+modal. The Items action carries that selected member in a distinct typed and
+tagged command; the same guarded top-level loop revalidates the member and live
+screen before returning the exact Classic `i` key record. The nested inventory
+screen remains unmodified and full-frame. Details and log surfaces stay
+informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
 local presentation actions with pointer and wrapping keyboard operation; they
 never cross the legacy mutation bridge. Popup anchors, text-input rectangles, cursor

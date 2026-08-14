@@ -1391,6 +1391,26 @@ void WindowManager::create_sdl_window() {
                 realmz::presentation::semantic_party_selection_tag(
                     member, surface);
             return tag && PushSemanticPartySelectionEvent(tag);
+          },
+          [](realmz::presentation::PartyMemberId member,
+              uint32_t,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::exploration)) ||
+                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::dungeon));
+            if (!matching_surface) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_open_inventory_tag(
+                    member, surface);
+            return tag && PushSemanticOpenInventoryEvent(tag);
           });
   this->configure_window_for_presentation_mode();
 
@@ -1996,16 +2016,30 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::movement;
         });
-    draw_shell_text(renderer, font,
-        has_semantic_movement
-            ? "SEMANTIC MOVEMENT — other actions remain in the game frame"
-            : "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame",
+    const bool has_semantic_inventory = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::open_inventory;
+        });
+    const char* action_summary =
+        "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
+    if (has_semantic_movement && has_semantic_inventory) {
+      action_summary =
+          "SEMANTIC MOVEMENT + INVENTORY — other actions remain in the game frame";
+    } else if (has_semantic_movement) {
+      action_summary =
+          "SEMANTIC MOVEMENT — other actions remain in the game frame";
+    }
+    draw_shell_text(renderer, font, action_summary,
         {left, panel.y + 37.0, width, 24.0},
         kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
     if (has_semantic_movement) {
       for (const auto& control : controls) {
-        if (control.kind !=
-            realmz::presentation::ShellControlKind::movement) {
+        if ((control.kind !=
+                realmz::presentation::ShellControlKind::movement) &&
+            (control.kind !=
+                realmz::presentation::ShellControlKind::open_inventory)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -2393,6 +2427,21 @@ void WindowManager::present_remastered_frame() {
                         realmz::presentation::ActionIntent::navigate &&
                     action.can_invoke();
               });
+      const auto inventory_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::open_inventory;
+          });
+      const std::optional<realmz::presentation::PartyMemberId>
+          inventory_member =
+              (inventory_action != shell_model->actions.end())
+              ? inventory_action->party_member
+              : std::nullopt;
+      const bool inventory_available = inventory_member &&
+          (inventory_action != shell_model->actions.end()) &&
+          inventory_action->can_invoke() && snapshot_context_matches &&
+          legacy_context.adaptive_eligible != 0;
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -2400,6 +2449,8 @@ void WindowManager::present_remastered_frame() {
               .action_panel =
                   this->adaptive_shell_plan->adaptive_layout->action_bar,
               .navigation_available = navigation_available,
+              .inventory_member = inventory_member,
+              .inventory_available = inventory_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -2487,6 +2538,20 @@ void WindowManager::present_remastered_frame() {
                 return control.kind ==
                         realmz::presentation::ShellControlKind::party_member &&
                     snapshot.party.member(selection->member) != nullptr;
+              }
+              if (const auto* inventory =
+                      std::get_if<
+                          realmz::presentation::OpenInventoryAction>(
+                          &control.payload)) {
+                const auto* member =
+                    snapshot.party.member(inventory->member);
+                return control.kind == realmz::presentation::
+                        ShellControlKind::open_inventory &&
+                    member && member->selected &&
+                    snapshot.party.selected_member == inventory->member &&
+                    realmz::presentation::
+                        legacy_key_message_for_open_inventory(context)
+                        .has_value();
               }
               if (std::holds_alternative<
                       realmz::presentation::SetDrawerPanelAction>(
@@ -2823,6 +2888,32 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       }
       if ((snapshot->screen != context.screen) ||
           !snapshot->party.member(selection->member)) {
+        return false;
+      }
+      continue;
+    }
+    if (const auto* inventory =
+            std::get_if<realmz::presentation::OpenInventoryAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::open_inventory ||
+          !realmz::presentation::legacy_key_message_for_open_inventory(
+              context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      const auto* member = snapshot->party.member(inventory->member);
+      if ((snapshot->screen != context.screen) || !member ||
+          !member->selected ||
+          snapshot->party.selected_member != inventory->member) {
         return false;
       }
       continue;

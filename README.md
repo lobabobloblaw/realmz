@@ -19,15 +19,20 @@ legacy event loop. On those eligible exploration and dungeon screens, party
 cards dispatch typed, idempotent
 `SelectPartyMemberAction` commands through the same guarded top-level route;
 selecting the active member never emulates the Classic second click that opens
-the character modal. Their code-native keyboard route supports wrapping Tab and
-Shift-Tab focus plus Return or Space activation, suppresses repeat dispatch,
-and uses a high-contrast non-color focus outline. In compact layouts the
+the character modal. A code-native Items control carries the selected member in
+a typed `OpenInventoryAction`; the guarded top-level route revalidates that
+selection before translating it to the preserved Classic inventory key, so the
+inventory screen itself remains an intact compatibility flow. Their code-native
+keyboard route supports wrapping Tab and Shift-Tab focus plus Return or Space
+activation, suppresses repeat dispatch, and uses a high-contrast non-color
+focus outline. In compact layouts the
 read-only Details and Event Log surfaces open and close through pointer or the
 same keyboard route; their tabs expose an explicit open-state label in addition
 to color. Pointer, popup, text-input, and cursor
 coordinates continue through the embedded Classic frame. Title and modal
-flows—including inventory, shop, and encounters—use an intact full-frame
-compatibility fallback. Neither route reveals additional map or combat terrain.
+flows—including the inventory screen after it opens, shop, and encounters—use
+an intact full-frame compatibility fallback. Neither route reveals additional
+map or combat terrain.
 
 The remaster is still under active development. In Remastered mode, the mixed
 phase-one runtime manifest now replaces 11 hash-locked, human-approved raster

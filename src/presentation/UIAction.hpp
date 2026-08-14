@@ -41,6 +41,14 @@ struct SelectPartyMemberAction {
   bool operator==(const SelectPartyMemberAction&) const = default;
 };
 
+// Opens the preserved Classic inventory flow for the explicitly selected
+// member. Item-level commands remain separate InventoryAction payloads.
+struct OpenInventoryAction {
+  PartyMemberId member = 0;
+
+  bool operator==(const OpenInventoryAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -157,6 +165,7 @@ struct SetPresentationModeAction {
 using UIActionPayload = std::variant<
     MovePartyAction,
     SelectPartyMemberAction,
+    OpenInventoryAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -181,6 +190,8 @@ struct UIAction {
       return "move_party";
     } else if constexpr (std::is_same_v<Action, SelectPartyMemberAction>) {
       return "select_party_member";
+    } else if constexpr (std::is_same_v<Action, OpenInventoryAction>) {
+      return "open_inventory";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

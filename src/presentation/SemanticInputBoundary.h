@@ -35,6 +35,13 @@ uint8_t RealmzIsSemanticPartySelectionTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticPartySelectionTagSurface(
     uint32_t tagged_message);
 
+// Open-inventory tags carry the selected member explicitly. This keeps a
+// queued action from silently retargeting if selection changes before the
+// guarded top-level loop receives it.
+uint8_t RealmzIsSemanticOpenInventoryTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenInventoryTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -59,6 +66,13 @@ uint8_t RealmzConsumeSemanticPartySelectionEvent(
     uint32_t tagged_message,
     uint8_t* party_member);
 
+// Revalidates the originating gameplay surface and selected member, then
+// returns the preserved Classic "i" key record to the top-level loop.
+uint8_t RealmzConsumeSemanticOpenInventoryEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -73,6 +87,10 @@ enum class MovementCommand;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_party_selection_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_inventory_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept;
 
