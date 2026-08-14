@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -35,6 +36,19 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     RuntimeLegacyDelayCombatantSink,
     RuntimeLegacyCenterActiveCombatantSink>);
+static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
+    std::optional<RuntimeLegacyGuardCombatantSink>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::finish_combatant),
+    std::optional<RuntimeLegacyFinishCombatantSink>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::delay_combatant),
+    std::optional<RuntimeLegacyDelayCombatantSink>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::center_active_combatant),
+    std::optional<RuntimeLegacyCenterActiveCombatantSink>>);
 
 struct ExpectedMovement {
   MovementCommand command;
@@ -1465,10 +1479,12 @@ void test_center_active_combatant_mapping_and_dispatch() {
       spellbook_sink,
       save_sink,
       load_sink,
-      guard_sink,
-      finish_sink,
-      delay_sink,
-      center_sink);
+      RuntimeLegacyCombatActionSinks{
+          .guard_combatant = guard_sink,
+          .finish_combatant = finish_sink,
+          .delay_combatant = delay_sink,
+          .center_active_combatant = center_sink,
+      });
 
   CHECK(bridge.dispatch(UIAction{
       .sequence = 360,
@@ -1698,6 +1714,273 @@ void test_center_active_combatant_mapping_and_dispatch() {
   CHECK(sink_thrown.detail.find("center sink failure") != std::string::npos);
 }
 
+void test_named_combat_sink_registration_semantics() {
+  const RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const std::array actions{
+      UIAction{
+          .sequence = 380,
+          .payload = GuardCombatantAction{1},
+      },
+      UIAction{
+          .sequence = 381,
+          .payload = FinishCombatantAction{2},
+      },
+      UIAction{
+          .sequence = 382,
+          .payload = DelayCombatantAction{3},
+      },
+      UIAction{
+          .sequence = 383,
+          .payload = CenterActiveCombatantAction{4},
+      },
+  };
+
+  RuntimeLegacyCommandBridge no_combat_sinks(
+      [context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  for (const auto& action : actions) {
+    CHECK(no_combat_sinks.dispatch(action).status ==
+        DispatchStatus::unsupported);
+  }
+
+  RuntimeLegacyCommandBridge empty_combat_sinks(
+      [context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .guard_combatant = RuntimeLegacyGuardCombatantSink{},
+          .finish_combatant = RuntimeLegacyFinishCombatantSink{},
+          .delay_combatant = RuntimeLegacyDelayCombatantSink{},
+          .center_active_combatant =
+              RuntimeLegacyCenterActiveCombatantSink{},
+      });
+  for (const auto& action : actions) {
+    const auto result = empty_combat_sinks.dispatch(action);
+    CHECK(result.status == DispatchStatus::failed);
+    CHECK(result.detail.find("sink is not available") != std::string::npos);
+  }
+
+  int guard_calls = 0;
+  int center_calls = 0;
+  RuntimeLegacyCommandBridge sparse_combat_sinks(
+      [context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .guard_combatant =
+              [&guard_calls](CombatantId combatant,
+                  uint32_t message,
+                  const RuntimeLegacyCommandContext&) {
+                ++guard_calls;
+                CHECK(combatant == 5);
+                CHECK(message == 0x00000567U);
+                return true;
+              },
+          .center_active_combatant =
+              [&center_calls](CombatantId combatant,
+                  uint32_t message,
+                  const RuntimeLegacyCommandContext&) {
+                ++center_calls;
+                CHECK(combatant == 6);
+                CHECK(message == 0x00000863U);
+                return true;
+              },
+      });
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 384,
+      .payload = GuardCombatantAction{5},
+  }).status == DispatchStatus::handled);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 385,
+      .payload = FinishCombatantAction{5},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 386,
+      .payload = DelayCombatantAction{5},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 387,
+      .payload = CenterActiveCombatantAction{6},
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(center_calls == 1);
+}
+
+void test_positional_combat_constructor_compatibility() {
+  const RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+
+  int guard_calls = 0;
+  int finish_calls = 0;
+  int delay_calls = 0;
+  int center_calls = 0;
+  const RuntimeLegacyGuardCombatantSink guard_sink =
+      [&guard_calls](CombatantId, uint32_t, const RuntimeLegacyCommandContext&) {
+        ++guard_calls;
+        return true;
+      };
+  const RuntimeLegacyFinishCombatantSink finish_sink =
+      [&finish_calls](
+          CombatantId, uint32_t, const RuntimeLegacyCommandContext&) {
+        ++finish_calls;
+        return true;
+      };
+  const RuntimeLegacyDelayCombatantSink delay_sink =
+      [&delay_calls](CombatantId, uint32_t, const RuntimeLegacyCommandContext&) {
+        ++delay_calls;
+        return true;
+      };
+  const RuntimeLegacyCenterActiveCombatantSink center_sink =
+      [&center_calls](
+          CombatantId, uint32_t, const RuntimeLegacyCommandContext&) {
+        ++center_calls;
+        return true;
+      };
+
+  RuntimeLegacyCommandBridge guard_only(
+      [context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      guard_sink);
+  CHECK(guard_only.dispatch(UIAction{
+      .sequence = 390,
+      .payload = GuardCombatantAction{1},
+  }).status == DispatchStatus::handled);
+  CHECK(guard_only.dispatch(UIAction{
+      .sequence = 391,
+      .payload = FinishCombatantAction{1},
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge through_finish(
+      [context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      guard_sink,
+      finish_sink);
+  CHECK(through_finish.dispatch(UIAction{
+      .sequence = 392,
+      .payload = FinishCombatantAction{2},
+  }).status == DispatchStatus::handled);
+  CHECK(through_finish.dispatch(UIAction{
+      .sequence = 393,
+      .payload = DelayCombatantAction{2},
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge through_delay(
+      [context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      guard_sink,
+      finish_sink,
+      delay_sink);
+  CHECK(through_delay.dispatch(UIAction{
+      .sequence = 394,
+      .payload = DelayCombatantAction{3},
+  }).status == DispatchStatus::handled);
+  CHECK(through_delay.dispatch(UIAction{
+      .sequence = 395,
+      .payload = CenterActiveCombatantAction{3},
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge through_center(
+      [context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      guard_sink,
+      finish_sink,
+      delay_sink,
+      center_sink);
+  CHECK(through_center.dispatch(UIAction{
+      .sequence = 396,
+      .payload = CenterActiveCombatantAction{4},
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(finish_calls == 1);
+  CHECK(delay_calls == 1);
+  CHECK(center_calls == 1);
+}
+
 void test_exception_boundary() {
   RuntimeLegacyCommandBridge provider_throws(
       []() -> RuntimeLegacyCommandContext {
@@ -1880,6 +2163,8 @@ int main() {
     test_finish_combatant_mapping_and_dispatch();
     test_delay_combatant_mapping_and_dispatch();
     test_center_active_combatant_mapping_and_dispatch();
+    test_named_combat_sink_registration_semantics();
+    test_positional_combat_constructor_compatibility();
     test_exception_boundary();
     std::cout << "RuntimeLegacyCommandBridgeTest passed ("
               << checks_run << " checks)\n";

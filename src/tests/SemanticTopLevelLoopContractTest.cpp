@@ -219,6 +219,34 @@ void require(bool condition, std::string_view detail) {
   return result;
 }
 
+[[nodiscard]] std::string designated_lambda_body(
+    std::string_view aggregate,
+    std::string_view field) {
+  require(count_identifier(aggregate, field) == 1,
+      std::string("combat sink aggregate must initialize exactly one .") +
+          std::string(field));
+  const std::size_t name = find_identifier(aggregate, field);
+  require(name > 0 && aggregate[name - 1] == '.',
+      std::string("combat sink must use designated field .") +
+          std::string(field));
+  std::size_t position = skip_whitespace(aggregate, name + field.size());
+  require(position < aggregate.size() && aggregate[position] == '=',
+      std::string("combat sink field is missing an initializer: ") +
+          std::string(field));
+  position = skip_whitespace(aggregate, position + 1);
+  require(position < aggregate.size() && aggregate[position] == '[',
+      std::string("combat sink field must own a lambda: ") +
+          std::string(field));
+  const std::size_t body_open = aggregate.find('{', position);
+  require(body_open != std::string_view::npos,
+      std::string("combat sink lambda is missing its body: ") +
+          std::string(field));
+  const std::size_t body_close = matching_delimiter(
+      aggregate, body_open, '{', '}');
+  return std::string(
+      aggregate.substr(body_open, body_close - body_open + 1));
+}
+
 void require_no_semantic_scope_or_consumer(
     std::string_view body,
     std::string_view function_name) {
@@ -1043,7 +1071,7 @@ void verify_mode_switch_cancellation(const fs::path& repository_root) {
       "presentation assets must refresh after mode selection and before recomposition");
 }
 
-void verify_window_manager_combat_sink_order(
+void verify_window_manager_named_combat_sinks(
     const fs::path& repository_root) {
   const std::string source = code_only(read_file(
       repository_root / "src/WindowManager.cpp"));
@@ -1062,6 +1090,21 @@ void verify_window_manager_combat_sink_order(
       create_window, invocation_open, '(', ')');
   const std::string invocation = create_window.substr(
       invocation_open, invocation_close - invocation_open + 1);
+
+  require(count_identifier(
+              invocation, "RuntimeLegacyCombatActionSinks") == 1,
+      "window creation must construct exactly one named combat sink bundle");
+  const std::size_t sinks_name = find_identifier(
+      invocation, "RuntimeLegacyCombatActionSinks");
+  const std::size_t sinks_open = skip_whitespace(
+      invocation,
+      sinks_name + std::string_view("RuntimeLegacyCombatActionSinks").size());
+  require(sinks_open < invocation.size() && invocation[sinks_open] == '{',
+      "runtime combat sink bundle is missing its aggregate initializer");
+  const std::size_t sinks_close = matching_delimiter(
+      invocation, sinks_open, '{', '}');
+  const std::string combat_sinks = invocation.substr(
+      sinks_open, sinks_close - sinks_open + 1);
 
   for (const auto identifier : {
            "legacy_key_message_for_guard_combatant",
@@ -1082,39 +1125,38 @@ void verify_window_manager_combat_sink_order(
             "one " + identifier);
   }
 
-  const std::string compact = without_whitespace(invocation);
-  const std::size_t guard_mapper = compact.find(
-      "legacy_key_message_for_guard_combatant");
-  const std::size_t guard_tag = compact.find(
-      "semantic_guard_combatant_tag");
-  const std::size_t guard_push = compact.find(
+  const auto verify_field = [&combat_sinks](
+                                std::string_view field,
+                                std::string_view mapper,
+                                std::string_view tag,
+                                std::string_view push) {
+    const std::string body = designated_lambda_body(combat_sinks, field);
+    for (const auto identifier : {mapper, tag, push}) {
+      require(count_identifier(body, identifier) == 1,
+          std::string("named combat sink .") + std::string(field) +
+              " must own exactly one " + std::string(identifier));
+    }
+  };
+  verify_field(
+      "guard_combatant",
+      "legacy_key_message_for_guard_combatant",
+      "semantic_guard_combatant_tag",
       "PushSemanticGuardCombatantEvent");
-  const std::size_t finish_mapper = compact.find(
-      "legacy_key_message_for_finish_combatant");
-  const std::size_t finish_tag = compact.find(
-      "semantic_finish_combatant_tag");
-  const std::size_t finish_push = compact.find(
+  verify_field(
+      "finish_combatant",
+      "legacy_key_message_for_finish_combatant",
+      "semantic_finish_combatant_tag",
       "PushSemanticFinishCombatantEvent");
-  const std::size_t delay_mapper = compact.find(
-      "legacy_key_message_for_delay_combatant");
-  const std::size_t delay_tag = compact.find(
-      "semantic_delay_combatant_tag");
-  const std::size_t delay_push = compact.find(
+  verify_field(
+      "delay_combatant",
+      "legacy_key_message_for_delay_combatant",
+      "semantic_delay_combatant_tag",
       "PushSemanticDelayCombatantEvent");
-  const std::size_t center_mapper = compact.find(
-      "legacy_key_message_for_center_active_combatant");
-  const std::size_t center_tag = compact.find(
-      "semantic_center_active_combatant_tag");
-  const std::size_t center_push = compact.find(
+  verify_field(
+      "center_active_combatant",
+      "legacy_key_message_for_center_active_combatant",
+      "semantic_center_active_combatant_tag",
       "PushSemanticCenterActiveCombatantEvent");
-  require(guard_mapper < guard_tag && guard_tag < guard_push &&
-          guard_push < finish_mapper && finish_mapper < finish_tag &&
-          finish_tag < finish_push && finish_push < delay_mapper &&
-          delay_mapper < delay_tag && delay_tag < delay_push &&
-          delay_push < center_mapper && center_mapper < center_tag &&
-          center_tag < center_push,
-      "identically typed combat sinks must remain ordered Guard, Finish, "
-      "Delay, then Center in runtime legacy bridge construction");
 }
 
 void verify_top_level_loop(
@@ -1551,7 +1593,7 @@ int main(int argc, char** argv) {
     verify_party_selection_adapter(repository_root);
     verify_legacy_loop_ownership(repository_root);
     verify_production_call_ownership(repository_root);
-    verify_window_manager_combat_sink_order(repository_root);
+    verify_window_manager_named_combat_sinks(repository_root);
     verify_mode_switch_cancellation(repository_root);
     std::cout << "SemanticTopLevelLoopContractTest passed ("
               << checks_run << " checks)\n";

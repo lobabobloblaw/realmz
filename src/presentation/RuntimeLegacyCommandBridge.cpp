@@ -97,7 +97,7 @@ LegacyActionHandlers make_handlers(
     RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
     RuntimeLegacyOpenSaveGameSink open_save_game_sink,
     RuntimeLegacyOpenLoadGameSink open_load_game_sink,
-    RuntimeLegacyGuardCombatantSink guard_combatant_sink) {
+    RuntimeLegacyCombatActionSinks combat_action_sinks) {
   auto handlers = make_handlers(
       context_provider,
       std::move(movement_sink),
@@ -106,204 +106,150 @@ LegacyActionHandlers make_handlers(
       std::move(open_spellbook_sink),
       std::move(open_save_game_sink),
       std::move(open_load_game_sink));
-  handlers.guard_combatant = [
-      context_provider = std::move(context_provider),
-      guard_combatant_sink = std::move(guard_combatant_sink)](
-          const GuardCombatantAction& action) {
-    if (!context_provider) {
-      return DispatchResult::failed(
-          "Runtime legacy context provider is not available");
-    }
-    if (!guard_combatant_sink) {
-      return DispatchResult::failed(
-          "Runtime legacy guard-combatant sink is not available");
-    }
 
-    const auto context = context_provider();
-    if (!context.adaptive_eligible) {
-      return DispatchResult::rejected(
-          "Legacy combat surface is not eligible for semantic guard");
-    }
-    const auto message = legacy_key_message_for_guard_combatant(
-        action.combatant, context);
-    if (!message) {
-      return DispatchResult::rejected(
-          "Guard is not supported for this combatant in the current legacy "
-          "context");
-    }
-    if (!guard_combatant_sink(action.combatant, *message, context)) {
-      return DispatchResult::failed(
-          "Legacy event queue rejected semantic guard-combatant action");
-    }
-    return DispatchResult::handled();
-  };
-  return handlers;
-}
+  if (combat_action_sinks.guard_combatant.has_value()) {
+    handlers.guard_combatant = [
+        context_provider,
+        guard_combatant_sink =
+            std::move(*combat_action_sinks.guard_combatant)](
+            const GuardCombatantAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!guard_combatant_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy guard-combatant sink is not available");
+      }
 
-LegacyActionHandlers make_handlers(
-    RuntimeLegacyContextProvider context_provider,
-    RuntimeLegacyMovementSink movement_sink,
-    RuntimeLegacyPartySelectionSink party_selection_sink,
-    RuntimeLegacyOpenInventorySink open_inventory_sink,
-    RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
-    RuntimeLegacyOpenSaveGameSink open_save_game_sink,
-    RuntimeLegacyOpenLoadGameSink open_load_game_sink,
-    RuntimeLegacyGuardCombatantSink guard_combatant_sink,
-    RuntimeLegacyFinishCombatantSink finish_combatant_sink) {
-  auto handlers = make_handlers(
-      context_provider,
-      std::move(movement_sink),
-      std::move(party_selection_sink),
-      std::move(open_inventory_sink),
-      std::move(open_spellbook_sink),
-      std::move(open_save_game_sink),
-      std::move(open_load_game_sink),
-      std::move(guard_combatant_sink));
-  handlers.finish_combatant = [
-      context_provider = std::move(context_provider),
-      finish_combatant_sink = std::move(finish_combatant_sink)](
-          const FinishCombatantAction& action) {
-    if (!context_provider) {
-      return DispatchResult::failed(
-          "Runtime legacy context provider is not available");
-    }
-    if (!finish_combatant_sink) {
-      return DispatchResult::failed(
-          "Runtime legacy finish-combatant sink is not available");
-    }
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic guard");
+      }
+      const auto message = legacy_key_message_for_guard_combatant(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Guard is not supported for this combatant in the current legacy "
+            "context");
+      }
+      if (!guard_combatant_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic guard-combatant action");
+      }
+      return DispatchResult::handled();
+    };
+  }
 
-    const auto context = context_provider();
-    if (!context.adaptive_eligible) {
-      return DispatchResult::rejected(
-          "Legacy combat surface is not eligible for semantic finish");
-    }
-    const auto message = legacy_key_message_for_finish_combatant(
-        action.combatant, context);
-    if (!message) {
-      return DispatchResult::rejected(
-          "Finish is not supported for this combatant in the current legacy "
-          "context");
-    }
-    if (!finish_combatant_sink(action.combatant, *message, context)) {
-      return DispatchResult::failed(
-          "Legacy event queue rejected semantic finish-combatant action");
-    }
-    return DispatchResult::handled();
-  };
-  return handlers;
-}
+  if (combat_action_sinks.finish_combatant.has_value()) {
+    handlers.finish_combatant = [
+        context_provider,
+        finish_combatant_sink =
+            std::move(*combat_action_sinks.finish_combatant)](
+            const FinishCombatantAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!finish_combatant_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy finish-combatant sink is not available");
+      }
 
-LegacyActionHandlers make_handlers(
-    RuntimeLegacyContextProvider context_provider,
-    RuntimeLegacyMovementSink movement_sink,
-    RuntimeLegacyPartySelectionSink party_selection_sink,
-    RuntimeLegacyOpenInventorySink open_inventory_sink,
-    RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
-    RuntimeLegacyOpenSaveGameSink open_save_game_sink,
-    RuntimeLegacyOpenLoadGameSink open_load_game_sink,
-    RuntimeLegacyGuardCombatantSink guard_combatant_sink,
-    RuntimeLegacyFinishCombatantSink finish_combatant_sink,
-    RuntimeLegacyDelayCombatantSink delay_combatant_sink) {
-  auto handlers = make_handlers(
-      context_provider,
-      std::move(movement_sink),
-      std::move(party_selection_sink),
-      std::move(open_inventory_sink),
-      std::move(open_spellbook_sink),
-      std::move(open_save_game_sink),
-      std::move(open_load_game_sink),
-      std::move(guard_combatant_sink),
-      std::move(finish_combatant_sink));
-  handlers.delay_combatant = [
-      context_provider = std::move(context_provider),
-      delay_combatant_sink = std::move(delay_combatant_sink)](
-          const DelayCombatantAction& action) {
-    if (!context_provider) {
-      return DispatchResult::failed(
-          "Runtime legacy context provider is not available");
-    }
-    if (!delay_combatant_sink) {
-      return DispatchResult::failed(
-          "Runtime legacy delay-combatant sink is not available");
-    }
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic finish");
+      }
+      const auto message = legacy_key_message_for_finish_combatant(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Finish is not supported for this combatant in the current legacy "
+            "context");
+      }
+      if (!finish_combatant_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic finish-combatant action");
+      }
+      return DispatchResult::handled();
+    };
+  }
 
-    const auto context = context_provider();
-    if (!context.adaptive_eligible) {
-      return DispatchResult::rejected(
-          "Legacy combat surface is not eligible for semantic delay");
-    }
-    const auto message = legacy_key_message_for_delay_combatant(
-        action.combatant, context);
-    if (!message) {
-      return DispatchResult::rejected(
-          "Delay is not supported for this combatant in the current legacy "
-          "context");
-    }
-    if (!delay_combatant_sink(action.combatant, *message, context)) {
-      return DispatchResult::failed(
-          "Legacy event queue rejected semantic delay-combatant action");
-    }
-    return DispatchResult::handled();
-  };
-  return handlers;
-}
+  if (combat_action_sinks.delay_combatant.has_value()) {
+    handlers.delay_combatant = [
+        context_provider,
+        delay_combatant_sink =
+            std::move(*combat_action_sinks.delay_combatant)](
+            const DelayCombatantAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!delay_combatant_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy delay-combatant sink is not available");
+      }
 
-LegacyActionHandlers make_handlers(
-    RuntimeLegacyContextProvider context_provider,
-    RuntimeLegacyMovementSink movement_sink,
-    RuntimeLegacyPartySelectionSink party_selection_sink,
-    RuntimeLegacyOpenInventorySink open_inventory_sink,
-    RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
-    RuntimeLegacyOpenSaveGameSink open_save_game_sink,
-    RuntimeLegacyOpenLoadGameSink open_load_game_sink,
-    RuntimeLegacyGuardCombatantSink guard_combatant_sink,
-    RuntimeLegacyFinishCombatantSink finish_combatant_sink,
-    RuntimeLegacyDelayCombatantSink delay_combatant_sink,
-    RuntimeLegacyCenterActiveCombatantSink center_active_combatant_sink) {
-  auto handlers = make_handlers(
-      context_provider,
-      std::move(movement_sink),
-      std::move(party_selection_sink),
-      std::move(open_inventory_sink),
-      std::move(open_spellbook_sink),
-      std::move(open_save_game_sink),
-      std::move(open_load_game_sink),
-      std::move(guard_combatant_sink),
-      std::move(finish_combatant_sink),
-      std::move(delay_combatant_sink));
-  handlers.center_active_combatant = [
-      context_provider = std::move(context_provider),
-      center_active_combatant_sink = std::move(center_active_combatant_sink)](
-          const CenterActiveCombatantAction& action) {
-    if (!context_provider) {
-      return DispatchResult::failed(
-          "Runtime legacy context provider is not available");
-    }
-    if (!center_active_combatant_sink) {
-      return DispatchResult::failed(
-          "Runtime legacy center-active-combatant sink is not available");
-    }
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic delay");
+      }
+      const auto message = legacy_key_message_for_delay_combatant(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Delay is not supported for this combatant in the current legacy "
+            "context");
+      }
+      if (!delay_combatant_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic delay-combatant action");
+      }
+      return DispatchResult::handled();
+    };
+  }
 
-    const auto context = context_provider();
-    if (!context.adaptive_eligible) {
-      return DispatchResult::rejected(
-          "Legacy combat surface is not eligible for semantic center-active");
-    }
-    const auto message = legacy_key_message_for_center_active_combatant(
-        action.combatant, context);
-    if (!message) {
-      return DispatchResult::rejected(
-          "Center active is not supported for this combatant in the current "
-          "legacy context");
-    }
-    if (!center_active_combatant_sink(
-            action.combatant, *message, context)) {
-      return DispatchResult::failed(
-          "Legacy event queue rejected semantic center-active-combatant "
-          "action");
-    }
-    return DispatchResult::handled();
-  };
+  if (combat_action_sinks.center_active_combatant.has_value()) {
+    handlers.center_active_combatant = [
+        context_provider,
+        center_active_combatant_sink =
+            std::move(*combat_action_sinks.center_active_combatant)](
+            const CenterActiveCombatantAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!center_active_combatant_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy center-active-combatant sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic "
+            "center-active");
+      }
+      const auto message = legacy_key_message_for_center_active_combatant(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Center active is not supported for this combatant in the current "
+            "legacy context");
+      }
+      if (!center_active_combatant_sink(
+              action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic center-active-combatant "
+            "action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
   return handlers;
 }
 
@@ -813,7 +759,7 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
     RuntimeLegacyOpenSaveGameSink open_save_game_sink,
     RuntimeLegacyOpenLoadGameSink open_load_game_sink,
-    RuntimeLegacyGuardCombatantSink guard_combatant_sink)
+    RuntimeLegacyCombatActionSinks combat_action_sinks)
     : injected_bridge_(make_handlers(
           std::move(context_provider),
           std::move(movement_sink),
@@ -822,7 +768,28 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
           std::move(open_spellbook_sink),
           std::move(open_save_game_sink),
           std::move(open_load_game_sink),
-          std::move(guard_combatant_sink))) {}
+          std::move(combat_action_sinks))) {}
+
+RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
+    RuntimeLegacyContextProvider context_provider,
+    RuntimeLegacyMovementSink movement_sink,
+    RuntimeLegacyPartySelectionSink party_selection_sink,
+    RuntimeLegacyOpenInventorySink open_inventory_sink,
+    RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+    RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+    RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+    RuntimeLegacyGuardCombatantSink guard_combatant_sink)
+    : RuntimeLegacyCommandBridge(
+          std::move(context_provider),
+          std::move(movement_sink),
+          std::move(party_selection_sink),
+          std::move(open_inventory_sink),
+          std::move(open_spellbook_sink),
+          std::move(open_save_game_sink),
+          std::move(open_load_game_sink),
+          RuntimeLegacyCombatActionSinks{
+              .guard_combatant = std::move(guard_combatant_sink),
+          }) {}
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyContextProvider context_provider,
@@ -834,7 +801,7 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyOpenLoadGameSink open_load_game_sink,
     RuntimeLegacyGuardCombatantSink guard_combatant_sink,
     RuntimeLegacyFinishCombatantSink finish_combatant_sink)
-    : injected_bridge_(make_handlers(
+    : RuntimeLegacyCommandBridge(
           std::move(context_provider),
           std::move(movement_sink),
           std::move(party_selection_sink),
@@ -842,8 +809,10 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
           std::move(open_spellbook_sink),
           std::move(open_save_game_sink),
           std::move(open_load_game_sink),
-          std::move(guard_combatant_sink),
-          std::move(finish_combatant_sink))) {}
+          RuntimeLegacyCombatActionSinks{
+              .guard_combatant = std::move(guard_combatant_sink),
+              .finish_combatant = std::move(finish_combatant_sink),
+          }) {}
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyContextProvider context_provider,
@@ -856,7 +825,7 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyGuardCombatantSink guard_combatant_sink,
     RuntimeLegacyFinishCombatantSink finish_combatant_sink,
     RuntimeLegacyDelayCombatantSink delay_combatant_sink)
-    : injected_bridge_(make_handlers(
+    : RuntimeLegacyCommandBridge(
           std::move(context_provider),
           std::move(movement_sink),
           std::move(party_selection_sink),
@@ -864,9 +833,11 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
           std::move(open_spellbook_sink),
           std::move(open_save_game_sink),
           std::move(open_load_game_sink),
-          std::move(guard_combatant_sink),
-          std::move(finish_combatant_sink),
-          std::move(delay_combatant_sink))) {}
+          RuntimeLegacyCombatActionSinks{
+              .guard_combatant = std::move(guard_combatant_sink),
+              .finish_combatant = std::move(finish_combatant_sink),
+              .delay_combatant = std::move(delay_combatant_sink),
+          }) {}
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyContextProvider context_provider,
@@ -880,7 +851,7 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyFinishCombatantSink finish_combatant_sink,
     RuntimeLegacyDelayCombatantSink delay_combatant_sink,
     RuntimeLegacyCenterActiveCombatantSink center_active_combatant_sink)
-    : injected_bridge_(make_handlers(
+    : RuntimeLegacyCommandBridge(
           std::move(context_provider),
           std::move(movement_sink),
           std::move(party_selection_sink),
@@ -888,10 +859,13 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
           std::move(open_spellbook_sink),
           std::move(open_save_game_sink),
           std::move(open_load_game_sink),
-          std::move(guard_combatant_sink),
-          std::move(finish_combatant_sink),
-          std::move(delay_combatant_sink),
-          std::move(center_active_combatant_sink))) {}
+          RuntimeLegacyCombatActionSinks{
+              .guard_combatant = std::move(guard_combatant_sink),
+              .finish_combatant = std::move(finish_combatant_sink),
+              .delay_combatant = std::move(delay_combatant_sink),
+              .center_active_combatant =
+                  std::move(center_active_combatant_sink),
+          }) {}
 
 DispatchResult RuntimeLegacyCommandBridge::dispatch(const UIAction& action) {
   return this->injected_bridge_.dispatch(action);

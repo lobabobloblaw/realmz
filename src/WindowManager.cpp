@@ -1472,81 +1472,93 @@ void WindowManager::create_sdl_window() {
                 realmz::presentation::semantic_open_load_game_tag(surface);
             return tag && PushSemanticOpenLoadGameEvent(tag);
           },
-          [](realmz::presentation::CombatantId combatant,
-              uint32_t message,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
-                (context.screen ==
-                    realmz::presentation::ScreenContext::combat);
-            const auto expected = realmz::presentation::
-                legacy_key_message_for_guard_combatant(combatant, context);
-            if (!matching_surface || !expected || (message != *expected)) {
-              return false;
-            }
-            const uint32_t tag =
-                realmz::presentation::semantic_guard_combatant_tag(
-                    combatant, surface);
-            return tag && PushSemanticGuardCombatantEvent(tag);
-          },
-          [](realmz::presentation::CombatantId combatant,
-              uint32_t message,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
-                (context.screen ==
-                    realmz::presentation::ScreenContext::combat);
-            const auto expected = realmz::presentation::
-                legacy_key_message_for_finish_combatant(combatant, context);
-            if (!matching_surface || !expected || (message != *expected)) {
-              return false;
-            }
-            const uint32_t tag =
-                realmz::presentation::semantic_finish_combatant_tag(
-                    combatant, surface);
-            return tag && PushSemanticFinishCombatantEvent(tag);
-          },
-          [](realmz::presentation::CombatantId combatant,
-              uint32_t message,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
-                (context.screen ==
-                    realmz::presentation::ScreenContext::combat);
-            const auto expected = realmz::presentation::
-                legacy_key_message_for_delay_combatant(combatant, context);
-            if (!matching_surface || !expected || (message != *expected)) {
-              return false;
-            }
-            const uint32_t tag =
-                realmz::presentation::semantic_delay_combatant_tag(
-                    combatant, surface);
-            return tag && PushSemanticDelayCombatantEvent(tag);
-          },
-          [](realmz::presentation::CombatantId combatant,
-              uint32_t message,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
-                (context.screen ==
-                    realmz::presentation::ScreenContext::combat);
-            const auto expected = realmz::presentation::
-                legacy_key_message_for_center_active_combatant(
-                    combatant, context);
-            if (!matching_surface || !expected || (message != *expected)) {
-              return false;
-            }
-            const uint32_t tag = realmz::presentation::
-                semantic_center_active_combatant_tag(combatant, surface);
-            return tag && PushSemanticCenterActiveCombatantEvent(tag);
+          realmz::presentation::RuntimeLegacyCombatActionSinks{
+              .guard_combatant =
+                  [](realmz::presentation::CombatantId combatant,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                        (context.screen ==
+                            realmz::presentation::ScreenContext::combat);
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_guard_combatant(
+                            combatant, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_guard_combatant_tag(combatant, surface);
+                    return tag && PushSemanticGuardCombatantEvent(tag);
+                  },
+              .finish_combatant =
+                  [](realmz::presentation::CombatantId combatant,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                        (context.screen ==
+                            realmz::presentation::ScreenContext::combat);
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_finish_combatant(
+                            combatant, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_finish_combatant_tag(combatant, surface);
+                    return tag && PushSemanticFinishCombatantEvent(tag);
+                  },
+              .delay_combatant =
+                  [](realmz::presentation::CombatantId combatant,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                        (context.screen ==
+                            realmz::presentation::ScreenContext::combat);
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_delay_combatant(
+                            combatant, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_delay_combatant_tag(combatant, surface);
+                    return tag && PushSemanticDelayCombatantEvent(tag);
+                  },
+              .center_active_combatant =
+                  [](realmz::presentation::CombatantId combatant,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                        (context.screen ==
+                            realmz::presentation::ScreenContext::combat);
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_center_active_combatant(
+                            combatant, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_center_active_combatant_tag(
+                            combatant, surface);
+                    return tag &&
+                        PushSemanticCenterActiveCombatantEvent(tag);
+                  },
           });
   this->configure_window_for_presentation_mode();
 

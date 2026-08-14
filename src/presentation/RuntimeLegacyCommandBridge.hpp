@@ -67,6 +67,19 @@ using RuntimeLegacyCenterActiveCombatantSink = std::function<bool(
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
 
+// Combat sinks are named because their callable signatures are intentionally
+// identical even though their commands are not interchangeable. A disengaged
+// field leaves that action unsupported. An engaged field containing an empty
+// std::function registers the action and makes dispatch fail closed, preserving
+// the behavior of the positional compatibility constructors below.
+struct RuntimeLegacyCombatActionSinks {
+  std::optional<RuntimeLegacyGuardCombatantSink> guard_combatant;
+  std::optional<RuntimeLegacyFinishCombatantSink> finish_combatant;
+  std::optional<RuntimeLegacyDelayCombatantSink> delay_combatant;
+  std::optional<RuntimeLegacyCenterActiveCombatantSink>
+      center_active_combatant;
+};
+
 // Returns the exact Classic Mac key message already consumed by the preserved
 // exploration/dungeon event loops. Unsupported command/context combinations
 // return nullopt instead of reaching into engine globals directly.
@@ -177,6 +190,18 @@ public:
       RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
       RuntimeLegacyOpenSaveGameSink open_save_game_sink,
       RuntimeLegacyOpenLoadGameSink open_load_game_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyOpenInventorySink open_inventory_sink,
+      RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+      RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+      RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+      RuntimeLegacyCombatActionSinks combat_action_sinks);
+
+  // Compatibility overloads retain the append-only API used before combat
+  // registration became named. New combat routes belong only in the bundle.
   RuntimeLegacyCommandBridge(
       RuntimeLegacyContextProvider context_provider,
       RuntimeLegacyMovementSink movement_sink,
