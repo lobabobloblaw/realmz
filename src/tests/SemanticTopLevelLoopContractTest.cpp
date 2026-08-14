@@ -296,6 +296,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticCenterActiveCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic center input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticSwitchWeaponEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic switch-weapon input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -568,6 +572,30 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(center_wrapper, "mouseDown") == 0,
       "public semantic center enqueue must not synthesize Classic input");
 
+  const std::string push_switch = function_body(
+      source, "push_semantic_switch_weapon_event");
+  const std::string compact_push_switch = without_whitespace(push_switch);
+  require(count_identifier(
+              push_switch, "RealmzIsSemanticSwitchWeaponTag") == 1,
+      "semantic switch-weapon enqueue must validate exactly one tag");
+  require(count_identifier(push_switch, "app1Evt") == 1,
+      "semantic switch-weapon enqueue must use app1Evt exactly once");
+  require(count_identifier(push_switch, "keyDown") == 0 &&
+          count_identifier(push_switch, "mouseDown") == 0,
+      "semantic switch-weapon enqueue must not synthesize Classic input");
+  require(compact_push_switch.contains("ev.what=app1Evt;") &&
+          compact_push_switch.contains("ev.message=tagged_message;"),
+      "semantic switch weapon must retain its tagged app1Evt payload");
+
+  const std::string switch_wrapper = function_body(
+      source, "PushSemanticSwitchWeaponEvent");
+  require(without_whitespace(switch_wrapper).contains(
+              "returnem.push_semantic_switch_weapon_event(tagged_message);"),
+      "public semantic switch-weapon enqueue must delegate to tagged queue");
+  require(count_identifier(switch_wrapper, "keyDown") == 0 &&
+          count_identifier(switch_wrapper, "mouseDown") == 0,
+      "public semantic switch-weapon enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -656,15 +684,19 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticCenterActiveCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late center consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticSwitchWeaponEvent") == 1,
+      "semantic gameplay wrapper must have one late switch-weapon consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 10,
-      "semantic gameplay wrapper must recognize all ten tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 7,
-      "only late movement, inventory, spellbook, guard, finish, delay, and "
-      "center validation may produce keyDown");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 11,
+      "semantic gameplay wrapper must recognize all eleven tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 8,
+      "only late movement, inventory, spellbook, guard, finish, delay, center, "
+      "or switch-weapon validation may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
@@ -707,6 +739,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticCenterActiveCombatantEvent") == 1,
       "EventManager may consume semantic center input only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticSwitchWeaponEvent") == 1,
+      "EventManager may consume semantic switch-weapon input only inside its "
+      "gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
 
@@ -840,6 +876,17 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", center_keydown);
   const std::size_t center_rejected_message = compact_semantic.find(
       "ret->message=0", center_null);
+  const std::size_t switch_branch = compact_semantic.find(
+      "RealmzIsSemanticSwitchWeaponTag(ret->message)",
+      center_rejected_message);
+  const std::size_t switch_consume = compact_semantic.find(
+      "RealmzConsumeSemanticSwitchWeaponEvent(", switch_branch);
+  const std::size_t switch_keydown = compact_semantic.find(
+      "ret->what=keyDown", switch_consume);
+  const std::size_t switch_null = compact_semantic.find(
+      "ret->what=nullEvent", switch_keydown);
+  const std::size_t switch_rejected_message = compact_semantic.find(
+      "ret->message=0", switch_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -902,7 +949,12 @@ void verify_event_manager(const fs::path& repository_root) {
           center_consume != std::string::npos &&
           center_keydown != std::string::npos &&
           center_null != std::string::npos &&
-          center_rejected_message != std::string::npos,
+          center_rejected_message != std::string::npos &&
+          switch_branch != std::string::npos &&
+          switch_consume != std::string::npos &&
+          switch_keydown != std::string::npos &&
+          switch_null != std::string::npos &&
+          switch_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -960,7 +1012,12 @@ void verify_event_manager(const fs::path& repository_root) {
           center_branch < center_consume &&
           center_consume < center_keydown &&
           center_keydown < center_null &&
-          center_null < center_rejected_message,
+          center_null < center_rejected_message &&
+          center_rejected_message < switch_branch &&
+          switch_branch < switch_consume &&
+          switch_consume < switch_keydown &&
+          switch_keydown < switch_null &&
+          switch_null < switch_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
@@ -1119,6 +1176,9 @@ void verify_window_manager_named_combat_sinks(
            "legacy_key_message_for_center_active_combatant",
            "semantic_center_active_combatant_tag",
            "PushSemanticCenterActiveCombatantEvent",
+           "legacy_key_message_for_switch_weapon",
+           "semantic_switch_weapon_tag",
+           "PushSemanticSwitchWeaponEvent",
        }) {
     require(count_identifier(invocation, identifier) == 1,
         std::string("runtime legacy bridge construction must contain exactly ") +
@@ -1157,6 +1217,138 @@ void verify_window_manager_named_combat_sinks(
       "legacy_key_message_for_center_active_combatant",
       "semantic_center_active_combatant_tag",
       "PushSemanticCenterActiveCombatantEvent");
+  verify_field(
+      "switch_weapon",
+      "legacy_key_message_for_switch_weapon",
+      "semantic_switch_weapon_tag",
+      "PushSemanticSwitchWeaponEvent");
+}
+
+void verify_window_manager_shell_dispatch_freshness(
+    const fs::path& repository_root) {
+  const std::string source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string dispatch = function_body(
+      source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+
+  const std::size_t switch_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::SwitchWeaponSetAction>"
+      "(&control.payload)");
+  const std::size_t ordinary_branch = compact_dispatch.find(
+      "}else{constautolive_control=std::ranges::find_if(",
+      switch_payload);
+  const std::size_t current_controls = compact_dispatch.find(
+      "this->remastered_shell_controls,", ordinary_branch);
+  const std::size_t exact_enabled_descriptor = compact_dispatch.find(
+      "returncandidate.enabled&&candidate==control;", current_controls);
+  const std::size_t fresh_route = compact_dispatch.find(
+      "!this->remastered_shell_keyboard_route_is_eligible()",
+      exact_enabled_descriptor);
+  const std::size_t descriptor_missing = compact_dispatch.find(
+      "live_control==this->remastered_shell_controls.end()", fresh_route);
+  const std::size_t bridge_missing = compact_dispatch.find(
+      "!this->runtime_legacy_command_bridge", descriptor_missing);
+  const std::size_t switch_guard = compact_dispatch.find(
+      "(switch_weapon&&", bridge_missing);
+  const std::size_t switch_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "switch_weapon_set",
+      switch_guard);
+  const std::size_t switch_page = compact_dispatch.find(
+      "this->remastered_combat_action_page!="
+      "realmz::presentation::CombatActionPage::secondary",
+      switch_kind);
+  const std::size_t switch_layout = compact_dispatch.find(
+      "this->adaptive_shell_plan->adaptive_layout->action_bar"
+      ".contains(control.bounds)",
+      switch_page);
+  const std::size_t reject = compact_dispatch.find(
+      "return;", switch_layout);
+  const std::size_t action = compact_dispatch.find(
+      "constrealmz::presentation::UIActionaction{", reject);
+  const std::size_t bridge_dispatch = compact_dispatch.find(
+      "this->runtime_legacy_command_bridge->dispatch(action)", action);
+  require(switch_payload != std::string::npos &&
+          ordinary_branch != std::string::npos &&
+          current_controls != std::string::npos &&
+          exact_enabled_descriptor != std::string::npos &&
+          fresh_route != std::string::npos &&
+          descriptor_missing != std::string::npos &&
+          bridge_missing != std::string::npos &&
+          switch_guard != std::string::npos &&
+          switch_kind != std::string::npos &&
+          switch_page != std::string::npos &&
+          switch_layout != std::string::npos &&
+          reject != std::string::npos &&
+          action != std::string::npos &&
+          bridge_dispatch != std::string::npos,
+      "bridge-bound shell dispatch must retain its live descriptor, fresh "
+      "route, and Weapon page/layout rejection gate");
+  require(switch_payload < ordinary_branch &&
+          ordinary_branch < current_controls &&
+          current_controls < exact_enabled_descriptor &&
+          exact_enabled_descriptor < fresh_route &&
+          fresh_route < descriptor_missing &&
+          descriptor_missing < bridge_missing &&
+          bridge_missing < switch_guard &&
+          switch_guard < switch_kind && switch_kind < switch_page &&
+          switch_page < switch_layout && switch_layout < reject &&
+          reject < action && action < bridge_dispatch,
+      "cached shell descriptors and stale Weapon routes must be rejected "
+      "before any runtime legacy bridge dispatch");
+
+  const std::string compact_source = without_whitespace(source);
+  const std::size_t eligibility_signature = compact_source.find(
+      "boolWindowManager::remastered_shell_keyboard_route_is_eligible()"
+      "const{");
+  require(eligibility_signature != std::string::npos,
+      "WindowManager must define fresh shell route eligibility");
+  const std::size_t eligibility_open = compact_source.find(
+      '{', eligibility_signature);
+  require(eligibility_open != std::string::npos,
+      "shell route eligibility is missing its function body");
+  const std::size_t eligibility_close = matching_delimiter(
+      compact_source, eligibility_open, '{', '}');
+  const std::string compact_eligibility = compact_source.substr(
+      eligibility_open, eligibility_close - eligibility_open + 1);
+  const std::size_t fresh_context = compact_eligibility.find(
+      "capture_runtime_legacy_command_context()");
+  const std::size_t switch_route = compact_eligibility.find(
+      "std::get_if<realmz::presentation::SwitchWeaponSetAction>"
+      "(&control.payload)");
+  const std::size_t fresh_snapshot = compact_eligibility.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      switch_route);
+  const std::size_t acting_actor = compact_eligibility.find(
+      "snapshot->combat->acting_combatant!=switch_weapon->combatant",
+      fresh_snapshot);
+  const std::size_t party_member = compact_eligibility.find(
+      "snapshot->party.member(", acting_actor);
+  const std::size_t combatant_view = compact_eligibility.find(
+      "std::ranges::find(snapshot->combat->combatants,"
+      "switch_weapon->combatant,",
+      party_member);
+  const std::size_t route_accept = compact_eligibility.find(
+      "continue;", combatant_view);
+  require(fresh_context != std::string::npos,
+      "fresh shell route eligibility must capture current legacy context");
+  require(switch_route != std::string::npos,
+      "fresh shell route eligibility must inspect Weapon controls");
+  require(fresh_snapshot != std::string::npos,
+      "fresh Weapon route eligibility must re-capture the game snapshot");
+  require(acting_actor != std::string::npos,
+      "fresh Weapon route eligibility must match the current acting actor");
+  require(party_member != std::string::npos &&
+          combatant_view != std::string::npos &&
+          route_accept != std::string::npos,
+      "fresh Weapon route eligibility must validate party and combatant "
+      "membership before acceptance");
+  require(fresh_context < switch_route && switch_route < fresh_snapshot &&
+          fresh_snapshot < acting_actor && acting_actor < party_member &&
+          party_member < combatant_view && combatant_view < route_accept,
+      "Weapon route eligibility must validate a fresh snapshot before "
+      "accepting the current control");
 }
 
 void verify_top_level_loop(
@@ -1217,6 +1409,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticCenterActiveCombatantEvent") == 0,
       std::string(function_name) +
           " must leave tagged center consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticSwitchWeaponEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged switch-weapon consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -1248,6 +1444,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       read_file(legacy_root / "threed.c"));
   const std::string combat_raw_source = read_file(legacy_root / "combat.c");
   const std::string combat_source = code_only(combat_raw_source);
+  const std::string combatchoice_source = code_only(read_file(
+      legacy_root / "combatinfo-combatchoice.c"));
   const std::string getchoice_source = code_only(
       read_file(legacy_root / "getchoice.c"));
 
@@ -1255,6 +1453,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const std::string threed = function_body(threed_source, "threed");
   const std::string combat = function_body(combat_source, "combat");
   const std::string combat_raw = function_body(combat_raw_source, "combat");
+  const std::string combatchoice = function_body(
+      combatchoice_source, "combatchoice");
   verify_top_level_loop(
       mainscreen,
       "mainscreen",
@@ -1339,6 +1539,149 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           finish_mutation < finish_turn_advance,
       "combat Finish must clear movement and guarding before advancing the "
       "turn");
+  const std::size_t weapon_case = compact_combat.find("case'w':");
+  const std::size_t weapon_next_case = compact_combat.find(
+      "case't':", weapon_case);
+  const std::size_t weapon_top = compact_combat.find(
+      "buttonrect.top=326+downshift;", weapon_case);
+  const std::size_t weapon_bottom = compact_combat.find(
+      "buttonrect.bottom=buttonrect.top+18;", weapon_top);
+  const std::size_t weapon_left = compact_combat.find(
+      "buttonrect.left=522+leftshift;", weapon_bottom);
+  const std::size_t weapon_right = compact_combat.find(
+      "buttonrect.right=buttonrect.left+44;", weapon_left);
+  const std::size_t weapon_button_down = compact_combat.find(
+      "downbutton(TRUE);", weapon_right);
+  const std::size_t weapon_control = compact_combat.find(
+      "theControl=melee;", weapon_button_down);
+  const std::size_t weapon_break = compact_combat.find(
+      "break;", weapon_control);
+  require(weapon_case != std::string::npos &&
+          weapon_next_case != std::string::npos &&
+          weapon_top != std::string::npos &&
+          weapon_bottom != std::string::npos &&
+          weapon_left != std::string::npos &&
+          weapon_right != std::string::npos &&
+          weapon_button_down != std::string::npos &&
+          weapon_control != std::string::npos &&
+          weapon_break != std::string::npos,
+      "combat must retain the preserved Weapon button and melee-control "
+      "handoff");
+  require(weapon_case < weapon_top && weapon_top < weapon_bottom &&
+          weapon_bottom < weapon_left && weapon_left < weapon_right &&
+          weapon_right < weapon_button_down &&
+          weapon_button_down < weapon_control &&
+          weapon_control < weapon_break && weapon_break < weapon_next_case,
+      "combat Weapon must preserve its exact handoff sequence before Target");
+  const std::string weapon_branch = compact_combat.substr(
+      weapon_case, weapon_next_case - weapon_case);
+  require(weapon_branch.find("c[charup]") == std::string::npos &&
+          count_identifier(weapon_branch, "getup") == 0 &&
+          count_identifier(weapon_branch, "combatchoice") == 0 &&
+          count_identifier(weapon_branch, "WaitNextEvent") == 0 &&
+          count_identifier(weapon_branch, "upbutton") == 0,
+      "combat Weapon branch must only select the preserved shared command "
+      "route");
+
+  const std::size_t shared_choice_guard = compact_combat.find(
+      "if((theControl)&&(q[up]<9)){", weapon_next_case);
+  const std::size_t shared_choice = compact_combat.find(
+      "combatchoice();", shared_choice_guard);
+  const std::size_t shared_attack_guard = compact_combat.find(
+      "if(c[charup].attacks<2)", shared_choice);
+  const std::size_t shared_getup = compact_combat.find(
+      "getup(FALSE);", shared_attack_guard);
+  const std::size_t shared_tail_break = compact_combat.find(
+      "break;", shared_getup);
+  require(shared_choice_guard != std::string::npos &&
+          shared_choice != std::string::npos &&
+          shared_attack_guard != std::string::npos &&
+          shared_getup != std::string::npos &&
+          shared_tail_break != std::string::npos,
+      "combat must retain the shared Classic command and post-command turn "
+      "tail");
+  require(weapon_next_case < shared_choice_guard &&
+          shared_choice_guard < shared_choice &&
+          shared_choice < shared_attack_guard &&
+          shared_attack_guard < shared_getup &&
+          shared_getup < shared_tail_break,
+      "combat Weapon must hand off to combatchoice before the preserved "
+      "attacks/getup tail");
+
+  const std::string compact_combatchoice = without_whitespace(combatchoice);
+  const std::size_t melee_block_begin = compact_combatchoice.find(
+      "if(theControl==melee){");
+  const std::size_t monster_block_begin = compact_combatchoice.find(
+      "if(theControl==monsterbut){", melee_block_begin);
+  const std::size_t melee_bounds = compact_combatchoice.find(
+      "GetControlBounds(melee,&buttonrect);", melee_block_begin);
+  const std::size_t melee_button_down = compact_combatchoice.find(
+      "downbutton(TRUE);", melee_bounds);
+  const std::size_t melee_sound = compact_combatchoice.find(
+      "sound(141);", melee_button_down);
+  const std::size_t toggle_snapshot = compact_combatchoice.find(
+      "temp=c[charup].toggle;", melee_sound);
+  const std::size_t primary_slot = compact_combatchoice.find(
+      "if(!c[charup].armor[2])", toggle_snapshot);
+  const std::size_t default_weapon_sound = compact_combatchoice.find(
+      "c[charup].weaponsound=(30+c[charup].gender*8);", primary_slot);
+  const std::size_t primary_load = compact_combatchoice.find(
+      "loaditem(c[charup].armor[2]);", default_weapon_sound);
+  const std::size_t loaded_weapon_sound = compact_combatchoice.find(
+      "c[charup].weaponsound=item.sound;", primary_load);
+  const std::size_t primary_toggle = compact_combatchoice.find(
+      "c[charup].toggle=0;", loaded_weapon_sound);
+  const std::size_t secondary_slot = compact_combatchoice.find(
+      "if(c[charup].armor[15])", primary_toggle);
+  const std::size_t secondary_toggle = compact_combatchoice.find(
+      "c[charup].toggle=1;", secondary_slot);
+  const std::size_t toggle_changed = compact_combatchoice.find(
+      "if(temp!=c[charup].toggle)", secondary_toggle);
+  const std::size_t toggle_refresh = compact_combatchoice.find(
+      "combatupdate2(charup);", toggle_changed);
+  const std::size_t toggle_failure = compact_combatchoice.find(
+      "sound(6000);", toggle_refresh);
+  require(melee_block_begin != std::string::npos &&
+          monster_block_begin != std::string::npos &&
+          melee_bounds != std::string::npos &&
+          melee_button_down != std::string::npos &&
+          melee_sound != std::string::npos &&
+          toggle_snapshot != std::string::npos &&
+          primary_slot != std::string::npos &&
+          default_weapon_sound != std::string::npos &&
+          primary_load != std::string::npos &&
+          loaded_weapon_sound != std::string::npos &&
+          primary_toggle != std::string::npos &&
+          secondary_slot != std::string::npos &&
+          secondary_toggle != std::string::npos &&
+          toggle_changed != std::string::npos &&
+          toggle_refresh != std::string::npos &&
+          toggle_failure != std::string::npos,
+      "combatchoice must retain its bounded live Weapon toggle and failure "
+      "block");
+  require(melee_block_begin < melee_bounds &&
+          melee_bounds < melee_button_down &&
+          melee_button_down < melee_sound &&
+          melee_sound < toggle_snapshot &&
+          toggle_snapshot < primary_slot &&
+          primary_slot < default_weapon_sound &&
+          default_weapon_sound < primary_load &&
+          primary_load < loaded_weapon_sound &&
+          loaded_weapon_sound < primary_toggle &&
+          primary_toggle < secondary_slot &&
+          secondary_slot < secondary_toggle &&
+          secondary_toggle < toggle_changed &&
+          toggle_changed < toggle_refresh &&
+          toggle_refresh < toggle_failure &&
+          toggle_failure < monster_block_begin,
+      "combatchoice Weapon source must keep the relative toggle, refresh, and "
+      "fallback order inside its melee block");
+  const std::string melee_block = compact_combatchoice.substr(
+      melee_block_begin, monster_block_begin - melee_block_begin);
+  require(count_identifier(melee_block, "WaitNextEvent") == 0 &&
+          count_identifier(melee_block, "getup") == 0,
+      "bounded combatchoice Weapon handling must not own a nested event loop "
+      "or direct turn advance");
   const std::size_t delay_case = compact_combat.find("case'd':");
   const std::size_t delay_next_case = compact_combat.find(
       "case'm':", delay_case);
@@ -1389,6 +1732,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_finish_consumer_count = 0;
   std::size_t global_delay_consumer_count = 0;
   std::size_t global_center_consumer_count = 0;
+  std::size_t global_switch_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -1425,6 +1769,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticDelayCombatantEvent");
     global_center_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticCenterActiveCombatantEvent");
+    global_switch_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticSwitchWeaponEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -1455,6 +1801,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic delay input directly");
   require(global_center_consumer_count == 0,
       "legacy loops must not consume tagged semantic center input directly");
+  require(global_switch_consumer_count == 0,
+      "legacy loops must not consume tagged semantic switch-weapon input "
+      "directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -1488,6 +1837,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t finish_consume_calls = 0;
   std::size_t delay_consume_calls = 0;
   std::size_t center_consume_calls = 0;
+  std::size_t switch_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -1535,6 +1885,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticDelayCombatantEvent");
     center_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticCenterActiveCombatantEvent");
+    switch_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticSwitchWeaponEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -1576,6 +1928,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   require(center_consume_calls == 0,
       "only EventManager may call "
       "RealmzConsumeSemanticCenterActiveCombatantEvent");
+  require(switch_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticSwitchWeaponEvent");
 }
 
 } // namespace
@@ -1594,6 +1948,7 @@ int main(int argc, char** argv) {
     verify_legacy_loop_ownership(repository_root);
     verify_production_call_ownership(repository_root);
     verify_window_manager_named_combat_sinks(repository_root);
+    verify_window_manager_shell_dispatch_freshness(repository_root);
     verify_mode_switch_cancellation(repository_root);
     std::cout << "SemanticTopLevelLoopContractTest passed ("
               << checks_run << " checks)\n";

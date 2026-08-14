@@ -73,6 +73,9 @@ private:
         const CenterActiveCombatantAction&) {
       return DispatchResult::handled();
     };
+    handlers.switch_weapon_set = [](const SwitchWeaponSetAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -158,12 +161,14 @@ public:
     (void)keyboard_.reconcile(controls_, route_enabled_);
   }
 
-  [[nodiscard]] RoutedKeyResult handle(const ShellKeyboardEvent& event) {
+  [[nodiscard]] RoutedKeyResult handle(
+      const ShellKeyboardEvent& event,
+      bool dispatch_invoked_control = true) {
     RoutedKeyResult routed{
         .shell = keyboard_.handle(event, controls_, route_enabled_),
         .dispatch = std::nullopt,
     };
-    if (routed.shell.invoked_control) {
+    if (routed.shell.invoked_control && dispatch_invoked_control) {
       routed.dispatch = bridge_.dispatch(UIAction{
           .sequence = next_sequence_++,
           .payload = routed.shell.invoked_control->payload,
@@ -900,6 +905,211 @@ void test_center_payload_orders_dispatches_and_cancels_recomposition() {
   CHECK(bridge.actions().size() == 1U);
 }
 
+void test_combat_action_pages_and_weapon_recomposition_are_fail_closed() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  const ShellControlPlacement guard{
+      .region = ShellRegionId{1104},
+      .kind = ShellControlKind::guard_combatant,
+      .bounds = {20.0, 72.0, 110.0, 48.0},
+      .label = "GUARD",
+      .accessibility_label = "Guard active combatant",
+      .focus_identifier = "focus.action.combat.guard",
+      .tab_order = 1104,
+      .enabled = true,
+      .payload = GuardCombatantAction{2},
+  };
+  const ShellControlPlacement finish{
+      .region = ShellRegionId{1105},
+      .kind = ShellControlKind::finish_combatant,
+      .bounds = {138.0, 72.0, 110.0, 48.0},
+      .label = "FINISH",
+      .accessibility_label = "Finish active combatant's turn",
+      .focus_identifier = "focus.action.combat.finish",
+      .tab_order = 1105,
+      .enabled = true,
+      .payload = FinishCombatantAction{2},
+  };
+  const ShellControlPlacement delay{
+      .region = ShellRegionId{1106},
+      .kind = ShellControlKind::delay_combatant,
+      .bounds = {256.0, 72.0, 110.0, 48.0},
+      .label = "DELAY",
+      .accessibility_label = "Delay active combatant's turn",
+      .focus_identifier = "focus.action.combat.delay",
+      .tab_order = 1106,
+      .enabled = true,
+      .payload = DelayCombatantAction{2},
+  };
+  const ShellControlPlacement center{
+      .region = ShellRegionId{1107},
+      .kind = ShellControlKind::center_active_combatant,
+      .bounds = {374.0, 72.0, 110.0, 48.0},
+      .label = "CENTER",
+      .accessibility_label = "Center view on active combatant",
+      .focus_identifier = "focus.action.combat.center",
+      .tab_order = 1107,
+      .enabled = true,
+      .payload = CenterActiveCombatantAction{2},
+  };
+  const ShellControlPlacement more{
+      .region = ShellRegionId{1108},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {500.0, 10.0, 44.0, 44.0},
+      .label = "MORE",
+      .accessibility_label = "Open more combat actions",
+      .focus_identifier = "focus.action.combat.more",
+      .tab_order = 1108,
+      .enabled = true,
+      .payload = SetCombatActionPageAction{CombatActionPage::secondary},
+  };
+  const ShellControlPlacement back{
+      .region = ShellRegionId{1108},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {500.0, 10.0, 44.0, 44.0},
+      .label = "BACK",
+      .accessibility_label = "Return to primary combat actions",
+      .focus_identifier = "focus.action.combat.more",
+      .tab_order = 1108,
+      .enabled = true,
+      .payload = SetCombatActionPageAction{CombatActionPage::primary},
+  };
+  const ShellControlPlacement weapon{
+      .region = ShellRegionId{1109},
+      .kind = ShellControlKind::switch_weapon_set,
+      .bounds = {20.0, 72.0, 464.0, 48.0},
+      .label = "WEAPON",
+      .accessibility_label = "Switch active combatant's weapon set",
+      .focus_identifier = "focus.action.combat.weapon",
+      .tab_order = 1109,
+      .enabled = true,
+      .payload = SwitchWeaponSetAction{2},
+  };
+  const std::vector primary{guard, finish, delay, center, more};
+  const std::vector secondary{back, weapon};
+
+  // Insertion order cannot disturb the primary combat traversal order.
+  CHECK(!harness.recompose({more, center, delay, finish, guard}));
+  for (const auto& expected : primary) {
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() ==
+        expected.focus_identifier);
+    release_tab(harness);
+  }
+
+  // Page commands are consumed locally by WindowManager and never dispatched
+  // through the legacy bridge.
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto open = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(open.shell.consumed);
+  CHECK(open.shell.invoked_control.has_value());
+  CHECK(!open.dispatch);
+  CHECK(std::get<SetCombatActionPageAction>(
+      open.shell.invoked_control->payload).page ==
+      CombatActionPage::secondary);
+  CHECK(bridge.actions().empty());
+  CHECK(harness.recompose({weapon, back}));
+  CHECK(!harness.keyboard().focused_identifier());
+
+  // BACK precedes WEAPON on the secondary page even when inserted second.
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == back.focus_identifier);
+  release_tab(harness);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == weapon.focus_identifier);
+  release_tab(harness);
+
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto weapon_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(weapon_release.shell.consumed);
+  CHECK(weapon_release.shell.invoked_control.has_value());
+  CHECK(weapon_release.shell.invoked_control->kind ==
+      ShellControlKind::switch_weapon_set);
+  CHECK(weapon_release.dispatch.has_value());
+  CHECK(weapon_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1U);
+  CHECK(std::get<SwitchWeaponSetAction>(
+      bridge.actions()[0].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1U);
+
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == back.focus_identifier);
+  release_tab(harness);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto close = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(close.shell.consumed);
+  CHECK(close.shell.invoked_control.has_value());
+  CHECK(!close.dispatch);
+  CHECK(std::get<SetCombatActionPageAction>(
+      close.shell.invoked_control->payload).page ==
+      CombatActionPage::primary);
+  CHECK(bridge.actions().size() == 1U);
+  CHECK(harness.recompose(primary));
+  CHECK(!harness.keyboard().focused_identifier());
+
+  // A held Weapon activation cannot silently retarget after the actor changes.
+  CHECK(!harness.recompose(secondary));
+  CHECK(harness.focus(weapon.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  auto changed = secondary;
+  changed[1].payload = SwitchWeaponSetAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_actor_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_actor_release.shell.consumed);
+  CHECK(!stale_actor_release.shell.invoked_control);
+  CHECK(!stale_actor_release.dispatch);
+  CHECK(bridge.actions().size() == 1U);
+
+  // Disabling the live descriptor and changing pages both cancel a held key
+  // while retaining ownership of its eventual release.
+  CHECK(!harness.recompose(secondary));
+  CHECK(harness.focus(weapon.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = secondary;
+  changed[1].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_release.shell.consumed);
+  CHECK(!disabled_release.shell.invoked_control);
+  CHECK(!disabled_release.dispatch);
+  CHECK(bridge.actions().size() == 1U);
+
+  CHECK(!harness.recompose(secondary));
+  CHECK(harness.focus(weapon.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(primary));
+  const auto changed_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(changed_page_release.shell.consumed);
+  CHECK(!changed_page_release.shell.invoked_control);
+  CHECK(!changed_page_release.dispatch);
+  CHECK(bridge.actions().size() == 1U);
+}
+
 using DescriptorMutation =
     std::function<void(std::vector<ShellControlPlacement>&)>;
 
@@ -1075,6 +1285,7 @@ int main() {
     test_finish_payload_orders_dispatches_and_cancels_stale_actor();
     test_delay_payload_orders_dispatches_and_cancels_recomposition();
     test_center_payload_orders_dispatches_and_cancels_recomposition();
+    test_combat_action_pages_and_weapon_recomposition_are_fail_closed();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();

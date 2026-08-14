@@ -133,6 +133,8 @@ private:
       remastered_shell_keyboard;
   std::optional<realmz::presentation::DrawerPanel>
       remastered_active_drawer;
+  realmz::presentation::CombatActionPage remastered_combat_action_page =
+      realmz::presentation::CombatActionPage::primary;
   std::unique_ptr<realmz::presentation::RuntimeLegacyCommandBridge>
       runtime_legacy_command_bridge;
   realmz::presentation::ActionSequence next_shell_action_sequence = 1;
