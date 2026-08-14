@@ -223,6 +223,29 @@ if(REALMZ_BUILD_CORE_TESTS)
     add_test(NAME CombatActionEquivalenceTest
         COMMAND CombatActionEquivalenceTest)
 
+    add_executable(LegacyCombatFocusTest
+        src/tests/LegacyCombatFocusTest.cpp
+        src/realmz_orig/centerstage.c)
+    target_include_directories(LegacyCombatFocusTest PRIVATE
+        src
+        src/realmz_orig
+        vendored/SDL/include)
+    set_target_properties(LegacyCombatFocusTest PROPERTIES
+        C_STANDARD 99
+        C_STANDARD_REQUIRED YES
+        C_EXTENSIONS NO)
+    realmz_configure_core_target(LegacyCombatFocusTest)
+    if(NOT MSVC)
+        # Keep strict warnings on the unchanged Classic helper while allowing
+        # its compatibility headers and signed-char queue index.
+        target_compile_options(LegacyCombatFocusTest PRIVATE
+            $<$<COMPILE_LANGUAGE:C>:-Wno-zero-length-array>
+            $<$<COMPILE_LANGUAGE:C>:-Wno-strict-prototypes>
+            $<$<COMPILE_LANGUAGE:C>:-Wno-char-subscripts>)
+    endif()
+    add_test(NAME LegacyCombatFocusTest
+        COMMAND LegacyCombatFocusTest)
+
     add_executable(ShellKeyboardInteractionContractTest
         tests/semantic/shell_keyboard/ShellKeyboardInteractionContractTest.cpp)
     target_link_libraries(ShellKeyboardInteractionContractTest PRIVATE

@@ -70,6 +70,34 @@ This is a contract-level, pre-Classic fixture. It does not run a live Classic
 combat mutation, choose or use an item, replay a modal, execute Auto's
 automation or turn, exercise RNG, or claim save equivalence.
 
+## Classic combat-focus helper
+
+This characterization fixture compiles and executes the unchanged
+`src/realmz_orig/centerstage.c` helper with test-owned Classic globals and
+presentation stubs. It covers Previous, Next, and current-focus queue
+navigation; queue wrapping and empty-slot skipping; live party-member and
+monster centering; Classic spell-coordinate offsets, sound, body refresh, and
+combat-info bracketing; dead-target behavior; bounded empty-queue termination;
+and repeat-run determinism.
+
+Run the strict standalone check from the repository root:
+
+```sh
+tests/semantic/run-legacy-combat-focus.sh
+```
+
+Sanitizers and compiler selection are available through the same environment
+style as the action-equivalence runners:
+
+```sh
+REALMZ_ENABLE_SANITIZERS=1 tests/semantic/run-legacy-combat-focus.sh
+CC=clang CXX=clang++ tests/semantic/run-legacy-combat-focus.sh
+```
+
+This helper-level fixture does not inject a keyDown event or execute the
+Classic combat loop. It does not characterize modal interaction, RNG, turn
+effects, full combat replay, or save equivalence.
+
 ## Boundary of these results
 
 This is a contract-level fixture, not a live-engine equivalence claim. The
