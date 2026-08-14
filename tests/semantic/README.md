@@ -45,8 +45,8 @@ CXX=g++ tests/semantic/run-exploration-action-equivalence.sh
 The combat harness compares the direct Classic-key mapper request with the
 typed-action path through the real runtime bridge and semantic input boundary
 for Guard, Finish, Delay, Center, Switch Weapon, Center Previous, Center Next,
-and Combat Items. Test-owned semantic-event sinks retain the tags instead of
-running the production WindowManager/EventManager queue. Its test-owned
+Combat Items, and Auto. Test-owned semantic-event sinks retain the tags instead
+of running the production WindowManager/EventManager queue. Its test-owned
 pre-Classic state image verifies stable acting combatant and selected-member
 identities, exact semantic tags and Classic key records, unchanged fixture
 bytes, single-use consumption, and fail-closed stale identity rejection.
@@ -67,8 +67,8 @@ CXX=g++ tests/semantic/run-combat-action-equivalence.sh
 ```
 
 This is a contract-level, pre-Classic fixture. It does not run a live Classic
-combat mutation, choose or use an item, replay a modal, exercise RNG, or claim
-save equivalence.
+combat mutation, choose or use an item, replay a modal, execute Auto's
+automation or turn, exercise RNG, or claim save equivalence.
 
 ## Boundary of these results
 
@@ -83,14 +83,15 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first eight bounded combat controls are covered by the combat fixture and
+The first nine bounded combat controls are covered by the combat fixture and
 the presentation, runtime-bridge, semantic-boundary, top-level-loop, and
 keyboard contract tests. They verify that typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`, and
-`CenterActiveCombatantAction`, `SwitchWeaponSetAction`, and
-`CycleCombatFocusAction` commands each carry the stable acting-combatant ID and
-are late-validated against the fresh acting party member with fail-closed
-rejection. The cycle command also preserves its Previous or Next direction.
+`CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
+`CycleCombatFocusAction`, and `AutoCombatantAction` commands each carry the
+stable acting-combatant ID and are late-validated against the fresh acting
+party member with fail-closed rejection. The cycle command also preserves its
+Previous or Next direction.
 `OpenCombatItemsAction` carries both the acting ID and selected party-member ID;
 delivery additionally requires that the same member still exists and remains
 selected.
@@ -107,18 +108,20 @@ Delay combat-state mutations and turn advance, Center's existing camera
 sequence, Weapon's live relative toggle and feedback, and the focus queue's
 relative destination. Combat Items becomes the exact Classic `i` message
 `0x00002269`; Classic owns all further modal selection, item use and mutation,
-targeting, and any attack, movement, or turn effects. This is not a camera,
-modal, or full combat replay, nor a save-equivalence claim; every other combat
-command remains on the Classic input route.
+targeting, and any attack, movement, or turn effects. Auto becomes the exact
+Classic `a` message `0x00000061`; Classic owns its automation, RNG, animation
+and movement or attack mutations, and turn effects. This is not a camera,
+modal, automation, RNG, turn, or full combat replay, nor a save-equivalence
+claim; every other combat command remains on the Classic input route.
 
 `SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
 fixture-owned legacy globals flow through the real presentation-context and
 snapshot adapters before the semantic boundary emits those exact key records.
 It covers stale acting-combatant and non-gameplay-window rejection for all
-eight command records, plus stale selected-member rejection for Combat Items,
+nine command records, plus stale selected-member rejection for Combat Items,
 while leaving its output sentinel unchanged. It performs no Classic combat or
 inventory mutation, reads or writes no user data, and is not a camera, modal,
-full combat replay, or save-equivalence test.
+automation, RNG, turn, full combat replay, or save-equivalence test.
 
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:

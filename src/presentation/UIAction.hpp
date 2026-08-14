@@ -144,6 +144,15 @@ struct OpenCombatItemsAction {
   bool operator==(const OpenCombatItemsAction&) const = default;
 };
 
+// Requests the preserved Classic Auto command for the explicitly identified
+// acting party combatant. Carrying the actor prevents a queued automation
+// request from silently starting on whichever combatant owns a later turn.
+struct AutoCombatantAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const AutoCombatantAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -243,7 +252,26 @@ enum class DrawerPanel {
 enum class CombatActionPage {
   primary,
   secondary,
+  utility,
 };
+
+// Combat pages form a bounded linear navigation path. Keeping this predicate
+// shared makes pointer and keyboard routing reject stale, skipped, self, and
+// invalid transitions through the same constexpr contract.
+[[nodiscard]] constexpr bool is_valid_combat_action_page_transition(
+    CombatActionPage from,
+    CombatActionPage to) noexcept {
+  switch (from) {
+    case CombatActionPage::primary:
+      return to == CombatActionPage::secondary;
+    case CombatActionPage::secondary:
+      return (to == CombatActionPage::primary) ||
+          (to == CombatActionPage::utility);
+    case CombatActionPage::utility:
+      return to == CombatActionPage::secondary;
+  }
+  return false;
+}
 
 // Compact-shell drawers are presentation state only. The desired panel is
 // explicit so a recorded action does not depend on whatever happened to be
@@ -284,6 +312,7 @@ using UIActionPayload = std::variant<
     SwitchWeaponSetAction,
     CycleCombatFocusAction,
     OpenCombatItemsAction,
+    AutoCombatantAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -332,6 +361,8 @@ struct UIAction {
       return "cycle_combat_focus";
     } else if constexpr (std::is_same_v<Action, OpenCombatItemsAction>) {
       return "open_combat_items";
+    } else if constexpr (std::is_same_v<Action, AutoCombatantAction>) {
+      return "auto_combatant";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

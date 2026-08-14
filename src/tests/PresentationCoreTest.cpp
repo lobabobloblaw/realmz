@@ -236,8 +236,15 @@ void test_actions_and_events() {
             open_combat_items.payload).combatant == 2);
   CHECK(std::get<OpenCombatItemsAction>(open_combat_items.payload).member == 4);
 
-  UIAction casting{
+  UIAction auto_combatant{
       .sequence = 20,
+      .payload = AutoCombatantAction{2},
+  };
+  CHECK(action_name(auto_combatant.payload) == "auto_combatant");
+  CHECK(std::get<AutoCombatantAction>(auto_combatant.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 21,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -273,6 +280,43 @@ void test_actions_and_events() {
   CHECK(std::get<MessageEvent>(event.payload).text == "Saved");
 }
 
+void test_combat_action_page_transitions() {
+  static_assert(is_valid_combat_action_page_transition(
+      CombatActionPage::primary, CombatActionPage::secondary));
+  static_assert(is_valid_combat_action_page_transition(
+      CombatActionPage::secondary, CombatActionPage::primary));
+  static_assert(is_valid_combat_action_page_transition(
+      CombatActionPage::secondary, CombatActionPage::utility));
+  static_assert(is_valid_combat_action_page_transition(
+      CombatActionPage::utility, CombatActionPage::secondary));
+
+  constexpr std::array pages{
+      CombatActionPage::primary,
+      CombatActionPage::secondary,
+      CombatActionPage::utility,
+  };
+  for (const auto from : pages) {
+    for (const auto to : pages) {
+      const bool expected =
+          ((from == CombatActionPage::primary) &&
+              (to == CombatActionPage::secondary)) ||
+          ((from == CombatActionPage::secondary) &&
+              ((to == CombatActionPage::primary) ||
+                  (to == CombatActionPage::utility))) ||
+          ((from == CombatActionPage::utility) &&
+              (to == CombatActionPage::secondary));
+      CHECK(is_valid_combat_action_page_transition(from, to) == expected);
+    }
+  }
+
+  constexpr auto invalid = static_cast<CombatActionPage>(255);
+  for (const auto page : pages) {
+    CHECK(!is_valid_combat_action_page_transition(invalid, page));
+    CHECK(!is_valid_combat_action_page_transition(page, invalid));
+  }
+  CHECK(!is_valid_combat_action_page_transition(invalid, invalid));
+}
+
 void test_command_bridge() {
   MovementCommand received = MovementCommand::step_backward;
   CombatantId weapon_combatant = -1;
@@ -280,6 +324,7 @@ void test_command_bridge() {
   CombatFocusDirection focus_direction = CombatFocusDirection::next;
   CombatantId items_combatant = -1;
   PartyMemberId items_member = 0;
+  CombatantId auto_combatant = -1;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -307,6 +352,11 @@ void test_command_bridge() {
       [&items_combatant, &items_member](const OpenCombatItemsAction& action) {
         items_combatant = action.combatant;
         items_member = action.member;
+        return DispatchResult::handled();
+      };
+  handlers.auto_combatant =
+      [&auto_combatant](const AutoCombatantAction& action) {
+        auto_combatant = action.combatant;
         return DispatchResult::handled();
       };
 
@@ -446,6 +496,13 @@ void test_command_bridge() {
   CHECK(open_combat_items_handled.was_handled());
   CHECK(items_combatant == 8);
   CHECK(items_member == 3);
+
+  const auto auto_combatant_handled = bridge.dispatch(UIAction{
+      .sequence = 17,
+      .payload = AutoCombatantAction{9},
+  });
+  CHECK(auto_combatant_handled.was_handled());
+  CHECK(auto_combatant == 9);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,
@@ -621,6 +678,7 @@ int main() {
     test_presentation_host_routing();
     test_snapshot_values();
     test_actions_and_events();
+    test_combat_action_page_transitions();
     test_command_bridge();
     test_layout_and_transforms();
     test_hit_testing_and_focus();

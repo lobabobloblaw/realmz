@@ -443,6 +443,20 @@ std::vector<ActionControlModel> build_actions(
     if (selected) {
       result.back().party_member = selected->id;
     }
+    result.emplace_back(action(
+        ActionIntent::auto_combatant,
+        "action.combat.auto",
+        "Auto",
+        can_act ? ActionAvailability::deferred_to_engine
+                : ActionAvailability::unavailable,
+        tab_order++,
+        can_act
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{
+                  unavailable_token("Wait for an active party member")}));
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
   }
 
   if (encounter_active) {
@@ -718,7 +732,8 @@ PresentationShellModel build_presentation_shell_model(
   result.combat_action_page =
       (snapshot.screen == ScreenContext::combat) &&
           ((preferences.combat_action_page == CombatActionPage::primary) ||
-              (preferences.combat_action_page == CombatActionPage::secondary))
+              (preferences.combat_action_page == CombatActionPage::secondary) ||
+              (preferences.combat_action_page == CombatActionPage::utility))
       ? preferences.combat_action_page
       : CombatActionPage::primary;
   result.party_rail = build_party_rail_model(snapshot);

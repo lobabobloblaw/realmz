@@ -73,6 +73,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(OpenCombatItemsAction::member),
     PartyMemberId>);
+static_assert(std::is_same_v<
+    decltype(AutoCombatantAction::combatant),
+    CombatantId>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -284,6 +287,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.center_active_combatant = mutateEngine;
   handlers.switch_weapon_set = mutateEngine;
   handlers.cycle_combat_focus = mutateEngine;
+  handlers.auto_combatant = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -472,6 +476,19 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(openCombatItemsUnsupported.status == DispatchStatus::unsupported);
   CHECK(openCombatItemsUnsupported.detail ==
       "No legacy handler registered for open_combat_items");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction autoCombatantAction{
+      .sequence = sequence++,
+      .payload = AutoCombatantAction{1},
+  };
+  CHECK(action_name(autoCombatantAction.payload) == "auto_combatant");
+  const auto autoCombatantUnsupported =
+      unsupportedBridge.dispatch(autoCombatantAction);
+  CHECK(autoCombatantUnsupported.status == DispatchStatus::unsupported);
+  CHECK(autoCombatantUnsupported.detail ==
+      "No legacy handler registered for auto_combatant");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

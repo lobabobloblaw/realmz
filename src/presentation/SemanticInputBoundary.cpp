@@ -56,6 +56,10 @@ constexpr uint32_t kSemanticOpenCombatItemsMask = 0xFF000000U;
 constexpr uint32_t kSemanticOpenCombatItemsSurfaceMask = 0x00FF0000U;
 constexpr uint32_t kSemanticOpenCombatItemsActorMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenCombatItemsMemberMask = 0x000000FFU;
+constexpr uint32_t kSemanticAutoCombatantSignature = 0x52410000U;
+constexpr uint32_t kSemanticAutoCombatantMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticAutoCombatantSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticAutoCombatantIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -131,6 +135,11 @@ struct DecodedCycleCombatFocus {
 struct DecodedOpenCombatItems {
   realmz::presentation::CombatantId combatant;
   realmz::presentation::PartyMemberId member;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedAutoCombatant {
+  realmz::presentation::CombatantId combatant;
   RealmzSemanticInputSurface surface;
 };
 
@@ -387,6 +396,24 @@ std::optional<DecodedOpenCombatItems> decode_open_combat_items(
           (tagged_message & kSemanticOpenCombatItemsActorMask) >> 8U),
       .member = static_cast<realmz::presentation::PartyMemberId>(
           tagged_message & kSemanticOpenCombatItemsMemberMask),
+      .surface = surface_value,
+  };
+}
+
+std::optional<DecodedAutoCombatant> decode_auto_combatant(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticAutoCombatantMask) !=
+      kSemanticAutoCombatantSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticAutoCombatantSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedAutoCombatant{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticAutoCombatantIdMask),
       .surface = surface_value,
   };
 }
@@ -676,6 +703,18 @@ uint32_t semantic_open_combat_items_tag(
       static_cast<uint32_t>(member);
 }
 
+uint32_t semantic_auto_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticAutoCombatantSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -871,6 +910,19 @@ RealmzSemanticOpenCombatItemsTagSurface(uint32_t tagged_message) {
       : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticAutoCombatantTag(
+    uint32_t tagged_message) {
+  return decode_auto_combatant(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticAutoCombatantTagSurface(uint32_t tagged_message) {
+  const auto auto_combatant = decode_auto_combatant(tagged_message);
+  return auto_combatant
+      ? auto_combatant->surface
+      : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -885,7 +937,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_center_active_combatant(tagged_message) ||
           decode_switch_weapon(tagged_message) ||
           decode_cycle_combat_focus(tagged_message) ||
-          decode_open_combat_items(tagged_message))
+          decode_open_combat_items(tagged_message) ||
+          decode_auto_combatant(tagged_message))
       ? 1
       : 0;
 }
@@ -930,6 +983,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto combat_items = decode_open_combat_items(tagged_message)) {
     return combat_items->surface;
+  }
+  if (const auto auto_combatant = decode_auto_combatant(tagged_message)) {
+    return auto_combatant->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1288,4 +1344,15 @@ extern "C" uint8_t RealmzConsumeSemanticOpenCombatItemsEvent(
       },
       nullptr,
       member);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticAutoCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  return consume_semantic_combatant_event(
+      expected_surface,
+      decode_auto_combatant(tagged_message),
+      classic_key_message,
+      realmz::presentation::legacy_key_message_for_auto_combatant);
 }

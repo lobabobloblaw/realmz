@@ -86,12 +86,13 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes eight bounded semantic controls: typed `GuardCombatantAction`,
+Combat exposes nine bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
-`CenterActiveCombatantAction`, `SwitchWeaponSetAction`, and
-`CycleCombatFocusAction` commands each carry the stable active-party combatant
-ID through distinct combat-only tagged events. The focus-cycle command also
-carries Previous or Next. `OpenCombatItemsAction` independently carries the
+`CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
+`CycleCombatFocusAction`, and `AutoCombatantAction` commands each carry the
+stable active-party combatant ID through distinct combat-only tagged events.
+The focus-cycle command also carries Previous or Next.
+`OpenCombatItemsAction` independently carries the
 acting combatant and selected party member so neither identity can silently
 change while queued. The top-level combat loop late-validates a fresh
 snapshot, including
@@ -107,6 +108,7 @@ Switch intentionally carries no desired set; the live relative toggle remains
 inside Classic combat. Center Previous becomes the exact Classic `p` message
 `0x00002370`, and Center Next becomes the exact Classic `n` message
 `0x00002D6E`. Combat Items becomes the exact Classic `i` message `0x00002269`.
+Auto becomes the exact Classic `a` message `0x00000061`.
 Validation fails closed, so stale or newly ineligible actions become inert.
 The original Classic guard/finish/delay mutations and turn
 advance remain authoritative, as do Center's existing non-turn-ending camera
@@ -114,8 +116,10 @@ sequence, Weapon's toggle and feedback, and Classic's queue-relative focus
 destination. Classic also owns the entire Items modal, its further character
 selection, every item use or mutation, targeting, and any resulting attack,
 movement, or turn effect. The semantic checks are not a camera, combat, modal,
-or save replay; all other combat commands remain in the interactive Classic
-frame.
+or save replay. Classic also owns Auto's automation, RNG, animation/movement
+and attack mutations, and turn effects; this route establishes no automation,
+RNG, mutation, or turn equivalence. All other combat commands remain in the
+interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
@@ -217,8 +221,8 @@ Automated checks do not replace these release decisions:
 - two human start-to-finish playthroughs of Tutorial and City, with no unresolved Classic fallback;
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, and Center
-  Previous/Next, and Combat Items controls at compact and wide layouts,
+  Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
+  Previous/Next, Combat Items, and Auto controls at compact and wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
   leaving their gameplay surface; and inert stale Guard, Finish, Delay, and
@@ -226,6 +230,8 @@ Automated checks do not replace these release decisions:
   combatant, eligibility, or combat surface changes; verify Combat Items is
   inert after either the acting combatant or selected party member changes and
   otherwise opens the preserved Classic modal for that selected member; verify
+  Auto is inert after the acting combatant or combat eligibility changes and
+  otherwise reaches the preserved Classic automation handoff; verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;
 - clean install on macOS 13.3 and the current macOS release, plus upgrade/import from an existing Realmz installation;

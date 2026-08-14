@@ -25,6 +25,7 @@ constexpr uint32_t kSwitchWeaponMessage = 0x00000D77U;
 constexpr uint32_t kCenterPreviousCombatantMessage = 0x00002370U;
 constexpr uint32_t kCenterNextCombatantMessage = 0x00002D6EU;
 constexpr uint32_t kOpenCombatItemsMessage = 0x00002269U;
+constexpr uint32_t kAutoCombatantMessage = 0x00000061U;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -357,6 +358,41 @@ LegacyActionHandlers make_handlers(
               action.combatant, action.member, *message, context)) {
         return DispatchResult::failed(
             "Legacy event queue rejected semantic open-combat-items action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
+  if (combat_action_sinks.auto_combatant.has_value()) {
+    handlers.auto_combatant = [
+        context_provider,
+        auto_combatant_sink =
+            std::move(*combat_action_sinks.auto_combatant)](
+            const AutoCombatantAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!auto_combatant_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy auto-combatant sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic auto");
+      }
+      const auto message = legacy_key_message_for_auto_combatant(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Auto is not supported for this combatant in the current legacy "
+            "context");
+      }
+      if (!auto_combatant_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic auto-combatant action");
       }
       return DispatchResult::handled();
     };
@@ -816,6 +852,16 @@ std::optional<uint32_t> legacy_key_message_for_open_combat_items(
     return std::nullopt;
   }
   return kOpenCombatItemsMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_auto_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kAutoCombatantMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

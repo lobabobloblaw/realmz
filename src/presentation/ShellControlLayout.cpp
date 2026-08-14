@@ -4,7 +4,9 @@
 #include <array>
 #include <cmath>
 #include <span>
+#include <string>
 #include <string_view>
+#include <utility>
 
 namespace realmz::presentation {
 namespace {
@@ -23,6 +25,8 @@ constexpr uint32_t kSwitchWeaponSetRegion = 1109U;
 constexpr uint32_t kCenterPreviousCombatantRegion = 1110U;
 constexpr uint32_t kCenterNextCombatantRegion = 1111U;
 constexpr uint32_t kOpenCombatItemsRegion = 1112U;
+constexpr uint32_t kCombatUtilityPageRegion = 1113U;
+constexpr uint32_t kAutoCombatantRegion = 1114U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -85,7 +89,10 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.combat_action_page == CombatActionPage::primary;
   const bool secondary_combat_page =
       request.combat_action_page == CombatActionPage::secondary;
-  if (!primary_combat_page && !secondary_combat_page) {
+  const bool utility_combat_page =
+      request.combat_action_page == CombatActionPage::utility;
+  if (!primary_combat_page && !secondary_combat_page &&
+      !utility_combat_page) {
     return {};
   }
   const auto valid_combatant = [](CombatantId combatant) {
@@ -111,6 +118,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       : std::nullopt;
   const bool valid_combat_items = request.combat_items &&
       valid_combatant(request.combat_items->combatant);
+  const bool valid_auto_combatant = request.auto_combatant &&
+      valid_combatant(*request.auto_combatant);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -120,6 +129,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.center_previous_combatant,
       request.center_next_combatant,
       combat_items_combatant,
+      request.auto_combatant,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -143,28 +153,50 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.finish_combatant ? 1U : 0U) +
       (request.delay_combatant ? 1U : 0U) +
       (request.center_active_combatant ? 1U : 0U);
+  const size_t secondary_combat_control_count =
+      (request.switch_weapon_combatant ? 1U : 0U) +
+      (request.center_previous_combatant ? 1U : 0U) +
+      (request.center_next_combatant ? 1U : 0U) +
+      (request.combat_items ? 1U : 0U);
+  const size_t utility_combat_control_count =
+      request.auto_combatant ? 1U : 0U;
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
-      : (request.switch_weapon_combatant ? 1U : 0U) +
-          (request.center_previous_combatant ? 1U : 0U) +
-          (request.center_next_combatant ? 1U : 0U) +
-          (request.combat_items ? 1U : 0U);
-  const bool combat_page_control_visible =
-      secondary_combat_page || valid_switch_weapon ||
+      : (secondary_combat_page ? secondary_combat_control_count
+                               : utility_combat_control_count);
+  const bool has_valid_secondary_action = valid_switch_weapon ||
       valid_center_previous || valid_center_next || valid_combat_items;
+  const bool has_valid_utility_action = valid_auto_combatant;
+  const size_t combat_page_control_count = primary_combat_page
+      ? ((has_valid_secondary_action || has_valid_utility_action) ? 1U : 0U)
+      : (secondary_combat_page
+              ? 1U + (has_valid_utility_action ? 1U : 0U)
+              : (has_valid_utility_action ? 1U : 0U));
+  const size_t required_combat_page_control_capacity =
+      has_valid_utility_action
+      ? std::max<size_t>(2U, combat_page_control_count)
+      : combat_page_control_count;
   const bool has_combatant_request = std::ranges::any_of(
       combatants,
       [](const auto& combatant) { return combatant.has_value(); });
   const bool combat_controls =
       (request.screen == ScreenContext::combat) &&
-      (combat_control_count > 0U) && !invalid_combatant &&
-      !mismatched_combatants;
+      !invalid_combatant && !mismatched_combatants &&
+      (primary_combat_page
+              ? ((primary_combat_control_count > 0U) ||
+                    has_valid_secondary_action || has_valid_utility_action)
+              : (secondary_combat_page
+                      ? ((secondary_combat_control_count > 0U) ||
+                            has_valid_utility_action)
+                      : has_valid_utility_action));
   const bool has_combat_request = has_combatant_request ||
       request.guard_available || request.finish_available ||
       request.delay_available || request.center_active_available ||
       request.switch_weapon_available || request.center_previous_available ||
       request.center_next_available || request.combat_items ||
-      request.combat_items_available || secondary_combat_page;
+      request.combat_items_available || request.auto_combatant ||
+      request.auto_combatant_available || secondary_combat_page ||
+      utility_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
       (combat_controls &&
@@ -183,7 +215,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.center_previous_available && !valid_center_previous) ||
       (request.center_next_available && !valid_center_next) ||
       (request.combat_items && !valid_combat_items) ||
-      (request.combat_items_available && !valid_combat_items)) {
+      (request.combat_items_available && !valid_combat_items) ||
+      (request.auto_combatant_available && !valid_auto_combatant)) {
     return {};
   }
 
@@ -200,22 +233,34 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const double available_height = request.action_panel.height -
       kControlsTopInset - kBottomInset;
   const double gap = std::clamp(available_width * 0.008, 6.0, 10.0);
-  const double computed_button_width =
-      (available_width - gap * (control_count - 1U)) /
-      control_count;
-  const double button_width = combat_controls
-      ? std::min(160.0, computed_button_width)
-      : computed_button_width;
+  double button_width = 0.0;
   const double button_height = std::min(52.0, available_height);
-  if (!std::isfinite(button_width) || !std::isfinite(button_height) ||
-      (button_width < kMinimumTargetExtent) ||
-      (button_height < kMinimumTargetExtent)) {
+  if (control_count > 0U) {
+    const double computed_button_width =
+        (available_width - gap * (control_count - 1U)) /
+        control_count;
+    button_width = combat_controls
+        ? std::min(160.0, computed_button_width)
+        : computed_button_width;
+    if (!std::isfinite(button_width) || !std::isfinite(button_height) ||
+        (button_width < kMinimumTargetExtent) ||
+        (button_height < kMinimumTargetExtent)) {
+      return {};
+    }
+  }
+  if ((required_combat_page_control_capacity > 0U) &&
+      ((request.action_panel.width <
+              2.0 * kHorizontalInset +
+                  kMinimumTargetExtent *
+                      required_combat_page_control_capacity +
+                  gap * (required_combat_page_control_capacity - 1U)) ||
+          (request.action_panel.height <
+              kHeaderTopInset + kMinimumTargetExtent))) {
     return {};
   }
 
   std::vector<ShellControlPlacement> result;
-  result.reserve(
-      control_count + (combat_page_control_visible ? 1U : 0U));
+  result.reserve(control_count + combat_page_control_count);
   double x = request.action_panel.x + kHorizontalInset;
   const double y = request.action_panel.y + kControlsTopInset;
   for (size_t index = 0; index < descriptors.size(); ++index) {
@@ -295,34 +340,76 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
     return result;
   }
 
-  const auto append_page_control = [&request, &result]() {
-    const bool primary =
-        request.combat_action_page == CombatActionPage::primary;
+  const auto append_page_control = [
+      &request, &result, gap](
+      CombatActionPage target,
+      uint32_t region,
+      std::string label,
+      std::string accessibility_label,
+      std::string focus_identifier,
+      int32_t tab_order,
+      size_t position_from_right) {
+    if (!is_valid_combat_action_page_transition(
+            request.combat_action_page, target)) {
+      return false;
+    }
     result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{kCombatActionPageRegion},
+        .region = ShellRegionId{region},
         .kind = ShellControlKind::combat_action_page,
         .bounds = {
             request.action_panel.right() - kHorizontalInset -
-                kMinimumTargetExtent,
+                kMinimumTargetExtent -
+                position_from_right * (kMinimumTargetExtent + gap),
             request.action_panel.y + kHeaderTopInset,
             kMinimumTargetExtent,
             kMinimumTargetExtent,
         },
-        .label = primary ? "MORE" : "BACK",
-        .accessibility_label = primary
-            ? "Open more combat actions"
-            : "Return to primary combat actions",
-        .focus_identifier = "focus.action.combat.more",
-        .tab_order = 1108,
+        .label = std::move(label),
+        .accessibility_label = std::move(accessibility_label),
+        .focus_identifier = std::move(focus_identifier),
+        .tab_order = tab_order,
         .enabled = true,
-        .payload = SetCombatActionPageAction{
-            primary ? CombatActionPage::secondary
-                    : CombatActionPage::primary},
+        .payload = SetCombatActionPageAction{target},
     });
+    return true;
   };
 
+  if (utility_combat_page) {
+    if (!append_page_control(
+            CombatActionPage::secondary,
+            kCombatActionPageRegion,
+            "BACK",
+            "Return to more combat actions",
+            "focus.action.combat.more",
+            1108,
+            0U)) {
+      return {};
+    }
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kAutoCombatantRegion},
+        .kind = ShellControlKind::auto_combatant,
+        .bounds = {x, y, button_width, button_height},
+        .label = "AUTO",
+        .accessibility_label = "Auto-play active combatant's turn",
+        .focus_identifier = "focus.action.combat.auto",
+        .tab_order = 1114,
+        .enabled = request.auto_combatant_available,
+        .payload = AutoCombatantAction{*request.auto_combatant},
+    });
+    return result;
+  }
+
   if (secondary_combat_page) {
-    append_page_control();
+    if (!append_page_control(
+            CombatActionPage::primary,
+            kCombatActionPageRegion,
+            "BACK",
+            "Return to primary combat actions",
+            "focus.action.combat.more",
+            1108,
+            0U)) {
+      return {};
+    }
     if (request.switch_weapon_combatant) {
       result.emplace_back(ShellControlPlacement{
           .region = ShellRegionId{kSwitchWeaponSetRegion},
@@ -383,6 +470,17 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .payload = *request.combat_items,
       });
     }
+    if (valid_auto_combatant &&
+        !append_page_control(
+            CombatActionPage::utility,
+            kCombatUtilityPageRegion,
+            "MORE",
+            "Open utility combat actions",
+            "focus.action.combat.utility",
+            1113,
+            1U)) {
+      return {};
+    }
     return result;
   }
 
@@ -442,9 +540,16 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             *request.center_active_combatant},
     });
   }
-  if (valid_switch_weapon || valid_center_previous || valid_center_next ||
-      valid_combat_items) {
-    append_page_control();
+  if ((has_valid_secondary_action || has_valid_utility_action) &&
+      !append_page_control(
+          CombatActionPage::secondary,
+          kCombatActionPageRegion,
+          "MORE",
+          "Open more combat actions",
+          "focus.action.combat.more",
+          1108,
+          0U)) {
+    return {};
   }
   return result;
 }

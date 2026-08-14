@@ -80,6 +80,10 @@ using RuntimeLegacyOpenCombatItemsSink = std::function<bool(
     PartyMemberId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyAutoCombatantSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Combat sinks are named because several callable signatures are intentionally
 // identical even though their commands are not interchangeable. The focus
@@ -96,6 +100,7 @@ struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacySwitchWeaponSink> switch_weapon;
   std::optional<RuntimeLegacyCycleCombatFocusSink> cycle_combat_focus;
   std::optional<RuntimeLegacyOpenCombatItemsSink> open_combat_items;
+  std::optional<RuntimeLegacyAutoCombatantSink> auto_combatant;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -187,6 +192,14 @@ legacy_key_message_for_cycle_combat_focus(
 legacy_key_message_for_open_combat_items(
     CombatantId combatant,
     PartyMemberId member,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact lowercase Classic "a" key record consumed by combat's
+// preserved Auto branch. The stable actor prevents a queued automation request
+// from crossing a turn before EventManager performs its late validation.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_auto_combatant(
+    CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Live UIAction boundary for the migrated command subset. The bridge queues

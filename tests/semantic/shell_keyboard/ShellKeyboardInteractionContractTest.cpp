@@ -82,6 +82,9 @@ private:
     handlers.open_combat_items = [](const OpenCombatItemsAction&) {
       return DispatchResult::handled();
     };
+    handlers.auto_combatant = [](const AutoCombatantAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1024,8 +1027,43 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = OpenCombatItemsAction{2, 4},
   };
+  const ShellControlPlacement utility_more{
+      .region = ShellRegionId{1113},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {448.0, 10.0, 44.0, 44.0},
+      .label = "MORE",
+      .accessibility_label = "Open utility combat actions",
+      .focus_identifier = "focus.action.combat.utility",
+      .tab_order = 1113,
+      .enabled = true,
+      .payload = SetCombatActionPageAction{CombatActionPage::utility},
+  };
+  const ShellControlPlacement utility_back{
+      .region = ShellRegionId{1108},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {500.0, 10.0, 44.0, 44.0},
+      .label = "BACK",
+      .accessibility_label = "Return to more combat actions",
+      .focus_identifier = "focus.action.combat.more",
+      .tab_order = 1108,
+      .enabled = true,
+      .payload = SetCombatActionPageAction{CombatActionPage::secondary},
+  };
+  const ShellControlPlacement auto_combatant{
+      .region = ShellRegionId{1114},
+      .kind = ShellControlKind::auto_combatant,
+      .bounds = {20.0, 72.0, 160.0, 48.0},
+      .label = "AUTO",
+      .accessibility_label = "Auto-play active combatant's turn",
+      .focus_identifier = "focus.action.combat.auto",
+      .tab_order = 1114,
+      .enabled = true,
+      .payload = AutoCombatantAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
-  const std::vector secondary{back, weapon, previous, next, items};
+  const std::vector secondary{
+      back, weapon, previous, next, items, utility_more};
+  const std::vector utility{utility_back, auto_combatant};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1049,11 +1087,17 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(std::get<SetCombatActionPageAction>(
       open.shell.invoked_control->payload).page ==
       CombatActionPage::secondary);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::primary,
+      std::get<SetCombatActionPageAction>(
+          open.shell.invoked_control->payload).page));
   CHECK(bridge.actions().empty());
-  CHECK(harness.recompose({items, next, previous, weapon, back}));
+  CHECK(harness.recompose(
+      {utility_more, items, next, previous, weapon, back}));
   CHECK(!harness.keyboard().focused_identifier());
 
-  // BACK, WEAPON, PREV, NEXT, ITEMS is stable even under reversed insertion.
+  // BACK, WEAPON, PREV, NEXT, ITEMS, MORE is stable even under reversed
+  // insertion.
   for (const auto& expected : secondary) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -1062,6 +1106,7 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
     release_tab(harness);
   }
 
+  CHECK(harness.focus(items.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
   for (int repeat = 0; repeat < 3; ++repeat) {
@@ -1160,6 +1205,10 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(std::get<SetCombatActionPageAction>(
       close.shell.invoked_control->payload).page ==
       CombatActionPage::primary);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::secondary,
+      std::get<SetCombatActionPageAction>(
+          close.shell.invoked_control->payload).page));
   CHECK(bridge.actions().size() == 4U);
   CHECK(harness.recompose(primary));
   CHECK(!harness.keyboard().focused_identifier());
@@ -1251,6 +1300,131 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!changed_route_release.shell.invoked_control);
   CHECK(!changed_route_release.dispatch);
   CHECK(bridge.actions().size() == 4U);
+
+  // Secondary MORE advances exactly one valid page and remains local.
+  CHECK(!harness.recompose(secondary));
+  CHECK(harness.focus(utility_more.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto open_utility = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(open_utility.shell.consumed);
+  CHECK(open_utility.shell.invoked_control.has_value());
+  CHECK(!open_utility.dispatch);
+  const auto utility_page = std::get<SetCombatActionPageAction>(
+      open_utility.shell.invoked_control->payload).page;
+  CHECK(utility_page == CombatActionPage::utility);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::secondary, utility_page));
+  CHECK(bridge.actions().size() == 4U);
+  CHECK(harness.recompose({auto_combatant, utility_back}));
+  CHECK(!harness.keyboard().focused_identifier());
+
+  // Utility traversal is BACK then AUTO regardless of insertion order.
+  for (const auto& expected : utility) {
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() ==
+        expected.focus_identifier);
+    release_tab(harness);
+  }
+
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto auto_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(auto_release.shell.consumed);
+  CHECK(auto_release.shell.invoked_control.has_value());
+  CHECK(auto_release.shell.invoked_control->kind ==
+      ShellControlKind::auto_combatant);
+  CHECK(auto_release.dispatch.has_value());
+  CHECK(auto_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 5U);
+  CHECK(std::get<AutoCombatantAction>(
+      bridge.actions()[4].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 5U);
+
+  // Utility BACK returns exactly to secondary and never crosses the bridge.
+  CHECK(harness.focus(utility_back.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto close_utility = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(close_utility.shell.consumed);
+  CHECK(close_utility.shell.invoked_control.has_value());
+  CHECK(!close_utility.dispatch);
+  const auto secondary_page = std::get<SetCombatActionPageAction>(
+      close_utility.shell.invoked_control->payload).page;
+  CHECK(secondary_page == CombatActionPage::secondary);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::utility, secondary_page));
+  CHECK(bridge.actions().size() == 5U);
+  CHECK(harness.recompose(secondary));
+  CHECK(!harness.keyboard().focused_identifier());
+
+  // Actor, enabled state, page, and route recomposition all cancel a held
+  // Auto activation while retaining ownership of the physical release.
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(auto_combatant.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[1].payload = AutoCombatantAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_auto_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_auto_release.shell.consumed);
+  CHECK(!stale_auto_release.shell.invoked_control);
+  CHECK(!stale_auto_release.dispatch);
+  CHECK(bridge.actions().size() == 5U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(auto_combatant.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[1].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_auto_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_auto_release.shell.consumed);
+  CHECK(!disabled_auto_release.shell.invoked_control);
+  CHECK(!disabled_auto_release.dispatch);
+  CHECK(bridge.actions().size() == 5U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(auto_combatant.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(secondary));
+  const auto auto_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(auto_page_release.shell.consumed);
+  CHECK(!auto_page_release.shell.invoked_control);
+  CHECK(!auto_page_release.dispatch);
+  CHECK(bridge.actions().size() == 5U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(auto_combatant.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto auto_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(auto_route_release.shell.consumed);
+  CHECK(!auto_route_release.shell.invoked_control);
+  CHECK(!auto_route_release.dispatch);
+  CHECK(bridge.actions().size() == 5U);
 }
 
 using DescriptorMutation =

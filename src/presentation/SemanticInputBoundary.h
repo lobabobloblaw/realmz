@@ -108,6 +108,12 @@ uint8_t RealmzIsSemanticOpenCombatItemsTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenCombatItemsTagSurface(
     uint32_t tagged_message);
 
+// Auto-combatant tags carry only the acting combatant. The preserved Classic
+// flow remains authoritative for every automated decision and combat effect.
+uint8_t RealmzIsSemanticAutoCombatantTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticAutoCombatantTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -215,6 +221,14 @@ uint8_t RealmzConsumeSemanticOpenCombatItemsEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant, then returns the preserved
+// Classic lowercase "a" key record. Classic owns automation, RNG, mutations,
+// and all subsequent turn handling.
+uint8_t RealmzConsumeSemanticAutoCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -275,6 +289,10 @@ enum class CombatFocusDirection;
 [[nodiscard]] uint32_t semantic_open_combat_items_tag(
     CombatantId combatant,
     PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_auto_combatant_tag(
+    CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 
 } // namespace realmz::presentation

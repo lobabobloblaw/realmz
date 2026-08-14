@@ -49,6 +49,7 @@ enum class CombatCommand {
   weapon,
   previous,
   next,
+  auto_combatant,
   items,
 };
 
@@ -105,6 +106,12 @@ constexpr std::array kCombatCases{
         .expected_classic_message = 0x00002D6EU,
         .expected_semantic_tag = 0x524E0302U,
         .direction = CombatFocusDirection::next,
+    },
+    CombatCase{
+        .command = CombatCommand::auto_combatant,
+        .label = "Auto",
+        .expected_classic_message = 0x00000061U,
+        .expected_semantic_tag = 0x52410302U,
     },
     CombatCase{
         .command = CombatCommand::items,
@@ -300,6 +307,9 @@ void reset_fixture_state() {
       }
       return legacy_key_message_for_cycle_combat_focus(
           kActingCombatant, *action_case.direction, kRuntimeContext);
+    case CombatCommand::auto_combatant:
+      return legacy_key_message_for_auto_combatant(
+          kActingCombatant, kRuntimeContext);
     case CombatCommand::items:
       if (!action_case.selected_member) {
         return std::nullopt;
@@ -350,6 +360,8 @@ void reset_fixture_state() {
           .combatant = kActingCombatant,
           .direction = *action_case.direction,
       };
+    case CombatCommand::auto_combatant:
+      return AutoCombatantAction{kActingCombatant};
     case CombatCommand::items:
       if (!action_case.selected_member) {
         throw std::logic_error("Combat Items case has no selected member");
@@ -512,6 +524,23 @@ void append_trace(
             tag);
         return tag != 0;
       },
+      .auto_combatant = [&traces](
+          CombatantId actor,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& context) {
+        const uint32_t tag = semantic_auto_combatant_tag(
+            actor, REALMZ_SEMANTIC_INPUT_COMBAT);
+        append_trace(
+            traces,
+            CombatCommand::auto_combatant,
+            actor,
+            std::nullopt,
+            std::nullopt,
+            message,
+            context,
+            tag);
+        return tag != 0;
+      },
   };
 
   return RuntimeLegacyCommandBridge(
@@ -574,6 +603,11 @@ void append_trace(
     case CombatCommand::previous:
     case CombatCommand::next:
       return RealmzConsumeSemanticCycleCombatFocusEvent(
+                 REALMZ_SEMANTIC_INPUT_COMBAT,
+                 tag,
+                 &classic_message) != 0;
+    case CombatCommand::auto_combatant:
+      return RealmzConsumeSemanticAutoCombatantEvent(
                  REALMZ_SEMANTIC_INPUT_COMBAT,
                  tag,
                  &classic_message) != 0;
