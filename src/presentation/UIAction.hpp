@@ -108,6 +108,16 @@ struct CenterActiveCombatantAction {
   bool operator==(const CenterActiveCombatantAction&) const = default;
 };
 
+// Requests the preserved Classic weapon-set toggle for the explicitly
+// identified acting party combatant. The desired set is intentionally not
+// encoded: the compatibility flow remains authoritative for the relative
+// toggle and for its failure feedback when no alternate weapon is equipped.
+struct SwitchWeaponSetAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const SwitchWeaponSetAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -204,6 +214,11 @@ enum class DrawerPanel {
   event_log,
 };
 
+enum class CombatActionPage {
+  primary,
+  secondary,
+};
+
 // Compact-shell drawers are presentation state only. The desired panel is
 // explicit so a recorded action does not depend on whatever happened to be
 // open when it is replayed; nullopt closes the current drawer.
@@ -211,6 +226,14 @@ struct SetDrawerPanelAction {
   std::optional<DrawerPanel> panel;
 
   bool operator==(const SetDrawerPanelAction&) const = default;
+};
+
+// The combat action page is presentation state only. Carrying the desired page
+// makes recorded shell input deterministic and avoids a state-relative toggle.
+struct SetCombatActionPageAction {
+  CombatActionPage page = CombatActionPage::primary;
+
+  bool operator==(const SetCombatActionPageAction&) const = default;
 };
 
 // Presentation changes are semantic UI commands but do not mutate save data.
@@ -232,6 +255,7 @@ using UIActionPayload = std::variant<
     FinishCombatantAction,
     DelayCombatantAction,
     CenterActiveCombatantAction,
+    SwitchWeaponSetAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -240,6 +264,7 @@ using UIActionPayload = std::variant<
     ConfirmAction,
     CancelAction,
     SetDrawerPanelAction,
+    SetCombatActionPageAction,
     SetPresentationModeAction>;
 
 struct UIAction {
@@ -273,6 +298,8 @@ struct UIAction {
     } else if constexpr (
         std::is_same_v<Action, CenterActiveCombatantAction>) {
       return "center_active_combatant";
+    } else if constexpr (std::is_same_v<Action, SwitchWeaponSetAction>) {
+      return "switch_weapon_set";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {
@@ -289,6 +316,8 @@ struct UIAction {
       return "cancel";
     } else if constexpr (std::is_same_v<Action, SetDrawerPanelAction>) {
       return "set_drawer_panel";
+    } else if constexpr (std::is_same_v<Action, SetCombatActionPageAction>) {
+      return "set_combat_action_page";
     } else {
       return "set_presentation_mode";
     }

@@ -109,6 +109,7 @@ enum class ActionIntent {
   finish,
   delay,
   center_active,
+  switch_weapon,
   cancel,
   encounter_choice,
 };
@@ -224,6 +225,7 @@ struct ShellViewPreferences {
   bool reduced_motion = false;
   bool panels_collapsed = false;
   std::optional<DrawerPanel> active_drawer;
+  CombatActionPage combat_action_page = CombatActionPage::primary;
   size_t event_log_limit = 100;
 
   bool operator==(const ShellViewPreferences&) const = default;
@@ -232,6 +234,7 @@ struct ShellViewPreferences {
 struct PresentationShellModel {
   SnapshotRevision revision = 0;
   ScreenContext screen = ScreenContext::title;
+  CombatActionPage combat_action_page = CombatActionPage::primary;
   PartyRailModel party_rail;
   SelectedPartyDetailsModel selected_details;
   std::vector<ActionControlModel> actions;

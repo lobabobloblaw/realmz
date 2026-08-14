@@ -18,7 +18,10 @@ constexpr uint32_t kGuardCombatantRegion = 1104U;
 constexpr uint32_t kFinishCombatantRegion = 1105U;
 constexpr uint32_t kDelayCombatantRegion = 1106U;
 constexpr uint32_t kCenterActiveCombatantRegion = 1107U;
+constexpr uint32_t kCombatActionPageRegion = 1108U;
+constexpr uint32_t kSwitchWeaponSetRegion = 1109U;
 constexpr double kHorizontalInset = 14.0;
+constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
 constexpr double kMinimumTargetExtent = 44.0;
@@ -75,6 +78,13 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   }
   const auto descriptors = descriptors_for(request);
   const bool world_controls = !descriptors.empty();
+  const bool primary_combat_page =
+      request.combat_action_page == CombatActionPage::primary;
+  const bool secondary_combat_page =
+      request.combat_action_page == CombatActionPage::secondary;
+  if (!primary_combat_page && !secondary_combat_page) {
+    return {};
+  }
   const auto valid_combatant = [](CombatantId combatant) {
     return (combatant >= 0) && (combatant <= 0xFF);
   };
@@ -86,37 +96,55 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.delay_combatant);
   const bool valid_center = request.center_active_combatant &&
       valid_combatant(*request.center_active_combatant);
-  const bool invalid_guard = request.guard_combatant && !valid_guard;
-  const bool invalid_finish = request.finish_combatant && !valid_finish;
-  const bool invalid_delay = request.delay_combatant && !valid_delay;
-  const bool invalid_center =
-      request.center_active_combatant && !valid_center;
-  const bool mismatched_combatants =
-      (request.guard_combatant && request.finish_combatant &&
-          (*request.guard_combatant != *request.finish_combatant)) ||
-      (request.guard_combatant && request.delay_combatant &&
-          (*request.guard_combatant != *request.delay_combatant)) ||
-      (request.finish_combatant && request.delay_combatant &&
-          (*request.finish_combatant != *request.delay_combatant)) ||
-      (request.guard_combatant && request.center_active_combatant &&
-          (*request.guard_combatant !=
-              *request.center_active_combatant)) ||
-      (request.finish_combatant && request.center_active_combatant &&
-          (*request.finish_combatant !=
-              *request.center_active_combatant)) ||
-      (request.delay_combatant && request.center_active_combatant &&
-          (*request.delay_combatant !=
-              *request.center_active_combatant));
+  const bool valid_switch_weapon = request.switch_weapon_combatant &&
+      valid_combatant(*request.switch_weapon_combatant);
+  const std::array combatants{
+      request.guard_combatant,
+      request.finish_combatant,
+      request.delay_combatant,
+      request.center_active_combatant,
+      request.switch_weapon_combatant,
+  };
+  std::optional<CombatantId> common_combatant;
+  bool invalid_combatant = false;
+  bool mismatched_combatants = false;
+  for (const auto combatant : combatants) {
+    if (!combatant) {
+      continue;
+    }
+    if (!valid_combatant(*combatant)) {
+      invalid_combatant = true;
+      continue;
+    }
+    if (common_combatant && (*common_combatant != *combatant)) {
+      mismatched_combatants = true;
+    } else {
+      common_combatant = combatant;
+    }
+  }
+  const size_t primary_combat_control_count =
+      (request.guard_combatant ? 1U : 0U) +
+      (request.finish_combatant ? 1U : 0U) +
+      (request.delay_combatant ? 1U : 0U) +
+      (request.center_active_combatant ? 1U : 0U);
+  const size_t combat_control_count = primary_combat_page
+      ? primary_combat_control_count
+      : (request.switch_weapon_combatant ? 1U : 0U);
+  const bool combat_page_control_visible =
+      secondary_combat_page || valid_switch_weapon;
+  const bool has_combatant_request = std::ranges::any_of(
+      combatants,
+      [](const auto& combatant) { return combatant.has_value(); });
   const bool combat_controls =
       (request.screen == ScreenContext::combat) &&
-      (valid_guard || valid_finish || valid_delay || valid_center) &&
-      !invalid_guard && !invalid_finish && !invalid_delay && !invalid_center &&
+      (combat_control_count > 0U) && !invalid_combatant &&
       !mismatched_combatants;
+  const bool has_combat_request = has_combatant_request ||
+      request.guard_available || request.finish_available ||
+      request.delay_available || request.center_active_available ||
+      request.switch_weapon_available || secondary_combat_page;
   if ((!world_controls && !combat_controls) ||
-      (world_controls &&
-          (request.guard_combatant || request.finish_combatant ||
-              request.delay_combatant ||
-              request.center_active_combatant)) ||
+      (world_controls && has_combat_request) ||
       (combat_controls &&
           (request.navigation_available || request.inventory_member ||
               request.spellbook_member || request.save_control_visible ||
@@ -128,19 +156,18 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.guard_available && !valid_guard) ||
       (request.finish_available && !valid_finish) ||
       (request.delay_available && !valid_delay) ||
-      (request.center_active_available && !valid_center)) {
+      (request.center_active_available && !valid_center) ||
+      (request.switch_weapon_available && !valid_switch_weapon)) {
     return {};
   }
 
-  const size_t control_count = descriptors.size() +
-      (request.inventory_member ? 1U : 0U) +
-      (request.spellbook_member ? 1U : 0U) +
-      (request.save_control_visible ? 1U : 0U) +
-      (request.load_control_visible ? 1U : 0U) +
-      (request.guard_combatant ? 1U : 0U) +
-      (request.finish_combatant ? 1U : 0U) +
-      (request.delay_combatant ? 1U : 0U) +
-      (request.center_active_combatant ? 1U : 0U);
+  const size_t control_count = combat_controls
+      ? combat_control_count
+      : descriptors.size() +
+          (request.inventory_member ? 1U : 0U) +
+          (request.spellbook_member ? 1U : 0U) +
+          (request.save_control_visible ? 1U : 0U) +
+          (request.load_control_visible ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -161,7 +188,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   }
 
   std::vector<ShellControlPlacement> result;
-  result.reserve(control_count);
+  result.reserve(
+      control_count + (combat_page_control_visible ? 1U : 0U));
   double x = request.action_panel.x + kHorizontalInset;
   const double y = request.action_panel.y + kControlsTopInset;
   for (size_t index = 0; index < descriptors.size(); ++index) {
@@ -237,6 +265,53 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
     });
     x += button_width + gap;
   }
+  if (!combat_controls) {
+    return result;
+  }
+
+  const auto append_page_control = [&request, &result]() {
+    const bool primary =
+        request.combat_action_page == CombatActionPage::primary;
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kCombatActionPageRegion},
+        .kind = ShellControlKind::combat_action_page,
+        .bounds = {
+            request.action_panel.right() - kHorizontalInset -
+                kMinimumTargetExtent,
+            request.action_panel.y + kHeaderTopInset,
+            kMinimumTargetExtent,
+            kMinimumTargetExtent,
+        },
+        .label = primary ? "MORE" : "BACK",
+        .accessibility_label = primary
+            ? "Open more combat actions"
+            : "Return to primary combat actions",
+        .focus_identifier = "focus.action.combat.more",
+        .tab_order = 1108,
+        .enabled = true,
+        .payload = SetCombatActionPageAction{
+            primary ? CombatActionPage::secondary
+                    : CombatActionPage::primary},
+    });
+  };
+
+  if (secondary_combat_page) {
+    append_page_control();
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kSwitchWeaponSetRegion},
+        .kind = ShellControlKind::switch_weapon_set,
+        .bounds = {x, y, button_width, button_height},
+        .label = "WEAPON",
+        .accessibility_label = "Switch active combatant's weapon set",
+        .focus_identifier = "focus.action.combat.weapon",
+        .tab_order = 1109,
+        .enabled = request.switch_weapon_available,
+        .payload = SwitchWeaponSetAction{
+            *request.switch_weapon_combatant},
+    });
+    return result;
+  }
+
   if (request.guard_combatant) {
     result.emplace_back(ShellControlPlacement{
         .region = ShellRegionId{kGuardCombatantRegion},
@@ -292,6 +367,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .payload = CenterActiveCombatantAction{
             *request.center_active_combatant},
     });
+  }
+  if (valid_switch_weapon) {
+    append_page_control();
   }
   return result;
 }

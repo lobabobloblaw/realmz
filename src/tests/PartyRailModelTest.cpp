@@ -226,6 +226,24 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(center.tab_order == delay.tab_order + 1);
   CHECK(center.focus_identifier != delay.focus_identifier);
   CHECK(center.availability_reason->label == "Game rules apply");
+  const auto& weapon = action_with(model, ActionIntent::switch_weapon);
+  CHECK(weapon.can_invoke());
+  CHECK(weapon.availability == ActionAvailability::deferred_to_engine);
+  CHECK(weapon.command == "action.combat.weapon.switch");
+  CHECK(weapon.combatant == guard.combatant);
+  CHECK(weapon.tab_order == center.tab_order + 1);
+  CHECK(weapon.focus_identifier != center.focus_identifier);
+  CHECK(weapon.availability_reason->label == "Game rules apply");
+  CHECK(model.combat_action_page == CombatActionPage::primary);
+
+  const auto secondary_page_model = build_presentation_shell_model(
+      snapshot,
+      {},
+      ShellViewPreferences{
+          .combat_action_page = CombatActionPage::secondary,
+      });
+  CHECK(secondary_page_model.combat_action_page ==
+      CombatActionPage::secondary);
 
   snapshot.party.members[0].movement =
       snapshot.party.members[0].movement_maximum;
@@ -240,6 +258,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::center_active);
   CHECK(center_before_movement.can_invoke());
   CHECK(center_before_movement.combatant == available_delay.combatant);
+  const auto& weapon_before_movement =
+      action_with(model, ActionIntent::switch_weapon);
+  CHECK(weapon_before_movement.can_invoke());
+  CHECK(weapon_before_movement.combatant == available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
   model = build_presentation_shell_model(snapshot);
@@ -254,6 +276,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::center_active);
   CHECK(unmatched_center.can_invoke());
   CHECK(unmatched_center.combatant == unmatched_delay.combatant);
+  const auto& unmatched_weapon =
+      action_with(model, ActionIntent::switch_weapon);
+  CHECK(unmatched_weapon.can_invoke());
+  CHECK(unmatched_weapon.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
@@ -263,6 +289,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::finish,
              ActionIntent::delay,
              ActionIntent::center_active,
+             ActionIntent::switch_weapon,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());
@@ -295,6 +322,15 @@ void test_combat_actions_track_the_active_party_combatant() {
 
   snapshot.combat.reset();
   check_combat_actions_unavailable();
+
+  snapshot.screen = ScreenContext::exploration;
+  const auto noncombat_page = build_presentation_shell_model(
+      snapshot,
+      {},
+      ShellViewPreferences{
+          .combat_action_page = CombatActionPage::secondary,
+      });
+  CHECK(noncombat_page.combat_action_page == CombatActionPage::primary);
 }
 
 void test_events_drawers_motion_and_log_limit() {

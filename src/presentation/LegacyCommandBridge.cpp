@@ -94,6 +94,11 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
           this->handlers_.center_active_combatant,
           payload,
           "center_active_combatant");
+    } else if constexpr (std::is_same_v<Action, SwitchWeaponSetAction>) {
+      return invoke_handler(
+          this->handlers_.switch_weapon_set,
+          payload,
+          "switch_weapon_set");
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return invoke_handler(this->handlers_.inventory, payload, "inventory");
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {
@@ -111,6 +116,10 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
     } else if constexpr (std::is_same_v<Action, SetDrawerPanelAction>) {
       return DispatchResult::unsupported(
           "Presentation-local set_drawer_panel cannot cross the legacy bridge");
+    } else if constexpr (std::is_same_v<Action, SetCombatActionPageAction>) {
+      return DispatchResult::unsupported(
+          "Presentation-local set_combat_action_page cannot cross the legacy "
+          "bridge");
     } else {
       return invoke_handler(
           this->handlers_.set_presentation_mode,

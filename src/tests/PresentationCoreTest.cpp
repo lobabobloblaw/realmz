@@ -203,8 +203,16 @@ void test_actions_and_events() {
   CHECK(std::get<CenterActiveCombatantAction>(
             center_active.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction switch_weapon{
       .sequence = 17,
+      .payload = SwitchWeaponSetAction{2},
+  };
+  CHECK(action_name(switch_weapon.payload) == "switch_weapon_set");
+  CHECK(std::get<SwitchWeaponSetAction>(
+            switch_weapon.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 18,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -225,6 +233,14 @@ void test_actions_and_events() {
   CHECK(std::get<SetDrawerPanelAction>(drawer.payload).panel ==
       DrawerPanel::event_log);
 
+  UIAction combat_page{
+      .sequence = 19,
+      .payload = SetCombatActionPageAction{CombatActionPage::secondary},
+  };
+  CHECK(action_name(combat_page.payload) == "set_combat_action_page");
+  CHECK(std::get<SetCombatActionPageAction>(combat_page.payload).page ==
+      CombatActionPage::secondary);
+
   GameEvent event{
       .sequence = 3,
       .payload = MessageEvent{MessageSeverity::success, "Saved"},
@@ -234,6 +250,7 @@ void test_actions_and_events() {
 
 void test_command_bridge() {
   MovementCommand received = MovementCommand::step_backward;
+  CombatantId weapon_combatant = -1;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -245,6 +262,11 @@ void test_command_bridge() {
   handlers.cast_spell = [](const CastSpellAction&) -> DispatchResult {
     throw std::runtime_error("legacy failure");
   };
+  handlers.switch_weapon_set =
+      [&weapon_combatant](const SwitchWeaponSetAction& action) {
+        weapon_combatant = action.combatant;
+        return DispatchResult::handled();
+      };
 
   InjectedLegacyCommandBridge* bridge_address = nullptr;
   handlers.confirm = [&bridge_address](const ConfirmAction&) {
@@ -281,6 +303,14 @@ void test_command_bridge() {
   });
   CHECK(local_only.status == DispatchStatus::unsupported);
   CHECK(local_only.detail.find("set_drawer_panel") != std::string::npos);
+
+  const auto combat_page_local_only = bridge.dispatch(UIAction{
+      .sequence = 6,
+      .payload = SetCombatActionPageAction{CombatActionPage::secondary},
+  });
+  CHECK(combat_page_local_only.status == DispatchStatus::unsupported);
+  CHECK(combat_page_local_only.detail.find("set_combat_action_page") !=
+      std::string::npos);
 
   const auto inventory_unsupported = bridge.dispatch(UIAction{
       .sequence = 6,
@@ -345,6 +375,13 @@ void test_command_bridge() {
   CHECK(center_active_unsupported.status == DispatchStatus::unsupported);
   CHECK(center_active_unsupported.detail.find("center_active_combatant") !=
       std::string::npos);
+
+  const auto weapon_handled = bridge.dispatch(UIAction{
+      .sequence = 14,
+      .payload = SwitchWeaponSetAction{7},
+  });
+  CHECK(weapon_handled.was_handled());
+  CHECK(weapon_combatant == 7);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,
