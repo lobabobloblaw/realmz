@@ -65,6 +65,18 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::cycle_combat_focus),
     std::optional<RuntimeLegacyCycleCombatFocusSink>>);
+static_assert(std::is_same_v<
+    RuntimeLegacyOpenCombatItemsSink,
+    std::function<bool(
+        CombatantId,
+        PartyMemberId,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::open_combat_items),
+    std::optional<RuntimeLegacyOpenCombatItemsSink>>);
+static_assert(std::numeric_limits<PartyMemberId>::min() == 0);
+static_assert(std::numeric_limits<PartyMemberId>::max() == 0xFF);
 
 struct ExpectedMovement {
   MovementCommand command;
@@ -1411,6 +1423,7 @@ void test_named_combat_mapping_and_dispatch() {
   int center_calls = 0;
   int switch_weapon_calls = 0;
   int cycle_focus_calls = 0;
+  int open_combat_items_calls = 0;
   bool accept_center = true;
   bool accept_switch_weapon = true;
   CombatantId received_guard_combatant = -1;
@@ -1419,12 +1432,15 @@ void test_named_combat_mapping_and_dispatch() {
   CombatantId received_center_combatant = -1;
   CombatantId received_switch_weapon_combatant = -1;
   CombatantId received_cycle_focus_combatant = -1;
+  CombatantId received_items_combatant = -1;
+  PartyMemberId received_items_member = 0;
   uint32_t received_guard_message = 0;
   uint32_t received_finish_message = 0;
   uint32_t received_delay_message = 0;
   uint32_t received_center_message = 0;
   uint32_t received_switch_weapon_message = 0;
   uint32_t received_cycle_focus_message = 0;
+  uint32_t received_items_message = 0;
   CombatFocusDirection received_cycle_focus_direction =
       CombatFocusDirection::next;
 
@@ -1498,6 +1514,20 @@ void test_named_combat_mapping_and_dispatch() {
         CHECK(captured_context == context);
         return true;
       };
+  RuntimeLegacyOpenCombatItemsSink open_combat_items_sink =
+      [&open_combat_items_calls, &received_items_combatant,
+          &received_items_member, &received_items_message,
+          &context](CombatantId combatant,
+          PartyMemberId member,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++open_combat_items_calls;
+        received_items_combatant = combatant;
+        received_items_member = member;
+        received_items_message = message;
+        CHECK(captured_context == context);
+        return true;
+      };
 
   const RuntimeLegacyMovementSink movement_sink =
       [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
@@ -1537,6 +1567,7 @@ void test_named_combat_mapping_and_dispatch() {
           .center_active_combatant = center_sink,
           .switch_weapon = switch_weapon_sink,
           .cycle_combat_focus = cycle_focus_sink,
+          .open_combat_items = open_combat_items_sink,
       });
 
   CHECK(bridge.dispatch(UIAction{
@@ -1633,6 +1664,25 @@ void test_named_combat_mapping_and_dispatch() {
   CHECK(received_cycle_focus_combatant == 12);
   CHECK(received_cycle_focus_direction == CombatFocusDirection::next);
   CHECK(received_cycle_focus_message == 0x00002D6EU);
+  CHECK(open_combat_items_calls == 0);
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 367,
+      .payload = OpenCombatItemsAction{
+          .combatant = 13,
+          .member = 4,
+      },
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(finish_calls == 1);
+  CHECK(delay_calls == 1);
+  CHECK(center_calls == 1);
+  CHECK(switch_weapon_calls == 1);
+  CHECK(cycle_focus_calls == 2);
+  CHECK(open_combat_items_calls == 1);
+  CHECK(received_items_combatant == 13);
+  CHECK(received_items_member == 4);
+  CHECK(received_items_message == 0x00002269U);
 
   for (const auto world : {
            WorldPresentation::none,
@@ -2372,6 +2422,289 @@ void test_cycle_combat_focus_mapping_and_dispatch() {
       std::string::npos);
 }
 
+void test_open_combat_items_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int items_calls = 0;
+  bool accept_items = true;
+  CombatantId received_combatant = -1;
+  PartyMemberId received_member = 0;
+  uint32_t received_message = 0;
+  const RuntimeLegacyOpenCombatItemsSink items_sink =
+      [&items_calls, &accept_items, &received_combatant, &received_member,
+          &received_message, &context](CombatantId combatant,
+          PartyMemberId member,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++items_calls;
+        received_combatant = combatant;
+        received_member = member;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept_items;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .open_combat_items = items_sink,
+      });
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    for (const CombatantId combatant : {0, 255}) {
+      for (const PartyMemberId member : {PartyMemberId{0}, PartyMemberId{255}}) {
+        CHECK(legacy_key_message_for_open_combat_items(
+                  combatant, member, context) == 0x00002269U);
+      }
+    }
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 398,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  }).status == DispatchStatus::handled);
+  CHECK(items_calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_member == 3);
+  CHECK(received_message == 0x00002269U);
+
+  for (const auto boundary : {
+           OpenCombatItemsAction{.combatant = 0, .member = PartyMemberId{255}},
+           OpenCombatItemsAction{.combatant = 255, .member = PartyMemberId{0}},
+       }) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 399,
+        .payload = boundary,
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(items_calls == 3);
+  CHECK(received_combatant == 255);
+  CHECK(received_member == 0);
+  CHECK(received_message == 0x00002269U);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_open_combat_items(9, 3, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 400,
+        .payload = OpenCombatItemsAction{
+            .combatant = 9,
+            .member = 3,
+        },
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(items_calls == 3);
+
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_open_combat_items(9, 3, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 401,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  }).status == DispatchStatus::rejected);
+  CHECK(items_calls == 3);
+
+  context.adaptive_eligible = true;
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(),
+           CombatantId{-1},
+           CombatantId{256},
+           std::numeric_limits<CombatantId>::max(),
+       }) {
+    for (const PartyMemberId member : {PartyMemberId{0}, PartyMemberId{255}}) {
+      CHECK(!legacy_key_message_for_open_combat_items(invalid, member, context));
+      CHECK(bridge.dispatch(UIAction{
+          .sequence = 402,
+          .payload = OpenCombatItemsAction{
+              .combatant = invalid,
+              .member = member,
+          },
+      }).status == DispatchStatus::rejected);
+    }
+  }
+  CHECK(items_calls == 3);
+
+  accept_items = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 403,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  }).status == DispatchStatus::failed);
+  CHECK(items_calls == 4);
+  accept_items = true;
+
+  RuntimeLegacyCommandBridge missing_provider(
+      RuntimeLegacyContextProvider{},
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .open_combat_items = items_sink,
+      });
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 404,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+  CHECK(items_calls == 4);
+
+  RuntimeLegacyCommandBridge empty_items_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .open_combat_items = RuntimeLegacyOpenCombatItemsSink{},
+      });
+  const auto no_sink = empty_items_sink.dispatch(UIAction{
+      .sequence = 405,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("open-combat-items sink") != std::string::npos);
+  CHECK(items_calls == 4);
+
+  RuntimeLegacyCommandBridge without_items_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(without_items_sink.dispatch(UIAction{
+      .sequence = 406,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge provider_throws(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("combat items provider failure");
+      },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .open_combat_items = items_sink,
+      });
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 407,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("combat items provider failure") !=
+      std::string::npos);
+  CHECK(items_calls == 4);
+
+  const RuntimeLegacyOpenCombatItemsSink throwing_items_sink =
+      [](CombatantId,
+          PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("combat items sink failure");
+      };
+  RuntimeLegacyCommandBridge items_sink_throws(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .open_combat_items = throwing_items_sink,
+      });
+  const auto sink_thrown = items_sink_throws.dispatch(UIAction{
+      .sequence = 408,
+      .payload = OpenCombatItemsAction{
+          .combatant = 9,
+          .member = 3,
+      },
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("combat items sink failure") !=
+      std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -2428,6 +2761,13 @@ void test_named_combat_sink_registration_semantics() {
               .direction = CombatFocusDirection::previous,
           },
       },
+      UIAction{
+          .sequence = 386,
+          .payload = OpenCombatItemsAction{
+              .combatant = 7,
+              .member = 3,
+          },
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -2460,6 +2800,7 @@ void test_named_combat_sink_registration_semantics() {
               RuntimeLegacyCenterActiveCombatantSink{},
           .switch_weapon = RuntimeLegacySwitchWeaponSink{},
           .cycle_combat_focus = RuntimeLegacyCycleCombatFocusSink{},
+          .open_combat_items = RuntimeLegacyOpenCombatItemsSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -2522,6 +2863,13 @@ void test_named_combat_sink_registration_semantics() {
       .payload = CycleCombatFocusAction{
           .combatant = 6,
           .direction = CombatFocusDirection::next,
+      },
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 390,
+      .payload = OpenCombatItemsAction{
+          .combatant = 6,
+          .member = 2,
       },
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
@@ -2666,6 +3014,13 @@ void test_positional_combat_constructor_compatibility() {
       .payload = CycleCombatFocusAction{
           .combatant = 4,
           .direction = CombatFocusDirection::next,
+      },
+  }).status == DispatchStatus::unsupported);
+  CHECK(through_center.dispatch(UIAction{
+      .sequence = 399,
+      .payload = OpenCombatItemsAction{
+          .combatant = 4,
+          .member = 2,
       },
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
@@ -2858,6 +3213,7 @@ int main() {
     test_named_combat_mapping_and_dispatch();
     test_switch_weapon_mapping_and_dispatch();
     test_cycle_combat_focus_mapping_and_dispatch();
+    test_open_combat_items_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

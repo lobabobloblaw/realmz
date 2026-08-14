@@ -74,6 +74,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<CenterActiveCombatantAction> center_active_combatant;
   LegacyActionHandler<SwitchWeaponSetAction> switch_weapon_set;
   LegacyActionHandler<CycleCombatFocusAction> cycle_combat_focus;
+  LegacyActionHandler<OpenCombatItemsAction> open_combat_items;
   LegacyActionHandler<InventoryAction> inventory;
   LegacyActionHandler<CastSpellAction> cast_spell;
   LegacyActionHandler<TradeAction> trade;

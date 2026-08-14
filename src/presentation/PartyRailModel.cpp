@@ -424,6 +424,25 @@ std::vector<ActionControlModel> build_actions(
     if (can_act) {
       result.back().combatant = acting->id;
     }
+    const bool can_open_combat_items = can_act && selected;
+    result.emplace_back(action(
+        ActionIntent::combat_items,
+        "action.combat.items",
+        "Items",
+        can_open_combat_items ? ActionAvailability::deferred_to_engine
+                              : ActionAvailability::unavailable,
+        tab_order++,
+        can_open_combat_items
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{unavailable_token(
+                  can_act ? "Select a party member first"
+                          : "Wait for an active party member")}));
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
+    if (selected) {
+      result.back().party_member = selected->id;
+    }
   }
 
   if (encounter_active) {

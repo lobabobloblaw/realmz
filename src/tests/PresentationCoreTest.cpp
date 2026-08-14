@@ -224,8 +224,20 @@ void test_actions_and_events() {
   CHECK(std::get<CycleCombatFocusAction>(cycle_focus.payload).direction ==
       CombatFocusDirection::previous);
 
-  UIAction casting{
+  UIAction open_combat_items{
       .sequence = 19,
+      .payload = OpenCombatItemsAction{
+          .combatant = 2,
+          .member = 4,
+      },
+  };
+  CHECK(action_name(open_combat_items.payload) == "open_combat_items");
+  CHECK(std::get<OpenCombatItemsAction>(
+            open_combat_items.payload).combatant == 2);
+  CHECK(std::get<OpenCombatItemsAction>(open_combat_items.payload).member == 4);
+
+  UIAction casting{
+      .sequence = 20,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -266,6 +278,8 @@ void test_command_bridge() {
   CombatantId weapon_combatant = -1;
   CombatantId focus_combatant = -1;
   CombatFocusDirection focus_direction = CombatFocusDirection::next;
+  CombatantId items_combatant = -1;
+  PartyMemberId items_member = 0;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -287,6 +301,12 @@ void test_command_bridge() {
           const CycleCombatFocusAction& action) {
         focus_combatant = action.combatant;
         focus_direction = action.direction;
+        return DispatchResult::handled();
+      };
+  handlers.open_combat_items =
+      [&items_combatant, &items_member](const OpenCombatItemsAction& action) {
+        items_combatant = action.combatant;
+        items_member = action.member;
         return DispatchResult::handled();
       };
 
@@ -415,6 +435,17 @@ void test_command_bridge() {
   CHECK(cycle_focus_handled.was_handled());
   CHECK(focus_combatant == 8);
   CHECK(focus_direction == CombatFocusDirection::previous);
+
+  const auto open_combat_items_handled = bridge.dispatch(UIAction{
+      .sequence = 16,
+      .payload = OpenCombatItemsAction{
+          .combatant = 8,
+          .member = 3,
+      },
+  });
+  CHECK(open_combat_items_handled.was_handled());
+  CHECK(items_combatant == 8);
+  CHECK(items_member == 3);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

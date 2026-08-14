@@ -104,6 +104,11 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
           this->handlers_.cycle_combat_focus,
           payload,
           "cycle_combat_focus");
+    } else if constexpr (std::is_same_v<Action, OpenCombatItemsAction>) {
+      return invoke_handler(
+          this->handlers_.open_combat_items,
+          payload,
+          "open_combat_items");
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return invoke_handler(this->handlers_.inventory, payload, "inventory");
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

@@ -86,15 +86,19 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes seven bounded semantic controls: typed `GuardCombatantAction`,
+Combat exposes eight bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`, and
 `CycleCombatFocusAction` commands each carry the stable active-party combatant
 ID through distinct combat-only tagged events. The focus-cycle command also
-carries Previous or Next. The top-level combat loop late-validates a fresh
+carries Previous or Next. `OpenCombatItemsAction` independently carries the
+acting combatant and selected party member so neither identity can silently
+change while queued. The top-level combat loop late-validates a fresh
 snapshot, including
 the acting ID, party ownership, active/targetable state, and positive stamina,
-before translating an action to its exact preserved Classic key record. Delay
+before translating an action to its exact preserved Classic key record. Combat
+Items additionally requires that the same member still exists and remains the
+live selected member. Delay
 is available only before movement (`movement == movement_maximum`), revalidates
 that condition at delivery, and becomes the exact Classic `d` message
 `0x00000264`. Center becomes the exact Classic `c` message `0x00000863`, and
@@ -102,12 +106,16 @@ Switch Weapon becomes the exact lowercase `w` message `0x00000D77`. Weapon
 Switch intentionally carries no desired set; the live relative toggle remains
 inside Classic combat. Center Previous becomes the exact Classic `p` message
 `0x00002370`, and Center Next becomes the exact Classic `n` message
-`0x00002D6E`. Validation fails closed, so stale or newly ineligible actions
-become inert. The original Classic guard/finish/delay mutations and turn
+`0x00002D6E`. Combat Items becomes the exact Classic `i` message `0x00002269`.
+Validation fails closed, so stale or newly ineligible actions become inert.
+The original Classic guard/finish/delay mutations and turn
 advance remain authoritative, as do Center's existing non-turn-ending camera
 sequence, Weapon's toggle and feedback, and Classic's queue-relative focus
-destination. The semantic checks are not a camera replay; all other combat
-commands remain in the interactive Classic frame.
+destination. Classic also owns the entire Items modal, its further character
+selection, every item use or mutation, targeting, and any resulting attack,
+movement, or turn effect. The semantic checks are not a camera, combat, modal,
+or save replay; all other combat commands remain in the interactive Classic
+frame.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
@@ -210,12 +218,14 @@ Automated checks do not replace these release decisions:
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, and Center
-  Previous/Next controls at compact and wide layouts,
+  Previous/Next, and Combat Items controls at compact and wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
   leaving their gameplay surface; and inert stale Guard, Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting
-  combatant, eligibility, or combat surface changes; verify
+  combatant, eligibility, or combat surface changes; verify Combat Items is
+  inert after either the acting combatant or selected party member changes and
+  otherwise opens the preserved Classic modal for that selected member; verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;
 - clean install on macOS 13.3 and the current macOS release, plus upgrade/import from an existing Realmz installation;

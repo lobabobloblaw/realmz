@@ -67,6 +67,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(CycleCombatFocusAction::direction),
     CombatFocusDirection>);
+static_assert(std::is_same_v<
+    decltype(OpenCombatItemsAction::combatant),
+    CombatantId>);
+static_assert(std::is_same_v<
+    decltype(OpenCombatItemsAction::member),
+    PartyMemberId>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -450,6 +456,22 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(cycleCombatFocusUnsupported.status == DispatchStatus::unsupported);
   CHECK(cycleCombatFocusUnsupported.detail ==
       "No legacy handler registered for cycle_combat_focus");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction openCombatItemsAction{
+      .sequence = sequence++,
+      .payload = OpenCombatItemsAction{
+          .combatant = 1,
+          .member = 2,
+      },
+  };
+  CHECK(action_name(openCombatItemsAction.payload) == "open_combat_items");
+  const auto openCombatItemsUnsupported =
+      unsupportedBridge.dispatch(openCombatItemsAction);
+  CHECK(openCombatItemsUnsupported.status == DispatchStatus::unsupported);
+  CHECK(openCombatItemsUnsupported.detail ==
+      "No legacy handler registered for open_combat_items");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

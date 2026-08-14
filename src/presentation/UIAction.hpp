@@ -133,6 +133,17 @@ struct CycleCombatFocusAction {
   bool operator==(const CycleCombatFocusAction&) const = default;
 };
 
+// Opens the preserved Classic combat Items flow for an explicitly identified
+// acting combatant and selected party member. Keeping both identities stable
+// prevents a queued command from crossing a turn or silently opening another
+// member's inventory after the Classic portrait selection changes.
+struct OpenCombatItemsAction {
+  CombatantId combatant = 0;
+  PartyMemberId member = 0;
+
+  bool operator==(const OpenCombatItemsAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -272,6 +283,7 @@ using UIActionPayload = std::variant<
     CenterActiveCombatantAction,
     SwitchWeaponSetAction,
     CycleCombatFocusAction,
+    OpenCombatItemsAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -318,6 +330,8 @@ struct UIAction {
       return "switch_weapon_set";
     } else if constexpr (std::is_same_v<Action, CycleCombatFocusAction>) {
       return "cycle_combat_focus";
+    } else if constexpr (std::is_same_v<Action, OpenCombatItemsAction>) {
+      return "open_combat_items";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

@@ -93,7 +93,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 7> combat_cases() {
+std::array<CombatCase, 8> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -140,6 +140,12 @@ std::array<CombatCase, 7> combat_cases() {
               REALMZ_SEMANTIC_INPUT_COMBAT),
           .consume = RealmzConsumeSemanticCycleCombatFocusEvent,
           .classic_message = 0x00002D6EU,
+      },
+      CombatCase{
+          .tag = semantic_open_combat_items_tag(
+              1, 1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticOpenCombatItemsEvent,
+          .classic_message = 0x00002269U,
       },
   };
 }
@@ -259,6 +265,20 @@ void test_non_gameplay_front_window_is_rejected() {
   }
 }
 
+void test_stale_selected_member_is_rejected() {
+  seed_active_party_combatant();
+  const uint32_t tag = semantic_open_combat_items_tag(
+      1, 1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(tag != 0);
+  complete_combat_scope();
+
+  charselectnew = 0;
+  uint32_t output = kUnchangedMessage;
+  CHECK(RealmzConsumeSemanticOpenCombatItemsEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+}
+
 } // namespace
 
 int main() {
@@ -267,6 +287,7 @@ int main() {
     test_moved_combatant_delay_is_rejected();
     test_stale_acting_combatant_is_rejected();
     test_non_gameplay_front_window_is_rejected();
+    test_stale_selected_member_is_rejected();
     reset_legacy_globals();
     std::cout << "Semantic combat legacy-adapter checks passed: "
               << checks_run << '\n';

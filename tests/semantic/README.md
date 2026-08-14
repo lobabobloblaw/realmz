@@ -51,7 +51,7 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first seven bounded combat controls are covered outside this exploration
+The first eight bounded combat controls are covered outside this exploration
 fixture by the presentation, runtime-bridge, semantic-boundary, top-level-loop,
 and keyboard contract tests. They verify that typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`, and
@@ -59,6 +59,9 @@ and keyboard contract tests. They verify that typed `GuardCombatantAction`,
 `CycleCombatFocusAction` commands each carry the stable acting-combatant ID and
 are late-validated against the fresh acting party member with fail-closed
 rejection. The cycle command also preserves its Previous or Next direction.
+`OpenCombatItemsAction` carries both the acting ID and selected party-member ID;
+delivery additionally requires that the same member still exists and remains
+selected.
 Delay is available only before
 movement and revalidates that eligibility before becoming the exact Classic
 `d` message `0x00000264`; Center becomes the exact Classic `c` message
@@ -66,21 +69,24 @@ movement and revalidates that eligibility before becoming the exact Classic
 `0x00000D77`, Center Previous becomes the exact Classic `p` message
 `0x00002370`, Center Next becomes the exact Classic `n` message `0x00002D6E`,
 and Guard and Finish become the exact Classic `g` and `f` key records. Switch
-Weapon carries no desired set, and focus cycling carries no absolute
+Weapon carries no desired set, focus cycling carries no absolute
 destination. The preserved Classic handlers still own the Guard, Finish, and
 Delay combat-state mutations and turn advance, Center's existing camera
 sequence, Weapon's live relative toggle and feedback, and the focus queue's
-relative destination. This is not a camera replay, full combat replay, or
-save-equivalence claim; every other combat command remains on the Classic input
-route.
+relative destination. Combat Items becomes the exact Classic `i` message
+`0x00002269`; Classic owns all further modal selection, item use and mutation,
+targeting, and any attack, movement, or turn effects. This is not a camera,
+modal, or full combat replay, nor a save-equivalence claim; every other combat
+command remains on the Classic input route.
 
 `SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
 fixture-owned legacy globals flow through the real presentation-context and
 snapshot adapters before the semantic boundary emits those exact key records.
 It covers stale acting-combatant and non-gameplay-window rejection for all
-seven command records while leaving its output sentinel unchanged. It performs
-no Classic combat mutation, reads or writes no user data, and is not a camera
-replay, full combat replay, or save-equivalence test.
+eight command records, plus stale selected-member rejection for Combat Items,
+while leaving its output sentinel unchanged. It performs no Classic combat or
+inventory mutation, reads or writes no user data, and is not a camera, modal,
+full combat replay, or save-equivalence test.
 
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:

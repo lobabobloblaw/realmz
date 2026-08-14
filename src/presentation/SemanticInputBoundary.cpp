@@ -51,6 +51,11 @@ constexpr uint32_t kSemanticCycleCombatFocusPreviousSignature = 0x52420000U;
 constexpr uint32_t kSemanticCycleCombatFocusMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticCycleCombatFocusSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticCycleCombatFocusIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticOpenCombatItemsSignature = 0x49000000U;
+constexpr uint32_t kSemanticOpenCombatItemsMask = 0xFF000000U;
+constexpr uint32_t kSemanticOpenCombatItemsSurfaceMask = 0x00FF0000U;
+constexpr uint32_t kSemanticOpenCombatItemsActorMask = 0x0000FF00U;
+constexpr uint32_t kSemanticOpenCombatItemsMemberMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -120,6 +125,12 @@ struct DecodedSwitchWeapon {
 struct DecodedCycleCombatFocus {
   realmz::presentation::CombatantId combatant;
   realmz::presentation::CombatFocusDirection direction;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedOpenCombatItems {
+  realmz::presentation::CombatantId combatant;
+  realmz::presentation::PartyMemberId member;
   RealmzSemanticInputSurface surface;
 };
 
@@ -360,6 +371,26 @@ std::optional<DecodedCycleCombatFocus> decode_cycle_combat_focus(
   };
 }
 
+std::optional<DecodedOpenCombatItems> decode_open_combat_items(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticOpenCombatItemsMask) !=
+      kSemanticOpenCombatItemsSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticOpenCombatItemsSurfaceMask) >> 16U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedOpenCombatItems{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          (tagged_message & kSemanticOpenCombatItemsActorMask) >> 8U),
+      .member = static_cast<realmz::presentation::PartyMemberId>(
+          tagged_message & kSemanticOpenCombatItemsMemberMask),
+      .surface = surface_value,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -409,7 +440,9 @@ uint8_t consume_semantic_combatant_event(
     const std::optional<DecodedCombatant>& decoded,
     uint32_t* classic_key_message,
     MessageMapper message_mapper,
-    CombatantSnapshotValidator snapshot_validator = nullptr) {
+    CombatantSnapshotValidator snapshot_validator = nullptr,
+    std::optional<realmz::presentation::PartyMemberId>
+        required_selected_member = std::nullopt) {
   const bool authorized = authorize_completed_scope(expected_surface);
   if (!classic_key_message || !authorized || !decoded ||
       (decoded->surface != expected_surface)) {
@@ -447,6 +480,14 @@ uint8_t consume_semantic_combatant_event(
         !combatant->active || !combatant->targetable ||
         (combatant->stamina.current <= 0)) {
       return 0;
+    }
+    if (required_selected_member) {
+      const auto* selected_member =
+          snapshot.party.member(*required_selected_member);
+      if (!selected_member || !selected_member->selected ||
+          (snapshot.party.selected_member != *required_selected_member)) {
+        return 0;
+      }
     }
     if (snapshot_validator &&
         !snapshot_validator(snapshot, decoded->combatant)) {
@@ -619,6 +660,20 @@ uint32_t semantic_cycle_combat_focus_tag(
   return signature |
       (static_cast<uint32_t>(surface) << 8U) |
       static_cast<uint32_t>(combatant);
+}
+
+uint32_t semantic_open_combat_items_tag(
+    CombatantId combatant,
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticOpenCombatItemsSignature |
+      (static_cast<uint32_t>(surface) << 16U) |
+      (static_cast<uint32_t>(combatant) << 8U) |
+      static_cast<uint32_t>(member);
 }
 
 } // namespace realmz::presentation
@@ -803,6 +858,19 @@ RealmzSemanticCycleCombatFocusTagSurface(uint32_t tagged_message) {
       : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticOpenCombatItemsTag(
+    uint32_t tagged_message) {
+  return decode_open_combat_items(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticOpenCombatItemsTagSurface(uint32_t tagged_message) {
+  const auto combat_items = decode_open_combat_items(tagged_message);
+  return combat_items
+      ? combat_items->surface
+      : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -816,7 +884,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_delay_combatant(tagged_message) ||
           decode_center_active_combatant(tagged_message) ||
           decode_switch_weapon(tagged_message) ||
-          decode_cycle_combat_focus(tagged_message))
+          decode_cycle_combat_focus(tagged_message) ||
+          decode_open_combat_items(tagged_message))
       ? 1
       : 0;
 }
@@ -858,6 +927,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto cycle_focus = decode_cycle_combat_focus(tagged_message)) {
     return cycle_focus->surface;
+  }
+  if (const auto combat_items = decode_open_combat_items(tagged_message)) {
+    return combat_items->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1193,4 +1265,27 @@ extern "C" uint8_t RealmzConsumeSemanticCycleCombatFocusEvent(
             legacy_key_message_for_cycle_combat_focus(
                 combatant, direction, context);
       });
+}
+
+extern "C" uint8_t RealmzConsumeSemanticOpenCombatItemsEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const auto combat_items = decode_open_combat_items(tagged_message);
+  const auto member = combat_items
+      ? combat_items->member
+      : realmz::presentation::PartyMemberId{};
+  return consume_semantic_combatant_event(
+      expected_surface,
+      combat_items,
+      classic_key_message,
+      [member](
+          realmz::presentation::CombatantId combatant,
+          const realmz::presentation::RuntimeLegacyCommandContext& context)
+          noexcept {
+        return realmz::presentation::legacy_key_message_for_open_combat_items(
+            combatant, member, context);
+      },
+      nullptr,
+      member);
 }

@@ -22,6 +22,7 @@ constexpr uint32_t kCombatActionPageRegion = 1108U;
 constexpr uint32_t kSwitchWeaponSetRegion = 1109U;
 constexpr uint32_t kCenterPreviousCombatantRegion = 1110U;
 constexpr uint32_t kCenterNextCombatantRegion = 1111U;
+constexpr uint32_t kOpenCombatItemsRegion = 1112U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -104,6 +105,12 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.center_previous_combatant);
   const bool valid_center_next = request.center_next_combatant &&
       valid_combatant(*request.center_next_combatant);
+  const std::optional<CombatantId> combat_items_combatant =
+      request.combat_items
+      ? std::optional<CombatantId>{request.combat_items->combatant}
+      : std::nullopt;
+  const bool valid_combat_items = request.combat_items &&
+      valid_combatant(request.combat_items->combatant);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -112,6 +119,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.switch_weapon_combatant,
       request.center_previous_combatant,
       request.center_next_combatant,
+      combat_items_combatant,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -139,10 +147,11 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       ? primary_combat_control_count
       : (request.switch_weapon_combatant ? 1U : 0U) +
           (request.center_previous_combatant ? 1U : 0U) +
-          (request.center_next_combatant ? 1U : 0U);
+          (request.center_next_combatant ? 1U : 0U) +
+          (request.combat_items ? 1U : 0U);
   const bool combat_page_control_visible =
       secondary_combat_page || valid_switch_weapon ||
-      valid_center_previous || valid_center_next;
+      valid_center_previous || valid_center_next || valid_combat_items;
   const bool has_combatant_request = std::ranges::any_of(
       combatants,
       [](const auto& combatant) { return combatant.has_value(); });
@@ -154,7 +163,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.guard_available || request.finish_available ||
       request.delay_available || request.center_active_available ||
       request.switch_weapon_available || request.center_previous_available ||
-      request.center_next_available || secondary_combat_page;
+      request.center_next_available || request.combat_items ||
+      request.combat_items_available || secondary_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
       (combat_controls &&
@@ -171,7 +181,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.center_active_available && !valid_center) ||
       (request.switch_weapon_available && !valid_switch_weapon) ||
       (request.center_previous_available && !valid_center_previous) ||
-      (request.center_next_available && !valid_center_next)) {
+      (request.center_next_available && !valid_center_next) ||
+      (request.combat_items && !valid_combat_items) ||
+      (request.combat_items_available && !valid_combat_items)) {
     return {};
   }
 
@@ -356,6 +368,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               *request.center_next_combatant,
               CombatFocusDirection::next},
       });
+      x += button_width + gap;
+    }
+    if (request.combat_items) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kOpenCombatItemsRegion},
+          .kind = ShellControlKind::open_combat_items,
+          .bounds = {x, y, button_width, button_height},
+          .label = "ITEMS",
+          .accessibility_label = "Open combat items",
+          .focus_identifier = "focus.action.combat.items",
+          .tab_order = 1112,
+          .enabled = request.combat_items_available,
+          .payload = *request.combat_items,
+      });
     }
     return result;
   }
@@ -416,7 +442,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             *request.center_active_combatant},
     });
   }
-  if (valid_switch_weapon || valid_center_previous || valid_center_next) {
+  if (valid_switch_weapon || valid_center_previous || valid_center_next ||
+      valid_combat_items) {
     append_page_control();
   }
   return result;

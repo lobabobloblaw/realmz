@@ -75,6 +75,11 @@ using RuntimeLegacyCycleCombatFocusSink = std::function<bool(
     CombatFocusDirection,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenCombatItemsSink = std::function<bool(
+    CombatantId,
+    PartyMemberId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Combat sinks are named because several callable signatures are intentionally
 // identical even though their commands are not interchangeable. The focus
@@ -90,6 +95,7 @@ struct RuntimeLegacyCombatActionSinks {
       center_active_combatant;
   std::optional<RuntimeLegacySwitchWeaponSink> switch_weapon;
   std::optional<RuntimeLegacyCycleCombatFocusSink> cycle_combat_focus;
+  std::optional<RuntimeLegacyOpenCombatItemsSink> open_combat_items;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -172,6 +178,15 @@ legacy_key_message_for_switch_weapon(
 legacy_key_message_for_cycle_combat_focus(
     CombatantId combatant,
     CombatFocusDirection direction,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "i" key record consumed by combat's preserved
+// Items branch. Both the acting combatant and selected party member are carried
+// to the runtime sink; the Classic modal remains authoritative for item actions.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_open_combat_items(
+    CombatantId combatant,
+    PartyMemberId member,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Live UIAction boundary for the migrated command subset. The bridge queues

@@ -101,6 +101,13 @@ uint8_t RealmzIsSemanticCycleCombatFocusTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticCycleCombatFocusTagSurface(
     uint32_t tagged_message);
 
+// Combat-Items tags carry the acting combatant and selected party member as
+// independent stable IDs. Both must still match the fresh combat snapshot
+// before the preserved Classic modal can be requested.
+uint8_t RealmzIsSemanticOpenCombatItemsTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenCombatItemsTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -200,6 +207,14 @@ uint8_t RealmzConsumeSemanticCycleCombatFocusEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant and selected party member, then
+// returns the preserved Classic lowercase "i" key record. Classic remains
+// authoritative for the complete modal and every item or turn effect.
+uint8_t RealmzConsumeSemanticOpenCombatItemsEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -255,6 +270,11 @@ enum class CombatFocusDirection;
 [[nodiscard]] uint32_t semantic_cycle_combat_focus_tag(
     CombatantId combatant,
     CombatFocusDirection direction,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_combat_items_tag(
+    CombatantId combatant,
+    PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept;
 
 } // namespace realmz::presentation

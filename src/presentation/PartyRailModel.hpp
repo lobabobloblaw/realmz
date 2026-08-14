@@ -112,6 +112,7 @@ enum class ActionIntent {
   switch_weapon,
   center_previous,
   center_next,
+  combat_items,
   cancel,
   encounter_choice,
 };
