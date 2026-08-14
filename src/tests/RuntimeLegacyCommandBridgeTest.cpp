@@ -468,6 +468,121 @@ void test_open_inventory_mapping_and_dispatch() {
   }).status == DispatchStatus::unsupported);
 }
 
+void test_open_spellbook_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  int spellbook_calls = 0;
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [&spellbook_calls, &context](
+          PartyMemberId member,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++spellbook_calls;
+        CHECK(member == 2);
+        CHECK(message == 0x00000173U);
+        CHECK(captured_context == context);
+        return true;
+      });
+
+  ActionSequence sequence = 80;
+  CHECK(legacy_key_message_for_open_spellbook(context) == 0x00000173U);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenSpellbookAction{2},
+  }).status == DispatchStatus::handled);
+  CHECK(spellbook_calls == 1);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    CHECK(legacy_key_message_for_open_spellbook(context) == 0x00000173U);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenSpellbookAction{2},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(spellbook_calls == 3);
+
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_open_spellbook(context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenSpellbookAction{2},
+  }).status == DispatchStatus::rejected);
+  CHECK(spellbook_calls == 3);
+
+  context.adaptive_eligible = true;
+  for (const auto invalid : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+           },
+       }) {
+    context = invalid;
+    CHECK(!legacy_key_message_for_open_spellbook(context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenSpellbookAction{2},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(spellbook_calls == 3);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  RuntimeLegacyCommandBridge rejecting_sink(
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return false; });
+  CHECK(rejecting_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenSpellbookAction{2},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = OpenSpellbookAction{2},
+  }).status == DispatchStatus::unsupported);
+}
+
 void test_exception_boundary() {
   RuntimeLegacyCommandBridge provider_throws(
       []() -> RuntimeLegacyCommandContext {
@@ -547,6 +662,31 @@ void test_exception_boundary() {
       .sequence = 5,
       .payload = OpenInventoryAction{1},
   }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge spellbook_sink_throws(
+      [] {
+        return RuntimeLegacyCommandContext{
+            .screen = ScreenContext::exploration,
+            .world_presentation = WorldPresentation::outdoor,
+            .adaptive_eligible = true,
+        };
+      },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("spellbook sink failure");
+      });
+  CHECK(spellbook_sink_throws.dispatch(UIAction{
+      .sequence = 6,
+      .payload = OpenSpellbookAction{1},
+  }).status == DispatchStatus::failed);
 }
 
 } // namespace
@@ -561,6 +701,7 @@ int main() {
     test_party_selection_fail_closed_boundaries();
     test_party_selection_is_opt_in_and_preserves_movement();
     test_open_inventory_mapping_and_dispatch();
+    test_open_spellbook_mapping_and_dispatch();
     test_exception_boundary();
     std::cout << "RuntimeLegacyCommandBridgeTest passed ("
               << checks_run << " checks)\n";

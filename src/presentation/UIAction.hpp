@@ -49,6 +49,15 @@ struct OpenInventoryAction {
   bool operator==(const OpenInventoryAction&) const = default;
 };
 
+// Opens the preserved Classic spell-selection flow for the explicitly
+// selected caster. Choosing a spell and target remains a separate
+// CastSpellAction concern.
+struct OpenSpellbookAction {
+  PartyMemberId member = 0;
+
+  bool operator==(const OpenSpellbookAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -166,6 +175,7 @@ using UIActionPayload = std::variant<
     MovePartyAction,
     SelectPartyMemberAction,
     OpenInventoryAction,
+    OpenSpellbookAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -192,6 +202,8 @@ struct UIAction {
       return "select_party_member";
     } else if constexpr (std::is_same_v<Action, OpenInventoryAction>) {
       return "open_inventory";
+    } else if constexpr (std::is_same_v<Action, OpenSpellbookAction>) {
+      return "open_spellbook";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

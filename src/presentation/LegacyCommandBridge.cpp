@@ -70,6 +70,9 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
     } else if constexpr (std::is_same_v<Action, OpenInventoryAction>) {
       return invoke_handler(
           this->handlers_.open_inventory, payload, "open_inventory");
+    } else if constexpr (std::is_same_v<Action, OpenSpellbookAction>) {
+      return invoke_handler(
+          this->handlers_.open_spellbook, payload, "open_spellbook");
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return invoke_handler(this->handlers_.inventory, payload, "inventory");
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

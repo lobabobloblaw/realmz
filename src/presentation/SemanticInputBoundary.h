@@ -42,6 +42,13 @@ uint8_t RealmzIsSemanticOpenInventoryTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenInventoryTagSurface(
     uint32_t tagged_message);
 
+// Open-spellbook tags carry the intended caster. Late validation rejects a
+// queued command if selection, consciousness, or spell points change before
+// the guarded gameplay loop receives it.
+uint8_t RealmzIsSemanticOpenSpellbookTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenSpellbookTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -73,6 +80,13 @@ uint8_t RealmzConsumeSemanticOpenInventoryEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the originating gameplay surface and intended caster, then
+// returns the preserved Classic "s" key record to the top-level loop.
+uint8_t RealmzConsumeSemanticOpenSpellbookEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -91,6 +105,10 @@ enum class MovementCommand;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_open_inventory_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_spellbook_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept;
 

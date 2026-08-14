@@ -1411,6 +1411,26 @@ void WindowManager::create_sdl_window() {
                 realmz::presentation::semantic_open_inventory_tag(
                     member, surface);
             return tag && PushSemanticOpenInventoryEvent(tag);
+          },
+          [](realmz::presentation::PartyMemberId member,
+              uint32_t,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::exploration)) ||
+                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                    (context.screen ==
+                        realmz::presentation::ScreenContext::dungeon));
+            if (!matching_surface) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_open_spellbook_tag(
+                    member, surface);
+            return tag && PushSemanticOpenSpellbookEvent(tag);
           });
   this->configure_window_for_presentation_mode();
 
@@ -2022,11 +2042,24 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::open_inventory;
         });
+    const bool has_semantic_spellbook = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::open_spellbook;
+        });
     const char* action_summary =
         "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
-    if (has_semantic_movement && has_semantic_inventory) {
+    if (has_semantic_movement && has_semantic_inventory &&
+        has_semantic_spellbook) {
       action_summary =
-          "SEMANTIC MOVEMENT + INVENTORY — other actions remain in the game frame";
+          "SEMANTIC MOVEMENT + ITEMS + SPELLS — other actions remain in the game frame";
+    } else if (has_semantic_movement && has_semantic_inventory) {
+      action_summary =
+          "SEMANTIC MOVEMENT + ITEMS — other actions remain in the game frame";
+    } else if (has_semantic_movement && has_semantic_spellbook) {
+      action_summary =
+          "SEMANTIC MOVEMENT + SPELLS — other actions remain in the game frame";
     } else if (has_semantic_movement) {
       action_summary =
           "SEMANTIC MOVEMENT — other actions remain in the game frame";
@@ -2039,7 +2072,9 @@ void draw_shell_panel_contents(
         if ((control.kind !=
                 realmz::presentation::ShellControlKind::movement) &&
             (control.kind !=
-                realmz::presentation::ShellControlKind::open_inventory)) {
+                realmz::presentation::ShellControlKind::open_inventory) &&
+            (control.kind !=
+                realmz::presentation::ShellControlKind::open_spellbook)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -2442,6 +2477,21 @@ void WindowManager::present_remastered_frame() {
           (inventory_action != shell_model->actions.end()) &&
           inventory_action->can_invoke() && snapshot_context_matches &&
           legacy_context.adaptive_eligible != 0;
+      const auto spellbook_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::cast_spell;
+          });
+      const std::optional<realmz::presentation::PartyMemberId>
+          spellbook_member =
+              (spellbook_action != shell_model->actions.end())
+              ? spellbook_action->party_member
+              : std::nullopt;
+      const bool spellbook_available = spellbook_member &&
+          (spellbook_action != shell_model->actions.end()) &&
+          spellbook_action->can_invoke() && snapshot_context_matches &&
+          legacy_context.adaptive_eligible != 0;
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -2451,6 +2501,8 @@ void WindowManager::present_remastered_frame() {
               .navigation_available = navigation_available,
               .inventory_member = inventory_member,
               .inventory_available = inventory_available,
+              .spellbook_member = spellbook_member,
+              .spellbook_available = spellbook_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -2551,6 +2603,21 @@ void WindowManager::present_remastered_frame() {
                     snapshot.party.selected_member == inventory->member &&
                     realmz::presentation::
                         legacy_key_message_for_open_inventory(context)
+                        .has_value();
+              }
+              if (const auto* spellbook =
+                      std::get_if<
+                          realmz::presentation::OpenSpellbookAction>(
+                          &control.payload)) {
+                const auto* member =
+                    snapshot.party.member(spellbook->member);
+                return control.kind == realmz::presentation::
+                        ShellControlKind::open_spellbook &&
+                    member && member->selected && member->conscious &&
+                    member->spell_points.current > 0 &&
+                    snapshot.party.selected_member == spellbook->member &&
+                    realmz::presentation::
+                        legacy_key_message_for_open_spellbook(context)
                         .has_value();
               }
               if (std::holds_alternative<
@@ -2914,6 +2981,33 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       if ((snapshot->screen != context.screen) || !member ||
           !member->selected ||
           snapshot->party.selected_member != inventory->member) {
+        return false;
+      }
+      continue;
+    }
+    if (const auto* spellbook =
+            std::get_if<realmz::presentation::OpenSpellbookAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::open_spellbook ||
+          !realmz::presentation::legacy_key_message_for_open_spellbook(
+              context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      const auto* member = snapshot->party.member(spellbook->member);
+      if ((snapshot->screen != context.screen) || !member ||
+          !member->selected || !member->conscious ||
+          (member->spell_points.current <= 0) ||
+          snapshot->party.selected_member != spellbook->member) {
         return false;
       }
       continue;

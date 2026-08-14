@@ -151,8 +151,15 @@ void test_actions_and_events() {
   CHECK(action_name(open_inventory.payload) == "open_inventory");
   CHECK(std::get<OpenInventoryAction>(open_inventory.payload).member == 2);
 
-  UIAction casting{
+  UIAction open_spellbook{
       .sequence = 10,
+      .payload = OpenSpellbookAction{2},
+  };
+  CHECK(action_name(open_spellbook.payload) == "open_spellbook");
+  CHECK(std::get<OpenSpellbookAction>(open_spellbook.payload).member == 2);
+
+  UIAction casting{
+      .sequence = 11,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -166,7 +173,7 @@ void test_actions_and_events() {
   CHECK(cast.target.secondary == 5);
 
   UIAction drawer{
-      .sequence = 11,
+      .sequence = 12,
       .payload = SetDrawerPanelAction{DrawerPanel::event_log},
   };
   CHECK(action_name(drawer.payload) == "set_drawer_panel");
@@ -236,6 +243,14 @@ void test_command_bridge() {
   });
   CHECK(inventory_unsupported.status == DispatchStatus::unsupported);
   CHECK(inventory_unsupported.detail.find("open_inventory") !=
+      std::string::npos);
+
+  const auto spellbook_unsupported = bridge.dispatch(UIAction{
+      .sequence = 7,
+      .payload = OpenSpellbookAction{1},
+  });
+  CHECK(spellbook_unsupported.status == DispatchStatus::unsupported);
+  CHECK(spellbook_unsupported.detail.find("open_spellbook") !=
       std::string::npos);
 
   const auto failed = bridge.dispatch(UIAction{

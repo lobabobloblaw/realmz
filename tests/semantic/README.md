@@ -8,6 +8,7 @@ without reading or writing a Realmz character or save file:
 - first-person dungeon movement keys from `realmz_orig/threed.c`;
 - party portrait selection behavior modeled on `realmz_orig/buttonchoice.c`;
 - the Classic `i` key and typed selected-member `OpenInventoryAction`;
+- the Classic `s` key and guarded selected-member `OpenSpellbookAction`;
 - lower/upper valid party-member IDs and rejected out-of-range IDs;
 - rejected movement at the 90-by-90 fixture boundary;
 - per-action status, detail, event stream, `GameSnapshot`, and deterministic
@@ -37,10 +38,12 @@ CXX=g++ tests/semantic/run-exploration-action-equivalence.sh
 
 This is a contract-level fixture, not a live-engine equivalence claim. The
 production runtime connects eligible `MovePartyAction`,
-`SelectPartyMemberAction`, and `OpenInventoryAction` commands to the guarded
-legacy event loop. The fixture models deterministic exploration mutations, the
-inventory-screen transition, and a stable byte image; it does not reproduce or
-alter Realmz's binary save format.
+`SelectPartyMemberAction`, `OpenInventoryAction`, and `OpenSpellbookAction`
+commands to the guarded legacy event loop. The fixture models deterministic
+exploration mutations, the inventory-screen transition, the spellbook modal
+request, and a stable byte image; opening either compatibility flow leaves its
+save-facing bytes unchanged. It does not reproduce or alter Realmz's binary
+save format.
 
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:

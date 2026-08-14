@@ -61,11 +61,18 @@ struct ClassicOpenInventoryKey {
   bool operator==(const ClassicOpenInventoryKey&) const = default;
 };
 
+struct ClassicOpenSpellbookKey {
+  char value = 's';
+
+  bool operator==(const ClassicOpenSpellbookKey&) const = default;
+};
+
 using ClassicExplorationInput = std::variant<
     ClassicOutdoorScanCode,
     ClassicDungeonKey,
     ClassicPortraitClick,
-    ClassicOpenInventoryKey>;
+    ClassicOpenInventoryKey,
+    ClassicOpenSpellbookKey>;
 
 struct ReplayStep {
   std::string_view label;
@@ -143,13 +150,21 @@ struct ReplayStep {
           .sequence = sequence,
           .payload = SelectPartyMemberAction{concrete.member},
       };
-    } else {
+    } else if constexpr (std::is_same_v<Input, ClassicOpenInventoryKey>) {
       if ((concrete.value != 'i') || !selected_member) {
         return std::nullopt;
       }
       return UIAction{
           .sequence = sequence,
           .payload = OpenInventoryAction{*selected_member},
+      };
+    } else {
+      if ((concrete.value != 's') || !selected_member) {
+        return std::nullopt;
+      }
+      return UIAction{
+          .sequence = sequence,
+          .payload = OpenSpellbookAction{*selected_member},
       };
     }
   }, input);
@@ -212,13 +227,16 @@ public:
     PartyMemberView arin;
     arin.id = 0;
     arin.name = "Arin";
+    arin.spell_points = {8, 8};
     arin.selected = true;
     PartyMemberView bryn;
     bryn.id = 1;
     bryn.name = "Bryn";
+    bryn.spell_points = {7, 7};
     PartyMemberView cerys;
     cerys.id = 2;
     cerys.name = "Cerys";
+    cerys.spell_points = {6, 6};
     snapshot_.party.members = {
         std::move(arin),
         std::move(bryn),
@@ -360,6 +378,25 @@ public:
     }});
   }
 
+  [[nodiscard]] DispatchResult open_spellbook(
+      const OpenSpellbookAction& action) const {
+    const auto* member = snapshot_.party.member(action.member);
+    if (!member || !member->selected || !member->conscious ||
+        (member->spell_points.current <= 0) ||
+        snapshot_.party.selected_member != action.member) {
+      return DispatchResult::rejected(
+          "spellbook target is not an eligible selected caster");
+    }
+    return DispatchResult::handled({GameEvent{
+        .sequence = snapshot_.revision,
+        .payload = ModalRequestEvent{
+            .request_id = snapshot_.revision,
+            .title = "Cast spell",
+            .body = member->name,
+        },
+    }});
+  }
+
 private:
   static void write_u16(
       SaveFacingBytes& bytes,
@@ -435,6 +472,9 @@ private:
       };
   handlers.open_inventory = [&fixture](const OpenInventoryAction& action) {
     return fixture.open_inventory(action);
+  };
+  handlers.open_spellbook = [&fixture](const OpenSpellbookAction& action) {
+    return fixture.open_spellbook(action);
   };
   return handlers;
 }
@@ -573,6 +613,8 @@ enum class ReplayRoute {
           SelectPartyMemberAction{2}},
       {"open selected inventory", ClassicOpenInventoryKey{'i'},
           OpenInventoryAction{2}},
+      {"open selected spellbook", ClassicOpenSpellbookKey{'s'},
+          OpenSpellbookAction{2}},
   };
 }
 
@@ -606,6 +648,9 @@ void test_classic_adapter_matches_semantic_payloads() {
   CHECK(!adapt_classic_input(ClassicOpenInventoryKey{'?'}, 1, 0));
   CHECK(!adapt_classic_input(
       ClassicOpenInventoryKey{'i'}, 1, std::nullopt));
+  CHECK(!adapt_classic_input(ClassicOpenSpellbookKey{'?'}, 1, 0));
+  CHECK(!adapt_classic_input(
+      ClassicOpenSpellbookKey{'s'}, 1, std::nullopt));
 }
 
 void test_equivalent_replay_and_determinism() {
@@ -646,12 +691,21 @@ void test_equivalent_replay_and_determinism() {
     } else {
       CHECK(observed.snapshot == previous_snapshot);
       CHECK(observed.save_facing_bytes == previous_save_facing_bytes);
-      if (index + 1U == classic_first.steps.size()) {
+      if (std::holds_alternative<OpenInventoryAction>(
+              steps[index].remastered_payload)) {
         CHECK(observed.events.size() == 1);
         const auto* transition =
             std::get_if<ScreenTransitionEvent>(&observed.events[0].payload);
         CHECK(transition != nullptr);
         CHECK(transition->destination == ScreenContext::inventory);
+      } else if (std::holds_alternative<OpenSpellbookAction>(
+                     steps[index].remastered_payload)) {
+        CHECK(observed.events.size() == 1);
+        const auto* modal =
+            std::get_if<ModalRequestEvent>(&observed.events[0].payload);
+        CHECK(modal != nullptr);
+        CHECK(modal->title == "Cast spell");
+        CHECK(modal->body == "Cerys");
       } else {
         CHECK(observed.events.empty());
       }
@@ -671,6 +725,7 @@ void test_equivalent_replay_and_determinism() {
   CHECK(final.snapshot.party.members[1].selected == false);
   CHECK(final.snapshot.party.members[2].selected == true);
   CHECK(final.events.size() == 1);
+  CHECK(std::holds_alternative<ModalRequestEvent>(final.events[0].payload));
 }
 
 void test_selection_bounds_reject_without_mutation() {

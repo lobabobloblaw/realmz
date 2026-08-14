@@ -49,6 +49,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(OpenInventoryAction::member),
     PartyMemberId>);
+static_assert(std::is_same_v<
+    decltype(OpenSpellbookAction::member),
+    PartyMemberId>);
 
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
@@ -251,6 +254,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.move_party = mutateEngine;
   handlers.select_party_member = mutateEngine;
   handlers.open_inventory = mutateEngine;
+  handlers.open_spellbook = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -322,6 +326,16 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(openInventoryUnsupported.status == DispatchStatus::unsupported);
   CHECK(openInventoryUnsupported.detail ==
       "No legacy handler registered for open_inventory");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const auto openSpellbookUnsupported = unsupportedBridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenSpellbookAction{1},
+  });
+  CHECK(openSpellbookUnsupported.status == DispatchStatus::unsupported);
+  CHECK(openSpellbookUnsupported.detail ==
+      "No legacy handler registered for open_spellbook");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

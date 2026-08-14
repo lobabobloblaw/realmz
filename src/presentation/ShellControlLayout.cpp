@@ -11,6 +11,7 @@ namespace {
 
 constexpr uint32_t kMovementRegionBase = 1000U;
 constexpr uint32_t kInventoryRegion = 1100U;
+constexpr uint32_t kSpellbookRegion = 1101U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
@@ -68,12 +69,14 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   }
   const auto descriptors = descriptors_for(request);
   if (descriptors.empty() ||
-      (request.inventory_available && !request.inventory_member)) {
+      (request.inventory_available && !request.inventory_member) ||
+      (request.spellbook_available && !request.spellbook_member)) {
     return {};
   }
 
   const size_t control_count = descriptors.size() +
-      (request.inventory_member ? 1U : 0U);
+      (request.inventory_member ? 1U : 0U) +
+      (request.spellbook_member ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -122,6 +125,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .tab_order = 1100,
         .enabled = request.inventory_available,
         .payload = OpenInventoryAction{*request.inventory_member},
+    });
+    x += button_width + gap;
+  }
+  if (request.spellbook_member) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kSpellbookRegion},
+        .kind = ShellControlKind::open_spellbook,
+        .bounds = {x, y, button_width, button_height},
+        .label = "SPELLS",
+        .accessibility_label = "Cast spell",
+        .focus_identifier = "focus.action.spellbook.open",
+        .tab_order = 1101,
+        .enabled = request.spellbook_available,
+        .payload = OpenSpellbookAction{*request.spellbook_member},
     });
   }
   return result;

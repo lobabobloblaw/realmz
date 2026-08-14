@@ -13,6 +13,7 @@ enum class ShellControlKind {
   movement,
   party_member,
   open_inventory,
+  open_spellbook,
   drawer_tab,
 };
 
@@ -37,6 +38,8 @@ struct ShellControlLayoutRequest {
   bool navigation_available = false;
   std::optional<PartyMemberId> inventory_member;
   bool inventory_available = false;
+  std::optional<PartyMemberId> spellbook_member;
+  bool spellbook_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

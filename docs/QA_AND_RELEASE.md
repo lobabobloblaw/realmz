@@ -72,11 +72,13 @@ On eligible exploration and dungeon screens, party cards expose typed
 late-validated against a fresh party snapshot, then a narrow
 legacy adapter changes `charselectnew` exactly once or performs an idempotent
 no-op for the selected member; it never synthesizes a portrait click or opens a
-modal. The Items action carries that selected member in a distinct typed and
-tagged command; the same guarded top-level loop revalidates the member and live
-screen before returning the exact Classic `i` key record. The nested inventory
-screen remains unmodified and full-frame. Details and log surfaces stay
-informational, and the complete
+modal. The Items and Spells actions carry that selected member in distinct typed
+and tagged commands; Spells is available only while the member is conscious and
+has spell points. The same guarded top-level loop revalidates the member, live
+selection, eligibility, and screen before returning the exact Classic `i` or
+`s` key record. Stale queued actions therefore become inert. The nested
+inventory and spell-selection screens remain unmodified and full-frame.
+Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
 local presentation actions with pointer and wrapping keyboard operation; they
 never cross the legacy mutation bridge. Popup anchors, text-input rectangles, cursor
@@ -175,6 +177,10 @@ Automated checks do not replace these release decisions:
 
 - two human start-to-finish playthroughs of Tutorial and City, with no unresolved Classic fallback;
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
+- pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items
+  and Spells controls at compact and wide layouts, including an inert stale
+  Spells action after selection, consciousness, spell points, or surface state
+  changes;
 - clean install on macOS 13.3 and the current macOS release, plus upgrade/import from an existing Realmz installation;
 - crash-free soak sessions and zero P0/P1 defects;
 - verification that imported saves were copied, hashed, and backed up, and the old installation remained byte-for-byte unchanged;

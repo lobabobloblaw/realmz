@@ -51,6 +51,9 @@ private:
     handlers.open_inventory = [](const OpenInventoryAction&) {
       return DispatchResult::handled();
     };
+    handlers.open_spellbook = [](const OpenSpellbookAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -411,6 +414,45 @@ void test_open_inventory_payload_activates_exactly_once() {
   CHECK(bridge.actions().size() == 1);
 }
 
+void test_open_spellbook_payload_activates_exactly_once() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  const ShellControlPlacement spellbook{
+      .region = ShellRegionId{1101},
+      .kind = ShellControlKind::open_spellbook,
+      .bounds = {108.0, 20.0, 80.0, 48.0},
+      .label = "SPELLS",
+      .accessibility_label = "Cast spell",
+      .focus_identifier = "focus.action.spellbook.open",
+      .tab_order = 1101,
+      .enabled = true,
+      .payload = OpenSpellbookAction{2},
+  };
+  CHECK(!harness.recompose({spellbook}));
+  CHECK(harness.focus(spellbook.focus_identifier));
+
+  const auto down = harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(down.shell.consumed);
+  CHECK(!down.shell.invoked_control);
+  CHECK(bridge.actions().empty());
+
+  const auto up = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(up.shell.consumed);
+  CHECK(up.shell.invoked_control.has_value());
+  CHECK(up.shell.invoked_control->kind ==
+      ShellControlKind::open_spellbook);
+  CHECK(up.dispatch.has_value());
+  CHECK(up.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1);
+  CHECK(std::get<OpenSpellbookAction>(bridge.actions()[0].payload).member == 2);
+
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1);
+}
+
 using DescriptorMutation =
     std::function<void(std::vector<ShellControlPlacement>&)>;
 
@@ -579,6 +621,7 @@ int main() {
     test_enter_space_exactly_once_and_physical_release_pairing();
     test_first_activation_wins_across_simultaneous_physical_keys();
     test_open_inventory_payload_activates_exactly_once();
+    test_open_spellbook_payload_activates_exactly_once();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();
