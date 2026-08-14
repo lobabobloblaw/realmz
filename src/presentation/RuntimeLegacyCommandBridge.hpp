@@ -54,6 +54,10 @@ using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyFinishCombatantSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Returns the exact Classic Mac key message already consumed by the preserved
 // exploration/dungeon event loops. Unsupported command/context combinations
@@ -93,6 +97,14 @@ legacy_menu_command_for_open_load_game(
 // immediately before EventManager translates the tagged command.
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_guard_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "f" key record consumed by the preserved combat
+// switch. The actor is carried and range-checked independently from Guard so a
+// queued Finish can never silently change its turn-ending semantics.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_finish_combatant(
     CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 
@@ -150,6 +162,16 @@ public:
       RuntimeLegacyOpenSaveGameSink open_save_game_sink,
       RuntimeLegacyOpenLoadGameSink open_load_game_sink,
       RuntimeLegacyGuardCombatantSink guard_combatant_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyOpenInventorySink open_inventory_sink,
+      RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+      RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+      RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+      RuntimeLegacyGuardCombatantSink guard_combatant_sink,
+      RuntimeLegacyFinishCombatantSink finish_combatant_sink);
 
   [[nodiscard]] DispatchResult dispatch(const UIAction& action) override;
 

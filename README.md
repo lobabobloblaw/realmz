@@ -30,12 +30,13 @@ and `OpenLoadGameAction` commands. After late surface validation, they become
 the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
-During combat, a code-native Guard control carries the stable active-party
-combatant ID in a typed `GuardCombatantAction`. Its combat-only guarded route
-revalidates the fresh acting combatant before returning the exact Classic `g`
-key record; the preserved guarding mutation and turn advance remain
-authoritative. Other combat commands remain inside the interactive Classic
-frame.
+During combat, code-native Guard and Finish controls each carry the stable
+active-party combatant ID in typed `GuardCombatantAction` and
+`FinishCombatantAction` commands. Their combat-only guarded routes revalidate
+the fresh acting combatant before returning the exact Classic `g` or `f` key
+record. The preserved Classic handlers remain authoritative for the resulting
+combat-state mutations and turn advance. Other combat commands remain inside
+the interactive Classic frame.
 The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a

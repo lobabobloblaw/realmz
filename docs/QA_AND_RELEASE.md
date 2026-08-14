@@ -86,14 +86,15 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes one bounded semantic action: typed `GuardCombatantAction`
-carries the stable active-party combatant ID through a combat-only tagged
-event. The top-level combat loop revalidates a fresh snapshot, including the
-acting ID, party ownership, active/targetable state, and positive stamina,
-before translating the action to the exact preserved Classic `g` key record.
-The original guard-state mutation and turn advance remain authoritative;
-stale actions become inert, and all other combat commands remain in the
-interactive Classic frame.
+Combat exposes two bounded semantic actions: typed `GuardCombatantAction` and
+`FinishCombatantAction` commands each carry the stable active-party combatant
+ID through distinct combat-only tagged events. The top-level combat loop
+revalidates a fresh snapshot, including the acting ID, party ownership,
+active/targetable state, and positive stamina, before translating either
+action to the exact preserved Classic `g` or `f` key record. The original
+Classic guard/finish mutations and turn advance remain authoritative; stale
+actions become inert, and all other combat commands remain in the interactive
+Classic frame.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
@@ -195,12 +196,13 @@ Automated checks do not replace these release decisions:
 - two human start-to-finish playthroughs of Tutorial and City, with no unresolved Classic fallback;
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, Save, and Load controls at compact and wide layouts, including an inert
-  stale Spells action after selection, consciousness, spell points, or surface
-  state changes and an inert stale Save action after leaving its gameplay
-  surface plus an inert stale Load action after leaving its gameplay surface;
-  verify Save and Load open the Classic chooser without selecting a slot,
-  writing a save, or replacing live state;
+  Spells, Save, Load, Guard, and Finish controls at compact and wide layouts,
+  including an inert stale Spells action after selection, consciousness, spell
+  points, or surface state changes; inert stale Save and Load actions after
+  leaving their gameplay surface; and inert stale Guard and Finish actions
+  after the acting combatant, eligibility, or combat surface changes; verify
+  Save and Load open the Classic chooser without selecting a slot, writing a
+  save, or replacing live state;
 - clean install on macOS 13.3 and the current macOS release, plus upgrade/import from an existing Realmz installation;
 - crash-free soak sessions and zero P0/P1 defects;
 - verification that imported saves were copied, hashed, and backed up, and the old installation remained byte-for-byte unchanged;

@@ -15,6 +15,7 @@ constexpr uint32_t kSpellbookRegion = 1101U;
 constexpr uint32_t kSaveGameRegion = 1102U;
 constexpr uint32_t kLoadGameRegion = 1103U;
 constexpr uint32_t kGuardCombatantRegion = 1104U;
+constexpr uint32_t kFinishCombatantRegion = 1105U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
@@ -72,11 +73,25 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   }
   const auto descriptors = descriptors_for(request);
   const bool world_controls = !descriptors.empty();
+  const auto valid_combatant = [](CombatantId combatant) {
+    return (combatant >= 0) && (combatant <= 0xFF);
+  };
+  const bool valid_guard = request.guard_combatant &&
+      valid_combatant(*request.guard_combatant);
+  const bool valid_finish = request.finish_combatant &&
+      valid_combatant(*request.finish_combatant);
+  const bool invalid_guard = request.guard_combatant && !valid_guard;
+  const bool invalid_finish = request.finish_combatant && !valid_finish;
+  const bool mismatched_combatants = request.guard_combatant &&
+      request.finish_combatant &&
+      (*request.guard_combatant != *request.finish_combatant);
   const bool combat_controls =
-      (request.screen == ScreenContext::combat) && request.guard_combatant &&
-      (*request.guard_combatant >= 0) && (*request.guard_combatant <= 0xFF);
+      (request.screen == ScreenContext::combat) &&
+      (valid_guard || valid_finish) && !invalid_guard && !invalid_finish &&
+      !mismatched_combatants;
   if ((!world_controls && !combat_controls) ||
-      (world_controls && request.guard_combatant) ||
+      (world_controls &&
+          (request.guard_combatant || request.finish_combatant)) ||
       (combat_controls &&
           (request.navigation_available || request.inventory_member ||
               request.spellbook_member || request.save_control_visible ||
@@ -85,7 +100,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.spellbook_available && !request.spellbook_member) ||
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
-      (request.guard_available && !combat_controls)) {
+      (request.guard_available && !valid_guard) ||
+      (request.finish_available && !valid_finish)) {
     return {};
   }
 
@@ -94,7 +110,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.spellbook_member ? 1U : 0U) +
       (request.save_control_visible ? 1U : 0U) +
       (request.load_control_visible ? 1U : 0U) +
-      (request.guard_combatant ? 1U : 0U);
+      (request.guard_combatant ? 1U : 0U) +
+      (request.finish_combatant ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -202,6 +219,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .tab_order = 1104,
         .enabled = request.guard_available,
         .payload = GuardCombatantAction{*request.guard_combatant},
+    });
+    x += button_width + gap;
+  }
+  if (request.finish_combatant) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kFinishCombatantRegion},
+        .kind = ShellControlKind::finish_combatant,
+        .bounds = {x, y, button_width, button_height},
+        .label = "FINISH",
+        .accessibility_label = "Finish active combatant's turn",
+        .focus_identifier = "focus.action.combat.finish",
+        .tab_order = 1105,
+        .enabled = request.finish_available,
+        .payload = FinishCombatantAction{*request.finish_combatant},
     });
   }
   return result;

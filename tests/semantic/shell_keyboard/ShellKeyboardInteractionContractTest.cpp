@@ -63,6 +63,9 @@ private:
     handlers.guard_combatant = [](const GuardCombatantAction&) {
       return DispatchResult::handled();
     };
+    handlers.finish_combatant = [](const FinishCombatantAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -582,6 +585,83 @@ void test_guard_payload_activates_exactly_once() {
   CHECK(bridge.actions().size() == 1);
 }
 
+void test_finish_payload_orders_dispatches_and_cancels_stale_actor() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  const ShellControlPlacement guard{
+      .region = ShellRegionId{1104},
+      .kind = ShellControlKind::guard_combatant,
+      .bounds = {20.0, 20.0, 120.0, 48.0},
+      .label = "GUARD",
+      .accessibility_label = "Guard active combatant",
+      .focus_identifier = "focus.action.combat.guard",
+      .tab_order = 1104,
+      .enabled = true,
+      .payload = GuardCombatantAction{2},
+  };
+  const ShellControlPlacement finish{
+      .region = ShellRegionId{1105},
+      .kind = ShellControlKind::finish_combatant,
+      .bounds = {148.0, 20.0, 120.0, 48.0},
+      .label = "FINISH",
+      .accessibility_label = "Finish active combatant's turn",
+      .focus_identifier = "focus.action.combat.finish",
+      .tab_order = 1105,
+      .enabled = true,
+      .payload = FinishCombatantAction{2},
+  };
+  // Reversed insertion order proves that semantic tab order remains stable.
+  CHECK(!harness.recompose({finish, guard}));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == guard.focus_identifier);
+  release_tab(harness);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() == finish.focus_identifier);
+  release_tab(harness);
+
+  const auto down = harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(down.shell.consumed);
+  CHECK(!down.shell.invoked_control);
+  CHECK(bridge.actions().empty());
+  const auto up = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(up.shell.consumed);
+  CHECK(up.shell.invoked_control.has_value());
+  CHECK(up.shell.invoked_control->kind ==
+      ShellControlKind::finish_combatant);
+  CHECK(up.dispatch.has_value());
+  CHECK(up.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1);
+  CHECK(std::get<FinishCombatantAction>(bridge.actions()[0].payload).combatant ==
+      2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1);
+
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.keyboard().pressed_identifier() == finish.focus_identifier);
+  auto changed = harness.controls();
+  const auto changed_finish = std::ranges::find_if(
+      changed, [](const auto& control) {
+        return control.kind == ShellControlKind::finish_combatant;
+      });
+  CHECK(changed_finish != changed.end());
+  changed_finish->payload = FinishCombatantAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.keyboard().pressed_identifier());
+  const auto stale_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_release.shell.consumed);
+  CHECK(!stale_release.shell.invoked_control);
+  CHECK(!stale_release.dispatch);
+  CHECK(bridge.actions().size() == 1);
+}
+
 using DescriptorMutation =
     std::function<void(std::vector<ShellControlPlacement>&)>;
 
@@ -754,6 +834,7 @@ int main() {
     test_open_save_payload_activates_exactly_once();
     test_open_load_payload_activates_exactly_once();
     test_guard_payload_activates_exactly_once();
+    test_finish_payload_orders_dispatches_and_cancels_stale_actor();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();

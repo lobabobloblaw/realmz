@@ -170,7 +170,7 @@ void test_action_availability_is_conservative() {
   CHECK(model.actions[7].can_invoke());
 }
 
-void test_combat_guard_tracks_the_active_party_combatant() {
+void test_combat_actions_track_the_active_party_combatant() {
   auto snapshot = sample_snapshot();
   snapshot.screen = ScreenContext::combat;
   snapshot.combat = CombatView{
@@ -202,20 +202,48 @@ void test_combat_guard_tracks_the_active_party_combatant() {
   CHECK(guard.availability == ActionAvailability::deferred_to_engine);
   CHECK(guard.command == "action.combat.guard");
   CHECK(guard.combatant == 1);
+  const auto& finish = action_with(model, ActionIntent::finish);
+  CHECK(finish.can_invoke());
+  CHECK(finish.availability == ActionAvailability::deferred_to_engine);
+  CHECK(finish.command == "action.combat.finish");
+  CHECK(finish.combatant == guard.combatant);
+  CHECK(finish.tab_order == guard.tab_order + 1);
+  CHECK(finish.focus_identifier != guard.focus_identifier);
+
+  const auto check_combat_actions_unavailable = [&snapshot]() {
+    const auto unavailable = build_presentation_shell_model(snapshot);
+    for (const auto intent : {ActionIntent::guard, ActionIntent::finish}) {
+      const auto& combat_action = action_with(unavailable, intent);
+      CHECK(!combat_action.can_invoke());
+      CHECK(!combat_action.combatant);
+      CHECK(combat_action.availability_reason->label ==
+          "Wait for an active party member");
+    }
+  };
 
   snapshot.combat->acting_combatant = 10;
   snapshot.combat->combatants[0].active = false;
   snapshot.combat->combatants[1].active = true;
-  model = build_presentation_shell_model(snapshot);
-  const auto& monster_turn = action_with(model, ActionIntent::guard);
-  CHECK(!monster_turn.can_invoke());
-  CHECK(!monster_turn.combatant);
-  CHECK(monster_turn.availability_reason->label ==
-      "Wait for an active party member");
+  check_combat_actions_unavailable();
+
+  snapshot.combat->acting_combatant = 1;
+  snapshot.combat->combatants[1].active = false;
+  check_combat_actions_unavailable();
+
+  snapshot.combat->combatants[0].active = true;
+  snapshot.combat->combatants[0].targetable = false;
+  check_combat_actions_unavailable();
+
+  snapshot.combat->combatants[0].targetable = true;
+  snapshot.combat->combatants[0].stamina.current = 0;
+  check_combat_actions_unavailable();
+
+  snapshot.combat->combatants[0].stamina.current = 12;
+  snapshot.combat->active = false;
+  check_combat_actions_unavailable();
 
   snapshot.combat.reset();
-  model = build_presentation_shell_model(snapshot);
-  CHECK(!action_with(model, ActionIntent::guard).can_invoke());
+  check_combat_actions_unavailable();
 }
 
 void test_events_drawers_motion_and_log_limit() {
@@ -337,7 +365,7 @@ int main() {
     test_party_rail_and_non_color_states();
     test_selection_fallback_and_meter_bounds();
     test_action_availability_is_conservative();
-    test_combat_guard_tracks_the_active_party_combatant();
+    test_combat_actions_track_the_active_party_combatant();
     test_events_drawers_motion_and_log_limit();
     test_typography_keyboard_order_and_remappable_ids();
     test_determinism_and_no_input_mutation();

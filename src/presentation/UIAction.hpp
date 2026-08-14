@@ -81,6 +81,15 @@ struct GuardCombatantAction {
   bool operator==(const GuardCombatantAction&) const = default;
 };
 
+// Ends the explicitly identified party combatant's current turn through the
+// preserved Classic Finish command. The stable actor ID prevents a queued
+// command from finishing whichever combatant happens to act next.
+struct FinishCombatantAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const FinishCombatantAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -202,6 +211,7 @@ using UIActionPayload = std::variant<
     OpenSaveGameAction,
     OpenLoadGameAction,
     GuardCombatantAction,
+    FinishCombatantAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -236,6 +246,8 @@ struct UIAction {
       return "open_load_game";
     } else if constexpr (std::is_same_v<Action, GuardCombatantAction>) {
       return "guard_combatant";
+    } else if constexpr (std::is_same_v<Action, FinishCombatantAction>) {
+      return "finish_combatant";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

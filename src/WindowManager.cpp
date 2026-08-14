@@ -1490,6 +1490,25 @@ void WindowManager::create_sdl_window() {
                 realmz::presentation::semantic_guard_combatant_tag(
                     combatant, surface);
             return tag && PushSemanticGuardCombatantEvent(tag);
+          },
+          [](realmz::presentation::CombatantId combatant,
+              uint32_t message,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                (context.screen ==
+                    realmz::presentation::ScreenContext::combat);
+            const auto expected = realmz::presentation::
+                legacy_key_message_for_finish_combatant(combatant, context);
+            if (!matching_surface || !expected || (message != *expected)) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_finish_combatant_tag(
+                    combatant, surface);
+            return tag && PushSemanticFinishCombatantEvent(tag);
           });
   this->configure_window_for_presentation_mode();
 
@@ -2125,6 +2144,12 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::guard_combatant;
         });
+    const bool has_semantic_finish = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::finish_combatant;
+        });
     std::string action_summary =
         "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
     if (has_semantic_movement) {
@@ -2142,14 +2167,20 @@ void draw_shell_panel_contents(
         action_summary += " + LOAD";
       }
       action_summary += " — other actions remain in the game frame";
-    } else if (has_semantic_guard) {
-      action_summary =
-          "SEMANTIC COMBAT + GUARD — other actions remain in the game frame";
+    } else if (has_semantic_guard || has_semantic_finish) {
+      action_summary = "SEMANTIC COMBAT";
+      if (has_semantic_guard) {
+        action_summary += " + GUARD";
+      }
+      if (has_semantic_finish) {
+        action_summary += " + FINISH";
+      }
+      action_summary += " — other actions remain in the game frame";
     }
     draw_shell_text(renderer, font, action_summary,
         {left, panel.y + 37.0, width, 24.0},
         kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
-    if (has_semantic_movement || has_semantic_guard) {
+    if (has_semantic_movement || has_semantic_guard || has_semantic_finish) {
       for (const auto& control : controls) {
         if ((control.kind !=
                 realmz::presentation::ShellControlKind::movement) &&
@@ -2162,7 +2193,9 @@ void draw_shell_panel_contents(
             (control.kind !=
                 realmz::presentation::ShellControlKind::open_load_game) &&
             (control.kind !=
-                realmz::presentation::ShellControlKind::guard_combatant)) {
+                realmz::presentation::ShellControlKind::guard_combatant) &&
+            (control.kind !=
+                realmz::presentation::ShellControlKind::finish_combatant)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -2637,6 +2670,26 @@ void WindowManager::present_remastered_frame() {
                   .adaptive_eligible =
                       legacy_context.adaptive_eligible != 0,
               }).has_value();
+      const auto finish_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::finish;
+          });
+      const std::optional<realmz::presentation::CombatantId> finish_combatant =
+          (finish_action != shell_model->actions.end())
+          ? finish_action->combatant
+          : std::nullopt;
+      const bool finish_available = finish_combatant &&
+          finish_action->can_invoke() && snapshot_context_matches &&
+          realmz::presentation::legacy_key_message_for_finish_combatant(
+              *finish_combatant,
+              {
+                  .screen = screen,
+                  .world_presentation = snapshot.world.presentation,
+                  .adaptive_eligible =
+                      legacy_context.adaptive_eligible != 0,
+              }).has_value();
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -2654,6 +2707,8 @@ void WindowManager::present_remastered_frame() {
               .load_available = load_available,
               .guard_combatant = guard_combatant,
               .guard_available = guard_available,
+              .finish_combatant = finish_combatant,
+              .finish_available = finish_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -2807,6 +2862,29 @@ void WindowManager::present_remastered_frame() {
                 const auto combatant = std::ranges::find(
                     snapshot.combat->combatants,
                     guard->combatant,
+                    &realmz::presentation::CombatantView::id);
+                return combatant != snapshot.combat->combatants.end() &&
+                    combatant->kind ==
+                        realmz::presentation::CombatantKind::party_member &&
+                    combatant->active && combatant->targetable &&
+                    combatant->stamina.current > 0;
+              }
+              if (const auto* finish =
+                      std::get_if<
+                          realmz::presentation::FinishCombatantAction>(
+                          &control.payload)) {
+                if (control.kind != realmz::presentation::
+                        ShellControlKind::finish_combatant ||
+                    !snapshot.combat || !snapshot.combat->active ||
+                    snapshot.combat->acting_combatant != finish->combatant ||
+                    !realmz::presentation::
+                        legacy_key_message_for_finish_combatant(
+                            finish->combatant, context)) {
+                  return false;
+                }
+                const auto combatant = std::ranges::find(
+                    snapshot.combat->combatants,
+                    finish->combatant,
                     &realmz::presentation::CombatantView::id);
                 return combatant != snapshot.combat->combatants.end() &&
                     combatant->kind ==
@@ -3256,6 +3334,42 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       const auto combatant = std::ranges::find(
           snapshot->combat->combatants,
           guard->combatant,
+          &realmz::presentation::CombatantView::id);
+      if ((combatant == snapshot->combat->combatants.end()) ||
+          (combatant->kind !=
+              realmz::presentation::CombatantKind::party_member) ||
+          !combatant->active || !combatant->targetable ||
+          (combatant->stamina.current <= 0)) {
+        return false;
+      }
+      continue;
+    }
+    if (const auto* finish =
+            std::get_if<realmz::presentation::FinishCombatantAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::finish_combatant ||
+          !realmz::presentation::legacy_key_message_for_finish_combatant(
+              finish->combatant, context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) || !snapshot->combat ||
+          !snapshot->combat->active ||
+          snapshot->combat->acting_combatant != finish->combatant) {
+        return false;
+      }
+      const auto combatant = std::ranges::find(
+          snapshot->combat->combatants,
+          finish->combatant,
           &realmz::presentation::CombatantView::id);
       if ((combatant == snapshot->combat->combatants.end()) ||
           (combatant->kind !=

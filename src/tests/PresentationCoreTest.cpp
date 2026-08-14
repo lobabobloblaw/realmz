@@ -181,8 +181,15 @@ void test_actions_and_events() {
   CHECK(action_name(guard.payload) == "guard_combatant");
   CHECK(std::get<GuardCombatantAction>(guard.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction finish{
       .sequence = 14,
+      .payload = FinishCombatantAction{2},
+  };
+  CHECK(action_name(finish.payload) == "finish_combatant");
+  CHECK(std::get<FinishCombatantAction>(finish.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 15,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -298,6 +305,14 @@ void test_command_bridge() {
   });
   CHECK(guard_unsupported.status == DispatchStatus::unsupported);
   CHECK(guard_unsupported.detail.find("guard_combatant") !=
+      std::string::npos);
+
+  const auto finish_unsupported = bridge.dispatch(UIAction{
+      .sequence = 11,
+      .payload = FinishCombatantAction{1},
+  });
+  CHECK(finish_unsupported.status == DispatchStatus::unsupported);
+  CHECK(finish_unsupported.detail.find("finish_combatant") !=
       std::string::npos);
 
   const auto failed = bridge.dispatch(UIAction{

@@ -101,6 +101,7 @@ Boolean PushSemanticOpenSpellbookEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenSaveGameEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenLoadGameEvent(uint32_t tagged_message);
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message);
+Boolean PushSemanticFinishCombatantEvent(uint32_t tagged_message);
 
 // Cancels active authorization and removes every queued presentation command.
 // Used by presentation-mode transitions, including native-menu callbacks.

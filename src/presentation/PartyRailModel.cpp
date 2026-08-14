@@ -314,21 +314,35 @@ std::vector<ActionControlModel> build_actions(
         acting = &*match;
       }
     }
-    const bool can_guard = acting &&
+    const bool can_act = acting &&
         (acting->kind == CombatantKind::party_member) && acting->active &&
         acting->targetable && (acting->stamina.current > 0);
     result.emplace_back(action(
         ActionIntent::guard,
         "action.combat.guard",
         "Guard",
-        can_guard ? ActionAvailability::deferred_to_engine
-                  : ActionAvailability::unavailable,
+        can_act ? ActionAvailability::deferred_to_engine
+                : ActionAvailability::unavailable,
         tab_order++,
-        can_guard
+        can_act
             ? std::optional<StateTokenModel>{engine_rules_token()}
             : std::optional<StateTokenModel>{
                   unavailable_token("Wait for an active party member")}));
-    if (can_guard) {
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
+    result.emplace_back(action(
+        ActionIntent::finish,
+        "action.combat.finish",
+        "Finish",
+        can_act ? ActionAvailability::deferred_to_engine
+                : ActionAvailability::unavailable,
+        tab_order++,
+        can_act
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{
+                  unavailable_token("Wait for an active party member")}));
+    if (can_act) {
       result.back().combatant = acting->id;
     }
   }

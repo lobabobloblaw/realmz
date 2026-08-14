@@ -69,6 +69,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<OpenSaveGameAction> open_save_game;
   LegacyActionHandler<OpenLoadGameAction> open_load_game;
   LegacyActionHandler<GuardCombatantAction> guard_combatant;
+  LegacyActionHandler<FinishCombatantAction> finish_combatant;
   LegacyActionHandler<InventoryAction> inventory;
   LegacyActionHandler<CastSpellAction> cast_spell;
   LegacyActionHandler<TradeAction> trade;

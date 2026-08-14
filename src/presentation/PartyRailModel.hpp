@@ -106,6 +106,7 @@ enum class ActionIntent {
   save_game,
   load_game,
   guard,
+  finish,
   cancel,
   encounter_choice,
 };
