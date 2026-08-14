@@ -174,8 +174,15 @@ void test_actions_and_events() {
   CHECK(std::holds_alternative<OpenLoadGameAction>(
       open_load_game.payload));
 
-  UIAction casting{
+  UIAction guard{
       .sequence = 13,
+      .payload = GuardCombatantAction{2},
+  };
+  CHECK(action_name(guard.payload) == "guard_combatant");
+  CHECK(std::get<GuardCombatantAction>(guard.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 14,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -283,6 +290,14 @@ void test_command_bridge() {
   });
   CHECK(load_chooser_unsupported.status == DispatchStatus::unsupported);
   CHECK(load_chooser_unsupported.detail.find("open_load_game") !=
+      std::string::npos);
+
+  const auto guard_unsupported = bridge.dispatch(UIAction{
+      .sequence = 10,
+      .payload = GuardCombatantAction{1},
+  });
+  CHECK(guard_unsupported.status == DispatchStatus::unsupported);
+  CHECK(guard_unsupported.detail.find("guard_combatant") !=
       std::string::npos);
 
   const auto failed = bridge.dispatch(UIAction{

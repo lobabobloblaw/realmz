@@ -60,6 +60,9 @@ private:
     handlers.open_load_game = [](const OpenLoadGameAction&) {
       return DispatchResult::handled();
     };
+    handlers.guard_combatant = [](const GuardCombatantAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -539,6 +542,46 @@ void test_open_load_payload_activates_exactly_once() {
   CHECK(bridge.actions().size() == 1);
 }
 
+void test_guard_payload_activates_exactly_once() {
+  RecordingBridge bridge;
+  ProductionKeyboardHarness harness(bridge);
+  const ShellControlPlacement guard{
+      .region = ShellRegionId{1104},
+      .kind = ShellControlKind::guard_combatant,
+      .bounds = {20.0, 20.0, 120.0, 48.0},
+      .label = "GUARD",
+      .accessibility_label = "Guard active combatant",
+      .focus_identifier = "focus.action.combat.guard",
+      .tab_order = 1104,
+      .enabled = true,
+      .payload = GuardCombatantAction{2},
+  };
+  CHECK(!harness.recompose({guard}));
+  CHECK(harness.focus(guard.focus_identifier));
+
+  const auto down = harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(down.shell.consumed);
+  CHECK(!down.shell.invoked_control);
+  CHECK(bridge.actions().empty());
+
+  const auto up = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(up.shell.consumed);
+  CHECK(up.shell.invoked_control.has_value());
+  CHECK(up.shell.invoked_control->kind ==
+      ShellControlKind::guard_combatant);
+  CHECK(up.dispatch.has_value());
+  CHECK(up.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 1);
+  CHECK(std::get<GuardCombatantAction>(bridge.actions()[0].payload).combatant ==
+      2);
+
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 1);
+}
+
 using DescriptorMutation =
     std::function<void(std::vector<ShellControlPlacement>&)>;
 
@@ -710,6 +753,7 @@ int main() {
     test_open_spellbook_payload_activates_exactly_once();
     test_open_save_payload_activates_exactly_once();
     test_open_load_payload_activates_exactly_once();
+    test_guard_payload_activates_exactly_once();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();

@@ -82,7 +82,7 @@ void SystemTask(void);
 // GetCaretTime (IM1-260) not used by Realmz
 
 Boolean GetNextEvent(int16_t mask, EventRecord* ev); // IM1-257
-// Top-level exploration/dungeon receive boundary for Remastered semantic
+// Top-level exploration/dungeon/combat receive boundary for Remastered semantic
 // input. In Classic mode this is exactly the ordinary GetNextEvent route.
 Boolean GetNextSemanticGameplayEvent(
     int16_t mask,
@@ -100,6 +100,7 @@ Boolean PushSemanticOpenInventoryEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenSpellbookEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenSaveGameEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenLoadGameEvent(uint32_t tagged_message);
+Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message);
 
 // Cancels active authorization and removes every queued presentation command.
 // Used by presentation-mode transitions, including native-menu callbacks.

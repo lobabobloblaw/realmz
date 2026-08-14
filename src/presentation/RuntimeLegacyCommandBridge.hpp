@@ -50,6 +50,10 @@ using RuntimeLegacyOpenSaveGameSink = std::function<bool(
 using RuntimeLegacyOpenLoadGameSink = std::function<bool(
     RuntimeLegacyMenuCommand,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyGuardCombatantSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Returns the exact Classic Mac key message already consumed by the preserved
 // exploration/dungeon event loops. Unsupported command/context combinations
@@ -82,6 +86,14 @@ legacy_menu_command_for_open_save_game(
 // slot and replace live engine state.
 [[nodiscard]] std::optional<RuntimeLegacyMenuCommand>
 legacy_menu_command_for_open_load_game(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic "g" key record consumed by the preserved combat
+// switch. The actor is range-checked here and revalidated against the live turn
+// immediately before EventManager translates the tagged command.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_guard_combatant(
+    CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Live UIAction boundary for the migrated command subset. The bridge queues
@@ -129,6 +141,15 @@ public:
       RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
       RuntimeLegacyOpenSaveGameSink open_save_game_sink,
       RuntimeLegacyOpenLoadGameSink open_load_game_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyOpenInventorySink open_inventory_sink,
+      RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+      RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+      RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+      RuntimeLegacyGuardCombatantSink guard_combatant_sink);
 
   [[nodiscard]] DispatchResult dispatch(const UIAction& action) override;
 

@@ -86,6 +86,14 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
+Combat exposes one bounded semantic action: typed `GuardCombatantAction`
+carries the stable active-party combatant ID through a combat-only tagged
+event. The top-level combat loop revalidates a fresh snapshot, including the
+acting ID, party ownership, active/targetable state, and positive stamina,
+before translating the action to the exact preserved Classic `g` key record.
+The original guard-state mutation and turn advance remain authoritative;
+stale actions become inert, and all other combat commands remain in the
+interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are

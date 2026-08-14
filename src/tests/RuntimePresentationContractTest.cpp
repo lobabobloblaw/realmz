@@ -257,6 +257,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.open_spellbook = mutateEngine;
   handlers.open_save_game = mutateEngine;
   handlers.open_load_game = mutateEngine;
+  handlers.guard_combatant = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -358,6 +359,16 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(openLoadUnsupported.status == DispatchStatus::unsupported);
   CHECK(openLoadUnsupported.detail ==
       "No legacy handler registered for open_load_game");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const auto guardCombatantUnsupported = unsupportedBridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = GuardCombatantAction{1},
+  });
+  CHECK(guardCombatantUnsupported.status == DispatchStatus::unsupported);
+  CHECK(guardCombatantUnsupported.detail ==
+      "No legacy handler registered for guard_combatant");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

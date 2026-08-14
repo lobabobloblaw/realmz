@@ -51,6 +51,15 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
+The first bounded combat action is covered outside this exploration fixture by
+the presentation, runtime-bridge, semantic-boundary, top-level-loop, and
+keyboard contract tests. They verify that typed `GuardCombatantAction` carries
+a stable combatant ID, is late-validated against the fresh acting party member,
+becomes the exact Classic `g` key record, and still reaches the preserved
+guard-state mutation and turn advance. This is not a full combat replay or
+save-equivalence claim; every other combat command remains on the Classic
+input route.
+
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:
 

@@ -446,6 +446,69 @@ void test_fail_closed_inputs() {
   }).empty());
 }
 
+void test_combat_guard_control() {
+  const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
+  const auto controls = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .guard_available = true,
+  });
+  CHECK(controls.size() == 1U);
+  const auto& guard = controls.front();
+  CHECK(guard.region.value == 1104U);
+  CHECK(guard.kind == ShellControlKind::guard_combatant);
+  CHECK(guard.label == "GUARD");
+  CHECK(guard.accessibility_label == "Guard active combatant");
+  CHECK(guard.focus_identifier == "focus.action.combat.guard");
+  CHECK(guard.tab_order == 1104);
+  CHECK(guard.enabled);
+  CHECK(panel.contains(guard.bounds));
+  CHECK(guard.bounds.width >= 44.0);
+  CHECK(guard.bounds.width <= 160.0);
+  CHECK(guard.bounds.height >= 44.0);
+  CHECK(std::get<GuardCombatantAction>(guard.payload).combatant == 2);
+
+  const auto disabled = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+  });
+  CHECK(disabled.size() == 1U);
+  CHECK(!disabled.front().enabled);
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{-1},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{256},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .navigation_available = true,
+      .guard_combatant = CombatantId{2},
+      .guard_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .guard_combatant = CombatantId{2},
+  }).empty());
+}
+
 } // namespace
 
 int main() {
@@ -454,6 +517,7 @@ int main() {
     test_payload_order_and_disabled_state();
     test_open_inventory_control();
     test_spellbook_save_and_load_controls_at_combined_minimum_layout();
+    test_combat_guard_control();
     test_fail_closed_inputs();
     std::cout << "ShellControlLayoutTest passed ("
               << checks_run << " checks)\n";

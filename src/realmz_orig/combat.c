@@ -532,7 +532,10 @@ void combat(short suprise, short mode) {
     if (gTheEvent.modifiers & alphaLock)
       warn(21);
     SystemTask();
-    a = GetNextEvent(everyEvent, &gTheEvent);
+    a = GetNextSemanticGameplayEvent(
+        everyEvent,
+        &gTheEvent,
+        REALMZ_SEMANTIC_INPUT_COMBAT);
 #ifdef PC // Myriad
     DoCorrectBugMADRepeat();
 #endif
@@ -557,6 +560,9 @@ void combat(short suprise, short mode) {
             BeginUpdate(mat);
             EndUpdate(mat);
           }
+          break;
+
+        case app1Evt:
           break;
 
         case (autoKey):

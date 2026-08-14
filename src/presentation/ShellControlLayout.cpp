@@ -14,6 +14,7 @@ constexpr uint32_t kInventoryRegion = 1100U;
 constexpr uint32_t kSpellbookRegion = 1101U;
 constexpr uint32_t kSaveGameRegion = 1102U;
 constexpr uint32_t kLoadGameRegion = 1103U;
+constexpr uint32_t kGuardCombatantRegion = 1104U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kControlsTopInset = 64.0;
 constexpr double kBottomInset = 12.0;
@@ -70,11 +71,21 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
     return {};
   }
   const auto descriptors = descriptors_for(request);
-  if (descriptors.empty() ||
+  const bool world_controls = !descriptors.empty();
+  const bool combat_controls =
+      (request.screen == ScreenContext::combat) && request.guard_combatant &&
+      (*request.guard_combatant >= 0) && (*request.guard_combatant <= 0xFF);
+  if ((!world_controls && !combat_controls) ||
+      (world_controls && request.guard_combatant) ||
+      (combat_controls &&
+          (request.navigation_available || request.inventory_member ||
+              request.spellbook_member || request.save_control_visible ||
+              request.load_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.save_available && !request.save_control_visible) ||
-      (request.load_available && !request.load_control_visible)) {
+      (request.load_available && !request.load_control_visible) ||
+      (request.guard_available && !combat_controls)) {
     return {};
   }
 
@@ -82,16 +93,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.inventory_member ? 1U : 0U) +
       (request.spellbook_member ? 1U : 0U) +
       (request.save_control_visible ? 1U : 0U) +
-      (request.load_control_visible ? 1U : 0U);
+      (request.load_control_visible ? 1U : 0U) +
+      (request.guard_combatant ? 1U : 0U);
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
   const double available_height = request.action_panel.height -
       kControlsTopInset - kBottomInset;
   const double gap = std::clamp(available_width * 0.008, 6.0, 10.0);
-  const double button_width =
+  const double computed_button_width =
       (available_width - gap * (control_count - 1U)) /
       control_count;
+  const double button_width = combat_controls
+      ? std::min(160.0, computed_button_width)
+      : computed_button_width;
   const double button_height = std::min(52.0, available_height);
   if (!std::isfinite(button_width) || !std::isfinite(button_height) ||
       (button_width < kMinimumTargetExtent) ||
@@ -173,6 +188,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .tab_order = 1103,
         .enabled = request.load_available,
         .payload = OpenLoadGameAction{},
+    });
+    x += button_width + gap;
+  }
+  if (request.guard_combatant) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kGuardCombatantRegion},
+        .kind = ShellControlKind::guard_combatant,
+        .bounds = {x, y, button_width, button_height},
+        .label = "GUARD",
+        .accessibility_label = "Guard active combatant",
+        .focus_identifier = "focus.action.combat.guard",
+        .tab_order = 1104,
+        .enabled = request.guard_available,
+        .payload = GuardCombatantAction{*request.guard_combatant},
     });
   }
   return result;

@@ -12,7 +12,7 @@ check entirely.
 Remastered mode currently runs a responsive compatibility shell with a
 1024×768 minimum. During exploration, dungeon play, and combat, it uniformly
 fits the complete interactive 800×600 Classic framebuffer into the gameplay
-area and uses widescreen space for an interactive party rail, semantic movement
+area and uses widescreen space for an interactive party rail, semantic action
 controls, details, and event log (or compact drawer tabs). Eligible outdoor and
 dungeon movement buttons dispatch typed `MovePartyAction` commands through the
 legacy event loop. On those eligible exploration and dungeon screens, party
@@ -30,6 +30,12 @@ and `OpenLoadGameAction` commands. After late surface validation, they become
 the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
+During combat, a code-native Guard control carries the stable active-party
+combatant ID in a typed `GuardCombatantAction`. Its combat-only guarded route
+revalidates the fresh acting combatant before returning the exact Classic `g`
+key record; the preserved guarding mutation and turn advance remain
+authoritative. Other combat commands remain inside the interactive Classic
+frame.
 The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a

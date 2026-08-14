@@ -252,6 +252,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticOpenLoadGameEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic load input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic guard input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -427,6 +431,30 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(load_wrapper, "mouseDown") == 0,
       "public semantic open load enqueue must not synthesize Classic input");
 
+  const std::string push_guard = function_body(
+      source, "push_semantic_guard_combatant_event");
+  const std::string compact_push_guard = without_whitespace(push_guard);
+  require(count_identifier(
+              push_guard, "RealmzIsSemanticGuardCombatantTag") == 1,
+      "semantic guard enqueue must validate exactly one tag");
+  require(count_identifier(push_guard, "app1Evt") == 1,
+      "semantic guard enqueue must use app1Evt exactly once");
+  require(count_identifier(push_guard, "keyDown") == 0 &&
+          count_identifier(push_guard, "mouseDown") == 0,
+      "semantic guard enqueue must not synthesize Classic input");
+  require(compact_push_guard.contains("ev.what=app1Evt;") &&
+          compact_push_guard.contains("ev.message=tagged_message;"),
+      "semantic guard must retain its tagged app1Evt payload");
+
+  const std::string guard_wrapper = function_body(
+      source, "PushSemanticGuardCombatantEvent");
+  require(without_whitespace(guard_wrapper).contains(
+              "returnem.push_semantic_guard_combatant_event(tagged_message);"),
+      "public semantic guard enqueue must delegate to tagged queue");
+  require(count_identifier(guard_wrapper, "keyDown") == 0 &&
+          count_identifier(guard_wrapper, "mouseDown") == 0,
+      "public semantic guard enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -499,14 +527,19 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticOpenLoadGameEvent") == 1,
       "semantic gameplay wrapper must have one late load consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticGuardCombatantEvent") == 1,
+      "semantic gameplay wrapper must have one late guard consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 6,
-      "semantic gameplay wrapper must recognize all six tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 3,
-      "only late movement, inventory, and spellbook validation may produce keyDown");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 7,
+      "semantic gameplay wrapper must recognize all seven tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 4,
+      "only late movement, inventory, spellbook, and guard validation may "
+      "produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
@@ -537,6 +570,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenLoadGameEvent") == 1,
       "EventManager may consume semantic load input only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
+      "EventManager may consume semantic guard input only inside its gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
 
@@ -626,6 +662,17 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", load_item_id);
   const std::size_t load_rejected_message = compact_semantic.find(
       "ret->message=0", load_null);
+  const std::size_t guard_branch = compact_semantic.find(
+      "RealmzIsSemanticGuardCombatantTag(ret->message)",
+      load_rejected_message);
+  const std::size_t guard_consume = compact_semantic.find(
+      "RealmzConsumeSemanticGuardCombatantEvent(", guard_branch);
+  const std::size_t guard_keydown = compact_semantic.find(
+      "ret->what=keyDown", guard_consume);
+  const std::size_t guard_null = compact_semantic.find(
+      "ret->what=nullEvent", guard_keydown);
+  const std::size_t guard_rejected_message = compact_semantic.find(
+      "ret->message=0", guard_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -668,7 +715,12 @@ void verify_event_manager(const fs::path& repository_root) {
           load_menu_id != std::string::npos &&
           load_item_id != std::string::npos &&
           load_null != std::string::npos &&
-          load_rejected_message != std::string::npos,
+          load_rejected_message != std::string::npos &&
+          guard_branch != std::string::npos &&
+          guard_consume != std::string::npos &&
+          guard_keydown != std::string::npos &&
+          guard_null != std::string::npos &&
+          guard_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -706,7 +758,12 @@ void verify_event_manager(const fs::path& repository_root) {
           load_message < load_menu_id &&
           load_menu_id < load_item_id &&
           load_item_id < load_null &&
-          load_null < load_rejected_message,
+          load_null < load_rejected_message &&
+          load_rejected_message < guard_branch &&
+          guard_branch < guard_consume &&
+          guard_consume < guard_keydown &&
+          guard_keydown < guard_null &&
+          guard_null < guard_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
@@ -859,6 +916,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticOpenLoadGameEvent") == 0,
       std::string(function_name) +
           " must leave tagged load consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged guard consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -888,11 +949,15 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const std::string misc = code_only(read_file(legacy_root / "misc.c"));
   const std::string threed_source = code_only(
       read_file(legacy_root / "threed.c"));
+  const std::string combat_raw_source = read_file(legacy_root / "combat.c");
+  const std::string combat_source = code_only(combat_raw_source);
   const std::string getchoice_source = code_only(
       read_file(legacy_root / "getchoice.c"));
 
   const std::string mainscreen = function_body(misc, "mainscreen");
   const std::string threed = function_body(threed_source, "threed");
+  const std::string combat = function_body(combat_source, "combat");
+  const std::string combat_raw = function_body(combat_raw_source, "combat");
   verify_top_level_loop(
       mainscreen,
       "mainscreen",
@@ -901,6 +966,24 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       threed,
       "threed",
       "REALMZ_SEMANTIC_INPUT_DUNGEON");
+  verify_top_level_loop(
+      combat,
+      "combat",
+      "REALMZ_SEMANTIC_INPUT_COMBAT");
+  const std::string compact_combat = without_whitespace(combat_raw);
+  const std::size_t guard_case = compact_combat.find("case'g':");
+  const std::size_t guard_mutation = compact_combat.find(
+      "c[charup].guarding=TRUE;", guard_case);
+  const std::size_t guard_turn_advance = compact_combat.find(
+      "getup(FALSE);", guard_mutation);
+  require(guard_case != std::string::npos &&
+          guard_mutation != std::string::npos &&
+          guard_turn_advance != std::string::npos,
+      "combat must retain the preserved Guard branch, mutation, and turn "
+      "advance");
+  require(guard_case < guard_mutation && guard_mutation < guard_turn_advance,
+      "combat Guard must mutate the active party member before advancing the "
+      "turn");
 
   std::size_t global_wrapper_count = 0;
   std::size_t global_begin_count = 0;
@@ -911,6 +994,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_spellbook_consumer_count = 0;
   std::size_t global_save_consumer_count = 0;
   std::size_t global_load_consumer_count = 0;
+  std::size_t global_guard_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -939,11 +1023,14 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenSaveGameEvent");
     global_load_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenLoadGameEvent");
+    global_guard_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticGuardCombatantEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
-  require(global_wrapper_count == 2,
-      "only mainscreen and threed may call the semantic gameplay wrapper");
+  require(global_wrapper_count == 3,
+      "only mainscreen, threed, and combat may call the semantic gameplay "
+      "wrapper");
   require(global_begin_count == 0,
       "legacy loops must not begin semantic input scopes directly");
   require(global_end_count == 0,
@@ -960,6 +1047,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic save input directly");
   require(global_load_consumer_count == 0,
       "legacy loops must not consume tagged semantic load input directly");
+  require(global_guard_consumer_count == 0,
+      "legacy loops must not consume tagged semantic guard input directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -989,6 +1078,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t spellbook_consume_calls = 0;
   std::size_t save_consume_calls = 0;
   std::size_t load_consume_calls = 0;
+  std::size_t guard_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -1028,19 +1118,24 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenSaveGameEvent");
     load_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenLoadGameEvent");
+    guard_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticGuardCombatantEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
   }
 
   std::ranges::sort(wrapper_callers);
-  require(wrapper_calls == 2,
-      "exactly two production call sites may use the semantic gameplay wrapper");
+  require(wrapper_calls == 3,
+      "exactly three production call sites may use the semantic gameplay "
+      "wrapper");
   require(wrapper_callers == std::vector<fs::path>{
+              fs::path("realmz_orig/combat.c"),
               fs::path("realmz_orig/misc.c"),
               fs::path("realmz_orig/threed.c"),
           },
-      "only misc.c mainscreen and threed.c may call the semantic wrapper");
+      "only combat.c, misc.c mainscreen, and threed.c may call the semantic "
+      "wrapper");
   require(begin_calls == 0,
       "only EventManager may call RealmzBeginSemanticInputSurface");
   require(end_calls == 0,
@@ -1057,6 +1152,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticOpenSaveGameEvent");
   require(load_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticOpenLoadGameEvent");
+  require(guard_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
 }
 
 } // namespace

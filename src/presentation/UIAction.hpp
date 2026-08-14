@@ -72,6 +72,15 @@ struct OpenLoadGameAction {
   bool operator==(const OpenLoadGameAction&) const = default;
 };
 
+// Ends the explicitly identified party combatant's current turn in the
+// preserved Classic combat loop with its Guard command. Carrying the actor
+// prevents a queued action from silently retargeting after the turn advances.
+struct GuardCombatantAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const GuardCombatantAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -192,6 +201,7 @@ using UIActionPayload = std::variant<
     OpenSpellbookAction,
     OpenSaveGameAction,
     OpenLoadGameAction,
+    GuardCombatantAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -224,6 +234,8 @@ struct UIAction {
       return "open_save_game";
     } else if constexpr (std::is_same_v<Action, OpenLoadGameAction>) {
       return "open_load_game";
+    } else if constexpr (std::is_same_v<Action, GuardCombatantAction>) {
+      return "guard_combatant";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

@@ -1471,6 +1471,25 @@ void WindowManager::create_sdl_window() {
             const uint32_t tag =
                 realmz::presentation::semantic_open_load_game_tag(surface);
             return tag && PushSemanticOpenLoadGameEvent(tag);
+          },
+          [](realmz::presentation::CombatantId combatant,
+              uint32_t message,
+              const realmz::presentation::RuntimeLegacyCommandContext&
+                  context) {
+            const auto surface = RealmzCurrentSemanticInputSurface();
+            const bool matching_surface =
+                (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                (context.screen ==
+                    realmz::presentation::ScreenContext::combat);
+            const auto expected = realmz::presentation::
+                legacy_key_message_for_guard_combatant(combatant, context);
+            if (!matching_surface || !expected || (message != *expected)) {
+              return false;
+            }
+            const uint32_t tag =
+                realmz::presentation::semantic_guard_combatant_tag(
+                    combatant, surface);
+            return tag && PushSemanticGuardCombatantEvent(tag);
           });
   this->configure_window_for_presentation_mode();
 
@@ -2100,6 +2119,12 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::open_load_game;
         });
+    const bool has_semantic_guard = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::guard_combatant;
+        });
     std::string action_summary =
         "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
     if (has_semantic_movement) {
@@ -2117,11 +2142,14 @@ void draw_shell_panel_contents(
         action_summary += " + LOAD";
       }
       action_summary += " — other actions remain in the game frame";
+    } else if (has_semantic_guard) {
+      action_summary =
+          "SEMANTIC COMBAT + GUARD — other actions remain in the game frame";
     }
     draw_shell_text(renderer, font, action_summary,
         {left, panel.y + 37.0, width, 24.0},
         kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
-    if (has_semantic_movement) {
+    if (has_semantic_movement || has_semantic_guard) {
       for (const auto& control : controls) {
         if ((control.kind !=
                 realmz::presentation::ShellControlKind::movement) &&
@@ -2132,7 +2160,9 @@ void draw_shell_panel_contents(
             (control.kind !=
                 realmz::presentation::ShellControlKind::open_save_game) &&
             (control.kind !=
-                realmz::presentation::ShellControlKind::open_load_game)) {
+                realmz::presentation::ShellControlKind::open_load_game) &&
+            (control.kind !=
+                realmz::presentation::ShellControlKind::guard_combatant)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -2511,6 +2541,9 @@ void WindowManager::present_remastered_frame() {
               .panels_collapsed = panels_collapsed,
               .active_drawer = this->remastered_active_drawer,
           });
+      const bool world_action_surface =
+          (screen == realmz::presentation::ScreenContext::exploration) ||
+          (screen == realmz::presentation::ScreenContext::dungeon);
       const bool navigation_available =
           legacy_context.adaptive_eligible != 0 &&
           std::ranges::any_of(
@@ -2528,7 +2561,8 @@ void WindowManager::present_remastered_frame() {
           });
       const std::optional<realmz::presentation::PartyMemberId>
           inventory_member =
-              (inventory_action != shell_model->actions.end())
+              (world_action_surface &&
+                  (inventory_action != shell_model->actions.end()))
               ? inventory_action->party_member
               : std::nullopt;
       const bool inventory_available = inventory_member &&
@@ -2543,7 +2577,8 @@ void WindowManager::present_remastered_frame() {
           });
       const std::optional<realmz::presentation::PartyMemberId>
           spellbook_member =
-              (spellbook_action != shell_model->actions.end())
+              (world_action_surface &&
+                  (spellbook_action != shell_model->actions.end()))
               ? spellbook_action->party_member
               : std::nullopt;
       const bool spellbook_available = spellbook_member &&
@@ -2557,7 +2592,7 @@ void WindowManager::present_remastered_frame() {
                 realmz::presentation::ActionIntent::save_game;
           });
       const bool save_control_visible =
-          save_action != shell_model->actions.end();
+          world_action_surface && save_action != shell_model->actions.end();
       const bool save_available = save_control_visible &&
           save_action->can_invoke() && snapshot_context_matches &&
           realmz::presentation::legacy_menu_command_for_open_save_game({
@@ -2573,7 +2608,7 @@ void WindowManager::present_remastered_frame() {
                 realmz::presentation::ActionIntent::load_game;
           });
       const bool load_control_visible =
-          load_action != shell_model->actions.end();
+          world_action_surface && load_action != shell_model->actions.end();
       const bool load_available = load_control_visible &&
           load_action->can_invoke() && snapshot_context_matches &&
           realmz::presentation::legacy_menu_command_for_open_load_game({
@@ -2582,6 +2617,26 @@ void WindowManager::present_remastered_frame() {
               .adaptive_eligible =
                   legacy_context.adaptive_eligible != 0,
           }).has_value();
+      const auto guard_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::guard;
+          });
+      const std::optional<realmz::presentation::CombatantId> guard_combatant =
+          (guard_action != shell_model->actions.end())
+          ? guard_action->combatant
+          : std::nullopt;
+      const bool guard_available = guard_combatant &&
+          guard_action->can_invoke() && snapshot_context_matches &&
+          realmz::presentation::legacy_key_message_for_guard_combatant(
+              *guard_combatant,
+              {
+                  .screen = screen,
+                  .world_presentation = snapshot.world.presentation,
+                  .adaptive_eligible =
+                      legacy_context.adaptive_eligible != 0,
+              }).has_value();
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -2597,6 +2652,8 @@ void WindowManager::present_remastered_frame() {
               .save_available = save_available,
               .load_control_visible = load_control_visible,
               .load_available = load_available,
+              .guard_combatant = guard_combatant,
+              .guard_available = guard_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -2733,6 +2790,29 @@ void WindowManager::present_remastered_frame() {
                     realmz::presentation::
                         legacy_menu_command_for_open_load_game(context)
                         .has_value();
+              }
+              if (const auto* guard =
+                      std::get_if<
+                          realmz::presentation::GuardCombatantAction>(
+                          &control.payload)) {
+                if (control.kind != realmz::presentation::
+                        ShellControlKind::guard_combatant ||
+                    !snapshot.combat || !snapshot.combat->active ||
+                    snapshot.combat->acting_combatant != guard->combatant ||
+                    !realmz::presentation::
+                        legacy_key_message_for_guard_combatant(
+                            guard->combatant, context)) {
+                  return false;
+                }
+                const auto combatant = std::ranges::find(
+                    snapshot.combat->combatants,
+                    guard->combatant,
+                    &realmz::presentation::CombatantView::id);
+                return combatant != snapshot.combat->combatants.end() &&
+                    combatant->kind ==
+                        realmz::presentation::CombatantKind::party_member &&
+                    combatant->active && combatant->targetable &&
+                    combatant->stamina.current > 0;
               }
               if (std::holds_alternative<
                       realmz::presentation::SetDrawerPanelAction>(
@@ -3011,7 +3091,9 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
           (context.screen ==
               realmz::presentation::ScreenContext::exploration)) ||
       ((semantic_surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
-          (context.screen == realmz::presentation::ScreenContext::dungeon));
+          (context.screen == realmz::presentation::ScreenContext::dungeon)) ||
+      ((semantic_surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+          (context.screen == realmz::presentation::ScreenContext::combat));
   if (!context.adaptive_eligible ||
       (context.screen != this->adaptive_shell_plan->screen)) {
     return false;
@@ -3144,6 +3226,42 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
               realmz::presentation::ShellControlKind::open_load_game ||
           !realmz::presentation::legacy_menu_command_for_open_load_game(
               context)) {
+        return false;
+      }
+      continue;
+    }
+    if (const auto* guard =
+            std::get_if<realmz::presentation::GuardCombatantAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::guard_combatant ||
+          !realmz::presentation::legacy_key_message_for_guard_combatant(
+              guard->combatant, context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) || !snapshot->combat ||
+          !snapshot->combat->active ||
+          snapshot->combat->acting_combatant != guard->combatant) {
+        return false;
+      }
+      const auto combatant = std::ranges::find(
+          snapshot->combat->combatants,
+          guard->combatant,
+          &realmz::presentation::CombatantView::id);
+      if ((combatant == snapshot->combat->combatants.end()) ||
+          (combatant->kind !=
+              realmz::presentation::CombatantKind::party_member) ||
+          !combatant->active || !combatant->targetable ||
+          (combatant->stamina.current <= 0)) {
         return false;
       }
       continue;

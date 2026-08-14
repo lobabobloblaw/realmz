@@ -1,5 +1,6 @@
 #include "SemanticInputBoundary.h"
 
+#include <algorithm>
 #include <optional>
 
 #include "LegacyGameSnapshotSource.hpp"
@@ -33,6 +34,10 @@ constexpr uint32_t kSemanticOpenLoadGameSignature = 0x524C0000U;
 constexpr uint32_t kSemanticOpenLoadGameMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenLoadGameSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenLoadGameReservedMask = 0x000000FFU;
+constexpr uint32_t kSemanticGuardCombatantSignature = 0x52470000U;
+constexpr uint32_t kSemanticGuardCombatantMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticGuardCombatantSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticGuardCombatantIdMask = 0x000000FFU;
 uint32_t scope_depth = 0;
 bool scope_invalid = false;
 RealmzSemanticInputSurface scope_surface = REALMZ_SEMANTIC_INPUT_NONE;
@@ -66,9 +71,19 @@ struct DecodedOpenLoadGame {
   RealmzSemanticInputSurface surface;
 };
 
-bool is_gameplay_surface(RealmzSemanticInputSurface surface) noexcept {
+struct DecodedGuardCombatant {
+  realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+bool is_world_gameplay_surface(RealmzSemanticInputSurface surface) noexcept {
   return (surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) ||
       (surface == REALMZ_SEMANTIC_INPUT_DUNGEON);
+}
+
+bool is_semantic_input_surface(RealmzSemanticInputSurface surface) noexcept {
+  return is_world_gameplay_surface(surface) ||
+      (surface == REALMZ_SEMANTIC_INPUT_COMBAT);
 }
 
 std::optional<DecodedMovement> decode_movement(
@@ -183,12 +198,30 @@ std::optional<DecodedOpenLoadGame> decode_open_load_game(
   return DecodedOpenLoadGame{.surface = surface_value};
 }
 
+std::optional<DecodedGuardCombatant> decode_guard_combatant(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticGuardCombatantMask) !=
+      kSemanticGuardCombatantSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticGuardCombatantSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedGuardCombatant{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticGuardCombatantIdMask),
+      .surface = surface_value,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
       (scope_depth == 0) &&
       (completed_surface == expected_surface) &&
-      is_gameplay_surface(expected_surface);
+      is_semantic_input_surface(expected_surface);
   // Delivery authorization is single-use regardless of whether the payload or
   // processing-time context validates. A later event needs a fresh scope.
   completed_surface = REALMZ_SEMANTIC_INPUT_NONE;
@@ -203,6 +236,8 @@ realmz::presentation::ScreenContext screen_for_surface(
       return ScreenContext::exploration;
     case REALMZ_SEMANTIC_INPUT_DUNGEON:
       return ScreenContext::dungeon;
+    case REALMZ_SEMANTIC_INPUT_COMBAT:
+      return ScreenContext::combat;
     case REALMZ_SEMANTIC_INPUT_NONE:
     default:
       return ScreenContext::title;
@@ -216,7 +251,7 @@ namespace realmz::presentation {
 uint32_t semantic_movement_tag(
     MovementCommand command,
     RealmzSemanticInputSurface surface) noexcept {
-  if (!is_gameplay_surface(surface) ||
+  if (!is_world_gameplay_surface(surface) ||
       (static_cast<uint32_t>(command) >
           static_cast<uint32_t>(MovementCommand::northwest))) {
     return 0;
@@ -229,7 +264,7 @@ uint32_t semantic_movement_tag(
 uint32_t semantic_party_selection_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept {
-  if (!is_gameplay_surface(surface)) {
+  if (!is_world_gameplay_surface(surface)) {
     return 0;
   }
   return kSemanticPartySelectionSignature |
@@ -240,7 +275,7 @@ uint32_t semantic_party_selection_tag(
 uint32_t semantic_open_inventory_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept {
-  if (!is_gameplay_surface(surface)) {
+  if (!is_world_gameplay_surface(surface)) {
     return 0;
   }
   return kSemanticOpenInventorySignature |
@@ -251,7 +286,7 @@ uint32_t semantic_open_inventory_tag(
 uint32_t semantic_open_spellbook_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept {
-  if (!is_gameplay_surface(surface)) {
+  if (!is_world_gameplay_surface(surface)) {
     return 0;
   }
   return kSemanticOpenSpellbookSignature |
@@ -261,7 +296,7 @@ uint32_t semantic_open_spellbook_tag(
 
 uint32_t semantic_open_save_game_tag(
     RealmzSemanticInputSurface surface) noexcept {
-  if (!is_gameplay_surface(surface)) {
+  if (!is_world_gameplay_surface(surface)) {
     return 0;
   }
   return kSemanticOpenSaveGameSignature |
@@ -270,11 +305,23 @@ uint32_t semantic_open_save_game_tag(
 
 uint32_t semantic_open_load_game_tag(
     RealmzSemanticInputSurface surface) noexcept {
-  if (!is_gameplay_surface(surface)) {
+  if (!is_world_gameplay_surface(surface)) {
     return 0;
   }
   return kSemanticOpenLoadGameSignature |
       (static_cast<uint32_t>(surface) << 8U);
+}
+
+uint32_t semantic_guard_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticGuardCombatantSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
 }
 
 } // namespace realmz::presentation
@@ -283,10 +330,10 @@ extern "C" void RealmzBeginSemanticInputSurface(
     RealmzSemanticInputSurface surface) {
   completed_surface = REALMZ_SEMANTIC_INPUT_NONE;
   if (scope_depth == 0) {
-    scope_surface = is_gameplay_surface(surface)
+    scope_surface = is_semantic_input_surface(surface)
         ? surface
         : REALMZ_SEMANTIC_INPUT_NONE;
-    scope_invalid = !is_gameplay_surface(surface);
+    scope_invalid = !is_semantic_input_surface(surface);
   } else {
     // Nested scopes are a programming error. Stay fail-closed until the
     // complete nesting depth unwinds; a third Begin cannot reopen the route.
@@ -391,6 +438,17 @@ RealmzSemanticOpenLoadGameTagSurface(uint32_t tagged_message) {
   return load_game ? load_game->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticGuardCombatantTag(
+    uint32_t tagged_message) {
+  return decode_guard_combatant(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticGuardCombatantTagSurface(uint32_t tagged_message) {
+  const auto guard = decode_guard_combatant(tagged_message);
+  return guard ? guard->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -398,7 +456,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_open_inventory(tagged_message) ||
           decode_open_spellbook(tagged_message) ||
           decode_open_save_game(tagged_message) ||
-          decode_open_load_game(tagged_message))
+          decode_open_load_game(tagged_message) ||
+          decode_guard_combatant(tagged_message))
       ? 1
       : 0;
 }
@@ -422,6 +481,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto load_game = decode_open_load_game(tagged_message)) {
     return load_game->surface;
+  }
+  if (const auto guard = decode_guard_combatant(tagged_message)) {
+    return guard->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -675,6 +737,62 @@ extern "C" uint8_t RealmzConsumeSemanticOpenLoadGameEvent(
     }
     *menu_id = command->menu_id;
     *item_id = command->item_id;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticGuardCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!classic_key_message || !authorized) {
+    return 0;
+  }
+  const auto guard = decode_guard_combatant(tagged_message);
+  if (!guard || (guard->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if ((snapshot.screen != screen) || !snapshot.combat ||
+        !snapshot.combat->active ||
+        (snapshot.combat->acting_combatant != guard->combatant)) {
+      return 0;
+    }
+    const auto combatant = std::ranges::find(
+        snapshot.combat->combatants,
+        guard->combatant,
+        &realmz::presentation::CombatantView::id);
+    if ((combatant == snapshot.combat->combatants.end()) ||
+        (combatant->kind != realmz::presentation::CombatantKind::party_member) ||
+        !combatant->active || !combatant->targetable ||
+        (combatant->stamina.current <= 0)) {
+      return 0;
+    }
+    const auto message =
+        realmz::presentation::legacy_key_message_for_guard_combatant(
+            guard->combatant,
+            {
+                .screen = screen,
+                .world_presentation = snapshot.world.presentation,
+                .adaptive_eligible = true,
+            });
+    if (!message) {
+      return 0;
+    }
+    *classic_key_message = *message;
     return 1;
   } catch (...) {
     return 0;

@@ -17,6 +17,7 @@ constexpr uint32_t kKeypadSevenMessage = 0x00005937U;
 constexpr uint32_t kKeypadNineMessage = 0x00005C39U;
 constexpr uint32_t kOpenInventoryMessage = 0x00002269U;
 constexpr uint32_t kOpenSpellbookMessage = 0x00000173U;
+constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -70,6 +71,66 @@ LegacyActionHandlers make_handlers(
     if (!movement_sink(action.command, *message, context)) {
       return DispatchResult::failed(
           "Legacy event queue rejected semantic movement");
+    }
+    return DispatchResult::handled();
+  };
+  return handlers;
+}
+
+LegacyActionHandlers make_handlers(
+    RuntimeLegacyContextProvider context_provider,
+    RuntimeLegacyMovementSink movement_sink,
+    RuntimeLegacyPartySelectionSink party_selection_sink,
+    RuntimeLegacyOpenInventorySink open_inventory_sink,
+    RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+    RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+    RuntimeLegacyOpenLoadGameSink open_load_game_sink);
+
+LegacyActionHandlers make_handlers(
+    RuntimeLegacyContextProvider context_provider,
+    RuntimeLegacyMovementSink movement_sink,
+    RuntimeLegacyPartySelectionSink party_selection_sink,
+    RuntimeLegacyOpenInventorySink open_inventory_sink,
+    RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+    RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+    RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+    RuntimeLegacyGuardCombatantSink guard_combatant_sink) {
+  auto handlers = make_handlers(
+      context_provider,
+      std::move(movement_sink),
+      std::move(party_selection_sink),
+      std::move(open_inventory_sink),
+      std::move(open_spellbook_sink),
+      std::move(open_save_game_sink),
+      std::move(open_load_game_sink));
+  handlers.guard_combatant = [
+      context_provider = std::move(context_provider),
+      guard_combatant_sink = std::move(guard_combatant_sink)](
+          const GuardCombatantAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!guard_combatant_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy guard-combatant sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy combat surface is not eligible for semantic guard");
+    }
+    const auto message = legacy_key_message_for_guard_combatant(
+        action.combatant, context);
+    if (!message) {
+      return DispatchResult::rejected(
+          "Guard is not supported for this combatant in the current legacy "
+          "context");
+    }
+    if (!guard_combatant_sink(action.combatant, *message, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic guard-combatant action");
     }
     return DispatchResult::handled();
   };
@@ -447,6 +508,16 @@ legacy_menu_command_for_open_load_game(
   return std::nullopt;
 }
 
+std::optional<uint32_t> legacy_key_message_for_guard_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kGuardCombatantMessage;
+}
+
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyContextProvider context_provider,
     RuntimeLegacyKeySink key_sink)
@@ -533,6 +604,25 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
           std::move(open_spellbook_sink),
           std::move(open_save_game_sink),
           std::move(open_load_game_sink))) {}
+
+RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
+    RuntimeLegacyContextProvider context_provider,
+    RuntimeLegacyMovementSink movement_sink,
+    RuntimeLegacyPartySelectionSink party_selection_sink,
+    RuntimeLegacyOpenInventorySink open_inventory_sink,
+    RuntimeLegacyOpenSpellbookSink open_spellbook_sink,
+    RuntimeLegacyOpenSaveGameSink open_save_game_sink,
+    RuntimeLegacyOpenLoadGameSink open_load_game_sink,
+    RuntimeLegacyGuardCombatantSink guard_combatant_sink)
+    : injected_bridge_(make_handlers(
+          std::move(context_provider),
+          std::move(movement_sink),
+          std::move(party_selection_sink),
+          std::move(open_inventory_sink),
+          std::move(open_spellbook_sink),
+          std::move(open_save_game_sink),
+          std::move(open_load_game_sink),
+          std::move(guard_combatant_sink))) {}
 
 DispatchResult RuntimeLegacyCommandBridge::dispatch(const UIAction& action) {
   return this->injected_bridge_.dispatch(action);

@@ -170,6 +170,54 @@ void test_action_availability_is_conservative() {
   CHECK(model.actions[7].can_invoke());
 }
 
+void test_combat_guard_tracks_the_active_party_combatant() {
+  auto snapshot = sample_snapshot();
+  snapshot.screen = ScreenContext::combat;
+  snapshot.combat = CombatView{
+      .active = true,
+      .round = 4,
+      .acting_combatant = 1,
+      .combatants = {
+          CombatantView{
+              .id = 1,
+              .kind = CombatantKind::party_member,
+              .name = "Arin",
+              .stamina = {12, 20},
+              .active = true,
+              .targetable = true,
+          },
+          CombatantView{
+              .id = 10,
+              .kind = CombatantKind::monster,
+              .name = "Goblin",
+              .stamina = {8, 8},
+              .targetable = true,
+          },
+      },
+  };
+
+  auto model = build_presentation_shell_model(snapshot);
+  const auto& guard = action_with(model, ActionIntent::guard);
+  CHECK(guard.can_invoke());
+  CHECK(guard.availability == ActionAvailability::deferred_to_engine);
+  CHECK(guard.command == "action.combat.guard");
+  CHECK(guard.combatant == 1);
+
+  snapshot.combat->acting_combatant = 10;
+  snapshot.combat->combatants[0].active = false;
+  snapshot.combat->combatants[1].active = true;
+  model = build_presentation_shell_model(snapshot);
+  const auto& monster_turn = action_with(model, ActionIntent::guard);
+  CHECK(!monster_turn.can_invoke());
+  CHECK(!monster_turn.combatant);
+  CHECK(monster_turn.availability_reason->label ==
+      "Wait for an active party member");
+
+  snapshot.combat.reset();
+  model = build_presentation_shell_model(snapshot);
+  CHECK(!action_with(model, ActionIntent::guard).can_invoke());
+}
+
 void test_events_drawers_motion_and_log_limit() {
   const auto snapshot = sample_snapshot();
   const std::vector<GameEvent> events{
@@ -289,6 +337,7 @@ int main() {
     test_party_rail_and_non_color_states();
     test_selection_fallback_and_meter_bounds();
     test_action_availability_is_conservative();
+    test_combat_guard_tracks_the_active_party_combatant();
     test_events_drawers_motion_and_log_limit();
     test_typography_keyboard_order_and_remappable_ids();
     test_determinism_and_no_input_mutation();

@@ -105,6 +105,7 @@ enum class ActionIntent {
   cast_spell,
   save_game,
   load_game,
+  guard,
   cancel,
   encounter_choice,
 };
@@ -124,6 +125,7 @@ struct ActionControlModel {
   ActionAvailability availability = ActionAvailability::unavailable;
   std::optional<StateTokenModel> availability_reason;
   std::optional<PartyMemberId> party_member;
+  std::optional<CombatantId> combatant;
   std::optional<int32_t> encounter_choice;
   FocusIdentifier focus_identifier;
   int32_t tab_order = 0;

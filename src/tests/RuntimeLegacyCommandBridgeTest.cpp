@@ -823,6 +823,110 @@ void test_open_load_game_mapping_and_dispatch() {
   }).status == DispatchStatus::unsupported);
 }
 
+void test_guard_combatant_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int guard_calls = 0;
+  bool accept_guard = true;
+  CombatantId received_combatant = -1;
+  uint32_t received_message = 0;
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [&guard_calls, &accept_guard, &received_combatant, &received_message,
+          &context](CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++guard_calls;
+        received_combatant = combatant;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept_guard;
+      });
+
+  CHECK(legacy_key_message_for_guard_combatant(2, context) == 0x00000567U);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 300,
+      .payload = GuardCombatantAction{2},
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(received_combatant == 2);
+  CHECK(received_message == 0x00000567U);
+
+  context.screen = ScreenContext::exploration;
+  context.world_presentation = WorldPresentation::outdoor;
+  CHECK(!legacy_key_message_for_guard_combatant(2, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 301,
+      .payload = GuardCombatantAction{2},
+  }).status == DispatchStatus::rejected);
+  CHECK(guard_calls == 1);
+
+  context = {ScreenContext::combat, WorldPresentation::none, false};
+  CHECK(!legacy_key_message_for_guard_combatant(2, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 302,
+      .payload = GuardCombatantAction{2},
+  }).status == DispatchStatus::rejected);
+
+  context.adaptive_eligible = true;
+  for (const CombatantId invalid : {-1, 256}) {
+    CHECK(!legacy_key_message_for_guard_combatant(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 303,
+        .payload = GuardCombatantAction{invalid},
+    }).status == DispatchStatus::rejected);
+  }
+
+  accept_guard = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 304,
+      .payload = GuardCombatantAction{3},
+  }).status == DispatchStatus::failed);
+  CHECK(guard_calls == 2);
+
+  RuntimeLegacyCommandBridge without_guard(
+      [&context] { return context; },
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      },
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      });
+  CHECK(without_guard.dispatch(UIAction{
+      .sequence = 305,
+      .payload = GuardCombatantAction{2},
+  }).status == DispatchStatus::unsupported);
+}
+
 void test_exception_boundary() {
   RuntimeLegacyCommandBridge provider_throws(
       []() -> RuntimeLegacyCommandContext {
@@ -1001,6 +1105,7 @@ int main() {
     test_open_spellbook_mapping_and_dispatch();
     test_open_save_game_mapping_and_dispatch();
     test_open_load_game_mapping_and_dispatch();
+    test_guard_combatant_mapping_and_dispatch();
     test_exception_boundary();
     std::cout << "RuntimeLegacyCommandBridgeTest passed ("
               << checks_run << " checks)\n";

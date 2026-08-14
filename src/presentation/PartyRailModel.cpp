@@ -301,6 +301,38 @@ std::vector<ActionControlModel> build_actions(
       tab_order++,
       engine_rules_token()));
 
+  if (snapshot.screen == ScreenContext::combat) {
+    const CombatantView* acting = nullptr;
+    if (snapshot.combat && snapshot.combat->active &&
+        snapshot.combat->acting_combatant) {
+      const auto acting_id = *snapshot.combat->acting_combatant;
+      const auto match = std::ranges::find(
+          snapshot.combat->combatants,
+          acting_id,
+          &CombatantView::id);
+      if (match != snapshot.combat->combatants.end()) {
+        acting = &*match;
+      }
+    }
+    const bool can_guard = acting &&
+        (acting->kind == CombatantKind::party_member) && acting->active &&
+        acting->targetable && (acting->stamina.current > 0);
+    result.emplace_back(action(
+        ActionIntent::guard,
+        "action.combat.guard",
+        "Guard",
+        can_guard ? ActionAvailability::deferred_to_engine
+                  : ActionAvailability::unavailable,
+        tab_order++,
+        can_guard
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{
+                  unavailable_token("Wait for an active party member")}));
+    if (can_guard) {
+      result.back().combatant = acting->id;
+    }
+  }
+
   if (encounter_active) {
     for (const auto& choice : snapshot.encounter->choices) {
       auto choice_action = action(

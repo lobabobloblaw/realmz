@@ -11,10 +11,11 @@ typedef uint32_t RealmzSemanticInputSurface;
 enum {
   REALMZ_SEMANTIC_INPUT_NONE = 0,
   REALMZ_SEMANTIC_INPUT_EXPLORATION = 1,
-  REALMZ_SEMANTIC_INPUT_DUNGEON = 2
+  REALMZ_SEMANTIC_INPUT_DUNGEON = 2,
+  REALMZ_SEMANTIC_INPUT_COMBAT = 3
 };
 
-// These functions bracket only the two top-level gameplay GetNextEvent calls.
+// These functions bracket only the three top-level gameplay GetNextEvent calls.
 // Nested Classic loops, FlushEvents, and Button/StillDown polling intentionally
 // run outside a semantic input surface.
 void RealmzBeginSemanticInputSurface(RealmzSemanticInputSurface surface);
@@ -59,6 +60,12 @@ RealmzSemanticInputSurface RealmzSemanticOpenSaveGameTagSurface(
 // identify a slot and cannot replace engine state at this boundary.
 uint8_t RealmzIsSemanticOpenLoadGameTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenLoadGameTagSurface(
+    uint32_t tagged_message);
+
+// Guard tags carry the acting combatant explicitly and are valid only on the
+// combat surface. This prevents a queued command from applying to a later turn.
+uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticGuardCombatantTagSurface(
     uint32_t tagged_message);
 
 // EventManager uses these generic predicates to keep every tagged gameplay
@@ -115,6 +122,13 @@ uint8_t RealmzConsumeSemanticOpenLoadGameEvent(
     int16_t* menu_id,
     int16_t* item_id);
 
+// Revalidates the live acting party combatant, then returns the preserved
+// Classic "g" key record to the top-level combat loop.
+uint8_t RealmzConsumeSemanticGuardCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -144,6 +158,10 @@ enum class MovementCommand;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_open_load_game_tag(
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_guard_combatant_tag(
+    CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 
 } // namespace realmz::presentation
