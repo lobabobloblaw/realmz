@@ -1,4 +1,6 @@
-# Exploration semantic-equivalence harness
+# Semantic action-equivalence harnesses
+
+## Exploration
 
 This focused harness compares the smallest migrated exploration command set
 without reading or writing a Realmz character or save file:
@@ -38,7 +40,37 @@ Select another compiler with `CXX`, for example:
 CXX=g++ tests/semantic/run-exploration-action-equivalence.sh
 ```
 
-## Boundary of this result
+## Combat
+
+The combat harness compares the direct Classic-key mapper request with the
+typed-action path through the real runtime bridge and semantic input boundary
+for Guard, Finish, Delay, Center, Switch Weapon, Center Previous, Center Next,
+and Combat Items. Test-owned semantic-event sinks retain the tags instead of
+running the production WindowManager/EventManager queue. Its test-owned
+pre-Classic state image verifies stable acting combatant and selected-member
+identities, exact semantic tags and Classic key records, unchanged fixture
+bytes, single-use consumption, and fail-closed stale identity rejection.
+
+Run the strict standalone check from the repository root:
+
+```sh
+tests/semantic/run-combat-action-equivalence.sh
+```
+
+Sanitizers and compiler selection use the same environment variables as the
+exploration runner:
+
+```sh
+REALMZ_ENABLE_SANITIZERS=1 \
+  tests/semantic/run-combat-action-equivalence.sh
+CXX=g++ tests/semantic/run-combat-action-equivalence.sh
+```
+
+This is a contract-level, pre-Classic fixture. It does not run a live Classic
+combat mutation, choose or use an item, replay a modal, exercise RNG, or claim
+save equivalence.
+
+## Boundary of these results
 
 This is a contract-level fixture, not a live-engine equivalence claim. The
 production runtime connects eligible `MovePartyAction`,
@@ -51,9 +83,9 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first eight bounded combat controls are covered outside this exploration
-fixture by the presentation, runtime-bridge, semantic-boundary, top-level-loop,
-and keyboard contract tests. They verify that typed `GuardCombatantAction`,
+The first eight bounded combat controls are covered by the combat fixture and
+the presentation, runtime-bridge, semantic-boundary, top-level-loop, and
+keyboard contract tests. They verify that typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`, and
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`, and
 `CycleCombatFocusAction` commands each carry the stable acting-combatant ID and

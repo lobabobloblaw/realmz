@@ -214,6 +214,15 @@ if(REALMZ_BUILD_CORE_TESTS)
     add_test(NAME ExplorationActionEquivalenceTest
         COMMAND ExplorationActionEquivalenceTest)
 
+    add_executable(CombatActionEquivalenceTest
+        tests/semantic/CombatActionEquivalenceTest.cpp
+        src/presentation/SemanticInputBoundary.cpp)
+    target_link_libraries(CombatActionEquivalenceTest PRIVATE
+        realmz_presentation_core)
+    realmz_configure_core_target(CombatActionEquivalenceTest)
+    add_test(NAME CombatActionEquivalenceTest
+        COMMAND CombatActionEquivalenceTest)
+
     add_executable(ShellKeyboardInteractionContractTest
         tests/semantic/shell_keyboard/ShellKeyboardInteractionContractTest.cpp)
     target_link_libraries(ShellKeyboardInteractionContractTest PRIVATE

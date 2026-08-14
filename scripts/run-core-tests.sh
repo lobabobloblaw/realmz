@@ -218,6 +218,11 @@ if [[ -x "$repo/tests/semantic/run-exploration-action-equivalence.sh" ]]; then
   "$repo/tests/semantic/run-exploration-action-equivalence.sh"
 fi
 
+if [[ -x "$repo/tests/semantic/run-combat-action-equivalence.sh" ]]; then
+  echo "Running semantic combat action-equivalence checks"
+  "$repo/tests/semantic/run-combat-action-equivalence.sh"
+fi
+
 if [[ -x "$repo/tests/semantic/shell_keyboard/run-shell-keyboard-interaction-contract.sh" ]]; then
   echo "Running semantic shell-keyboard contract checks"
   "$repo/tests/semantic/shell_keyboard/run-shell-keyboard-interaction-contract.sh"
