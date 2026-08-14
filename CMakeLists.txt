@@ -186,6 +186,20 @@ if(REALMZ_BUILD_CORE_TESTS)
     add_test(NAME SemanticInputBoundaryTest
         COMMAND SemanticInputBoundaryTest)
 
+    add_executable(SemanticCombatLegacyAdapterTest
+        src/tests/SemanticCombatLegacyAdapterTest.cpp
+        src/presentation/SemanticInputBoundary.cpp
+        src/presentation/LegacyGameSnapshotSource.cpp
+        src/presentation/LegacyPresentationContext.c)
+    target_link_libraries(SemanticCombatLegacyAdapterTest PRIVATE
+        realmz_presentation_core)
+    target_include_directories(SemanticCombatLegacyAdapterTest PRIVATE src)
+    set_target_properties(SemanticCombatLegacyAdapterTest PROPERTIES
+        C_STANDARD 99)
+    realmz_configure_core_target(SemanticCombatLegacyAdapterTest)
+    add_test(NAME SemanticCombatLegacyAdapterTest
+        COMMAND SemanticCombatLegacyAdapterTest)
+
     add_executable(SemanticTopLevelLoopContractTest
         src/tests/SemanticTopLevelLoopContractTest.cpp)
     realmz_configure_core_target(SemanticTopLevelLoopContractTest)

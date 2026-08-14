@@ -135,6 +135,21 @@ echo "Compiling LegacyPresentationContextTest"
 echo "Running LegacyPresentationContextTest"
 "$tmp_dir/LegacyPresentationContextTest" "$repo"
 
+echo "Compiling SemanticCombatLegacyAdapterTest"
+(
+  cd "$repo"
+  "$cxx" "${common_flags[@]}" \
+    src/tests/SemanticCombatLegacyAdapterTest.cpp \
+    src/presentation/SemanticInputBoundary.cpp \
+    src/presentation/LegacyGameSnapshotSource.cpp \
+    src/presentation/RuntimeLegacyCommandBridge.cpp \
+    src/presentation/LegacyCommandBridge.cpp \
+    "$tmp_dir/LegacyPresentationContext.o" \
+    -o "$tmp_dir/SemanticCombatLegacyAdapterTest"
+)
+echo "Running SemanticCombatLegacyAdapterTest"
+"$tmp_dir/SemanticCombatLegacyAdapterTest"
+
 echo "Compiling LegacyPartySelectionTest"
 (
   cd "$repo"

@@ -61,6 +61,11 @@ resulting combat-state mutations and turn advance. This is not a full combat
 replay or save-equivalence claim; every other combat command remains on the
 Classic input route.
 
+`SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
+fixture-owned legacy globals flow through the real presentation-context and
+snapshot adapters before the semantic boundary emits those exact key records.
+It performs no Classic combat mutation and reads or writes no user data.
+
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:
 
