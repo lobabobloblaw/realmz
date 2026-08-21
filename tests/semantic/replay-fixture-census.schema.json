@@ -1,0 +1,76 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/replay-fixture-census-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A mechanical, unreviewed census of one explicitly supplied Realmz replay fixture tree. This artifact makes no provenance, authorization, redistribution, or equivalence claim.",
+  "properties": {
+    "directory_count": {
+      "maximum": 100000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "file_count": {
+      "maximum": 100000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "NFC relative POSIX path in canonical UTF-8 byte order. JSON maxLength counts code points and is a structural ceiling; the census implementation separately enforces at most 4096 UTF-8 bytes plus the full path rules.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 100000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "slot": {
+      "pattern": "^[A-J](?![\\s\\S])",
+      "type": "string"
+    },
+    "status": {
+      "const": "census_unreviewed"
+    },
+    "total_file_bytes": {
+      "maximum": 1073741824,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "tree_sha256": {
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "slot",
+    "files",
+    "tree_sha256",
+    "file_count",
+    "directory_count",
+    "total_file_bytes"
+  ],
+  "title": "Realmz replay fixture census v1",
+  "type": "object"
+}

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import io
 import importlib.util
 import json
 import os
@@ -281,6 +282,123 @@ class ReplayRunnerTestCase(unittest.TestCase):
 
 
 class ProcessIsolationTests(ReplayRunnerTestCase):
+    def test_pinned_executable_fstat_interrupt_closes_descriptor(self) -> None:
+        request = runner.load_request(self.request_path)
+        real_open = runner.os.open
+        real_fstat = runner.os.fstat
+        opened_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        def fstat_then_interrupt(descriptor: int) -> os.stat_result:
+            real_fstat(descriptor)
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            runner.os,
+            "open",
+            side_effect=record_open,
+        ), mock.patch.object(
+            runner.os,
+            "fstat",
+            side_effect=fstat_then_interrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                runner._open_pinned_executable(request)
+
+        self.assertEqual(len(opened_descriptors), 1)
+        with self.assertRaises(OSError):
+            os.fstat(opened_descriptors[0])
+
+    def test_popen_init_interrupt_terminates_registered_child(self) -> None:
+        request = runner.load_request(self.request_path)
+        popen_init = subprocess.Popen.__init__
+        launched: list[subprocess.Popen[bytes]] = []
+
+        def init_then_interrupt(
+            process: subprocess.Popen[bytes],
+            *arguments: object,
+            **keywords: object,
+        ) -> None:
+            popen_init(process, *arguments, **keywords)
+            launched.append(process)
+            raise KeyboardInterrupt
+
+        with mock.patch.dict(
+            os.environ,
+            {"REALMZ_REPLAY_FAKE_LOG": str(self.log_path)},
+            clear=False,
+        ), mock.patch.object(
+            subprocess.Popen,
+            "__init__",
+            new=init_then_interrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt) as raised:
+                runner.run_request(request)
+
+        self.track_workspace(raised.exception)
+        self.assertEqual(len(launched), 1)
+        self.assertIsNotNone(launched[0].poll())
+
+    def test_cli_return_interrupt_reports_registered_workspace(self) -> None:
+        run_request_file = runner.run_request_file
+
+        def run_then_interrupt(
+            *arguments: object,
+            **keywords: object,
+        ) -> dict[str, object]:
+            run_request_file(*arguments, **keywords)
+            raise KeyboardInterrupt
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.dict(
+            os.environ,
+            {"REALMZ_REPLAY_FAKE_LOG": str(self.log_path)},
+            clear=False,
+        ), mock.patch.object(
+            runner,
+            "run_request_file",
+            side_effect=run_then_interrupt,
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = runner.main(["--request", str(self.request_path)])
+
+        self.assertEqual(exit_code, runner.EXIT_INTERRUPTED)
+        self.assertEqual(stdout.getvalue(), "")
+        envelope = json.loads(stderr.getvalue())
+        self.track_workspace(envelope)
+        self.assertEqual(envelope["error"]["code"], "runner.interrupted")
+        self.assertIn("workspace_retention", envelope)
+
+    def test_cli_success_emission_interrupt_reports_registered_workspace(self) -> None:
+        class InterruptingStdout(io.StringIO):
+            def write(self, value: str) -> int:
+                super().write(value)
+                raise KeyboardInterrupt
+
+        stdout = InterruptingStdout()
+        stderr = io.StringIO()
+        with mock.patch.dict(
+            os.environ,
+            {"REALMZ_REPLAY_FAKE_LOG": str(self.log_path)},
+            clear=False,
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = runner.main(["--request", str(self.request_path)])
+
+        self.assertEqual(exit_code, runner.EXIT_INTERRUPTED)
+        self.assertNotEqual(stdout.getvalue(), "")
+        envelope = json.loads(stderr.getvalue())
+        self.track_workspace(envelope)
+        self.assertEqual(envelope["error"]["code"], "runner.interrupted")
+        self.assertIn("workspace_retention", envelope)
+
     def test_runs_same_executable_in_classic_then_semantic_processes(self) -> None:
         envelope = self.run_parent()
         invocations = self.invocations()

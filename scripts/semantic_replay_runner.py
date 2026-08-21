@@ -991,6 +991,21 @@ def _attach_workspace_retention(
         error.args = (error.message,)
 
 
+def _register_workspace_retention(
+    retention_out: dict[str, object] | None,
+    retention: dict[str, object],
+) -> None:
+    if retention_out is not None:
+        retention_out["workspace_retention"] = retention
+
+
+def _registered_workspace_retention(
+    retention_out: dict[str, object],
+) -> dict[str, object] | None:
+    retention = retention_out.get("workspace_retention")
+    return retention if isinstance(retention, dict) else None
+
+
 def _terminate_process(process: subprocess.Popen[bytes]) -> None:
     group_was_signaled = False
     try:
@@ -1238,7 +1253,10 @@ def _verify_pinned_executable(
         _launch_error(f"pinned executable changed before/during {phase}")
 
 
-def _open_pinned_executable(request: RunRequest) -> int:
+def _open_pinned_executable(
+    request: RunRequest,
+    ownership: list[int] | None = None,
+) -> int:
     flags = os.O_RDONLY
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
@@ -1246,22 +1264,85 @@ def _open_pinned_executable(request: RunRequest) -> int:
         flags |= os.O_NOFOLLOW
     if hasattr(os, "O_NONBLOCK"):
         flags |= os.O_NONBLOCK
+    descriptor = -1
     try:
         descriptor = os.open(request.executable, flags)
     except OSError as error:
         _launch_error(f"cannot pin the requested executable: {error}")
-    status = os.fstat(descriptor)
-    identity = (
-        status.st_dev,
-        status.st_ino,
-        status.st_size,
-        status.st_mtime_ns,
-        status.st_ctime_ns,
-    )
-    if not stat.S_ISREG(status.st_mode) or identity != request.executable_identity:
-        os.close(descriptor)
-        _launch_error("executable identity changed before it could be pinned")
-    return descriptor
+    try:
+        status = os.fstat(descriptor)
+        identity = (
+            status.st_dev,
+            status.st_ino,
+            status.st_size,
+            status.st_mtime_ns,
+            status.st_ctime_ns,
+        )
+        if not stat.S_ISREG(status.st_mode) or identity != request.executable_identity:
+            _launch_error("executable identity changed before it could be pinned")
+        if ownership is not None:
+            ownership.append(descriptor)
+        return descriptor
+    except OSError as error:
+        if ownership is None or descriptor not in ownership:
+            os.close(descriptor)
+        _launch_error(f"cannot inspect the pinned executable: {error}")
+    except BaseException:
+        if ownership is None or descriptor not in ownership:
+            os.close(descriptor)
+        raise
+
+
+def _launch_registered_process(
+    argv: list[str],
+    route_directory: Path,
+    ownership: list[subprocess.Popen[bytes]],
+) -> subprocess.Popen[bytes]:
+    keywords = {
+        "cwd": route_directory,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "shell": False,
+        "start_new_session": True,
+    }
+    factory = subprocess.Popen
+    if isinstance(factory, type):
+        # Register an inert Popen owner before __init__ can create a child.  If
+        # an asynchronous exception lands after fork/posix_spawn but before
+        # constructor return, the caller can still terminate the process.
+        process = factory.__new__(factory)
+        ownership.append(process)
+        factory.__init__(process, argv, **keywords)
+        return process
+
+    # Test/instrumentation factories remain supported.  Production uses the
+    # pre-registered class path above.
+    process = factory(argv, **keywords)
+    ownership.append(process)
+    return process
+
+
+def _terminate_registered_process(process: subprocess.Popen[bytes]) -> None:
+    try:
+        process_id = getattr(process, "pid", None)
+        if isinstance(process_id, int) and process_id > 0:
+            try:
+                running = process.poll() is None
+            except BaseException:
+                running = True
+            if running:
+                _terminate_process(process)
+    except BaseException:
+        pass
+    finally:
+        for attribute in ("stdin", "stdout", "stderr"):
+            stream = getattr(process, attribute, None)
+            if stream is not None:
+                try:
+                    stream.close()
+                except BaseException:
+                    pass
 
 
 def _run_one_child(
@@ -1301,30 +1382,32 @@ def _run_one_child(
     _verify_namespace_pins(namespace_pins, f"{route} launch")
     _verify_executable_identity(request, f"{route} launch")
     _verify_pinned_executable(request, executable_descriptor, f"{route} launch")
+    process_ownership: list[subprocess.Popen[bytes]] = []
     try:
-        process = subprocess.Popen(
-            argv,
-            cwd=route_directory,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=False,
-            start_new_session=True,
-        )
-    except OSError as error:
-        _launch_error(f"cannot launch {route} child: {error}")
-    process_id = process.pid
-    with process:
         try:
-            _verify_namespace_pins(namespace_pins, f"{route} process start")
-            _verify_executable_identity(request, f"{route} process start")
-            _verify_pinned_executable(
-                request, executable_descriptor, f"{route} process start"
+            process = _launch_registered_process(
+                argv,
+                route_directory,
+                process_ownership,
             )
-            _wait_for_child(process, route, request.timeout_seconds)
-        except BaseException:
-            _terminate_process(process)
-            raise
+        except OSError as error:
+            _launch_error(f"cannot launch {route} child: {error}")
+        process_id = process.pid
+        with process:
+            try:
+                _verify_namespace_pins(namespace_pins, f"{route} process start")
+                _verify_executable_identity(request, f"{route} process start")
+                _verify_pinned_executable(
+                    request, executable_descriptor, f"{route} process start"
+                )
+                _wait_for_child(process, route, request.timeout_seconds)
+            except BaseException:
+                _terminate_registered_process(process)
+                raise
+    finally:
+        for owned_process in reversed(process_ownership):
+            _terminate_registered_process(owned_process)
+        process_ownership.clear()
     _verify_user_roots(request, f"{route} completion")
     _verify_private_directory(workspace, workspace_identity, "parent workspace")
     _verify_private_directory(route_directory, route_identity, f"{route} workspace")
@@ -1363,23 +1446,36 @@ def _run_one_child(
     return result
 
 
-def run_request(request: RunRequest) -> dict[str, object]:
+def run_request(
+    request: RunRequest,
+    *,
+    retention_out: dict[str, object] | None = None,
+) -> dict[str, object]:
     """Run the v1 parent protocol and return a non-equivalence envelope."""
 
     run_id = secrets.token_hex(TOKEN_HEX_LENGTH // 2)
     nonces = [secrets.token_hex(TOKEN_HEX_LENGTH // 2) for _ in ROUTES]
     if len(set(nonces)) != len(nonces):  # cryptographically negligible, fail closed
         _launch_error("could not generate distinct child nonces")
-    executable_descriptor = _open_pinned_executable(request)
+    executable_descriptor = -1
+    owned_descriptors: list[int] = []
     workspace: Path | None = None
     workspace_identity: tuple[int, int] | None = None
     try:
+        executable_descriptor = _open_pinned_executable(
+            request,
+            owned_descriptors,
+        )
         workspace = Path(tempfile.mkdtemp(prefix="realmz-semantic-replay-"))
         workspace = workspace.resolve(strict=True)
         workspace_status = workspace.stat(follow_symlinks=False)
         if workspace_status.st_uid != os.getuid() or stat.S_IMODE(workspace_status.st_mode) != 0o700:
             _launch_error("temporary workspace is not private and owned by the current user")
         workspace_identity = (workspace_status.st_dev, workspace_status.st_ino)
+        _register_workspace_retention(
+            retention_out,
+            _workspace_retention_record(workspace, workspace_identity),
+        )
         for user_root in (
             request.classic_user_data_root,
             request.semantic_user_data_root,
@@ -1419,13 +1515,19 @@ def run_request(request: RunRequest) -> dict[str, object]:
             )
         _verify_private_directory(workspace, workspace_identity, "parent workspace")
         retention = _workspace_retention_record(workspace, workspace_identity)
+        _register_workspace_retention(retention_out, retention)
     except BaseException as error:
         if workspace is not None:
             retention = _workspace_retention_record(workspace, workspace_identity)
+            _register_workspace_retention(retention_out, retention)
             _attach_workspace_retention(error, retention)
         raise
     finally:
-        os.close(executable_descriptor)
+        for descriptor in owned_descriptors:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
     envelope: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
@@ -1442,10 +1544,14 @@ def run_request(request: RunRequest) -> dict[str, object]:
     return envelope
 
 
-def run_request_file(path: Path) -> dict[str, object]:
+def run_request_file(
+    path: Path,
+    *,
+    retention_out: dict[str, object] | None = None,
+) -> dict[str, object]:
     """Load a request and execute both isolated child routes."""
 
-    return run_request(load_request(path))
+    return run_request(load_request(path), retention_out=retention_out)
 
 
 def _error_envelope(error: ReplayRunnerError) -> dict[str, object]:
@@ -1480,9 +1586,18 @@ def _argument_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _argument_parser().parse_args(argv)
+    retention_out: dict[str, object] = {}
     try:
-        envelope = run_request_file(arguments.request)
+        envelope = run_request_file(
+            arguments.request,
+            retention_out=retention_out,
+        )
+        print(json.dumps(envelope, ensure_ascii=False, sort_keys=True))
     except ReplayRunnerError as error:
+        if error.workspace_retention is None:
+            retention = _registered_workspace_retention(retention_out)
+            if retention is not None:
+                _attach_workspace_retention(error, retention)
         print(
             json.dumps(_error_envelope(error), ensure_ascii=False, sort_keys=True),
             file=sys.stderr,
@@ -1495,6 +1610,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             EXIT_INTERRUPTED,
         )
         retention = getattr(error, "workspace_retention", None)
+        if not isinstance(retention, dict):
+            retention = _registered_workspace_retention(retention_out)
         if isinstance(retention, dict):
             _attach_workspace_retention(wrapped, retention)
         print(
@@ -1511,6 +1628,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             EXIT_INTERNAL,
         )
         retention = getattr(error, "workspace_retention", None)
+        if not isinstance(retention, dict):
+            retention = _registered_workspace_retention(retention_out)
         if isinstance(retention, dict):
             _attach_workspace_retention(wrapped, retention)
         print(
@@ -1518,7 +1637,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return wrapped.exit_code
-    print(json.dumps(envelope, ensure_ascii=False, sort_keys=True))
     return 0
 
 

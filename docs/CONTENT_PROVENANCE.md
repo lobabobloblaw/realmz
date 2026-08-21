@@ -178,8 +178,20 @@ Committed fixtures must be synthetic or redistributable under the project licens
 
 `scripts/semantic_replay_fixture.py` is the first, byte-handling stage of the
 live semantic-replay milestone. It accepts no default save location: callers
-must explicitly supply both a version-1 manifest and the source root. The
-manifest records:
+must explicitly supply the source root, plus a version-1 manifest for
+verification or staging. Its census mode performs no explicit content writes
+and first produces a closed, mechanical `census_unreviewed` record of canonical
+paths, sizes, hashes, tree digest, slot, and bounds. Filesystem reads may update
+access-time metadata, so use a backed-up copy or snapshot when preserving that
+metadata matters. It never infers provenance or authorization:
+
+```sh
+python3 scripts/semantic_replay_fixture.py census \
+  --source-root /path/to/user-owned-fixture \
+  --slot A
+```
+
+A human-reviewed manifest combines that evidence with:
 
 - `source_class` and a human-readable `authorization_basis` establishing why
   the bytes may be used locally;
@@ -190,11 +202,12 @@ manifest records:
   lowercase SHA-256 digests, capped at 1 GiB of declared fixture bytes; and
 - a domain-separated `tree_sha256` over that census.
 
-The checked-in JSON Schema is
-`tests/semantic/replay-fixture-manifest.schema.json`. Schema conformance does
-not replace authorization review, and a manifest does not make its source
-bytes redistributable. Keep private fixture bytes outside Git and outside
-release artifacts.
+The checked-in JSON Schemas are
+`tests/semantic/replay-fixture-census.schema.json` and
+`tests/semantic/replay-fixture-manifest.schema.json`. Schema conformance and a
+mechanical census do not replace authorization review, and a manifest does not
+make its source bytes redistributable. Keep private fixture bytes, census,
+manifest, and review artifacts outside Git and release artifacts.
 
 Verify an explicitly supplied source without copying it:
 
@@ -223,7 +236,10 @@ are caller-owned trust boundaries and the two `Game A` destinations must not
 already exist. The process runner below receives the user-root paths, not the
 slot paths.
 
-Staging refuses existing, aliased, or nested destinations. It creates two
+Verification and staging keep the exact manifest descriptor pinned throughout
+their source work, fail if its bytes or namespace drift, and emit its SHA-256
+for the equivalence request. Staging refuses existing, aliased, or nested
+destinations. It creates two
 byte-exact copies with identities independent from the source and from one
 another, rehashes both copies, and verifies the source again before reporting
 success. Manifest reads, source traversal, destination creation, and copying
@@ -248,9 +264,10 @@ process renames the open directory. Retained roots may contain private fixture
 bytes and require deliberate cleanup by the caller after the parent namespace
 and reported names have been reviewed.
 
-Both successful fixture commands emit machine-readable JSON containing
-`"semantic_equivalence":"not_evaluated"`. Verification and staging establish
-fixture identity and isolation only.
+Successful verification and staging emit machine-readable JSON containing
+`"semantic_equivalence":"not_evaluated"`; the separate census emits
+`"status":"census_unreviewed"` and no equivalence field. These operations
+establish mechanical identity and isolation only.
 
 `scripts/semantic_replay_runner.py` adds the process-isolation layer. Its
 version-1 request, child-config, child-result, and run-envelope contracts are
@@ -309,7 +326,9 @@ verifies the output tree, and exclusively publishes its state, save, action,
 and RNG measurements before exiting successfully.
 
 Synthetic tests pin the parent protocol, and linked native tests exercise both
-delivery routes against controlled engine globals, but the runner deliberately
+delivery routes against controlled engine globals for all eight outdoor and
+four first-person dungeon movement commands. Those linked tests establish
+delivery mapping and next-poll settlement, not Tutorial traversal. The runner deliberately
 does not compare child-reported state and save hashes. The repository also has
 no selected provenance-reviewed live Tutorial fixture. Even a successful
 runner invocation therefore emits `"runner_scope":"process_isolation_only"`
@@ -317,9 +336,11 @@ and `"semantic_equivalence":"not_evaluated"`; it is not evidence of engine or
 save equivalence.
 
 `scripts/semantic_replay_equivalence.py` is the separate opt-in comparison
-layer. Its closed v1 request explicitly pins the expected fixture-tree digest,
-manifest and source, physical executable, output slot, action plan, timeout,
-and RNG seed and stream. The gate creates its own private Classic and semantic
+layer. Its closed v1 request explicitly pins the exact reviewed manifest and
+fixture-tree digests, manifest and source paths, physical executable, output
+slot, native-v1 movement action plan, timeout, and RNG seed and stream. Invalid
+native actions and digest mismatches fail before private staging. The gate
+creates its own private Classic and semantic
 user roots, stages the fixture twice, and holds one descriptor-backed lease over
 the exact manifest, source tree, and both staged inputs throughout the two
 process runs. It finalizes that lease on runner success, failure, or
@@ -327,7 +348,19 @@ interruption. Finalization rehashes all three trees, rechecks their captured
 metadata and namespaces, and reproves root and file independence before any
 behavioral verdict is possible.
 
-Invoke the gate only with a reviewed local request:
+Inspect a reviewed local request without staging or launching children:
+
+```sh
+python3 scripts/semantic_replay_equivalence.py \
+  --request /path/to/semantic-replay-equivalence-request.json \
+  --inspect-profile
+```
+
+The closed `profile_inspected` record contains only manifest, tree, and action
+digests plus counts, slots, settlement barrier, and RNG inputs. It is not an
+equivalence verdict or evidence that the intended route was covered. Invoke the
+real gate only after separately reviewing that profile and its human coverage
+narrative:
 
 ```sh
 python3 scripts/semantic_replay_equivalence.py \
@@ -360,6 +393,9 @@ real-engine equivalence result. A verdict is scoped to its exact fixture-tree
 and action-plan digests; a zero-action or narrow movement profile must not be
 presented as broader release coverage. V1 also compares RNG draw counts rather
 than a separate trace of every value drawn.
+
+The complete private review and archival checklist is
+[`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md).
 
 The synthetic replay foundation suite is:
 

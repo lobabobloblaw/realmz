@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import copy
+import errno
+import gc
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -19,6 +22,7 @@ from unittest import mock
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPOSITORY_ROOT / "scripts/semantic_replay_fixture.py"
 SCHEMA_PATH = Path(__file__).with_name("replay-fixture-manifest.schema.json")
+CENSUS_SCHEMA_PATH = Path(__file__).with_name("replay-fixture-census.schema.json")
 
 SPEC = importlib.util.spec_from_file_location("semantic_replay_fixture", SCRIPT_PATH)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import machinery guard
@@ -111,10 +115,23 @@ class ReplayFixtureTestCase(unittest.TestCase):
             text=True,
         )
 
+    def assert_descriptor_closed(self, descriptor: int) -> None:
+        try:
+            os.fstat(descriptor)
+        except OSError as error:
+            self.assertEqual(error.errno, errno.EBADF)
+            return
+        os.close(descriptor)
+        self.fail(f"descriptor {descriptor} remained open")
+
 
 class ManifestValidationTests(ReplayFixtureTestCase):
     def test_valid_manifest_and_source_verify(self) -> None:
         verified = fixture_tool.verify_fixture(self.manifest, self.source)
+        self.assertEqual(
+            verified.manifest_sha256,
+            digest_bytes(self.manifest.read_bytes()),
+        )
         self.assertEqual(verified.manifest.manifest_version, 1)
         self.assertEqual(verified.manifest.source_class, "user-owned-save")
         self.assertEqual(
@@ -481,6 +498,253 @@ class SourceVerificationTests(ReplayFixtureTestCase):
             tree.close()
 
 
+class CensusTests(ReplayFixtureTestCase):
+    def assert_census_error(self, expected: str, *, slot: object = "A") -> None:
+        with self.assertRaises(fixture_tool.FixtureError) as raised:
+            fixture_tool.census_fixture(self.source, slot)
+        self.assertEqual(raised.exception.exit_code, fixture_tool.EXIT_VERIFICATION)
+        self.assertEqual(raised.exception.code, "fixture.census_failed")
+        self.assertIn(expected, raised.exception.message)
+
+    def test_api_emits_a_canonical_unreviewed_manifest_fragment(self) -> None:
+        census = fixture_tool.census_fixture(self.source, "C")
+        expected_paths = sorted(self.files, key=lambda value: value.encode("utf-8"))
+        self.assertEqual(census.slot, "C")
+        self.assertEqual([record.path for record in census.files], expected_paths)
+        self.assertEqual(
+            [(record.size, record.sha256) for record in census.files],
+            [
+                (len(self.files[path]), digest_bytes(self.files[path]))
+                for path in expected_paths
+            ],
+        )
+        self.assertEqual(
+            census.tree_sha256,
+            fixture_tool.compute_tree_sha256(census.files),
+        )
+        self.assertEqual(census.directory_count, 1)
+        self.assertEqual(census.total_file_bytes, sum(map(len, self.files.values())))
+
+        result = fixture_tool.census_result(census)
+        self.assertEqual(
+            set(result),
+            {
+                "status",
+                "slot",
+                "files",
+                "tree_sha256",
+                "file_count",
+                "directory_count",
+                "total_file_bytes",
+            },
+        )
+        self.assertEqual(result["status"], "census_unreviewed")
+        self.assertEqual(result["file_count"], 3)
+        for forbidden in (
+            "source_class",
+            "authorization_basis",
+            "redistribution_allowed",
+            "semantic_equivalence",
+            "equivalent",
+            "source_root",
+        ):
+            self.assertNotIn(forbidden, result)
+
+    def test_census_schema_is_closed_and_declares_structural_bounds(self) -> None:
+        schema = json.loads(CENSUS_SCHEMA_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
+        self.assertIs(schema["additionalProperties"], False)
+        expected_fields = {
+            "status",
+            "slot",
+            "files",
+            "tree_sha256",
+            "file_count",
+            "directory_count",
+            "total_file_bytes",
+        }
+        self.assertEqual(set(schema["properties"]), expected_fields)
+        self.assertEqual(set(schema["required"]), expected_fields)
+        self.assertEqual(schema["properties"]["status"]["const"], "census_unreviewed")
+        self.assertEqual(schema["properties"]["files"]["maxItems"], fixture_tool.MAX_FILES)
+        self.assertEqual(
+            schema["properties"]["directory_count"]["maximum"],
+            fixture_tool.MAX_DIRECTORIES,
+        )
+        self.assertEqual(
+            schema["properties"]["total_file_bytes"]["maximum"],
+            fixture_tool.MAX_TOTAL_FILE_BYTES,
+        )
+        path_schema = schema["properties"]["files"]["items"]["properties"]["path"]
+        self.assertEqual(
+            path_schema["maxLength"], fixture_tool.MAX_RELATIVE_PATH_BYTES
+        )
+        self.assertIn("maxLength counts code points", path_schema["description"])
+        self.assertIn("UTF-8 bytes", path_schema["description"])
+
+    def test_paths_are_ordered_by_canonical_utf8_bytes(self) -> None:
+        source = self.root / "unicode-source"
+        source.mkdir()
+        for name in ("é-state", "z-state", "A-state"):
+            (source / name).write_bytes(name.encode("utf-8"))
+        census = fixture_tool.census_fixture(source, "B")
+        self.assertEqual(
+            [record.path for record in census.files],
+            sorted(
+                ("é-state", "z-state", "A-state"),
+                key=lambda value: value.encode("utf-8"),
+            ),
+        )
+
+    def test_census_never_requests_writable_descriptors_or_content_writes(self) -> None:
+        real_open = fixture_tool.os.open
+
+        def require_read_only_open(
+            path: object,
+            flags: int,
+            mode: int = 0o777,
+            *,
+            dir_fd: int | None = None,
+        ) -> int:
+            forbidden = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+            if flags & forbidden:
+                raise AssertionError(f"census attempted writable open: {path}")
+            if dir_fd is None:
+                return real_open(path, flags, mode)
+            return real_open(path, flags, mode, dir_fd=dir_fd)
+
+        before = {
+            relative: (self.source / relative).read_bytes()
+            for relative in self.files
+        }
+        with mock.patch.object(
+            fixture_tool.os,
+            "open",
+            side_effect=require_read_only_open,
+        ), mock.patch.object(
+            fixture_tool.os,
+            "write",
+            side_effect=AssertionError("census must not write"),
+        ) as write_call:
+            census = fixture_tool.census_fixture(self.source, "A")
+        self.assertEqual(len(census.files), len(self.files))
+        write_call.assert_not_called()
+        self.assertEqual(
+            {
+                relative: (self.source / relative).read_bytes()
+                for relative in self.files
+            },
+            before,
+        )
+
+    def test_api_requires_an_explicit_uppercase_slot(self) -> None:
+        for invalid in ("", "a", "K", "AA", 1, None):
+            with self.subTest(slot=invalid):
+                self.assert_census_error("slot must be", slot=invalid)
+
+    def test_root_and_nested_symlinks_are_rejected_without_following(self) -> None:
+        root_link = self.root / "source-link"
+        try:
+            root_link.symlink_to(self.source, target_is_directory=True)
+        except (NotImplementedError, OSError) as error:
+            self.skipTest(f"symbolic links unavailable: {error}")
+        with self.assertRaises(fixture_tool.FixtureError) as raised:
+            fixture_tool.census_fixture(root_link, "A")
+        self.assertIn("not a symbolic link", raised.exception.message)
+
+        target = self.source / "empty.bin"
+        target.unlink()
+        target.symlink_to(self.root / "outside")
+        self.assert_census_error("symbolic links are forbidden")
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO creation is unavailable")
+    def test_special_files_are_rejected(self) -> None:
+        os.mkfifo(self.source / "fifo")
+        self.assert_census_error("special files are forbidden")
+
+    def test_empty_and_unrepresentable_directory_trees_are_rejected(self) -> None:
+        (self.source / "empty-directory").mkdir()
+        self.assert_census_error("directory not represented by a regular file")
+
+        empty_root = self.root / "empty-root"
+        empty_root.mkdir()
+        with self.assertRaises(fixture_tool.FixtureError) as raised:
+            fixture_tool.census_fixture(empty_root, "A")
+        self.assertIn("at least one regular file", raised.exception.message)
+
+    def test_file_directory_and_byte_bounds_are_enforced(self) -> None:
+        with mock.patch.object(fixture_tool, "MAX_FILES", 2):
+            self.assert_census_error("more than 2 files")
+        with mock.patch.object(fixture_tool, "MAX_DIRECTORIES", 0):
+            self.assert_census_error("more than 0 directories")
+        with mock.patch.object(
+            fixture_tool,
+            "MAX_FILE_SIZE",
+            len(self.files["Data I1"]) - 1,
+        ):
+            self.assert_census_error("file size for Data I1 is outside")
+        with mock.patch.object(
+            fixture_tool,
+            "MAX_TOTAL_FILE_BYTES",
+            sum(map(len, self.files.values())) - 1,
+        ):
+            self.assert_census_error("total bytes")
+
+    def test_mutation_after_hashing_is_detected(self) -> None:
+        original_hash = fixture_tool._hash_record
+        mutated = False
+
+        def hash_then_mutate(
+            tree: fixture_tool._PinnedTree,
+            record: fixture_tool.FileRecord,
+            fail: object,
+        ) -> object:
+            nonlocal mutated
+            result = original_hash(tree, record, fail)
+            if not mutated:
+                target = self.source / record.path
+                target.write_bytes(b"x" * record.size)
+                mutated = True
+            return result
+
+        with mock.patch.object(
+            fixture_tool,
+            "_hash_record",
+            side_effect=hash_then_mutate,
+        ):
+            self.assert_census_error("directory contents changed")
+        self.assertTrue(mutated)
+
+    def test_nested_directory_replacement_is_detected_without_hashing_replacement(self) -> None:
+        outside = self.root / "outside"
+        outside.mkdir()
+        malicious = b"outside bytes must never be hashed"
+        (outside / "State").write_bytes(malicious)
+        original_hash = fixture_tool._hash_record
+        replaced = False
+
+        def replace_before_nested_hash(
+            tree: fixture_tool._PinnedTree,
+            record: fixture_tool.FileRecord,
+            fail: object,
+        ) -> object:
+            nonlocal replaced
+            if not replaced and record.path == "Journal/State":
+                (self.source / "Journal").rename(self.source / "Journal-original")
+                (self.source / "Journal").symlink_to(outside, target_is_directory=True)
+                replaced = True
+            return original_hash(tree, record, fail)
+
+        with mock.patch.object(
+            fixture_tool,
+            "_hash_record",
+            side_effect=replace_before_nested_hash,
+        ):
+            self.assert_census_error("fixture directory link changed: Journal")
+        self.assertTrue(replaced)
+        self.assertEqual((outside / "State").read_bytes(), malicious)
+
+
 class StagingTests(ReplayFixtureTestCase):
     def test_stage_creates_two_byte_exact_independent_roots(self) -> None:
         classic = self.root / "classic"
@@ -492,10 +756,15 @@ class StagingTests(ReplayFixtureTestCase):
             self.source,
             classic,
             semantic,
+            expected_manifest_sha256=digest_bytes(self.manifest.read_bytes()),
         )
 
         self.assertEqual(result["status"], "staged")
         self.assertEqual(result["semantic_equivalence"], "not_evaluated")
+        self.assertEqual(
+            result["manifest_sha256"],
+            digest_bytes(self.manifest.read_bytes()),
+        )
         self.assertNotIn("equivalent", result)
         self.assertIs(result["source_unchanged"], True)
         self.assertEqual(result["file_count"], 3)
@@ -515,6 +784,69 @@ class StagingTests(ReplayFixtureTestCase):
             self.assertEqual(len(identities), 3)
             self.assertEqual(classic_file.stat().st_nlink, 1)
             self.assertEqual(semantic_file.stat().st_nlink, 1)
+
+    def test_expected_manifest_digest_is_checked_before_source_or_destination_work(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            fixture_tool,
+            "_open_existing_tree",
+            side_effect=AssertionError("source must not be traversed"),
+        ) as open_source, mock.patch.object(
+            fixture_tool,
+            "_open_destination_plan",
+            side_effect=AssertionError("destination must not be planned"),
+        ) as open_destination, mock.patch.object(
+            fixture_tool,
+            "_create_destination_tree",
+            side_effect=AssertionError("destination must not be allocated"),
+        ) as create_destination:
+            with self.assertRaises(fixture_tool.FixtureError) as raised:
+                fixture_tool.stage_fixture(
+                    self.manifest,
+                    self.source,
+                    self.root / "classic",
+                    self.root / "semantic",
+                    expected_manifest_sha256="0" * 64,
+                )
+
+        self.assertEqual(raised.exception.code, "fixture.digest_mismatch")
+        self.assertEqual(raised.exception.exit_code, fixture_tool.EXIT_VERIFICATION)
+        open_source.assert_not_called()
+        open_destination.assert_not_called()
+        create_destination.assert_not_called()
+        self.assertFalse((self.root / "classic").exists())
+        self.assertFalse((self.root / "semantic").exists())
+        self.assertEqual(list(self.root.glob(".realmz-stage-*")), [])
+
+    def test_malformed_expected_manifest_digest_precedes_staging_work(self) -> None:
+        with mock.patch.object(
+            fixture_tool,
+            "_open_existing_tree",
+            side_effect=AssertionError("source must not be traversed"),
+        ) as open_source, mock.patch.object(
+            fixture_tool,
+            "_open_destination_plan",
+            side_effect=AssertionError("destination must not be planned"),
+        ) as open_destination, mock.patch.object(
+            fixture_tool,
+            "_create_destination_tree",
+            side_effect=AssertionError("destination must not be allocated"),
+        ) as create_destination:
+            with self.assertRaises(fixture_tool.FixtureError) as raised:
+                fixture_tool.stage_fixture(
+                    self.manifest,
+                    self.source,
+                    self.root / "classic",
+                    self.root / "semantic",
+                    expected_manifest_sha256="not-a-digest",
+                )
+
+        self.assertEqual(raised.exception.code, "fixture.staging_failed")
+        self.assertEqual(raised.exception.exit_code, fixture_tool.EXIT_STAGING)
+        open_source.assert_not_called()
+        open_destination.assert_not_called()
+        create_destination.assert_not_called()
 
     def test_stage_refuses_overwrite_and_preserves_existing_content(self) -> None:
         classic = self.root / "classic"
@@ -762,6 +1094,33 @@ class FixtureSetLeaseTests(ReplayFixtureTestCase):
         )
         return classic, semantic
 
+    def test_discarded_lease_best_effort_closes_all_descriptors(self) -> None:
+        classic, semantic = self.stage_inputs("-discarded")
+        real_open = fixture_tool.os.open
+        opened_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        with mock.patch.object(
+            fixture_tool.os,
+            "open",
+            side_effect=record_open,
+        ):
+            fixture_tool.acquire_fixture_set_lease(
+                self.manifest,
+                self.source,
+                classic,
+                semantic,
+            )
+        gc.collect()
+
+        self.assertGreater(len(opened_descriptors), 3)
+        for descriptor in opened_descriptors:
+            self.assert_descriptor_closed(descriptor)
+
     def test_lease_exposes_only_bounded_non_content_evidence(self) -> None:
         classic, semantic = self.stage_inputs()
         manifest_bytes = self.manifest.read_bytes()
@@ -938,7 +1297,8 @@ class FixtureSetLeaseTests(ReplayFixtureTestCase):
         with self.assertRaises(fixture_tool.FixtureError) as raised:
             lease.finalize()
         self.assertIn("manifest", raised.exception.message)
-        self.assertIn("changed while fixture trees were leased", raised.exception.message)
+        self.assertIn("fixture set changed while leased", raised.exception.message)
+        self.assertIn("manifest changed while its descriptor was pinned", raised.exception.message)
         self.assertNotIn(
             str(self.manifest_value["authorization_basis"]),
             raised.exception.message,
@@ -975,6 +1335,624 @@ class FixtureSetLeaseTests(ReplayFixtureTestCase):
 
 
 class DescriptorRaceTests(ReplayFixtureTestCase):
+    def test_interrupted_owner_close_cannot_close_a_reused_descriptor(self) -> None:
+        descriptor = os.open(os.devnull, os.O_RDONLY)
+        anchor = fixture_tool._DirectoryAnchor(
+            relative="",
+            descriptor=descriptor,
+            identity=(0, 0, 0),
+            link_parent_descriptor=-1,
+            link_name="unused",
+        )
+
+        def close_then_interrupt(value: int) -> None:
+            os.close(value)
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_tool,
+            "_close_descriptor",
+            side_effect=close_then_interrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                anchor.close()
+
+        self.assertEqual(anchor.descriptor, -1)
+        replacement = os.open(os.devnull, os.O_RDONLY)
+        try:
+            self.assertEqual(replacement, descriptor)
+            del anchor
+            gc.collect()
+            os.fstat(replacement)
+        finally:
+            os.close(replacement)
+
+    def test_discarded_manifest_tree_and_plan_owners_close_descriptors(self) -> None:
+        operations = (
+            ("manifest", lambda: fixture_tool._open_pinned_manifest(self.manifest)),
+            (
+                "tree",
+                lambda: fixture_tool._open_existing_tree(
+                    self.source,
+                    "source root",
+                    fixture_tool._census_error,
+                ),
+            ),
+            (
+                "plan",
+                lambda: fixture_tool._open_destination_plan(
+                    fixture_tool._path_spec(
+                        self.root / "discarded-plan",
+                        "Classic root",
+                        fixture_tool._staging_error,
+                    ),
+                    "Classic root",
+                ),
+            ),
+        )
+        for name, operation in operations:
+            with self.subTest(name=name):
+                real_open = fixture_tool.os.open
+                opened_descriptors: list[int] = []
+
+                def record_open(*arguments: object, **keywords: object) -> int:
+                    descriptor = real_open(*arguments, **keywords)
+                    opened_descriptors.append(descriptor)
+                    return descriptor
+
+                with mock.patch.object(
+                    fixture_tool.os,
+                    "open",
+                    side_effect=record_open,
+                ):
+                    operation()
+                gc.collect()
+                self.assertGreaterEqual(len(opened_descriptors), 1)
+                for descriptor in opened_descriptors:
+                    self.assert_descriptor_closed(descriptor)
+
+    def test_path_node_registration_interrupt_closes_shared_descriptor_once(
+        self,
+    ) -> None:
+        register = fixture_tool._register_path_node
+        replacement = -1
+        first_closed = -1
+
+        def register_then_interrupt(
+            nodes: list[fixture_tool._PathNode],
+            node: fixture_tool._PathNode,
+            descriptor: int,
+        ) -> None:
+            register(nodes, node, descriptor)
+            raise KeyboardInterrupt
+
+        def close_and_reuse(descriptor: int) -> None:
+            nonlocal first_closed, replacement
+            if descriptor < 0:
+                return
+            os.close(descriptor)
+            if replacement < 0:
+                first_closed = descriptor
+                replacement = os.open(os.devnull, os.O_RDONLY)
+
+        try:
+            with mock.patch.object(
+                fixture_tool,
+                "_register_path_node",
+                side_effect=register_then_interrupt,
+            ), mock.patch.object(
+                fixture_tool,
+                "_close_descriptor",
+                side_effect=close_and_reuse,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._open_directory_chain(
+                        Path("/"),
+                        "source root",
+                        fixture_tool._census_error,
+                    )
+            self.assertEqual(replacement, first_closed)
+            os.fstat(replacement)
+        finally:
+            fixture_tool._close_descriptor(replacement)
+
+    def test_partial_path_chain_finalizer_cannot_close_reused_descriptor(
+        self,
+    ) -> None:
+        path_chain_type = fixture_tool._PathChain
+        partial_owners: list[fixture_tool._PathChain] = []
+        replacement = -1
+        first_closed = -1
+
+        def retain_nodes_then_interrupt(
+            *,
+            display_path: Path,
+            nodes: list[fixture_tool._PathNode],
+        ) -> fixture_tool._PathChain:
+            owner = object.__new__(path_chain_type)
+            owner.display_path = display_path
+            owner.nodes = nodes
+            partial_owners.append(owner)
+            raise KeyboardInterrupt
+
+        def close_and_reuse(descriptor: int) -> None:
+            nonlocal first_closed, replacement
+            if descriptor < 0:
+                return
+            os.close(descriptor)
+            if replacement < 0:
+                first_closed = descriptor
+                replacement = os.open(os.devnull, os.O_RDONLY)
+
+        try:
+            with mock.patch.object(
+                fixture_tool,
+                "_PathChain",
+                side_effect=retain_nodes_then_interrupt,
+            ), mock.patch.object(
+                fixture_tool,
+                "_close_descriptor",
+                side_effect=close_and_reuse,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._open_directory_chain(
+                        Path("/"),
+                        "source root",
+                        fixture_tool._census_error,
+                    )
+            self.assertEqual(replacement, first_closed)
+            partial_owners.clear()
+            gc.collect()
+            os.fstat(replacement)
+        finally:
+            fixture_tool._close_descriptor(replacement)
+
+    def test_destination_root_constructor_interrupt_closes_descriptor(self) -> None:
+        spec = fixture_tool._path_spec(
+            self.root / "constructor-interrupt-root",
+            "Classic root",
+            fixture_tool._staging_error,
+        )
+        plan = fixture_tool._open_destination_plan(spec, "Classic root")
+        owned_trees: list[fixture_tool._PinnedTree] = []
+        real_open = fixture_tool.os.open
+        opened_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        try:
+            with mock.patch.object(
+                fixture_tool.os,
+                "open",
+                side_effect=record_open,
+            ), mock.patch.object(
+                fixture_tool,
+                "_DirectoryAnchor",
+                side_effect=KeyboardInterrupt,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._create_destination_tree(plan, owned_trees)
+            self.assertGreaterEqual(len(opened_descriptors), 1)
+            for descriptor in opened_descriptors:
+                self.assert_descriptor_closed(descriptor)
+        finally:
+            for tree in owned_trees:
+                tree.close()
+            plan.close()
+
+    def test_destination_tree_append_interrupt_cannot_close_a_reused_descriptor(
+        self,
+    ) -> None:
+        spec = fixture_tool._path_spec(
+            self.root / "append-interrupt-root",
+            "Classic root",
+            fixture_tool._staging_error,
+        )
+        plan = fixture_tool._open_destination_plan(spec, "Classic root")
+
+        class InterruptBeforeAppend(list[fixture_tool._PinnedTree]):
+            def append(self, tree: fixture_tool._PinnedTree) -> None:
+                del tree
+                raise KeyboardInterrupt
+
+        ownership = InterruptBeforeAppend()
+        replacement = -1
+        first_closed = -1
+
+        def close_and_reuse(descriptor: int) -> None:
+            nonlocal first_closed, replacement
+            if descriptor < 0:
+                return
+            os.close(descriptor)
+            if replacement < 0:
+                first_closed = descriptor
+                replacement = os.open(os.devnull, os.O_RDONLY)
+
+        try:
+            with mock.patch.object(
+                fixture_tool,
+                "_close_descriptor",
+                side_effect=close_and_reuse,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._create_destination_tree(plan, ownership)
+            self.assertEqual(ownership, [])
+            self.assertEqual(replacement, first_closed)
+            os.fstat(replacement)
+        finally:
+            fixture_tool._close_descriptor(replacement)
+            plan.close()
+
+    def test_nested_destination_constructor_interrupt_closes_descriptor(self) -> None:
+        spec = fixture_tool._path_spec(
+            self.root / "nested-constructor-interrupt-root",
+            "Classic root",
+            fixture_tool._staging_error,
+        )
+        plan = fixture_tool._open_destination_plan(spec, "Classic root")
+        owned_trees: list[fixture_tool._PinnedTree] = []
+        tree = fixture_tool._create_destination_tree(plan, owned_trees)
+        manifest = fixture_tool.load_manifest(self.manifest)
+        real_open = fixture_tool.os.open
+        opened_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        try:
+            with mock.patch.object(
+                fixture_tool.os,
+                "open",
+                side_effect=record_open,
+            ), mock.patch.object(
+                fixture_tool,
+                "_DirectoryAnchor",
+                side_effect=KeyboardInterrupt,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._create_fixture_directories(tree, manifest.files)
+            self.assertGreaterEqual(len(opened_descriptors), 1)
+            for descriptor in opened_descriptors:
+                self.assert_descriptor_closed(descriptor)
+        finally:
+            for owned_tree in owned_trees:
+                owned_tree.close()
+            plan.close()
+
+    def test_new_leaf_interrupt_after_registration_is_closed_by_owner(self) -> None:
+        spec = fixture_tool._path_spec(
+            self.root / "leaf-registration-root",
+            "Classic root",
+            fixture_tool._staging_error,
+        )
+        plan = fixture_tool._open_destination_plan(spec, "Classic root")
+        owned_trees: list[fixture_tool._PinnedTree] = []
+        tree = fixture_tool._create_destination_tree(plan, owned_trees)
+        record = fixture_tool.FileRecord("leaf", 0, digest_bytes(b""))
+
+        class InterruptAfterAppend(list[int]):
+            def append(self, descriptor: int) -> None:
+                super().append(descriptor)
+                raise KeyboardInterrupt
+
+        owned_descriptors = InterruptAfterAppend()
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                fixture_tool._open_new_leaf(tree, record, owned_descriptors)
+            self.assertEqual(len(owned_descriptors), 1)
+            os.fstat(owned_descriptors[0])
+        finally:
+            for descriptor in owned_descriptors:
+                fixture_tool._close_descriptor(descriptor)
+            for descriptor in owned_descriptors:
+                self.assert_descriptor_closed(descriptor)
+            for owned_tree in owned_trees:
+                owned_tree.close()
+            plan.close()
+
+    def test_directory_chain_constructor_interrupt_closes_all_descriptors(self) -> None:
+        real_open = fixture_tool.os.open
+        opened_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        with mock.patch.object(
+            fixture_tool.os,
+            "open",
+            side_effect=record_open,
+        ), mock.patch.object(
+            fixture_tool,
+            "_PathChain",
+            side_effect=KeyboardInterrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                fixture_tool._open_directory_chain(
+                    Path("/"),
+                    "source root",
+                    fixture_tool._census_error,
+                )
+
+        self.assertGreaterEqual(len(opened_descriptors), 1)
+        for descriptor in opened_descriptors:
+            self.assert_descriptor_closed(descriptor)
+
+    def test_directory_chain_interrupt_closes_every_acquired_descriptor(self) -> None:
+        real_fstat = fixture_tool.os.fstat
+        interrupted_descriptors: list[int] = []
+
+        def fstat_then_interrupt(descriptor: int) -> os.stat_result:
+            metadata = real_fstat(descriptor)
+            interrupted_descriptors.append(descriptor)
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_tool.os,
+            "fstat",
+            side_effect=fstat_then_interrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                fixture_tool._open_directory_chain(
+                    self.source,
+                    "source root",
+                    fixture_tool._census_error,
+                )
+
+        self.assertEqual(len(interrupted_descriptors), 1)
+        self.assert_descriptor_closed(interrupted_descriptors[0])
+
+    def test_existing_tree_interrupt_closes_leaf_and_parent_chain(self) -> None:
+        chain = fixture_tool._open_directory_chain(
+            self.source.parent,
+            "source root",
+            fixture_tool._census_error,
+        )
+        chain_descriptors = [node.descriptor for node in chain.nodes]
+        real_fstat = fixture_tool.os.fstat
+        leaf_descriptors: list[int] = []
+
+        def fstat_then_interrupt(descriptor: int) -> os.stat_result:
+            metadata = real_fstat(descriptor)
+            leaf_descriptors.append(descriptor)
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_tool,
+            "_open_directory_chain",
+            return_value=chain,
+        ), mock.patch.object(
+            fixture_tool.os,
+            "fstat",
+            side_effect=fstat_then_interrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                fixture_tool._open_existing_tree(
+                    self.source,
+                    "source root",
+                    fixture_tool._census_error,
+                )
+
+        self.assertEqual(len(leaf_descriptors), 1)
+        self.assert_descriptor_closed(leaf_descriptors[0])
+        for descriptor in chain_descriptors:
+            self.assert_descriptor_closed(descriptor)
+
+    def test_existing_tree_constructor_interrupt_closes_all_ownership(self) -> None:
+        chain = fixture_tool._open_directory_chain(
+            self.source.parent,
+            "source root",
+            fixture_tool._census_error,
+        )
+        chain_descriptors = [node.descriptor for node in chain.nodes]
+        real_open = fixture_tool.os.open
+        leaf_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            leaf_descriptors.append(descriptor)
+            return descriptor
+
+        with mock.patch.object(
+            fixture_tool,
+            "_open_directory_chain",
+            return_value=chain,
+        ), mock.patch.object(
+            fixture_tool.os,
+            "open",
+            side_effect=record_open,
+        ), mock.patch.object(
+            fixture_tool,
+            "_PinnedTree",
+            side_effect=KeyboardInterrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                fixture_tool._open_existing_tree(
+                    self.source,
+                    "source root",
+                    fixture_tool._census_error,
+                )
+
+        self.assertEqual(len(leaf_descriptors), 1)
+        self.assert_descriptor_closed(leaf_descriptors[0])
+        for descriptor in chain_descriptors:
+            self.assert_descriptor_closed(descriptor)
+
+    def test_child_directory_interrupt_closes_the_new_descriptor(self) -> None:
+        tree = fixture_tool._open_existing_tree(
+            self.source,
+            "source root",
+            fixture_tool._census_error,
+        )
+        entry = fixture_tool._entry_state(
+            tree.root.descriptor,
+            "Journal",
+            "Journal",
+            fixture_tool._census_error,
+        )
+        real_fstat = fixture_tool.os.fstat
+        child_descriptors: list[int] = []
+
+        def fstat_then_interrupt(descriptor: int) -> os.stat_result:
+            metadata = real_fstat(descriptor)
+            child_descriptors.append(descriptor)
+            raise KeyboardInterrupt
+
+        try:
+            with mock.patch.object(
+                fixture_tool.os,
+                "fstat",
+                side_effect=fstat_then_interrupt,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._open_child_directory(
+                        tree.root,
+                        entry,
+                        "Journal",
+                        fixture_tool._census_error,
+                    )
+            self.assertEqual(len(child_descriptors), 1)
+            self.assert_descriptor_closed(child_descriptors[0])
+        finally:
+            tree.close()
+
+    def test_child_directory_constructor_interrupt_closes_descriptor(self) -> None:
+        tree = fixture_tool._open_existing_tree(
+            self.source,
+            "source root",
+            fixture_tool._census_error,
+        )
+        entry = fixture_tool._entry_state(
+            tree.root.descriptor,
+            "Journal",
+            "Journal",
+            fixture_tool._census_error,
+        )
+        real_open = fixture_tool.os.open
+        child_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            child_descriptors.append(descriptor)
+            return descriptor
+
+        try:
+            with mock.patch.object(
+                fixture_tool.os,
+                "open",
+                side_effect=record_open,
+            ), mock.patch.object(
+                fixture_tool,
+                "_DirectoryAnchor",
+                side_effect=KeyboardInterrupt,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._open_child_directory(
+                        tree.root,
+                        entry,
+                        "Journal",
+                        fixture_tool._census_error,
+                    )
+            self.assertEqual(len(child_descriptors), 1)
+            self.assert_descriptor_closed(child_descriptors[0])
+        finally:
+            tree.close()
+
+    def test_regular_leaf_interrupt_closes_the_file_descriptor(self) -> None:
+        tree = fixture_tool._open_existing_tree(
+            self.source,
+            "source root",
+            fixture_tool._census_error,
+        )
+        record = fixture_tool.FileRecord(
+            "Data I1",
+            len(self.files["Data I1"]),
+            digest_bytes(self.files["Data I1"]),
+        )
+        real_fstat = fixture_tool.os.fstat
+        leaf_descriptors: list[int] = []
+
+        def fstat_then_interrupt(descriptor: int) -> os.stat_result:
+            metadata = real_fstat(descriptor)
+            leaf_descriptors.append(descriptor)
+            raise KeyboardInterrupt
+
+        try:
+            with mock.patch.object(
+                fixture_tool.os,
+                "fstat",
+                side_effect=fstat_then_interrupt,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    fixture_tool._open_regular_leaf(
+                        tree,
+                        record,
+                        fixture_tool._census_error,
+                    )
+            self.assertEqual(len(leaf_descriptors), 1)
+            self.assert_descriptor_closed(leaf_descriptors[0])
+        finally:
+            tree.close()
+
+    def test_manifest_owner_constructor_interrupt_closes_all_descriptors(self) -> None:
+        real_open = fixture_tool.os.open
+        opened_descriptors: list[int] = []
+
+        def record_open(*arguments: object, **keywords: object) -> int:
+            descriptor = real_open(*arguments, **keywords)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        with mock.patch.object(
+            fixture_tool.os,
+            "open",
+            side_effect=record_open,
+        ), mock.patch.object(
+            fixture_tool,
+            "_PinnedManifest",
+            side_effect=KeyboardInterrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                fixture_tool._open_pinned_manifest(self.manifest)
+
+        self.assertGreaterEqual(len(opened_descriptors), 2)
+        for descriptor in opened_descriptors:
+            self.assert_descriptor_closed(descriptor)
+
+    def test_destination_plan_constructor_interrupt_closes_parent_chain(self) -> None:
+        destination = self.root / "new-destination"
+        spec = fixture_tool._path_spec(
+            destination,
+            "Classic root",
+            fixture_tool._staging_error,
+        )
+        chain = fixture_tool._open_directory_chain(
+            destination.parent,
+            "Classic root",
+            fixture_tool._staging_error,
+        )
+        chain_descriptors = [node.descriptor for node in chain.nodes]
+        with mock.patch.object(
+            fixture_tool,
+            "_open_directory_chain",
+            return_value=chain,
+        ), mock.patch.object(
+            fixture_tool,
+            "_DestinationPlan",
+            side_effect=KeyboardInterrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                fixture_tool._open_destination_plan(spec, "Classic root")
+
+        for descriptor in chain_descriptors:
+            self.assert_descriptor_closed(descriptor)
+
     def test_supplied_path_with_traversal_is_rejected_before_opening(self) -> None:
         traversing = self.root / "unused" / ".." / self.manifest.name
         with self.assertRaises(fixture_tool.FixtureError) as raised:
@@ -1018,6 +1996,55 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
                 fixture_tool.load_manifest(self.manifest)
         self.assertTrue(swapped)
         self.assertIn("manifest link changed", raised.exception.message)
+
+    def test_verify_holds_the_exact_manifest_while_hashing_the_source(self) -> None:
+        original_verify = fixture_tool._verify_source_initial
+        changed = copy.deepcopy(self.manifest_value)
+        changed["authorization_basis"] = "Changed after source hashing began."
+
+        def verify_then_change_manifest(*arguments: object) -> object:
+            result = original_verify(*arguments)
+            self.write_manifest(changed)
+            return result
+
+        with mock.patch.object(
+            fixture_tool,
+            "_verify_source_initial",
+            side_effect=verify_then_change_manifest,
+        ):
+            with self.assertRaises(fixture_tool.FixtureError) as raised:
+                fixture_tool.verify_fixture(self.manifest, self.source)
+        self.assertEqual(raised.exception.code, "fixture.verification_failed")
+        self.assertIn("manifest changed", raised.exception.message)
+
+    def test_stage_holds_the_exact_manifest_through_publication(self) -> None:
+        original_verify = fixture_tool._verify_source_initial
+        changed = copy.deepcopy(self.manifest_value)
+        changed["authorization_basis"] = "Changed while staging was active."
+
+        def verify_then_change_manifest(*arguments: object) -> object:
+            result = original_verify(*arguments)
+            self.write_manifest(changed)
+            return result
+
+        classic = self.root / "classic-manifest-drift"
+        semantic = self.root / "semantic-manifest-drift"
+        with mock.patch.object(
+            fixture_tool,
+            "_verify_source_initial",
+            side_effect=verify_then_change_manifest,
+        ):
+            with self.assertRaises(fixture_tool.FixtureError) as raised:
+                fixture_tool.stage_fixture(
+                    self.manifest,
+                    self.source,
+                    classic,
+                    semantic,
+                )
+        self.assertEqual(raised.exception.code, "fixture.staging_failed")
+        self.assertIn("manifest changed", raised.exception.message)
+        self.assertFalse(classic.exists())
+        self.assertFalse(semantic.exists())
 
     def test_ancestor_symlink_is_rejected_before_manifest_or_root_traversal(self) -> None:
         actual = self.root / "actual-parent"
@@ -1203,7 +2230,7 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
             "rmdir",
             side_effect=AssertionError("interruption handling must not rmdir"),
         ):
-            with self.assertRaises(fixture_tool.FixtureError) as raised:
+            with self.assertRaises(KeyboardInterrupt) as raised:
                 fixture_tool.stage_fixture(
                     self.manifest,
                     self.source,
@@ -1211,11 +2238,62 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
                     self.root / "semantic",
                 )
         self.assertEqual(len(interrupted_names), 1)
-        self.assertIn("interrupted while creating Classic root", raised.exception.message)
-        self.assertIn("last-observed attempted name status=pinned", raised.exception.message)
-        self.assertIn(interrupted_names[0], raised.exception.message)
-        self.assertIn("no deletion attempted", raised.exception.message)
+        notice = getattr(raised.exception, "fixture_retention_notice", "")
+        self.assertIn("last-observed attempted name status=pinned", notice)
+        self.assertIn(interrupted_names[0], notice)
+        self.assertIn("no deletion attempted", notice)
         self.assertTrue((self.root / interrupted_names[0]).is_dir())
+
+    def test_keyboard_interrupt_creating_second_root_merges_both_retention_notices(
+        self,
+    ) -> None:
+        real_mkdir = fixture_tool.os.mkdir
+        staged_names: list[str] = []
+
+        def mkdir_then_interrupt_second_root(
+            path: object,
+            mode: int = 0o777,
+            *,
+            dir_fd: int | None = None,
+        ) -> None:
+            if dir_fd is None:
+                real_mkdir(path, mode)
+            else:
+                real_mkdir(path, mode, dir_fd=dir_fd)
+            if dir_fd is not None and str(path).startswith(".realmz-stage-"):
+                staged_names.append(str(path))
+                if len(staged_names) == 2:
+                    raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_tool.os,
+            "mkdir",
+            side_effect=mkdir_then_interrupt_second_root,
+        ), mock.patch.object(
+            fixture_tool.os,
+            "unlink",
+            side_effect=AssertionError("interruption handling must not unlink"),
+        ), mock.patch.object(
+            fixture_tool.os,
+            "rmdir",
+            side_effect=AssertionError("interruption handling must not rmdir"),
+        ):
+            with self.assertRaises(KeyboardInterrupt) as raised:
+                fixture_tool.stage_fixture(
+                    self.manifest,
+                    self.source,
+                    self.root / "classic",
+                    self.root / "semantic",
+                )
+
+        self.assertEqual(len(staged_names), 2)
+        notice = getattr(raised.exception, "fixture_retention_notice", "")
+        for staged_name in staged_names:
+            self.assertIn(staged_name, notice)
+            self.assertTrue((self.root / staged_name).is_dir())
+        self.assertIn("namespace-uncertain private staging root", notice)
+        self.assertIn("retained private staging root allocation", notice)
+        self.assertGreaterEqual(notice.count("no deletion attempted"), 2)
 
     def test_keyboard_interrupt_after_helper_return_keeps_owned_tree_reportable(self) -> None:
         create_tree = fixture_tool._create_destination_tree
@@ -1245,7 +2323,7 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
             "rmdir",
             side_effect=AssertionError("interruption handling must not rmdir"),
         ):
-            with self.assertRaises(fixture_tool.FixtureError) as raised:
+            with self.assertRaises(KeyboardInterrupt) as raised:
                 fixture_tool.stage_fixture(
                     self.manifest,
                     self.source,
@@ -1253,9 +2331,9 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
                     self.root / "semantic",
                 )
         self.assertTrue(interrupted)
-        self.assertIn("unexpected staging failure: KeyboardInterrupt", raised.exception.message)
-        self.assertIn("retained private staging root allocation", raised.exception.message)
-        self.assertIn("last-observed matching name", raised.exception.message)
+        notice = getattr(raised.exception, "fixture_retention_notice", "")
+        self.assertIn("retained private staging root allocation", notice)
+        self.assertIn("last-observed matching name", notice)
         self.assertEqual(len(list(self.root.glob(".realmz-stage-*"))), 1)
 
     def test_destination_nested_mkdir_swap_taints_and_retains_private_root(self) -> None:
@@ -1543,7 +2621,7 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
             "rmdir",
             side_effect=AssertionError("interruption handling must not rmdir"),
         ):
-            with self.assertRaises(fixture_tool.FixtureError) as raised:
+            with self.assertRaises(KeyboardInterrupt) as raised:
                 fixture_tool.stage_fixture(
                     self.manifest,
                     self.source,
@@ -1551,11 +2629,11 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
                     self.root / "semantic",
                 )
         self.assertTrue(interrupted)
-        self.assertIn("unexpected staging failure: KeyboardInterrupt", raised.exception.message)
-        self.assertIn("retained published root allocation", raised.exception.message)
+        notice = getattr(raised.exception, "fixture_retention_notice", "")
+        self.assertIn("retained published root allocation", notice)
         self.assertIn(
             f"last-observed matching name: {self.root / 'classic'}",
-            raised.exception.message,
+            notice,
         )
         self.assertTrue((self.root / "classic").is_dir())
         self.assertFalse((self.root / "semantic").exists())
@@ -1600,7 +2678,7 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
             "rmdir",
             side_effect=AssertionError("interruption handling must not rmdir"),
         ):
-            with self.assertRaises(fixture_tool.FixtureError) as raised:
+            with self.assertRaises(KeyboardInterrupt) as raised:
                 fixture_tool.stage_fixture(
                     self.manifest,
                     self.source,
@@ -1608,12 +2686,12 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
                     destination_parent / "semantic",
                 )
         self.assertTrue(interrupted)
-        self.assertIn("unexpected staging failure: KeyboardInterrupt", raised.exception.message)
-        self.assertIn("namespace-tainted published root", raised.exception.message)
-        self.assertIn("last-known names", raised.exception.message)
-        self.assertIn(f"final={destination_parent / 'classic'}", raised.exception.message)
-        self.assertIn("may now be missing or refer to a replacement", raised.exception.message)
-        self.assertIn("no deletion attempted", raised.exception.message)
+        notice = getattr(raised.exception, "fixture_retention_notice", "")
+        self.assertIn("namespace-tainted published root", notice)
+        self.assertIn("last-known names", notice)
+        self.assertIn(f"final={destination_parent / 'classic'}", notice)
+        self.assertIn("may now be missing or refer to a replacement", notice)
+        self.assertIn("no deletion attempted", notice)
         self.assertEqual(
             (destination_parent / "replacement-sentinel").read_bytes(),
             b"preserve",
@@ -1659,6 +2737,45 @@ class DescriptorRaceTests(ReplayFixtureTestCase):
 
 
 class CommandLineTests(ReplayFixtureTestCase):
+    def invoke_main(self, arguments: list[str]) -> tuple[int, str, str]:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = fixture_tool.main(arguments)
+        return exit_code, stdout.getvalue(), stderr.getvalue()
+
+    def test_census_cli_emits_only_mechanical_unreviewed_evidence(self) -> None:
+        completed = self.run_cli(
+            "census",
+            "--source-root",
+            self.source,
+            "--slot",
+            "H",
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "census_unreviewed")
+        self.assertEqual(result["slot"], "H")
+        self.assertEqual(result["file_count"], 3)
+        self.assertEqual(result["directory_count"], 1)
+        self.assertEqual(result["total_file_bytes"], sum(map(len, self.files.values())))
+        self.assertEqual(
+            [record["path"] for record in result["files"]],
+            sorted(self.files, key=lambda value: value.encode("utf-8")),
+        )
+        for forbidden in (
+            "source_class",
+            "authorization_basis",
+            "redistribution_allowed",
+            "semantic_equivalence",
+            "equivalent",
+            "source_root",
+        ):
+            self.assertNotIn(forbidden, result)
+
     def test_verify_emits_machine_readable_non_equivalence_result(self) -> None:
         completed = self.run_cli(
             "verify",
@@ -1673,6 +2790,10 @@ class CommandLineTests(ReplayFixtureTestCase):
         self.assertEqual(result["status"], "verified")
         self.assertEqual(result["semantic_equivalence"], "not_evaluated")
         self.assertNotIn("equivalent", result)
+        self.assertEqual(
+            result["manifest_sha256"],
+            digest_bytes(self.manifest.read_bytes()),
+        )
         self.assertEqual(result["source_root"], str(self.source.resolve()))
 
     def test_stage_cli_emits_machine_readable_staged_result(self) -> None:
@@ -1693,15 +2814,26 @@ class CommandLineTests(ReplayFixtureTestCase):
         result = json.loads(completed.stdout)
         self.assertEqual(result["status"], "staged")
         self.assertEqual(result["semantic_equivalence"], "not_evaluated")
+        self.assertEqual(
+            result["manifest_sha256"],
+            digest_bytes(self.manifest.read_bytes()),
+        )
         self.assertIs(result["source_unchanged"], True)
 
     def test_cli_has_help_and_requires_explicit_source_root(self) -> None:
         help_result = self.run_cli("--help")
         self.assertEqual(help_result.returncode, 0)
         self.assertIn("No save path is implied", help_result.stdout)
+        self.assertIn("census", help_result.stdout)
+        self.assertIn("mechanical and unreviewed", help_result.stdout)
         self.assertIn("verify", help_result.stdout)
         self.assertIn("stage", help_result.stdout)
         self.assertIn("contain fixture bytes", help_result.stdout)
+
+        census_help = self.run_cli("census", "--help")
+        self.assertEqual(census_help.returncode, 0)
+        self.assertIn("mechanical, unreviewed file census", census_help.stdout)
+        self.assertIn("does not establish", census_help.stdout)
 
         missing_source = self.run_cli("verify", "--manifest", self.manifest)
         self.assertEqual(missing_source.returncode, fixture_tool.EXIT_USAGE)
@@ -1709,6 +2841,34 @@ class CommandLineTests(ReplayFixtureTestCase):
         self.assertEqual(error["status"], "error")
         self.assertEqual(error["error"]["code"], "usage.invalid")
         self.assertIn("--source-root", error["error"]["message"])
+
+        missing_census_source = self.run_cli("census", "--slot", "A")
+        self.assertEqual(missing_census_source.returncode, fixture_tool.EXIT_USAGE)
+        error = json.loads(missing_census_source.stderr)
+        self.assertEqual(error["error"]["code"], "usage.invalid")
+        self.assertIn("--source-root", error["error"]["message"])
+
+        missing_census_slot = self.run_cli(
+            "census",
+            "--source-root",
+            self.source,
+        )
+        self.assertEqual(missing_census_slot.returncode, fixture_tool.EXIT_USAGE)
+        error = json.loads(missing_census_slot.stderr)
+        self.assertEqual(error["error"]["code"], "usage.invalid")
+        self.assertIn("--slot", error["error"]["message"])
+
+        invalid_census_slot = self.run_cli(
+            "census",
+            "--source-root",
+            self.source,
+            "--slot",
+            "a",
+        )
+        self.assertEqual(invalid_census_slot.returncode, fixture_tool.EXIT_USAGE)
+        error = json.loads(invalid_census_slot.stderr)
+        self.assertEqual(error["error"]["code"], "usage.invalid")
+        self.assertIn("uppercase Classic save slot", error["error"]["message"])
 
     def test_cli_errors_are_json_with_stable_exit_classes(self) -> None:
         invalid_manifest = copy.deepcopy(self.manifest_value)
@@ -1741,6 +2901,196 @@ class CommandLineTests(ReplayFixtureTestCase):
             verification_error["error"]["code"],
             "fixture.verification_failed",
         )
+
+        census_failure = self.run_cli(
+            "census",
+            "--source-root",
+            self.root / "missing-census-root",
+            "--slot",
+            "A",
+        )
+        self.assertEqual(census_failure.returncode, fixture_tool.EXIT_VERIFICATION)
+        self.assertEqual(census_failure.stdout, "")
+        census_error = json.loads(census_failure.stderr)
+        self.assertEqual(census_error["status"], "error")
+        self.assertEqual(census_error["error"]["code"], "fixture.census_failed")
+
+    def test_cli_interrupts_are_json_exit_130_for_every_operation(self) -> None:
+        cases = (
+            (
+                "census_fixture",
+                ["census", "--source-root", str(self.source), "--slot", "A"],
+            ),
+            (
+                "verify_fixture",
+                [
+                    "verify",
+                    "--manifest",
+                    str(self.manifest),
+                    "--source-root",
+                    str(self.source),
+                ],
+            ),
+        )
+        for operation, arguments in cases:
+            with self.subTest(operation=operation), mock.patch.object(
+                fixture_tool,
+                operation,
+                side_effect=KeyboardInterrupt,
+            ):
+                exit_code, stdout, stderr = self.invoke_main(arguments)
+            self.assertEqual(exit_code, fixture_tool.EXIT_INTERRUPTED)
+            self.assertEqual(stdout, "")
+            envelope = json.loads(stderr)
+            self.assertEqual(
+                envelope,
+                {
+                    "error": {
+                        "code": "fixture.interrupted",
+                        "message": "fixture operation was interrupted",
+                    },
+                    "status": "error",
+                },
+            )
+
+    def test_stage_cli_interrupt_reports_retained_root_notice(self) -> None:
+        interrupted = KeyboardInterrupt()
+        interrupted.fixture_retention_notice = "retained synthetic private root"
+        with mock.patch.object(
+            fixture_tool,
+            "stage_fixture",
+            side_effect=interrupted,
+        ):
+            exit_code, stdout, stderr = self.invoke_main(
+                [
+                    "stage",
+                    "--manifest",
+                    str(self.manifest),
+                    "--source-root",
+                    str(self.source),
+                    "--classic-root",
+                    str(self.root / "classic"),
+                    "--semantic-root",
+                    str(self.root / "semantic"),
+                ]
+            )
+        self.assertEqual(exit_code, fixture_tool.EXIT_INTERRUPTED)
+        self.assertEqual(stdout, "")
+        envelope = json.loads(stderr)
+        self.assertEqual(envelope["error"]["code"], "fixture.interrupted")
+        self.assertEqual(
+            envelope["retention_notice"], "retained synthetic private root"
+        )
+
+    def test_stage_cli_interrupt_after_helper_return_reports_published_roots(
+        self,
+    ) -> None:
+        stage_fixture = fixture_tool.stage_fixture
+        classic = self.root / "classic-return-interrupt"
+        semantic = self.root / "semantic-return-interrupt"
+
+        def stage_then_interrupt(
+            *arguments: object,
+            **keywords: object,
+        ) -> dict[str, object]:
+            stage_fixture(*arguments, **keywords)
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_tool,
+            "stage_fixture",
+            side_effect=stage_then_interrupt,
+        ):
+            exit_code, stdout, stderr = self.invoke_main(
+                [
+                    "stage",
+                    "--manifest",
+                    str(self.manifest),
+                    "--source-root",
+                    str(self.source),
+                    "--classic-root",
+                    str(classic),
+                    "--semantic-root",
+                    str(semantic),
+                ]
+            )
+
+        self.assertEqual(exit_code, fixture_tool.EXIT_INTERRUPTED)
+        self.assertEqual(stdout, "")
+        envelope = json.loads(stderr)
+        self.assertEqual(envelope["error"]["code"], "fixture.interrupted")
+        self.assertIn(str(classic), envelope["retention_notice"])
+        self.assertIn(str(semantic), envelope["retention_notice"])
+        self.assertTrue(classic.is_dir())
+        self.assertTrue(semantic.is_dir())
+
+    def test_interrupt_during_success_emission_returns_json_exit_130(self) -> None:
+        real_emit = fixture_tool._emit_json
+
+        def interrupt_stdout(value: object, stream: object) -> None:
+            if stream is sys.stdout:
+                stream.write("partial-success")
+                raise KeyboardInterrupt
+            real_emit(value, stream)
+
+        with mock.patch.object(
+            fixture_tool,
+            "_emit_json",
+            side_effect=interrupt_stdout,
+        ):
+            exit_code, stdout, stderr = self.invoke_main(
+                [
+                    "census",
+                    "--source-root",
+                    str(self.source),
+                    "--slot",
+                    "A",
+                ]
+            )
+
+        self.assertEqual(exit_code, fixture_tool.EXIT_INTERRUPTED)
+        self.assertEqual(stdout, "partial-success")
+        envelope = json.loads(stderr)
+        self.assertEqual(envelope["error"]["code"], "fixture.interrupted")
+
+    def test_stage_emission_interrupt_reports_both_published_roots(self) -> None:
+        real_emit = fixture_tool._emit_json
+        classic = self.root / "classic"
+        semantic = self.root / "semantic"
+
+        def interrupt_stdout(value: object, stream: object) -> None:
+            if stream is sys.stdout:
+                stream.write("partial-stage")
+                raise KeyboardInterrupt
+            real_emit(value, stream)
+
+        with mock.patch.object(
+            fixture_tool,
+            "_emit_json",
+            side_effect=interrupt_stdout,
+        ):
+            exit_code, stdout, stderr = self.invoke_main(
+                [
+                    "stage",
+                    "--manifest",
+                    str(self.manifest),
+                    "--source-root",
+                    str(self.source),
+                    "--classic-root",
+                    str(classic),
+                    "--semantic-root",
+                    str(semantic),
+                ]
+            )
+
+        self.assertEqual(exit_code, fixture_tool.EXIT_INTERRUPTED)
+        self.assertEqual(stdout, "partial-stage")
+        envelope = json.loads(stderr)
+        self.assertEqual(envelope["error"]["code"], "fixture.interrupted")
+        self.assertIn(str(classic), envelope["retention_notice"])
+        self.assertIn(str(semantic), envelope["retention_notice"])
+        self.assertTrue(classic.is_dir())
+        self.assertTrue(semantic.is_dir())
 
 
 if __name__ == "__main__":

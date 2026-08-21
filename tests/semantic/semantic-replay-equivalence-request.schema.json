@@ -6,34 +6,33 @@
       "additionalProperties": false,
       "properties": {
         "arguments": {
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "maxLength": 1024,
-                "pattern": "^[ -~]*(?![\\s\\S])",
-                "type": "string"
-              },
-              {
-                "maximum": 9007199254740991,
-                "minimum": -9007199254740991,
-                "type": "integer"
-              },
-              {
-                "type": "boolean"
-              }
-            ]
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "enum": [
+                "step_forward",
+                "step_backward",
+                "turn_left",
+                "turn_right",
+                "north",
+                "northeast",
+                "east",
+                "southeast",
+                "south",
+                "southwest",
+                "west",
+                "northwest"
+              ],
+              "type": "string"
+            }
           },
-          "maxProperties": 32,
-          "propertyNames": {
-            "maxLength": 64,
-            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])"
-          },
+          "required": [
+            "command"
+          ],
           "type": "object"
         },
         "kind": {
-          "maxLength": 64,
-          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])",
-          "type": "string"
+          "const": "move_party"
         },
         "ordinal": {
           "maximum": 4095,
@@ -53,7 +52,7 @@
   "description": "A provenance-pinned request to stage one fixture twice, run both replay routes in isolated processes, post-attest the fixture trees, and evaluate exact semantic equivalence.",
   "properties": {
     "actions": {
-      "description": "Ordered replay actions. The gate enforces zero-based contiguous ordinals and hashes the canonical array into the completed replay profile.",
+      "description": "Ordered native-v1 move_party actions. Each has exactly one supported string command; the gate enforces zero-based contiguous ordinals and hashes the canonical array into the completed replay profile.",
       "items": {
         "$ref": "#/$defs/action"
       },
@@ -64,6 +63,11 @@
       "description": "Absolute, physical, normalized executable path used for both children.",
       "maxLength": 4096,
       "minLength": 1,
+      "type": "string"
+    },
+    "fixture_manifest_sha256": {
+      "description": "Caller-pinned SHA-256 digest of the exact reviewed manifest bytes. The gate matches it before staging and against the continuously held manifest lease before either child runs.",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
       "type": "string"
     },
     "fixture_tree_sha256": {
@@ -111,6 +115,7 @@
     "schema_version",
     "manifest",
     "source_root",
+    "fixture_manifest_sha256",
     "fixture_tree_sha256",
     "executable",
     "output_slot",

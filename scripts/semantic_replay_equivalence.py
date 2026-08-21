@@ -9,10 +9,10 @@ source and both input copies while the children run, and only then compares
 the four declared replay observables.
 
 The gate is an equivalence comparison, not a correctness oracle.  A successful
-result is scoped to the exact fixture tree and canonical action-plan digests in
-its envelope.  Fixture bytes are never emitted.  The fixture and protocol
-workspaces are deliberately retained and reported; this tool never performs
-pathname-recursive cleanup.
+result is scoped to the exact manifest, fixture tree, and canonical action-plan
+digests in its envelope.  Fixture bytes are never emitted.  The fixture and
+protocol workspaces are deliberately retained and reported; this tool never
+performs pathname-recursive cleanup.
 """
 
 from __future__ import annotations
@@ -52,6 +52,23 @@ MAX_JSON_BYTES = replay_runner.MAX_JSON_BYTES
 MAX_PATH_BYTES = replay_runner.MAX_PATH_BYTES
 SHA256_HEX_LENGTH = 64
 MAX_ERROR_MESSAGE_LENGTH = 4096
+NATIVE_V1_ACTION_KIND = "move_party"
+NATIVE_V1_ACTION_ARGUMENT = "command"
+NATIVE_V1_MOVEMENT_COMMANDS = (
+    "step_forward",
+    "step_backward",
+    "turn_left",
+    "turn_right",
+    "north",
+    "northeast",
+    "east",
+    "southeast",
+    "south",
+    "southwest",
+    "west",
+    "northwest",
+)
+_NATIVE_V1_MOVEMENT_COMMAND_SET = frozenset(NATIVE_V1_MOVEMENT_COMMANDS)
 
 EXIT_NOT_EQUIVALENT = 1
 EXIT_USAGE = 2
@@ -68,6 +85,7 @@ REQUEST_FIELDS = frozenset(
         "schema_version",
         "manifest",
         "source_root",
+        "fixture_manifest_sha256",
         "fixture_tree_sha256",
         "executable",
         "output_slot",
@@ -100,6 +118,21 @@ COMPLETED_ENVELOPE_FIELDS = frozenset(
         "fixture_workspace_retention",
     }
 )
+PROFILE_INSPECTION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "status",
+        "fixture_manifest_sha256",
+        "fixture_tree_sha256",
+        "actions_sha256",
+        "action_count",
+        "input_slot",
+        "output_slot",
+        "settlement_barrier",
+        "rng_seed",
+        "rng_stream",
+    }
+)
 
 
 class EquivalenceGateError(Exception):
@@ -123,6 +156,7 @@ class _DuplicateJsonKey(ValueError):
 class EquivalenceRequest:
     manifest: Path
     source_root: Path
+    fixture_manifest_sha256: str
     fixture_tree_sha256: str
     executable: Path
     output_slot: str
@@ -310,6 +344,81 @@ def _validate_timeout(value: object) -> float:
     return timeout
 
 
+def _validate_native_v1_actions(
+    actions: Sequence[replay_runner.Action],
+) -> tuple[replay_runner.Action, ...]:
+    """Enforce the deliberately movement-only native v1 action vocabulary."""
+
+    if len(actions) > replay_runner.MAX_ACTIONS:
+        _request_error(
+            f"actions exceeds the {replay_runner.MAX_ACTIONS}-action limit"
+        )
+    validated: list[replay_runner.Action] = []
+    for index, action in enumerate(actions):
+        context = f"actions[{index}]"
+        if not isinstance(action, replay_runner.Action):
+            _request_error(f"{context} is not a normalized replay action")
+        if not replay_runner._is_plain_int(action.ordinal) or action.ordinal != index:
+            _request_error(f"{context}.ordinal must equal its zero-based array index")
+        if not isinstance(action.kind, str) or action.kind != NATIVE_V1_ACTION_KIND:
+            _request_error(
+                f"{context}.kind must be {NATIVE_V1_ACTION_KIND} for native v1"
+            )
+        if not isinstance(action.arguments, dict) or set(action.arguments) != {
+            NATIVE_V1_ACTION_ARGUMENT
+        }:
+            _request_error(
+                f"{context}.arguments must contain exactly the "
+                f"{NATIVE_V1_ACTION_ARGUMENT} field"
+            )
+        command = action.arguments[NATIVE_V1_ACTION_ARGUMENT]
+        if not isinstance(command, str):
+            _request_error(f"{context}.arguments.command must be a string")
+        if command not in _NATIVE_V1_MOVEMENT_COMMAND_SET:
+            _request_error(
+                f"{context}.arguments.command is not a supported native v1 "
+                "movement command"
+            )
+        validated.append(action)
+    return tuple(validated)
+
+
+def _validate_normalized_request(request: EquivalenceRequest) -> None:
+    """Revalidate every field on the public normalized request value type."""
+
+    if not isinstance(request, EquivalenceRequest):
+        _request_error("request must be a normalized EquivalenceRequest")
+    for value, context, directory, executable in (
+        (request.manifest, "manifest", False, False),
+        (request.source_root, "source_root", True, False),
+        (request.executable, "executable", False, True),
+    ):
+        if not isinstance(value, Path):
+            _request_error(f"{context} must be a normalized Path value")
+        _validate_canonical_path(
+            str(value),
+            context,
+            directory=directory,
+            executable=executable,
+        )
+    _validate_sha256(
+        request.fixture_manifest_sha256,
+        "fixture_manifest_sha256",
+    )
+    _validate_sha256(request.fixture_tree_sha256, "fixture_tree_sha256")
+    _validate_slot(request.output_slot, "output_slot")
+    if not isinstance(request.actions, tuple):
+        _request_error("actions must be a normalized tuple")
+    _validate_native_v1_actions(request.actions)
+    _validate_timeout(request.timeout_seconds)
+    replay_runner._validate_rng_hex(request.rng_seed, "rng_seed", _request_error)
+    replay_runner._validate_rng_hex(
+        request.rng_stream,
+        "rng_stream",
+        _request_error,
+    )
+
+
 def parse_request(value: object) -> EquivalenceRequest:
     """Strictly validate all non-fixture-mutation inputs."""
 
@@ -325,6 +434,9 @@ def parse_request(value: object) -> EquivalenceRequest:
     source_root = _validate_canonical_path(
         value["source_root"], "source_root", directory=True
     )
+    fixture_manifest_sha256 = _validate_sha256(
+        value["fixture_manifest_sha256"], "fixture_manifest_sha256"
+    )
     fixture_tree_sha256 = _validate_sha256(
         value["fixture_tree_sha256"], "fixture_tree_sha256"
     )
@@ -332,7 +444,9 @@ def parse_request(value: object) -> EquivalenceRequest:
         value["executable"], "executable", directory=False, executable=True
     )
     output_slot = _validate_slot(value["output_slot"], "output_slot")
-    actions = replay_runner._validate_actions(value["actions"], _request_error)
+    actions = _validate_native_v1_actions(
+        replay_runner._validate_actions(value["actions"], _request_error)
+    )
     timeout_seconds = _validate_timeout(value["timeout_seconds"])
     rng_seed = replay_runner._validate_rng_hex(
         value["rng_seed"], "rng_seed", _request_error
@@ -343,6 +457,7 @@ def parse_request(value: object) -> EquivalenceRequest:
     return EquivalenceRequest(
         manifest=manifest,
         source_root=source_root,
+        fixture_manifest_sha256=fixture_manifest_sha256,
         fixture_tree_sha256=fixture_tree_sha256,
         executable=executable,
         output_slot=output_slot,
@@ -381,7 +496,10 @@ def _require_private_directory(path: Path, context: str) -> tuple[int, int]:
     return (status.st_dev, status.st_ino)
 
 
-def _make_gate_workspace() -> tuple[Path, tuple[int, int], Path, Path]:
+def _make_gate_workspace(
+    *,
+    retention_out: dict[str, object] | None = None,
+) -> tuple[Path, tuple[int, int], Path, Path]:
     workspace: Path | None = None
     workspace_identity: tuple[int, int] | None = None
     try:
@@ -396,6 +514,10 @@ def _make_gate_workspace() -> tuple[Path, tuple[int, int], Path, Path]:
             save_root = user_root / "Save"
             save_root.mkdir(mode=0o700)
             _require_private_directory(save_root, "staged Save root")
+        _register_fixture_retention(
+            retention_out,
+            _workspace_retention_record(workspace, workspace_identity),
+        )
     except BaseException as error:
         if isinstance(error, EquivalenceGateError):
             wrapped = error
@@ -409,6 +531,7 @@ def _make_gate_workspace() -> tuple[Path, tuple[int, int], Path, Path]:
             wrapped = error
         if workspace is not None:
             retention = _workspace_retention_record(workspace, workspace_identity)
+            _register_fixture_retention(retention_out, retention)
             _attach_fixture_retention(wrapped, retention)
         if wrapped is error:
             raise
@@ -458,6 +581,50 @@ def _attach_fixture_retention(
     setattr(error, "fixture_workspace_retention", retention)
     if isinstance(error, EquivalenceGateError):
         error.fixture_workspace_retention = retention
+
+
+def _register_fixture_retention(
+    retention_out: dict[str, object] | None,
+    retention: dict[str, object],
+) -> None:
+    if retention_out is not None:
+        retention_out["fixture_workspace_retention"] = retention
+
+
+def _registered_retention(
+    retention_out: dict[str, object] | None,
+    key: str,
+) -> dict[str, object] | None:
+    if retention_out is None:
+        return None
+    retention = retention_out.get(key)
+    return retention if isinstance(retention, dict) else None
+
+
+def _attach_registered_retentions(
+    error: BaseException,
+    retention_out: dict[str, object] | None,
+) -> None:
+    fixture_retention = _registered_retention(
+        retention_out,
+        "fixture_workspace_retention",
+    )
+    if (
+        fixture_retention is not None
+        and getattr(error, "fixture_workspace_retention", None) is None
+    ):
+        _attach_fixture_retention(error, fixture_retention)
+    runner_retention = _registered_retention(
+        retention_out,
+        "workspace_retention",
+    )
+    if (
+        runner_retention is not None
+        and getattr(error, "runner_workspace_retention", None) is None
+    ):
+        setattr(error, "runner_workspace_retention", runner_retention)
+        if isinstance(error, EquivalenceGateError):
+            error.runner_workspace_retention = runner_retention
 
 
 def _runner_retention(error: BaseException) -> dict[str, object] | None:
@@ -600,6 +767,7 @@ def _lease_and_run(
     input_slot: str,
     expected_file_count: int,
     expected_total_file_bytes: int,
+    retention_out: dict[str, object] | None = None,
 ) -> tuple[dict[str, object], fixture_tool.FixtureSetEvidence]:
     try:
         lease = fixture_tool.acquire_fixture_set_lease(
@@ -613,7 +781,8 @@ def _lease_and_run(
 
     initial_evidence = lease.evidence
     if (
-        initial_evidence.tree_sha256 != request.fixture_tree_sha256
+        initial_evidence.manifest_sha256 != request.fixture_manifest_sha256
+        or initial_evidence.tree_sha256 != request.fixture_tree_sha256
         or initial_evidence.slot != input_slot
         or initial_evidence.file_count != expected_file_count
         or initial_evidence.total_file_bytes != expected_total_file_bytes
@@ -645,7 +814,10 @@ def _lease_and_run(
             )
         except fixture_tool.FixtureError as error:
             raise _fixture_error(error) from error
-        runner_envelope = replay_runner.run_request(bound_request)
+        runner_envelope = replay_runner.run_request(
+            bound_request,
+            retention_out=retention_out,
+        )
     except BaseException as error:
         runner_failure = error
 
@@ -661,6 +833,11 @@ def _lease_and_run(
             candidate = runner_envelope.get("workspace_retention")
             if isinstance(candidate, dict):
                 retention = candidate
+        if retention is None:
+            retention = _registered_retention(
+                retention_out,
+                "workspace_retention",
+            )
         if retention is not None:
             setattr(error, "runner_workspace_retention", retention)
         raise
@@ -693,10 +870,20 @@ def _lease_and_run(
                     "message": f"runner failed with {type(runner_failure).__name__}",
                 }
             wrapped.runner_workspace_retention = _runner_retention(runner_failure)
+            if wrapped.runner_workspace_retention is None:
+                wrapped.runner_workspace_retention = _registered_retention(
+                    retention_out,
+                    "workspace_retention",
+                )
         elif runner_envelope is not None:
             candidate = runner_envelope.get("workspace_retention")
             if isinstance(candidate, dict):
                 wrapped.runner_workspace_retention = candidate
+        if wrapped.runner_workspace_retention is None:
+            wrapped.runner_workspace_retention = _registered_retention(
+                retention_out,
+                "workspace_retention",
+            )
         raise wrapped from attestation_failure
 
     assert final_evidence is not None
@@ -708,6 +895,12 @@ def _lease_and_run(
         )
 
     if runner_failure is not None:
+        registered = _registered_retention(
+            retention_out,
+            "workspace_retention",
+        )
+        if registered is not None and _runner_retention(runner_failure) is None:
+            setattr(runner_failure, "runner_workspace_retention", registered)
         if isinstance(runner_failure, replay_runner.ReplayRunnerError):
             raise _runner_error(runner_failure) from runner_failure
         raise runner_failure
@@ -720,8 +913,15 @@ def _lease_and_run(
     return runner_envelope, final_evidence
 
 
-def run_request(request: EquivalenceRequest) -> dict[str, object]:
-    """Stage, execute, attest, compare, and return a completed gate envelope."""
+def _verify_request_fixture(
+    request: EquivalenceRequest,
+) -> fixture_tool.VerifiedFixture:
+    """Perform the read-only request/fixture preflight shared by inspect and run."""
+
+    # EquivalenceRequest is a public value type. Recheck every normalized field
+    # so a direct caller cannot bypass parse_request, emit an invalid inspection
+    # record, or create private copies before the runner rejects the value.
+    _validate_normalized_request(request)
 
     # Validate the manifest and source before allocating a workspace containing
     # private copies.  Request parsing has already validated every independent
@@ -731,6 +931,12 @@ def run_request(request: EquivalenceRequest) -> dict[str, object]:
     except fixture_tool.FixtureError as error:
         raise _fixture_error(error) from error
     manifest = verified.manifest
+    if verified.manifest_sha256 != request.fixture_manifest_sha256:
+        raise EquivalenceGateError(
+            "fixture.digest_mismatch",
+            "manifest SHA-256 does not match fixture_manifest_sha256",
+            EXIT_FIXTURE,
+        )
     if manifest.tree_sha256 != request.fixture_tree_sha256:
         raise EquivalenceGateError(
             "fixture.digest_mismatch",
@@ -743,13 +949,53 @@ def run_request(request: EquivalenceRequest) -> dict[str, object]:
             "output_slot must differ from the fixture manifest input slot",
             EXIT_REQUEST,
         )
+    return verified
+
+
+def inspect_profile(request: EquivalenceRequest) -> dict[str, object]:
+    """Return a privacy-safe, non-executing record of one validated profile."""
+
+    verified = _verify_request_fixture(request)
+    profile: dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "profile_inspected",
+        "fixture_manifest_sha256": verified.manifest_sha256,
+        "fixture_tree_sha256": verified.manifest.tree_sha256,
+        "actions_sha256": _actions_sha256(request.actions),
+        "action_count": len(request.actions),
+        "input_slot": verified.manifest.slot,
+        "output_slot": request.output_slot,
+        "settlement_barrier": SETTLEMENT_BARRIER,
+        "rng_seed": request.rng_seed,
+        "rng_stream": request.rng_stream,
+    }
+    if frozenset(profile) != PROFILE_INSPECTION_FIELDS:  # pragma: no cover
+        raise AssertionError("profile inspection fields drifted from v1")
+    return profile
+
+
+def inspect_profile_file(path: Path) -> dict[str, object]:
+    """Load and inspect one request without staging or launching children."""
+
+    return inspect_profile(load_request(path))
+
+
+def run_request(
+    request: EquivalenceRequest,
+    *,
+    retention_out: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Stage, execute, attest, compare, and return a completed gate envelope."""
+
+    verified = _verify_request_fixture(request)
+    manifest = verified.manifest
 
     workspace: Path | None = None
     workspace_identity: tuple[int, int] | None = None
     runner_envelope: dict[str, object] | None = None
     try:
         workspace, workspace_identity, classic_root, semantic_root = (
-            _make_gate_workspace()
+            _make_gate_workspace(retention_out=retention_out)
         )
         try:
             fixture_tool.stage_fixture(
@@ -757,6 +1003,7 @@ def run_request(request: EquivalenceRequest) -> dict[str, object]:
                 request.source_root,
                 classic_root / "Save" / f"Game {manifest.slot}",
                 semantic_root / "Save" / f"Game {manifest.slot}",
+                expected_manifest_sha256=request.fixture_manifest_sha256,
             )
         except fixture_tool.FixtureError as error:
             raise _fixture_error(error) from error
@@ -768,9 +1015,11 @@ def run_request(request: EquivalenceRequest) -> dict[str, object]:
             input_slot=manifest.slot,
             expected_file_count=len(manifest.files),
             expected_total_file_bytes=sum(record.size for record in manifest.files),
+            retention_out=retention_out,
         )
         if (
-            evidence.tree_sha256 != request.fixture_tree_sha256
+            evidence.manifest_sha256 != request.fixture_manifest_sha256
+            or evidence.tree_sha256 != request.fixture_tree_sha256
             or evidence.slot != manifest.slot
             or evidence.file_count != len(manifest.files)
             or evidence.total_file_bytes
@@ -789,6 +1038,7 @@ def run_request(request: EquivalenceRequest) -> dict[str, object]:
             SEMANTIC_EQUIVALENT if not mismatched else SEMANTIC_NOT_EQUIVALENT
         )
         retention = _workspace_retention_record(workspace, workspace_identity)
+        _register_fixture_retention(retention_out, retention)
         envelope: dict[str, object] = {
             "schema_version": SCHEMA_VERSION,
             "status": "completed",
@@ -843,14 +1093,20 @@ def run_request(request: EquivalenceRequest) -> dict[str, object]:
                     error.runner_workspace_retention = candidate
         if workspace is not None:
             retention = _workspace_retention_record(workspace, workspace_identity)
+            _register_fixture_retention(retention_out, retention)
             _attach_fixture_retention(error, retention)
+        _attach_registered_retentions(error, retention_out)
         raise
 
 
-def run_request_file(path: Path) -> dict[str, object]:
+def run_request_file(
+    path: Path,
+    *,
+    retention_out: dict[str, object] | None = None,
+) -> dict[str, object]:
     """Load a request and execute the provenance-bound equivalence gate."""
 
-    return run_request(load_request(path))
+    return run_request(load_request(path), retention_out=retention_out)
 
 
 def _error_envelope(error: EquivalenceGateError) -> dict[str, object]:
@@ -873,6 +1129,24 @@ def _error_envelope(error: EquivalenceGateError) -> dict[str, object]:
     if runner_retention is not None:
         envelope["runner_workspace_retention"] = runner_retention
     return envelope
+
+
+def _attach_completed_envelope_retention(
+    error: EquivalenceGateError,
+    completed: dict[str, object] | None,
+) -> None:
+    if not isinstance(completed, dict) or completed.get("status") != "completed":
+        return
+    if error.fixture_workspace_retention is None:
+        fixture_retention = completed.get("fixture_workspace_retention")
+        if isinstance(fixture_retention, dict):
+            error.fixture_workspace_retention = fixture_retention
+    if error.runner_workspace_retention is None:
+        runner_envelope = completed.get("runner_envelope")
+        if isinstance(runner_envelope, dict):
+            runner_retention = runner_envelope.get("workspace_retention")
+            if isinstance(runner_retention, dict):
+                error.runner_workspace_retention = runner_retention
 
 
 def _emit_json(value: object, stream: Any) -> None:
@@ -899,9 +1173,9 @@ class _JsonArgumentParser(argparse.ArgumentParser):
 def _argument_parser() -> argparse.ArgumentParser:
     parser = _JsonArgumentParser(
         description=(
-            "Stage one provenance-declared fixture, run isolated Classic and semantic "
-            "children, and compare their exact replay observables. Private workspaces "
-            "are retained and reported."
+            "Inspect one provenance-declared native-v1 profile, or stage its fixture, "
+            "run isolated Classic and semantic children, and compare their exact "
+            "replay observables. Private run workspaces are retained and reported."
         )
     )
     parser.add_argument(
@@ -910,14 +1184,39 @@ def _argument_parser() -> argparse.ArgumentParser:
         type=Path,
         help="v1 semantic replay equivalence request JSON",
     )
+    parser.add_argument(
+        "--inspect-profile",
+        action="store_true",
+        help=(
+            "validate the request, exact manifest, source tree, and native-v1 "
+            "action profile without staging or launching children"
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _argument_parser().parse_args(argv)
+    envelope: dict[str, object] | None = None
+    retention_out: dict[str, object] = {}
     try:
-        envelope = run_request_file(arguments.request)
+        if arguments.inspect_profile:
+            envelope = inspect_profile_file(arguments.request)
+            exit_code = 0
+        else:
+            envelope = run_request_file(
+                arguments.request,
+                retention_out=retention_out,
+            )
+            exit_code = (
+                0
+                if envelope["semantic_equivalence"] == SEMANTIC_EQUIVALENT
+                else EXIT_NOT_EQUIVALENT
+            )
+        _emit_json(envelope, sys.stdout)
     except EquivalenceGateError as error:
+        _attach_registered_retentions(error, retention_out)
+        _attach_completed_envelope_retention(error, envelope)
         _emit_json(_error_envelope(error), sys.stderr)
         return error.exit_code
     except KeyboardInterrupt as error:
@@ -926,12 +1225,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "semantic replay equivalence run was interrupted",
             EXIT_INTERRUPTED,
         )
+        _attach_registered_retentions(wrapped, retention_out)
         fixture_retention = getattr(error, "fixture_workspace_retention", None)
         if isinstance(fixture_retention, dict):
             wrapped.fixture_workspace_retention = fixture_retention
         runner_retention = _runner_retention(error)
         if runner_retention is not None:
             wrapped.runner_workspace_retention = runner_retention
+        _attach_completed_envelope_retention(wrapped, envelope)
         _emit_json(_error_envelope(wrapped), sys.stderr)
         return EXIT_INTERRUPTED
     except Exception as error:
@@ -940,19 +1241,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"unexpected {type(error).__name__}",
             EXIT_INTERNAL,
         )
+        _attach_registered_retentions(wrapped, retention_out)
         fixture_retention = getattr(error, "fixture_workspace_retention", None)
         if isinstance(fixture_retention, dict):
             wrapped.fixture_workspace_retention = fixture_retention
         runner_retention = _runner_retention(error)
         if runner_retention is not None:
             wrapped.runner_workspace_retention = runner_retention
+        _attach_completed_envelope_retention(wrapped, envelope)
         _emit_json(_error_envelope(wrapped), sys.stderr)
         return EXIT_INTERNAL
 
-    _emit_json(envelope, sys.stdout)
-    if envelope["semantic_equivalence"] == SEMANTIC_EQUIVALENT:
-        return 0
-    return EXIT_NOT_EQUIVALENT
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -20,12 +20,19 @@ The same command exercises the synthetic semantic-replay fixture, process, and
 equivalence protocols. `scripts/semantic_replay_equivalence.py` now composes a
 provenance-pinned fixture, two real child routes, continuous input attestation,
 and exact state/save/action/RNG comparison into a fail-closed local verdict.
+Its census performs no explicit content writes (filesystem reads may update
+access-time metadata) and produces unreviewed mechanical fixture evidence. Its
+request pins both the reviewed manifest bytes and fixture tree, and
+`--inspect-profile` validates the exact native-v1 action digest without staging
+or launching children. A configured build separately exercises all 12 native
+movement commands through both linked production routes.
 This is harness coverage only: no provenance-reviewed Tutorial fixture is
 selected in the repository, so no current CI result establishes real-engine
 equivalence. Before release, run the built application through that gate with a
 reviewed private Tutorial request and archive the envelope bound to its exact
-fixture-tree and action-plan digests. Broader action profiles and City coverage
-remain separate acceptance work.
+manifest, fixture-tree, and action-plan digests. Follow
+[`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md); broader action
+profiles and City coverage remain separate acceptance work.
 
 A configured full build also registers `ResourceForkSelectionIntegrationTest`.
 That test parses the five real phase-one resource forks and proves that all

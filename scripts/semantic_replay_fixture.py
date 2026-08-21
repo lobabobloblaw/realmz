@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Verify and stage provenance-declared Realmz semantic replay fixtures.
+"""Census, verify, and stage Realmz semantic replay fixture trees.
 
-This utility deliberately does not know a default save directory.  Both the
-manifest and every filesystem root must be supplied by the caller.
+This utility deliberately does not know a default save directory.  Every
+filesystem root, and every manifest used for verification or staging, must be
+supplied by the caller.  The census operation is mechanical and unreviewed: it
+does not infer provenance or authorization.
 
 Manifest v1 records an exact, canonically ordered file census.  Its tree hash
 is SHA-256 over this binary stream::
@@ -62,6 +64,7 @@ EXIT_USAGE = 2
 EXIT_MANIFEST = 3
 EXIT_VERIFICATION = 4
 EXIT_STAGING = 5
+EXIT_INTERRUPTED = 130
 
 TOP_LEVEL_FIELDS = frozenset(
     {
@@ -112,8 +115,20 @@ class FixtureManifest:
 @dataclass(frozen=True)
 class VerifiedFixture:
     manifest: FixtureManifest
+    manifest_sha256: str
     manifest_path: Path
     source_root: Path
+
+
+@dataclass(frozen=True)
+class FixtureCensus:
+    """Mechanical, unreviewed evidence captured from one fixture tree."""
+
+    slot: str
+    files: tuple[FileRecord, ...]
+    tree_sha256: str
+    directory_count: int
+    total_file_bytes: int
 
 
 @dataclass(frozen=True)
@@ -142,6 +157,10 @@ def _manifest_error(message: str) -> NoReturn:
 
 def _verification_error(message: str) -> NoReturn:
     raise FixtureError("fixture.verification_failed", message, EXIT_VERIFICATION)
+
+
+def _census_error(message: str) -> NoReturn:
+    raise FixtureError("fixture.census_failed", message, EXIT_VERIFICATION)
 
 
 def _staging_error(message: str) -> NoReturn:
@@ -215,6 +234,14 @@ def _validate_authorization_basis(value: object) -> str:
 def _validate_slot(value: object) -> str:
     if not isinstance(value, str) or len(value) != 1 or value < "A" or value > "J":
         _manifest_error("slot must be one uppercase Classic save slot letter A through J")
+    return value
+
+
+def _census_slot_argument(value: str) -> str:
+    if len(value) != 1 or value < "A" or value > "J":
+        raise argparse.ArgumentTypeError(
+            "slot must be one uppercase Classic save slot letter A through J"
+        )
     return value
 
 
@@ -430,9 +457,16 @@ class _PathChain:
         return self.nodes[-1].descriptor
 
     def close(self) -> None:
-        for node in reversed(self.nodes):
-            _close_descriptor(node.descriptor)
+        for node in reversed(getattr(self, "nodes", ())):
+            descriptor = node.descriptor
             node.descriptor = -1
+            _close_descriptor(descriptor)
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 @dataclass
@@ -447,9 +481,19 @@ class _PinnedManifest:
     sha256: str
 
     def close(self) -> None:
-        _close_descriptor(self.descriptor)
-        self.descriptor = -1
-        self.parent_chain.close()
+        descriptor = getattr(self, "descriptor", -1)
+        if hasattr(self, "descriptor"):
+            self.descriptor = -1
+        _close_descriptor(descriptor)
+        parent_chain = getattr(self, "parent_chain", None)
+        if parent_chain is not None:
+            parent_chain.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 @dataclass(frozen=True)
@@ -480,6 +524,18 @@ class _DirectoryAnchor:
     link_name: str
     entries: tuple[_EntryState, ...] | None = None
 
+    def close(self) -> None:
+        descriptor = getattr(self, "descriptor", -1)
+        if hasattr(self, "descriptor"):
+            self.descriptor = -1
+        _close_descriptor(descriptor)
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
+
 
 @dataclass
 class _PinnedTree:
@@ -495,20 +551,32 @@ class _PinnedTree:
 
     def close_nested(self) -> None:
         nested = sorted(
-            (relative for relative in self.directories if relative),
+            (
+                relative
+                for relative in getattr(self, "directories", {})
+                if relative
+            ),
             key=lambda value: (value.count("/"), _canonical_path_key(value)),
             reverse=True,
         )
         for relative in nested:
             anchor = self.directories[relative]
-            _close_descriptor(anchor.descriptor)
-            anchor.descriptor = -1
+            anchor.close()
 
     def close(self) -> None:
         self.close_nested()
-        _close_descriptor(self.root.descriptor)
-        self.root.descriptor = -1
-        self.parent_chain.close()
+        root = getattr(self, "root", None)
+        if root is not None:
+            root.close()
+        parent_chain = getattr(self, "parent_chain", None)
+        if parent_chain is not None:
+            parent_chain.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 @dataclass
@@ -521,9 +589,16 @@ class _DestinationPlan:
     retention_reported: bool = False
 
     def close(self) -> None:
-        if self.parent_chain is not None:
-            self.parent_chain.close()
+        parent_chain = getattr(self, "parent_chain", None)
+        if parent_chain is not None:
+            parent_chain.close()
             self.parent_chain = None
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 @dataclass
@@ -534,8 +609,15 @@ class _DirectoryNameObservation:
     metadata: os.stat_result | None = None
 
     def close(self) -> None:
-        _close_descriptor(self.descriptor)
+        descriptor = self.descriptor
         self.descriptor = -1
+        _close_descriptor(descriptor)
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 def _path_spec(path: Path | str, label: str, fail: Failure) -> _PathSpec:
@@ -574,14 +656,13 @@ def _open_directory_chain(path: Path, label: str, fail: Failure) -> _PathChain:
         root_metadata = os.fstat(pending_descriptor)
         if not stat.S_ISDIR(root_metadata.st_mode):
             fail(f"filesystem root for {label} is not a directory")
-        nodes.append(
-            _PathNode(
-                descriptor=pending_descriptor,
-                identity=_stat_identity(root_metadata),
-                parent_descriptor=None,
-                name=None,
-            )
+        root_node = _PathNode(
+            descriptor=-1,
+            identity=_stat_identity(root_metadata),
+            parent_descriptor=None,
+            name=None,
         )
+        _register_path_node(nodes, root_node, pending_descriptor)
         pending_descriptor = -1
         for component in path.parts[1:]:
             parent_descriptor = nodes[-1].descriptor
@@ -599,29 +680,58 @@ def _open_directory_chain(path: Path, label: str, fail: Failure) -> _PathChain:
             )
             opened_metadata = os.fstat(pending_descriptor)
             if _stat_identity(link_metadata) != _stat_identity(opened_metadata):
-                _close_descriptor(pending_descriptor)
+                closing_descriptor = pending_descriptor
                 pending_descriptor = -1
+                _close_descriptor(closing_descriptor)
                 fail(f"path component changed while opening {label}: {component}")
-            nodes.append(
-                _PathNode(
-                    descriptor=pending_descriptor,
-                    identity=_stat_identity(opened_metadata),
-                    parent_descriptor=parent_descriptor,
-                    name=component,
-                )
+            node = _PathNode(
+                descriptor=-1,
+                identity=_stat_identity(opened_metadata),
+                parent_descriptor=parent_descriptor,
+                name=component,
             )
+            _register_path_node(nodes, node, pending_descriptor)
             pending_descriptor = -1
+        return _PathChain(display_path=path, nodes=nodes)
     except FixtureError:
-        _close_descriptor(pending_descriptor)
-        for node in reversed(nodes):
-            _close_descriptor(node.descriptor)
+        _close_partial_path_descriptors(pending_descriptor, nodes)
         raise
     except OSError as error:
-        _close_descriptor(pending_descriptor)
-        for node in reversed(nodes):
-            _close_descriptor(node.descriptor)
+        _close_partial_path_descriptors(pending_descriptor, nodes)
         fail(f"cannot open descriptor path for {label}: {error.strerror or error}")
-    return _PathChain(display_path=path, nodes=nodes)
+    except BaseException:
+        _close_partial_path_descriptors(pending_descriptor, nodes)
+        raise
+
+
+def _register_path_node(
+    nodes: list[_PathNode],
+    node: _PathNode,
+    descriptor: int,
+) -> None:
+    node.descriptor = descriptor
+    nodes.append(node)
+
+
+def _close_partial_path_descriptors(
+    pending_descriptor: int,
+    nodes: Sequence[_PathNode],
+) -> None:
+    """Close construction-time aliases once after detaching every node owner."""
+
+    descriptors: list[int] = []
+    seen: set[int] = set()
+    if pending_descriptor >= 0:
+        descriptors.append(pending_descriptor)
+        seen.add(pending_descriptor)
+    for node in reversed(nodes):
+        descriptor = node.descriptor
+        node.descriptor = -1
+        if descriptor >= 0 and descriptor not in seen:
+            descriptors.append(descriptor)
+            seen.add(descriptor)
+    for descriptor in descriptors:
+        _close_descriptor(descriptor)
 
 
 def _assert_path_chain_stable(chain: _PathChain, label: str, fail: Failure) -> None:
@@ -675,6 +785,8 @@ def _open_pinned_manifest(path: Path | str) -> _PinnedManifest:
     _require_descriptor_support(_manifest_error)
     spec = _path_spec(path, "manifest", _manifest_error)
     parent_chain = _open_directory_chain(spec.parent_path, "manifest", _manifest_error)
+    descriptor = -1
+    pinned: _PinnedManifest | None = None
     try:
         descriptor = os.open(
             spec.name,
@@ -682,10 +794,15 @@ def _open_pinned_manifest(path: Path | str) -> _PinnedManifest:
             dir_fd=parent_chain.descriptor,
         )
     except OSError as error:
+        _close_descriptor(descriptor)
         parent_chain.close()
         _manifest_error(
             f"cannot open manifest {spec.display_path}: {error.strerror or error}"
         )
+    except BaseException:
+        _close_descriptor(descriptor)
+        parent_chain.close()
+        raise
 
     try:
         _assert_path_chain_stable(parent_chain, "manifest", _manifest_error)
@@ -727,30 +844,42 @@ def _open_pinned_manifest(path: Path | str) -> _PinnedManifest:
         except (ValueError, RecursionError) as error:
             _manifest_error(f"manifest is not valid JSON: {error}")
 
-        return _PinnedManifest(
+        pinned = _PinnedManifest(
             manifest=_parse_manifest(value),
             path=spec.display_path,
-            descriptor=descriptor,
+            descriptor=-1,
             parent_chain=parent_chain,
             name=spec.name,
             stability=_stat_stability(after),
             byte_size=len(raw),
             sha256=hashlib.sha256(raw).hexdigest(),
         )
+        pinned.descriptor = descriptor
+        descriptor = -1
+        return pinned
     except FixtureError:
-        _close_descriptor(descriptor)
-        parent_chain.close()
+        _close_manifest_construction(pinned, descriptor, parent_chain)
         raise
     except OSError as error:
-        _close_descriptor(descriptor)
-        parent_chain.close()
+        _close_manifest_construction(pinned, descriptor, parent_chain)
         _manifest_error(
             f"cannot read manifest {spec.display_path}: {error.strerror or error}"
         )
     except BaseException:
-        _close_descriptor(descriptor)
-        parent_chain.close()
+        _close_manifest_construction(pinned, descriptor, parent_chain)
         raise
+
+
+def _close_manifest_construction(
+    pinned: _PinnedManifest | None,
+    descriptor: int,
+    parent_chain: _PathChain,
+) -> None:
+    if pinned is not None and pinned.descriptor >= 0:
+        pinned.close()
+        return
+    _close_descriptor(descriptor)
+    parent_chain.close()
 
 
 def _verify_pinned_manifest(
@@ -770,7 +899,7 @@ def _verify_pinned_manifest(
             or _stat_identity(before) != _stat_identity(linked)
             or before.st_size != pinned.byte_size
         ):
-            fail(f"manifest changed while fixture trees were leased: {pinned.path}")
+            fail(f"manifest changed while its descriptor was pinned: {pinned.path}")
         raw = _read_manifest_bytes(pinned.descriptor, pinned.path, fail)
         after = os.fstat(pinned.descriptor)
         linked_after = os.stat(
@@ -784,7 +913,7 @@ def _verify_pinned_manifest(
             or len(raw) != pinned.byte_size
             or hashlib.sha256(raw).hexdigest() != pinned.sha256
         ):
-            fail(f"manifest changed while fixture trees were leased: {pinned.path}")
+            fail(f"manifest changed while its descriptor was pinned: {pinned.path}")
         _assert_path_chain_stable(pinned.parent_chain, "manifest", fail)
     except FixtureError:
         raise
@@ -796,6 +925,7 @@ def _open_existing_tree(path: Path | str, label: str, fail: Failure) -> _PinnedT
     spec = _path_spec(path, label, fail)
     parent_chain = _open_directory_chain(spec.parent_path, label, fail)
     descriptor = -1
+    root: _DirectoryAnchor | None = None
     try:
         link_metadata = os.stat(
             spec.name,
@@ -812,31 +942,45 @@ def _open_existing_tree(path: Path | str, label: str, fail: Failure) -> _PinnedT
         opened_metadata = os.fstat(descriptor)
         if _stat_identity(link_metadata) != _stat_identity(opened_metadata):
             fail(f"{label} changed while it was being opened: {spec.display_path}")
+        root = _DirectoryAnchor(
+            relative="",
+            descriptor=-1,
+            identity=_stat_identity(opened_metadata),
+            link_parent_descriptor=parent_chain.descriptor,
+            link_name=spec.name,
+        )
+        root.descriptor = descriptor
+        descriptor = -1
+        return _PinnedTree(
+            label=label,
+            path=spec.display_path,
+            parent_chain=parent_chain,
+            root=root,
+            directories={"": root},
+            private_name=spec.name,
+        )
     except FixtureError:
-        _close_descriptor(descriptor)
+        _close_anchor_construction(root, descriptor)
         parent_chain.close()
         raise
     except OSError as error:
-        _close_descriptor(descriptor)
+        _close_anchor_construction(root, descriptor)
         parent_chain.close()
         fail(f"cannot open {label} {spec.display_path}: {error.strerror or error}")
+    except BaseException:
+        _close_anchor_construction(root, descriptor)
+        parent_chain.close()
+        raise
 
-    root = _DirectoryAnchor(
-        relative="",
-        descriptor=descriptor,
-        identity=_stat_identity(opened_metadata),
-        link_parent_descriptor=parent_chain.descriptor,
-        link_name=spec.name,
-    )
-    return _PinnedTree(
-        label=label,
-        path=spec.display_path,
-        parent_chain=parent_chain,
-        root=root,
-        directories={"": root},
-        private_name=spec.name,
-    )
 
+def _close_anchor_construction(
+    anchor: _DirectoryAnchor | None,
+    descriptor: int,
+) -> None:
+    if anchor is not None and anchor.descriptor >= 0:
+        anchor.close()
+    else:
+        _close_descriptor(descriptor)
 
 def _entry_state(
     directory_descriptor: int,
@@ -903,6 +1047,7 @@ def _open_child_directory(
     fail: Failure,
 ) -> _DirectoryAnchor:
     descriptor = -1
+    anchor: _DirectoryAnchor | None = None
     try:
         descriptor = os.open(
             entry.name,
@@ -911,22 +1056,28 @@ def _open_child_directory(
         )
         metadata = os.fstat(descriptor)
         if _state_identity(entry) != _stat_identity(metadata):
-            _close_descriptor(descriptor)
+            closing_descriptor = descriptor
+            descriptor = -1
+            _close_descriptor(closing_descriptor)
             fail(f"fixture directory changed while opening it: {relative}")
+        anchor = _DirectoryAnchor(
+            relative=relative,
+            descriptor=-1,
+            identity=_stat_identity(metadata),
+            link_parent_descriptor=parent.descriptor,
+            link_name=entry.name,
+        )
+        anchor.descriptor = descriptor
+        descriptor = -1
+        return anchor
     except FixtureError:
         raise
     except OSError as error:
-        _close_descriptor(descriptor)
+        _close_anchor_construction(anchor, descriptor)
         fail(f"cannot open fixture directory {relative}: {error.strerror or error}")
-    return _DirectoryAnchor(
-        relative=relative,
-        descriptor=descriptor,
-        identity=_stat_identity(metadata),
-        link_parent_descriptor=parent.descriptor,
-        link_name=entry.name,
-    )
-
-
+    except BaseException:
+        _close_anchor_construction(anchor, descriptor)
+        raise
 def _discover_tree(
     tree: _PinnedTree,
     fail: Failure,
@@ -1095,6 +1246,7 @@ def _open_regular_leaf(
     tree: _PinnedTree,
     record: FileRecord,
     fail: Failure,
+    ownership: list[int] | None = None,
 ) -> tuple[int, os.stat_result]:
     parent_descriptor, name = _record_parent(tree, record, fail)
     descriptor = -1
@@ -1108,23 +1260,33 @@ def _open_regular_leaf(
         if _stat_identity(opened_metadata) != _stat_identity(link_metadata):
             _close_descriptor(descriptor)
             fail(f"fixture file changed while opening it: {record.path}")
+        if ownership is not None:
+            ownership.append(descriptor)
+        return descriptor, opened_metadata
     except FixtureError:
         raise
     except OSError as error:
         _close_descriptor(descriptor)
         fail(f"cannot open fixture file {record.path}: {error.strerror or error}")
-    return descriptor, opened_metadata
-
-
+    except BaseException:
+        if ownership is None or descriptor not in ownership:
+            _close_descriptor(descriptor)
+        raise
 def _hash_record(
     tree: _PinnedTree,
     record: FileRecord,
     fail: Failure,
 ) -> tuple[int, str, tuple[int, int], int]:
-    descriptor, before = _open_regular_leaf(tree, record, fail)
+    owned_descriptors: list[int] = []
     digest = hashlib.sha256()
     total = 0
     try:
+        descriptor, before = _open_regular_leaf(
+            tree,
+            record,
+            fail,
+            owned_descriptors,
+        )
         if before.st_size != record.size:
             fail(
                 f"fixture size mismatch for {record.path}: "
@@ -1155,7 +1317,8 @@ def _hash_record(
     except OSError as error:
         fail(f"cannot read fixture file {record.path}: {error.strerror or error}")
     finally:
-        _close_descriptor(descriptor)
+        for owned_descriptor in owned_descriptors:
+            _close_descriptor(owned_descriptor)
     return total, digest.hexdigest(), (after.st_dev, after.st_ino), after.st_nlink
 
 
@@ -1231,20 +1394,141 @@ def _verify_source_again(tree: _PinnedTree, manifest: FixtureManifest) -> None:
     )
 
 
+def _census_seed_records(
+    tree: _PinnedTree,
+    files: Sequence[str],
+    directories: Sequence[str],
+) -> tuple[tuple[FileRecord, ...], int]:
+    captured: dict[str, _EntryState] = {}
+    for parent_relative in sorted(tree.directories, key=_canonical_path_key):
+        anchor = tree.directories[parent_relative]
+        if anchor.entries is None:
+            _census_error(
+                "internal error: fixture directory was not captured: "
+                f"{parent_relative or '.'}"
+            )
+        for entry in anchor.entries:
+            if not stat.S_ISREG(entry.mode):
+                continue
+            relative = (
+                f"{parent_relative}/{entry.name}"
+                if parent_relative
+                else entry.name
+            )
+            captured[relative] = entry
+
+    records: list[FileRecord] = []
+    total_file_bytes = 0
+    for relative in files:
+        entry = captured.get(relative)
+        if entry is None:
+            _census_error(f"fixture file was not captured: {relative}")
+        if entry.size < 0 or entry.size > MAX_FILE_SIZE:
+            _census_error(
+                f"fixture file size for {relative} is outside 0 through "
+                f"{MAX_FILE_SIZE}"
+            )
+        total_file_bytes += entry.size
+        if total_file_bytes > MAX_TOTAL_FILE_BYTES:
+            _census_error(
+                f"fixture contains more than {MAX_TOTAL_FILE_BYTES} total bytes"
+            )
+        records.append(FileRecord(relative, entry.size, ""))
+
+    expected_directories = tuple(
+        sorted(
+            _collect_expected_directories(records, _census_error),
+            key=_canonical_path_key,
+        )
+    )
+    if tuple(directories) != expected_directories:
+        missing = sorted(
+            set(expected_directories) - set(directories), key=_canonical_path_key
+        )
+        extra = sorted(
+            set(directories) - set(expected_directories), key=_canonical_path_key
+        )
+        if missing:
+            _census_error(f"fixture is missing directory: {missing[0]}")
+        _census_error(
+            "fixture has a directory not represented by a regular file: "
+            f"{extra[0]}"
+        )
+    return tuple(records), total_file_bytes
+
+
+def _census_tree(tree: _PinnedTree, slot: str) -> FixtureCensus:
+    discovered_files, discovered_directories = _discover_tree(tree, _census_error)
+    if not discovered_files:
+        _census_error("fixture must contain at least one regular file")
+
+    captured_files, captured_directories = _capture_tree(tree, _census_error)
+    if (
+        discovered_files != captured_files
+        or discovered_directories != captured_directories
+    ):
+        _census_error("fixture contents changed while its census was captured")
+    _assert_tree_stable(tree, _census_error)
+
+    seeds, total_file_bytes = _census_seed_records(
+        tree,
+        captured_files,
+        captured_directories,
+    )
+    records: list[FileRecord] = []
+    for seed in seeds:
+        size, file_sha256, _, _ = _hash_record(tree, seed, _census_error)
+        if size != seed.size:
+            _census_error(
+                f"fixture size changed for {seed.path}: "
+                f"expected {seed.size}, got {size}"
+            )
+        records.append(FileRecord(seed.path, size, file_sha256))
+    _assert_tree_stable(tree, _census_error)
+
+    canonical_records = tuple(records)
+    return FixtureCensus(
+        slot=slot,
+        files=canonical_records,
+        tree_sha256=compute_tree_sha256(canonical_records),
+        directory_count=len(captured_directories),
+        total_file_bytes=total_file_bytes,
+    )
+
+
+def census_fixture(source_root: Path | str, slot: str) -> FixtureCensus:
+    """Mechanically census one explicitly supplied, descriptor-pinned tree."""
+
+    if not isinstance(slot, str) or len(slot) != 1 or slot < "A" or slot > "J":
+        _census_error(
+            "slot must be one uppercase Classic save slot letter A through J"
+        )
+    tree = _open_existing_tree(source_root, "source root", _census_error)
+    try:
+        return _census_tree(tree, slot)
+    finally:
+        tree.close()
+
+
 def verify_fixture(
     manifest_path: Path | str, source_root: Path | str
 ) -> VerifiedFixture:
     """Verify an explicitly supplied source root through pinned descriptors."""
 
-    manifest = load_manifest(manifest_path)
-    tree = _open_existing_tree(source_root, "source root", _verification_error)
+    pinned_manifest = _open_pinned_manifest(manifest_path)
+    tree: _PinnedTree | None = None
     try:
-        _verify_source_initial(tree, manifest)
+        tree = _open_existing_tree(source_root, "source root", _verification_error)
+        _verify_source_initial(tree, pinned_manifest.manifest)
+        _verify_pinned_manifest(pinned_manifest, _verification_error)
         canonical_source = tree.path
     finally:
-        tree.close()
+        if tree is not None:
+            tree.close()
+        pinned_manifest.close()
     return VerifiedFixture(
-        manifest=manifest,
+        manifest=pinned_manifest.manifest,
+        manifest_sha256=pinned_manifest.sha256,
         manifest_path=_manifest_display_path(manifest_path),
         source_root=canonical_source,
     )
@@ -1291,10 +1575,17 @@ def _open_destination_plan(spec: _PathSpec, label: str) -> _DestinationPlan:
         chain.close()
         raise
     except FileNotFoundError:
-        return _DestinationPlan(label=label, spec=spec, parent_chain=chain)
+        try:
+            return _DestinationPlan(label=label, spec=spec, parent_chain=chain)
+        except BaseException:
+            chain.close()
+            raise
     except OSError as error:
         chain.close()
         _staging_error(f"cannot inspect {label} {spec.display_path}: {error.strerror or error}")
+    except BaseException:
+        chain.close()
+        raise
     chain.close()
     _staging_error(f"{label} already exists: {spec.display_path}")
 
@@ -1451,6 +1742,8 @@ def _create_destination_tree(
     # it even if this helper is interrupted at a later Python bytecode boundary.
     plan.private_name = private_name
     observation = _DirectoryNameObservation(private_name)
+    root: _DirectoryAnchor | None = None
+    tree: _PinnedTree | None = None
     try:
         _assert_path_chain_stable(parent_chain, plan.label, _staging_error)
         parent_before = os.fstat(parent_chain.descriptor)
@@ -1475,15 +1768,56 @@ def _create_destination_tree(
                 f"new {plan.label} was replaced before its descriptor was pinned; "
                 f"cleanup refused for private name {private_name}"
             )
+        root = _DirectoryAnchor(
+            relative="",
+            descriptor=-1,
+            identity=_stat_identity(opened_metadata),
+            link_parent_descriptor=parent_chain.descriptor,
+            link_name=private_name,
+        )
+        root.descriptor = observation.descriptor
+        observation.descriptor = -1
+        tree = _PinnedTree(
+            label=plan.label,
+            path=plan.spec.display_path,
+            parent_chain=parent_chain,
+            root=root,
+            directories={"": root},
+            private_name=private_name,
+        )
+        if ownership is not None:
+            # Transfer ownership before returning so an asynchronous exception
+            # in a caller wrapper cannot strand a fully created tree.
+            ownership.append(tree)
+        plan.parent_chain = None
+        return tree
     except BaseException as error:
         if observation.metadata is not None:
             plan.root_identity = _stat_identity(observation.metadata)
-        observation.close()
+        tree_is_owned = (
+            tree is not None
+            and ownership is not None
+            and any(candidate is tree for candidate in ownership)
+        )
+        if tree_is_owned:
+            observation.descriptor = -1
+        else:
+            if root is not None and root.descriptor >= 0:
+                observation.descriptor = -1
+                root.close()
+            else:
+                observation.close()
+            if plan.parent_chain is None:
+                parent_chain.close()
         report = _unadopted_private_report(
             parent_chain,
             private_name,
             observation,
         )
+        if isinstance(error, KeyboardInterrupt):
+            plan.retention_reported = True
+            setattr(error, "fixture_retention_notice", report)
+            raise
         if isinstance(error, FixtureError):
             plan.retention_reported = True
             raise FixtureError(
@@ -1504,30 +1838,6 @@ def _create_destination_tree(
         plan.retention_reported = True
         raise FixtureError("fixture.staging_failed", detail, EXIT_STAGING) from error
 
-    descriptor = observation.descriptor
-    observation.descriptor = -1
-    root = _DirectoryAnchor(
-        relative="",
-        descriptor=descriptor,
-        identity=_stat_identity(opened_metadata),
-        link_parent_descriptor=parent_chain.descriptor,
-        link_name=private_name,
-    )
-    tree = _PinnedTree(
-        label=plan.label,
-        path=plan.spec.display_path,
-        parent_chain=parent_chain,
-        root=root,
-        directories={"": root},
-        private_name=private_name,
-    )
-    if ownership is not None:
-        # Transfer ownership before returning so an asynchronous exception in a
-        # caller wrapper cannot strand an unreported, fully created tree.
-        ownership.append(tree)
-    plan.parent_chain = None
-    return tree
-
 
 def _create_fixture_directories(tree: _PinnedTree, records: Sequence[FileRecord]) -> None:
     directories = sorted(
@@ -1541,6 +1851,7 @@ def _create_fixture_directories(tree: _PinnedTree, records: Sequence[FileRecord]
         name = parts[-1]
         descriptor = -1
         directory_created = False
+        anchor: _DirectoryAnchor | None = None
         try:
             parent_before = os.fstat(parent.descriptor)
             os.mkdir(name, mode=0o700, dir_fd=parent.descriptor)
@@ -1555,41 +1866,69 @@ def _create_fixture_directories(tree: _PinnedTree, records: Sequence[FileRecord]
             parent_after = os.fstat(parent.descriptor)
             if _stat_identity(link_metadata) != _stat_identity(opened_metadata):
                 tree.tainted = True
-                _close_descriptor(descriptor)
+                closing_descriptor = descriptor
+                descriptor = -1
+                _close_descriptor(closing_descriptor)
                 _staging_error(f"staged directory changed while opening it: {relative}")
             if parent_after.st_nlink != parent_before.st_nlink + 1:
                 tree.tainted = True
-                _close_descriptor(descriptor)
+                closing_descriptor = descriptor
                 descriptor = -1
+                _close_descriptor(closing_descriptor)
                 _staging_error(
                     f"staged directory was replaced before its descriptor was pinned: "
                     f"{relative}"
                 )
-        except FixtureError:
+            anchor = _DirectoryAnchor(
+                relative=relative,
+                descriptor=-1,
+                identity=_stat_identity(opened_metadata),
+                link_parent_descriptor=parent.descriptor,
+                link_name=name,
+            )
+            anchor.descriptor = descriptor
+            descriptor = -1
+            tree.directories[relative] = anchor
+        except BaseException as error:
             if directory_created:
                 tree.tainted = True
+            anchor_is_owned = (
+                anchor is not None and tree.directories.get(relative) is anchor
+            )
+            if anchor_is_owned:
+                descriptor = -1
+            else:
+                _close_anchor_construction(anchor, descriptor)
+            if isinstance(error, FixtureError):
+                raise
+            if isinstance(error, OSError):
+                _staging_error(
+                    f"cannot create staged directory {relative}: "
+                    f"{error.strerror or error}"
+                )
             raise
-        except OSError as error:
-            if directory_created:
-                tree.tainted = True
-            _close_descriptor(descriptor)
-            _staging_error(f"cannot create staged directory {relative}: {error.strerror or error}")
-        tree.directories[relative] = _DirectoryAnchor(
-            relative=relative,
-            descriptor=descriptor,
-            identity=_stat_identity(opened_metadata),
-            link_parent_descriptor=parent.descriptor,
-            link_name=name,
-        )
 
 
-def _open_new_leaf(tree: _PinnedTree, record: FileRecord) -> int:
+def _open_new_leaf(
+    tree: _PinnedTree,
+    record: FileRecord,
+    ownership: list[int] | None = None,
+) -> int:
     parent_descriptor, name = _record_parent(tree, record, _staging_error)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW
+    descriptor = -1
     try:
-        return os.open(name, flags, 0o600, dir_fd=parent_descriptor)
+        descriptor = os.open(name, flags, 0o600, dir_fd=parent_descriptor)
+        if ownership is not None:
+            ownership.append(descriptor)
+        return descriptor
     except OSError as error:
+        _close_descriptor(descriptor)
         _staging_error(f"cannot create staged file {record.path}: {error.strerror or error}")
+    except BaseException:
+        if ownership is None or descriptor not in ownership:
+            _close_descriptor(descriptor)
+        raise
 
 
 def _write_all(descriptor: int, block: bytes) -> None:
@@ -1610,19 +1949,23 @@ def _copy_record_to_trees(
     _assert_tree_stable(source, _staging_error)
     _assert_tree_links_stable(classic, _staging_error)
     _assert_tree_links_stable(semantic, _staging_error)
-    source_descriptor, source_before = _open_regular_leaf(source, record, _staging_error)
-    classic_descriptor = -1
-    semantic_descriptor = -1
+    owned_descriptors: list[int] = []
     digest = hashlib.sha256()
     total = 0
     try:
+        source_descriptor, source_before = _open_regular_leaf(
+            source,
+            record,
+            _staging_error,
+            owned_descriptors,
+        )
         if source_before.st_size != record.size:
             _staging_error(
                 f"source size mismatch for {record.path}: "
                 f"expected {record.size}, got {source_before.st_size}"
             )
-        classic_descriptor = _open_new_leaf(classic, record)
-        semantic_descriptor = _open_new_leaf(semantic, record)
+        classic_descriptor = _open_new_leaf(classic, record, owned_descriptors)
+        semantic_descriptor = _open_new_leaf(semantic, record, owned_descriptors)
         while True:
             block = os.read(
                 source_descriptor,
@@ -1644,9 +1987,8 @@ def _copy_record_to_trees(
     except OSError as error:
         _staging_error(f"cannot stage {record.path}: {error.strerror or error}")
     finally:
-        _close_descriptor(source_descriptor)
-        _close_descriptor(classic_descriptor)
-        _close_descriptor(semantic_descriptor)
+        for owned_descriptor in owned_descriptors:
+            _close_descriptor(owned_descriptor)
 
     if _stat_stability(source_before) != _stat_stability(source_after):
         _staging_error(f"source file changed while it was being staged: {record.path}")
@@ -1772,6 +2114,18 @@ class FixtureSetLease:
         for tree in (self._semantic, self._classic, self._source):
             tree.close()
         self._manifest.close()
+
+    def __del__(self) -> None:
+        try:
+            for attribute in ("_semantic", "_classic", "_source"):
+                tree = getattr(self, attribute, None)
+                if tree is not None:
+                    tree.close()
+            manifest = getattr(self, "_manifest", None)
+            if manifest is not None:
+                manifest.close()
+        except BaseException:
+            pass
 
     def finalize(self) -> FixtureSetEvidence:
         """Reverify every pinned object, then close descriptors without deletion."""
@@ -2129,16 +2483,34 @@ def stage_fixture(
     source_root: Path | str,
     classic_root: Path | str,
     semantic_root: Path | str,
+    *,
+    expected_manifest_sha256: str | None = None,
+    retention_out: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Verify and descriptor-copy one source fixture into independent twin roots."""
 
-    manifest = load_manifest(manifest_path)
-    source = _open_existing_tree(source_root, "source root", _verification_error)
+    pinned_manifest = _open_pinned_manifest(manifest_path)
+    if expected_manifest_sha256 is not None:
+        if not _is_lower_sha256(expected_manifest_sha256):
+            pinned_manifest.close()
+            _staging_error(
+                "expected_manifest_sha256 must be a lowercase SHA-256 digest"
+            )
+        if pinned_manifest.sha256 != expected_manifest_sha256:
+            pinned_manifest.close()
+            raise FixtureError(
+                "fixture.digest_mismatch",
+                "manifest SHA-256 does not match expected_manifest_sha256",
+                EXIT_VERIFICATION,
+            )
+    manifest = pinned_manifest.manifest
+    source: _PinnedTree | None = None
     plans: list[_DestinationPlan] = []
     created: list[_PinnedTree] = []
     completed = False
     result: dict[str, object] | None = None
     try:
+        source = _open_existing_tree(source_root, "source root", _verification_error)
         classic_spec = _path_spec(classic_root, "Classic root", _staging_error)
         semantic_spec = _path_spec(semantic_root, "semantic root", _staging_error)
         _check_distinct_roots(
@@ -2147,6 +2519,7 @@ def stage_fixture(
             semantic_spec.display_path,
         )
         _verify_source_initial(source, manifest)
+        _verify_pinned_manifest(pinned_manifest, _staging_error)
         plans.append(_open_destination_plan(classic_spec, "Classic root"))
         plans.append(_open_destination_plan(semantic_spec, "semantic root"))
         _check_descriptor_aliases(source, plans)
@@ -2171,13 +2544,16 @@ def stage_fixture(
             semantic_identities,
         )
         _verify_source_again(source, manifest)
+        _verify_pinned_manifest(pinned_manifest, _staging_error)
         _publish_destination(classic)
         _publish_destination(semantic)
+        _verify_pinned_manifest(pinned_manifest, _staging_error)
         completed = True
         result = {
             "status": "staged",
             "semantic_equivalence": "not_evaluated",
             "manifest": str(_manifest_display_path(manifest_path)),
+            "manifest_sha256": pinned_manifest.sha256,
             "source_root": str(source.path),
             "classic_root": str(classic.path),
             "semantic_root": str(semantic.path),
@@ -2186,6 +2562,8 @@ def stage_fixture(
             "file_count": len(manifest.files),
             "tree_sha256": manifest.tree_sha256,
         }
+        if retention_out is not None:
+            retention_out["stage_result"] = result
     except BaseException as error:
         retention_reports = tuple(
             report
@@ -2196,6 +2574,16 @@ def stage_fixture(
             if report
         )
         retained_roots = "; ".join(retention_reports) or None
+        if isinstance(error, KeyboardInterrupt):
+            prior_notice = getattr(error, "fixture_retention_notice", None)
+            notices = tuple(
+                notice
+                for notice in (prior_notice, retained_roots)
+                if isinstance(notice, str) and notice
+            )
+            if notices:
+                setattr(error, "fixture_retention_notice", "; ".join(notices))
+            raise
         if isinstance(error, FixtureError):
             if retained_roots:
                 raise FixtureError(
@@ -2213,7 +2601,9 @@ def stage_fixture(
             tree.close()
         for plan in plans:
             plan.close()
-        source.close()
+        if source is not None:
+            source.close()
+        pinned_manifest.close()
 
     if not completed or result is None:
         _staging_error("internal error: staging did not produce a result")
@@ -2225,10 +2615,32 @@ def verification_result(verified: VerifiedFixture) -> dict[str, object]:
         "status": "verified",
         "semantic_equivalence": "not_evaluated",
         "manifest": str(verified.manifest_path),
+        "manifest_sha256": verified.manifest_sha256,
         "source_root": str(verified.source_root),
         "slot": verified.manifest.slot,
         "file_count": len(verified.manifest.files),
         "tree_sha256": verified.manifest.tree_sha256,
+    }
+
+
+def census_result(census: FixtureCensus) -> dict[str, object]:
+    """Return a manifest-like fragment that makes no provenance claim."""
+
+    return {
+        "status": "census_unreviewed",
+        "slot": census.slot,
+        "files": [
+            {
+                "path": record.path,
+                "size": record.size,
+                "sha256": record.sha256,
+            }
+            for record in census.files
+        ],
+        "tree_sha256": census.tree_sha256,
+        "file_count": len(census.files),
+        "directory_count": census.directory_count,
+        "total_file_bytes": census.total_file_bytes,
     }
 
 
@@ -2249,10 +2661,13 @@ class _JsonArgumentParser(argparse.ArgumentParser):
 def build_parser() -> argparse.ArgumentParser:
     parser = _JsonArgumentParser(
         description=(
-            "Verify a provenance-declared Realmz replay fixture or stage it into "
-            "independent Classic and semantic roots. No save path is implied."
+            "Mechanically census one unreviewed Realmz replay fixture tree, "
+            "verify a provenance-declared fixture, or stage it into independent "
+            "Classic and semantic roots. No save path is implied."
         ),
         epilog=(
+            "Census output is mechanical and unreviewed; it does not infer "
+            "source_class, authorization_basis, or redistribution permission. "
             "Manifest v1 requires source_class, authorization_basis, "
             "redistribution_allowed, slot A-J, a canonical files census, and its "
             "tree_sha256. Verification establishes byte identity only; it does "
@@ -2263,6 +2678,29 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    census_parser = subparsers.add_parser(
+        "census",
+        help="mechanically inventory one explicitly supplied source root",
+        description=(
+            "Read one explicitly supplied fixture tree without explicit content "
+            "writes and emit a mechanical, unreviewed file census. Filesystem "
+            "reads may update access-time metadata. This does not establish "
+            "provenance, authorization, redistribution rights, or equivalence."
+        ),
+    )
+    census_parser.add_argument(
+        "--source-root",
+        required=True,
+        type=Path,
+        help="existing fixture directory to census (there is no default)",
+    )
+    census_parser.add_argument(
+        "--slot",
+        required=True,
+        type=_census_slot_argument,
+        help="uppercase Classic save slot letter A through J",
+    )
 
     verify_parser = subparsers.add_parser(
         "verify", help="verify one explicitly supplied source root"
@@ -2304,11 +2742,40 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _retention_notice_after_output_failure(
+    error: BaseException,
+    result: dict[str, object] | None,
+    retention_out: dict[str, object] | None = None,
+) -> str | None:
+    notice = getattr(error, "fixture_retention_notice", None)
+    if isinstance(notice, str) and notice:
+        return notice
+    if not isinstance(result, dict) and retention_out is not None:
+        registered = retention_out.get("stage_result")
+        if isinstance(registered, dict):
+            result = registered
+    if not isinstance(result, dict) or result.get("status") != "staged":
+        return None
+    classic_root = result.get("classic_root")
+    semantic_root = result.get("semantic_root")
+    if not isinstance(classic_root, str) or not isinstance(semantic_root, str):
+        return None
+    return (
+        "staging completed before result emission failed; retained published "
+        f"Classic root: {classic_root}; retained published semantic root: "
+        f"{semantic_root}; no deletion attempted"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    result: dict[str, object] | None = None
+    retention_out: dict[str, object] = {}
     try:
-        if args.command == "verify":
+        if args.command == "census":
+            result = census_result(census_fixture(args.source_root, args.slot))
+        elif args.command == "verify":
             result = verification_result(verify_fixture(args.manifest, args.source_root))
         else:
             result = stage_fixture(
@@ -2316,7 +2783,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.source_root,
                 args.classic_root,
                 args.semantic_root,
+                retention_out=retention_out,
             )
+        _emit_json(result, sys.stdout)
+    except KeyboardInterrupt as error:
+        envelope: dict[str, object] = {
+            "error": {
+                "code": "fixture.interrupted",
+                "message": "fixture operation was interrupted",
+            },
+            "status": "error",
+        }
+        retention_notice = _retention_notice_after_output_failure(
+            error,
+            result,
+            retention_out,
+        )
+        if retention_notice is not None:
+            envelope["retention_notice"] = retention_notice
+        _emit_json(envelope, sys.stderr)
+        return EXIT_INTERRUPTED
     except FixtureError as error:
         _emit_json(
             {"error": {"code": error.code, "message": error.message}, "status": "error"},
@@ -2324,19 +2810,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return error.exit_code
     except Exception as error:
-        exit_code = EXIT_VERIFICATION if args.command == "verify" else EXIT_STAGING
-        _emit_json(
-            {
-                "error": {
-                    "code": "fixture.unexpected_error",
-                    "message": f"unexpected {type(error).__name__}",
-                },
-                "status": "error",
+        exit_code = EXIT_STAGING if args.command == "stage" else EXIT_VERIFICATION
+        envelope = {
+            "error": {
+                "code": "fixture.unexpected_error",
+                "message": f"unexpected {type(error).__name__}",
             },
-            sys.stderr,
+            "status": "error",
+        }
+        retention_notice = _retention_notice_after_output_failure(
+            error,
+            result,
+            retention_out,
         )
+        if retention_notice is not None:
+            envelope["retention_notice"] = retention_notice
+        _emit_json(envelope, sys.stderr)
         return exit_code
-    _emit_json(result)
     return 0
 
 

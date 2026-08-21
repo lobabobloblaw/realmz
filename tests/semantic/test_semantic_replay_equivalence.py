@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import hashlib
 import importlib.util
 import io
@@ -27,6 +28,9 @@ REQUEST_SCHEMA_PATH = Path(__file__).with_name(
 )
 ENVELOPE_SCHEMA_PATH = Path(__file__).with_name(
     "semantic-replay-equivalence-envelope.schema.json"
+)
+PROFILE_SCHEMA_PATH = Path(__file__).with_name(
+    "semantic-replay-equivalence-profile.schema.json"
 )
 
 SPEC = importlib.util.spec_from_file_location(
@@ -200,6 +204,7 @@ class EquivalenceGateTestCase(unittest.TestCase):
             "schema_version": 1,
             "manifest": str(self.manifest),
             "source_root": str(self.source),
+            "fixture_manifest_sha256": _sha256(self.manifest.read_bytes()),
             "fixture_tree_sha256": self.manifest_value["tree_sha256"],
             "executable": str(self.executable),
             "output_slot": "B",
@@ -207,7 +212,7 @@ class EquivalenceGateTestCase(unittest.TestCase):
                 {
                     "ordinal": 0,
                     "kind": "move_party",
-                    "arguments": {"direction": "north"},
+                    "arguments": {"command": "north"},
                 }
             ],
             "timeout_seconds": 2,
@@ -294,13 +299,16 @@ class CompletedGateTests(EquivalenceGateTestCase):
             )
 
         fixture = envelope["fixture_evidence"]
+        self.assertEqual(
+            fixture["manifest_sha256"],
+            self.request["fixture_manifest_sha256"],
+        )
         self.assertEqual(fixture["tree_sha256"], self.request["fixture_tree_sha256"])
         self.assertEqual(fixture["slot"], "A")
         self.assertEqual(fixture["file_count"], len(self.files))
         self.assertEqual(
             fixture["total_file_bytes"], sum(map(len, self.files.values()))
         )
-        self.assertEqual(len(fixture["manifest_sha256"]), 64)
         self.assertIs(fixture["independent_copies"], True)
         for role in ("source", "classic_input", "semantic_input"):
             self.assertEqual(
@@ -458,6 +466,21 @@ class FailClosedGateTests(EquivalenceGateTestCase):
         self.assertTrue(Path(retention["candidate_path"]).is_dir())
 
     def test_fixture_digest_and_slot_are_checked_before_workspace_creation(self) -> None:
+        self.request["fixture_manifest_sha256"] = "0" * 64
+        self.write_request()
+        with mock.patch.object(
+            gate,
+            "_make_gate_workspace",
+            side_effect=AssertionError("workspace must not be created"),
+        ) as make_workspace:
+            error = self.assert_gate_error("fixture.digest_mismatch")
+        make_workspace.assert_not_called()
+        self.assertIn("fixture_manifest_sha256", error.message)
+        self.assertIsNone(error.fixture_workspace_retention)
+
+        self.request["fixture_manifest_sha256"] = _sha256(
+            self.manifest.read_bytes()
+        )
         self.request["fixture_tree_sha256"] = "0" * 64
         self.write_request()
         with mock.patch.object(
@@ -505,11 +528,13 @@ class FailClosedGateTests(EquivalenceGateTestCase):
         )
         stage_fixture = gate.fixture_tool.stage_fixture
 
-        def replace_before_stage(*arguments: object) -> dict[str, object]:
+        def replace_before_stage(
+            *arguments: object, **keywords: object
+        ) -> dict[str, object]:
             for relative, contents in replacement_files.items():
                 (self.source / relative).write_bytes(contents)
             self.write_json(self.manifest, replacement_manifest)
-            return stage_fixture(*arguments)
+            return stage_fixture(*arguments, **keywords)
 
         with mock.patch.object(
             gate.fixture_tool,
@@ -520,11 +545,45 @@ class FailClosedGateTests(EquivalenceGateTestCase):
             "run_request",
             side_effect=AssertionError("children must not run for a changed fixture"),
         ) as run_children:
-            error = self.assert_gate_error("fixture.attestation_failed")
+            error = self.assert_gate_error("fixture.digest_mismatch")
         run_children.assert_not_called()
-        self.assertIn("before child execution", error.message)
+        self.assertIn("expected_manifest_sha256", error.message)
         self.assertIsNotNone(error.fixture_workspace_retention)
         self.assertIsNone(error.runner_workspace_retention)
+        workspace = Path(error.fixture_workspace_retention["candidate_path"])
+        self.assertFalse((workspace / "classic-user" / "Save" / "Game A").exists())
+        self.assertFalse((workspace / "semantic-user" / "Save" / "Game A").exists())
+
+    def test_reviewed_manifest_bytes_are_bound_before_either_child_can_run(self) -> None:
+        changed_manifest = copy.deepcopy(self.manifest_value)
+        changed_manifest["authorization_basis"] = (
+            "A different declaration over the same exact fixture bytes."
+        )
+        stage_fixture = gate.fixture_tool.stage_fixture
+
+        def replace_manifest_before_stage(
+            *arguments: object, **keywords: object
+        ) -> dict[str, object]:
+            self.write_json(self.manifest, changed_manifest)
+            return stage_fixture(*arguments, **keywords)
+
+        with mock.patch.object(
+            gate.fixture_tool,
+            "stage_fixture",
+            side_effect=replace_manifest_before_stage,
+        ), mock.patch.object(
+            gate.replay_runner,
+            "run_request",
+            side_effect=AssertionError("children must not run for changed provenance"),
+        ) as run_children:
+            error = self.assert_gate_error("fixture.digest_mismatch")
+        run_children.assert_not_called()
+        self.assertIn("expected_manifest_sha256", error.message)
+        self.assertIsNotNone(error.fixture_workspace_retention)
+        self.assertIsNone(error.runner_workspace_retention)
+        workspace = Path(error.fixture_workspace_retention["candidate_path"])
+        self.assertFalse((workspace / "classic-user" / "Save" / "Game A").exists())
+        self.assertFalse((workspace / "semantic-user" / "Save" / "Game A").exists())
 
     def test_input_mutation_prevents_an_equivalence_verdict(self) -> None:
         for flag in ("mutate_source", "mutate_input", "mutate_semantic_input"):
@@ -660,6 +719,151 @@ class FailClosedGateTests(EquivalenceGateTestCase):
         self.assertIn("fixture_workspace_retention", envelope)
         self.assertIn("runner_workspace_retention", envelope)
 
+    def test_interrupt_during_staging_exits_130_without_running_children(self) -> None:
+        environment = {
+            "REALMZ_EQ_FAKE_FLAGS": "",
+            "REALMZ_EQ_FAKE_MANIFEST": str(self.manifest),
+            "REALMZ_EQ_FAKE_SOURCE": str(self.source),
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, environment, clear=False), mock.patch.object(
+            gate.fixture_tool,
+            "stage_fixture",
+            side_effect=KeyboardInterrupt,
+        ), mock.patch.object(
+            gate.replay_runner,
+            "run_request",
+            side_effect=AssertionError("children must not run after staging interrupt"),
+        ) as run_children, mock.patch.object(
+            sys, "stdout", stdout
+        ), mock.patch.object(sys, "stderr", stderr):
+            exit_code = gate.main(["--request", str(self.request_path)])
+
+        self.assertEqual(exit_code, gate.EXIT_INTERRUPTED)
+        self.assertEqual(stdout.getvalue(), "")
+        envelope = json.loads(stderr.getvalue())
+        self.track_retention(envelope)
+        self.assertEqual(envelope["status"], "error")
+        self.assertEqual(envelope["semantic_equivalence"], "not_evaluated")
+        self.assertEqual(envelope["error"]["code"], "gate.interrupted")
+        self.assertIn("fixture_workspace_retention", envelope)
+        self.assertNotIn("runner_workspace_retention", envelope)
+        workspace = Path(
+            envelope["fixture_workspace_retention"]["candidate_path"]
+        )
+        self.assertFalse((workspace / "classic-user" / "Save" / "Game A").exists())
+        self.assertFalse((workspace / "semantic-user" / "Save" / "Game A").exists())
+        run_children.assert_not_called()
+
+    def test_completed_gate_emission_interrupt_preserves_both_retentions(self) -> None:
+        environment = {
+            "REALMZ_EQ_FAKE_FLAGS": "",
+            "REALMZ_EQ_FAKE_MANIFEST": str(self.manifest),
+            "REALMZ_EQ_FAKE_SOURCE": str(self.source),
+        }
+        real_emit = gate._emit_json
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        def interrupt_stdout(value: object, stream: object) -> None:
+            if stream is sys.stdout:
+                self.assertEqual(value["status"], "completed")
+                stream.write("partial-completed-gate")
+                raise KeyboardInterrupt
+            real_emit(value, stream)
+
+        with mock.patch.dict(os.environ, environment, clear=False), mock.patch.object(
+            gate,
+            "_emit_json",
+            side_effect=interrupt_stdout,
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = gate.main(["--request", str(self.request_path)])
+
+        self.assertEqual(exit_code, gate.EXIT_INTERRUPTED)
+        self.assertEqual(stdout.getvalue(), "partial-completed-gate")
+        envelope = json.loads(stderr.getvalue())
+        self.track_retention(envelope)
+        self.assertEqual(envelope["error"]["code"], "gate.interrupted")
+        self.assertIn("fixture_workspace_retention", envelope)
+        self.assertIn("runner_workspace_retention", envelope)
+        self.assertTrue(
+            Path(envelope["fixture_workspace_retention"]["candidate_path"]).is_dir()
+        )
+        self.assertTrue(
+            Path(envelope["runner_workspace_retention"]["candidate_path"]).is_dir()
+        )
+
+    def test_runner_return_interrupt_preserves_both_retentions(self) -> None:
+        environment = {
+            "REALMZ_EQ_FAKE_FLAGS": "",
+            "REALMZ_EQ_FAKE_MANIFEST": str(self.manifest),
+            "REALMZ_EQ_FAKE_SOURCE": str(self.source),
+        }
+        run_request = gate.replay_runner.run_request
+
+        def run_then_interrupt(
+            *arguments: object,
+            **keywords: object,
+        ) -> dict[str, object]:
+            run_request(*arguments, **keywords)
+            raise KeyboardInterrupt
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, environment, clear=False), mock.patch.object(
+            gate.replay_runner,
+            "run_request",
+            side_effect=run_then_interrupt,
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = gate.main(["--request", str(self.request_path)])
+
+        self.assertEqual(exit_code, gate.EXIT_INTERRUPTED)
+        self.assertEqual(stdout.getvalue(), "")
+        envelope = json.loads(stderr.getvalue())
+        self.track_retention(envelope)
+        self.assertEqual(envelope["error"]["code"], "gate.interrupted")
+        self.assertIn("fixture_workspace_retention", envelope)
+        self.assertIn("runner_workspace_retention", envelope)
+
+    def test_completed_gate_return_interrupt_preserves_both_retentions(self) -> None:
+        environment = {
+            "REALMZ_EQ_FAKE_FLAGS": "",
+            "REALMZ_EQ_FAKE_MANIFEST": str(self.manifest),
+            "REALMZ_EQ_FAKE_SOURCE": str(self.source),
+        }
+        run_request_file = gate.run_request_file
+
+        def run_then_interrupt(
+            *arguments: object,
+            **keywords: object,
+        ) -> dict[str, object]:
+            run_request_file(*arguments, **keywords)
+            raise KeyboardInterrupt
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, environment, clear=False), mock.patch.object(
+            gate,
+            "run_request_file",
+            side_effect=run_then_interrupt,
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = gate.main(["--request", str(self.request_path)])
+
+        self.assertEqual(exit_code, gate.EXIT_INTERRUPTED)
+        self.assertEqual(stdout.getvalue(), "")
+        envelope = json.loads(stderr.getvalue())
+        self.track_retention(envelope)
+        self.assertEqual(envelope["error"]["code"], "gate.interrupted")
+        self.assertIn("fixture_workspace_retention", envelope)
+        self.assertIn("runner_workspace_retention", envelope)
+
     def test_retained_fixture_workspace_is_not_automatically_removed(self) -> None:
         envelope = self.run_gate()
         retention = envelope["fixture_workspace_retention"]
@@ -675,6 +879,91 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
             gate.load_request(self.request_path)
         self.assertEqual(raised.exception.code, "request.invalid")
         self.assertIn(expected, raised.exception.message)
+
+    def test_profile_inspection_is_validated_private_and_non_executing(self) -> None:
+        with mock.patch.object(
+            gate,
+            "_make_gate_workspace",
+            side_effect=AssertionError("profile inspection must not stage"),
+        ) as make_workspace, mock.patch.object(
+            gate.replay_runner,
+            "run_request",
+            side_effect=AssertionError("profile inspection must not launch children"),
+        ) as run_children:
+            profile = gate.inspect_profile_file(self.request_path)
+        make_workspace.assert_not_called()
+        run_children.assert_not_called()
+
+        self.assertEqual(set(profile), gate.PROFILE_INSPECTION_FIELDS)
+        self.assertEqual(profile["schema_version"], 1)
+        self.assertEqual(profile["status"], "profile_inspected")
+        self.assertEqual(
+            profile["fixture_manifest_sha256"],
+            self.request["fixture_manifest_sha256"],
+        )
+        self.assertEqual(
+            profile["fixture_tree_sha256"],
+            self.request["fixture_tree_sha256"],
+        )
+        parsed = gate.load_request(self.request_path)
+        self.assertEqual(profile["actions_sha256"], gate._actions_sha256(parsed.actions))
+        self.assertEqual(profile["action_count"], 1)
+        self.assertEqual(profile["input_slot"], "A")
+        self.assertEqual(profile["output_slot"], "B")
+        self.assertEqual(profile["settlement_barrier"], gate.SETTLEMENT_BARRIER)
+        serialized = json.dumps(profile, sort_keys=True)
+        self.assertNotIn(str(self.manifest), serialized)
+        self.assertNotIn(str(self.source), serialized)
+        self.assertNotIn(str(self.executable), serialized)
+        self.assertNotIn(self.authorization_basis, serialized)
+
+    def test_profile_inspection_cli_emits_stdout_and_no_verdict(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ), mock.patch.object(
+            gate,
+            "_make_gate_workspace",
+            side_effect=AssertionError("profile inspection must not stage"),
+        ):
+            exit_code = gate.main(
+                ["--request", str(self.request_path), "--inspect-profile"]
+            )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        profile = json.loads(stdout.getvalue())
+        self.assertEqual(profile["status"], "profile_inspected")
+        self.assertNotIn("semantic_equivalence", profile)
+
+    def test_interrupt_during_profile_emission_returns_json_exit_130(self) -> None:
+        real_emit = gate._emit_json
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        def interrupt_stdout(value: object, stream: object) -> None:
+            if stream is sys.stdout:
+                stream.write("partial-profile")
+                raise KeyboardInterrupt
+            real_emit(value, stream)
+
+        with mock.patch.object(
+            gate,
+            "_emit_json",
+            side_effect=interrupt_stdout,
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = gate.main(
+                ["--request", str(self.request_path), "--inspect-profile"]
+            )
+
+        self.assertEqual(exit_code, gate.EXIT_INTERRUPTED)
+        self.assertEqual(stdout.getvalue(), "partial-profile")
+        envelope = json.loads(stderr.getvalue())
+        self.assertEqual(envelope["status"], "error")
+        self.assertEqual(envelope["semantic_equivalence"], "not_evaluated")
+        self.assertEqual(envelope["error"]["code"], "gate.interrupted")
 
     def test_request_is_strict_and_validated_before_fixture_mutation(self) -> None:
         unknown = copy.deepcopy(self.request)
@@ -706,6 +995,7 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
 
     def test_tree_digest_output_slot_actions_timeout_and_rng_are_strict(self) -> None:
         cases = (
+            ("fixture_manifest_sha256", "A" * 64, "lowercase SHA-256"),
             ("fixture_tree_sha256", "A" * 64, "lowercase SHA-256"),
             ("output_slot", "K", "uppercase Classic slot"),
             ("timeout_seconds", True, "finite number"),
@@ -723,6 +1013,161 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         self.write_request(invalid_action)
         self.assert_request_error("zero-based array index")
 
+    def test_native_v1_action_rejections_precede_fixture_and_workspace_work(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "unsupported kind",
+                {
+                    "ordinal": 0,
+                    "kind": "probe",
+                    "arguments": {"command": "north"},
+                },
+                ".kind must be move_party",
+            ),
+            (
+                "missing command",
+                {"ordinal": 0, "kind": "move_party", "arguments": {}},
+                "must contain exactly the command field",
+            ),
+            (
+                "wrong direction argument name",
+                {
+                    "ordinal": 0,
+                    "kind": "move_party",
+                    "arguments": {"direction": "north"},
+                },
+                "must contain exactly the command field",
+            ),
+            (
+                "extra argument",
+                {
+                    "ordinal": 0,
+                    "kind": "move_party",
+                    "arguments": {"command": "north", "repeat": True},
+                },
+                "must contain exactly the command field",
+            ),
+            (
+                "non-string command",
+                {
+                    "ordinal": 0,
+                    "kind": "move_party",
+                    "arguments": {"command": 1},
+                },
+                ".command must be a string",
+            ),
+            (
+                "unsupported command",
+                {
+                    "ordinal": 0,
+                    "kind": "move_party",
+                    "arguments": {"command": "up"},
+                },
+                "not a supported native v1 movement command",
+            ),
+            (
+                "noncontiguous ordinal",
+                {
+                    "ordinal": 1,
+                    "kind": "move_party",
+                    "arguments": {"command": "north"},
+                },
+                "zero-based array index",
+            ),
+        )
+        for name, action, expected in cases:
+            with self.subTest(name=name):
+                value = copy.deepcopy(self.request)
+                value["actions"] = [action]
+                self.write_request(value)
+                with mock.patch.object(
+                    gate.fixture_tool,
+                    "verify_fixture",
+                    side_effect=AssertionError("fixture must not be inspected"),
+                ) as verify_fixture, mock.patch.object(
+                    gate,
+                    "_make_gate_workspace",
+                    side_effect=AssertionError("workspace must not be created"),
+                ) as make_workspace:
+                    with self.assertRaises(gate.EquivalenceGateError) as raised:
+                        gate.run_request_file(self.request_path)
+                self.assertEqual(raised.exception.code, "request.invalid")
+                self.assertIn(expected, raised.exception.message)
+                verify_fixture.assert_not_called()
+                make_workspace.assert_not_called()
+
+    def test_direct_request_value_cannot_bypass_native_v1_action_check(self) -> None:
+        self.write_request()
+        parsed = gate.load_request(self.request_path)
+        invalid = replace(
+            parsed,
+            actions=(
+                gate.replay_runner.Action(
+                    ordinal=0,
+                    kind="probe",
+                    arguments={"command": "north"},
+                ),
+            ),
+        )
+        with mock.patch.object(
+            gate.fixture_tool,
+            "verify_fixture",
+            side_effect=AssertionError("fixture must not be inspected"),
+        ) as verify_fixture, mock.patch.object(
+            gate,
+            "_make_gate_workspace",
+            side_effect=AssertionError("workspace must not be created"),
+        ) as make_workspace:
+            with self.assertRaises(gate.EquivalenceGateError) as raised:
+                gate.run_request(invalid)
+        self.assertEqual(raised.exception.code, "request.invalid")
+        self.assertIn(".kind must be move_party", raised.exception.message)
+        verify_fixture.assert_not_called()
+        make_workspace.assert_not_called()
+
+    def test_direct_request_value_revalidates_every_independent_field(self) -> None:
+        parsed = gate.load_request(self.request_path)
+        cases = (
+            (replace(parsed, manifest=Path("relative.json")), "manifest must be"),
+            (replace(parsed, source_root=str(self.source)), "source_root must be"),
+            (
+                replace(parsed, fixture_manifest_sha256="A" * 64),
+                "fixture_manifest_sha256",
+            ),
+            (
+                replace(parsed, fixture_tree_sha256="A" * 64),
+                "fixture_tree_sha256",
+            ),
+            (
+                replace(parsed, executable=self.root / "missing-executable"),
+                "executable does not exist",
+            ),
+            (replace(parsed, output_slot="K"), "output_slot must be"),
+            (replace(parsed, actions=list(parsed.actions)), "normalized tuple"),
+            (replace(parsed, timeout_seconds=True), "finite number"),
+            (replace(parsed, rng_seed="0" * 15), "rng_seed"),
+            (replace(parsed, rng_stream="0" * 15), "rng_stream"),
+        )
+        for invalid, expected in cases:
+            with self.subTest(expected=expected):
+                with mock.patch.object(
+                    gate.fixture_tool,
+                    "verify_fixture",
+                    side_effect=AssertionError("fixture must not be inspected"),
+                ) as verify_fixture, mock.patch.object(
+                    gate,
+                    "_make_gate_workspace",
+                    side_effect=AssertionError("workspace must not be created"),
+                ) as make_workspace:
+                    with self.assertRaises(gate.EquivalenceGateError) as raised:
+                        gate.inspect_profile(invalid)
+                self.assertEqual(raised.exception.code, "request.invalid")
+                self.assertIn(expected, raised.exception.message)
+                verify_fixture.assert_not_called()
+                make_workspace.assert_not_called()
+
     def test_zero_and_maximum_action_profiles_parse_without_staging(self) -> None:
         empty = copy.deepcopy(self.request)
         empty["actions"] = []
@@ -731,7 +1176,15 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
 
         maximum = copy.deepcopy(self.request)
         maximum["actions"] = [
-            {"ordinal": index, "kind": "probe", "arguments": {}}
+            {
+                "ordinal": index,
+                "kind": gate.NATIVE_V1_ACTION_KIND,
+                "arguments": {
+                    gate.NATIVE_V1_ACTION_ARGUMENT: gate.NATIVE_V1_MOVEMENT_COMMANDS[
+                        index % len(gate.NATIVE_V1_MOVEMENT_COMMANDS)
+                    ]
+                },
+            }
             for index in range(gate.replay_runner.MAX_ACTIONS)
         ]
         self.write_request(maximum)
@@ -742,7 +1195,7 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         self.write_request()
         actions = gate.load_request(self.request_path).actions
         canonical = (
-            b'[{"arguments":{"direction":"north"},"kind":"move_party","ordinal":0}]'
+            b'[{"arguments":{"command":"north"},"kind":"move_party","ordinal":0}]'
         )
         expected = hashlib.sha256(
             b"realmz-semantic-replay-actions-v1\n" + canonical
@@ -758,16 +1211,82 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         self.assertIn("realmz-semantic-replay-actions-v1", description)
         self.assertIn("RFC 8785", description)
 
+    def test_request_schema_matches_native_v1_runtime_action_contract(self) -> None:
+        request_schema = json.loads(REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+        actions_schema = request_schema["properties"]["actions"]
+        self.assertEqual(actions_schema["maxItems"], gate.replay_runner.MAX_ACTIONS)
+        action_schema = request_schema["$defs"]["action"]
+        self.assertIs(action_schema["additionalProperties"], False)
+        self.assertEqual(
+            set(action_schema["required"]), gate.replay_runner.ACTION_FIELDS
+        )
+        self.assertEqual(
+            set(action_schema["properties"]), gate.replay_runner.ACTION_FIELDS
+        )
+
+        properties = action_schema["properties"]
+        self.assertEqual(
+            properties["kind"], {"const": gate.NATIVE_V1_ACTION_KIND}
+        )
+        self.assertEqual(properties["ordinal"]["minimum"], 0)
+        self.assertEqual(properties["ordinal"]["type"], "integer")
+        self.assertEqual(
+            properties["ordinal"]["maximum"], gate.replay_runner.MAX_ACTIONS - 1
+        )
+
+        arguments_schema = properties["arguments"]
+        self.assertIs(arguments_schema["additionalProperties"], False)
+        self.assertEqual(
+            arguments_schema["required"], [gate.NATIVE_V1_ACTION_ARGUMENT]
+        )
+        self.assertEqual(
+            set(arguments_schema["properties"]), {gate.NATIVE_V1_ACTION_ARGUMENT}
+        )
+        command_schema = arguments_schema["properties"][
+            gate.NATIVE_V1_ACTION_ARGUMENT
+        ]
+        self.assertEqual(command_schema["type"], "string")
+        self.assertEqual(
+            tuple(command_schema["enum"]), gate.NATIVE_V1_MOVEMENT_COMMANDS
+        )
+
+        value = copy.deepcopy(self.request)
+        value["actions"] = [
+            {
+                "ordinal": index,
+                "kind": gate.NATIVE_V1_ACTION_KIND,
+                "arguments": {gate.NATIVE_V1_ACTION_ARGUMENT: command},
+            }
+            for index, command in enumerate(gate.NATIVE_V1_MOVEMENT_COMMANDS)
+        ]
+        self.write_request(value)
+        parsed = gate.load_request(self.request_path)
+        self.assertEqual(
+            tuple(
+                action.arguments[gate.NATIVE_V1_ACTION_ARGUMENT]
+                for action in parsed.actions
+            ),
+            gate.NATIVE_V1_MOVEMENT_COMMANDS,
+        )
+
     def test_new_schemas_are_v1_closed_and_keep_runner_v1_nested(self) -> None:
         request_schema = json.loads(REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
         envelope_schema = json.loads(ENVELOPE_SCHEMA_PATH.read_text(encoding="utf-8"))
-        for schema in (request_schema, envelope_schema):
+        profile_schema = json.loads(PROFILE_SCHEMA_PATH.read_text(encoding="utf-8"))
+        for schema in (request_schema, envelope_schema, profile_schema):
             self.assertEqual(
                 schema["$schema"], "https://json-schema.org/draft/2020-12/schema"
             )
             self.assertIs(schema["additionalProperties"], False)
             self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
         self.assertEqual(set(request_schema["required"]), gate.REQUEST_FIELDS)
+        self.assertEqual(
+            set(profile_schema["required"]), gate.PROFILE_INSPECTION_FIELDS
+        )
+        self.assertEqual(
+            profile_schema["properties"]["status"]["const"],
+            "profile_inspected",
+        )
         completed_required = set(envelope_schema["required"]) | set(
             envelope_schema["oneOf"][0]["required"]
         )

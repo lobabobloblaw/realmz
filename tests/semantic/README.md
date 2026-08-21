@@ -238,14 +238,29 @@ milestone; it is no longer waiting on another handler in that slice.
 
 Step 1 plumbing for that milestone is available in
 `scripts/semantic_replay_fixture.py`, with its versioned contract in
-`replay-fixture-manifest.schema.json`. A caller provides a manifest and source
-root explicitly; there is no default save location. The manifest records a
-source class, authorization basis, redistribution decision, and Classic slot;
-its domain-separated tree digest binds the canonical path/size/SHA-256 census,
-whose aggregate declared size is capped at 1 GiB. Private or user-owned
-fixture bytes remain outside the repository.
+`replay-fixture-manifest.schema.json`. The separate closed
+`replay-fixture-census.schema.json` contract covers a mechanical, explicitly
+unreviewed inventory. A caller always provides the source root; there is no
+default save location. Capture its canonical file evidence without explicit
+content writes or invented provenance. Reads may update access-time metadata,
+so use a backed-up copy or snapshot when metadata preservation matters:
 
-Verify a declared fixture without modifying it:
+```sh
+python3 scripts/semantic_replay_fixture.py census \
+  --source-root /path/to/candidate-fixture \
+  --slot A
+```
+
+The census emits paths, sizes, SHA-256 values, the domain-separated tree
+digest, and bounded counts. It deliberately omits source class, authorization,
+redistribution, source paths, and equivalence fields. A human-reviewed manifest
+combines that mechanical evidence with an explicit source class, authorization
+basis, redistribution decision, and Classic slot. Aggregate fixture size is
+capped at 1 GiB. Private or user-owned fixture bytes and review artifacts remain
+outside the repository.
+
+Verify a declared fixture without copying or explicitly writing its contents;
+verification reads may likewise update access-time metadata:
 
 ```sh
 python3 scripts/semantic_replay_fixture.py verify \
@@ -272,8 +287,10 @@ The example manifest declares slot `A`. Its two `Save` parents are explicit
 caller-owned trust boundaries, and the new `Game A` paths become the isolated
 input slots. The process runner receives the two user-root paths.
 
-The verifier and stager are descriptor-anchored and fail closed on symlinks,
-special files, mutations, or untrusted ancestor replacement races. The stager
+The census, verifier, and stager are descriptor-anchored and fail closed on
+symlinks, special files, mutations, or untrusted ancestor replacement races.
+Verification and staging hold the exact manifest descriptor throughout their
+source work and emit its SHA-256 for later pinning. The stager
 refuses existing, aliased, or nested roots, verifies independent byte-exact
 copies, and rechecks the source after staging. Destination parents are an
 explicit trust boundary: they must be owned by the current user and must not
@@ -361,24 +378,40 @@ After the final checkpoint, the child synchronously finalizes the state trace,
 rechecks that the output slot is still fresh, invokes the explicit legacy save,
 verifies the ten-file output tree, and exclusively publishes the strict v1
 result before terminating. Linked sanitizer tests exercise both native action
-routes against controlled engine globals; dependency-free tests cover live
-state capture, controller ordering, completion ordering, and result contents.
+routes against controlled engine globals for all eight outdoor compass commands
+and all four first-person dungeon commands. Those are delivery/settlement
+mapping tests, not Tutorial traversal evidence. Dependency-free tests cover
+live state capture, controller ordering, completion ordering, and result
+contents.
 
 The opt-in live comparison layer is
 `scripts/semantic_replay_equivalence.py`. Its separate v1 request and envelope
 schemas are `semantic-replay-equivalence-request.schema.json` and
-`semantic-replay-equivalence-envelope.schema.json`. A request names the
-physical executable, manifest and source paths, the expected fixture-tree
-digest, a fresh output slot, normalized actions, timeout, and deterministic RNG
-seed and stream. The manifest supplies the input slot. Invoke it with:
+`semantic-replay-equivalence-envelope.schema.json`; the non-executing inspection
+record uses `semantic-replay-equivalence-profile.schema.json`. A request names
+the physical executable, manifest and source paths, the expected exact manifest
+and fixture-tree digests, a fresh output slot, native-v1 movement actions,
+timeout, and deterministic RNG seed and stream. The manifest supplies the input
+slot. Inspect the bound profile without staging or child launch:
+
+```sh
+python3 scripts/semantic_replay_equivalence.py \
+  --request /path/to/semantic-replay-equivalence-request.json \
+  --inspect-profile
+```
+
+`profile_inspected` records only manifest/tree/action digests, counts, slots,
+settlement barrier, and RNG inputs. It is neither an equivalence verdict nor a
+coverage claim. Run the reviewed profile with:
 
 ```sh
 python3 scripts/semantic_replay_equivalence.py \
   --request /path/to/semantic-replay-equivalence-request.json
 ```
 
-The gate validates every independent execution field and verifies the expected
-fixture digest before it creates private copies. It allocates a mode-`0700`
+The gate validates every independent execution field and verifies both expected
+fixture digests before it creates private copies. Unsupported native action
+plans fail at this boundary rather than after private staging. It allocates a mode-`0700`
 workspace, stages independent Classic and semantic inputs, then acquires one
 descriptor-held lease over the exact manifest, source, and both input trees.
 That lease remains open across both child processes. Finalization rechecks the
@@ -451,7 +484,7 @@ runner result and owns the only evaluated verdict.
 The remaining milestone work is to:
 
 1. Select and review a private Tutorial fixture manifest, then pin its
-   `tree_sha256` in an explicit equivalence request.
+   exact manifest SHA-256 and `tree_sha256` in an explicit equivalence request.
 2. Review and pin the movement-only Tutorial action profile that exercises the
    intended exploration and dungeon coverage.
 3. Run the real built Realmz executable through the equivalence gate and archive
@@ -460,5 +493,8 @@ The remaining milestone work is to:
 4. Expand the native action vocabulary and repeat with broader Tutorial and
    City profiles before treating replay equivalence as a release-wide claim.
 
-That real-fixture invocation, rather than the synthetic gate tests, is the
-release gate for actual engine and save compatibility.
+That real-fixture invocation, rather than the synthetic gate tests, is a
+required gate for the exact profile's real-engine and save-equivalence
+evidence. Broader Tutorial and City profiles remain separate release work.
+The private operational checklist is in
+[`docs/SEMANTIC_REPLAY_RUNBOOK.md`](../../docs/SEMANTIC_REPLAY_RUNBOOK.md).

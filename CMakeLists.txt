@@ -795,10 +795,16 @@ if(REALMZ_BUILD_CORE_TESTS)
     target_link_libraries(SemanticReplayRouteIntegrationTest PRIVATE
         realmz_event_test_legacy_globals)
     realmz_configure_core_target(SemanticReplayRouteIntegrationTest)
-    add_test(NAME SemanticReplayClassicRouteIntegrationTest
-        COMMAND SemanticReplayRouteIntegrationTest classic)
-    add_test(NAME SemanticReplaySemanticRouteIntegrationTest
-        COMMAND SemanticReplayRouteIntegrationTest semantic)
+    foreach(REPLAY_ROUTE IN ITEMS Classic Semantic)
+        string(TOLOWER "${REPLAY_ROUTE}" REPLAY_ROUTE_ARGUMENT)
+        foreach(REPLAY_SURFACE IN ITEMS Outdoor Dungeon)
+            string(TOLOWER "${REPLAY_SURFACE}" REPLAY_SURFACE_ARGUMENT)
+            add_test(
+                NAME SemanticReplay${REPLAY_ROUTE}${REPLAY_SURFACE}RouteIntegrationTest
+                COMMAND SemanticReplayRouteIntegrationTest
+                    "${REPLAY_ROUTE_ARGUMENT}" "${REPLAY_SURFACE_ARGUMENT}")
+        endforeach()
+    endforeach()
 endif()
 
 add_executable(Realmz
