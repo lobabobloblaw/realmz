@@ -86,7 +86,7 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes fifteen bounded semantic controls: typed `GuardCombatantAction`,
+Combat exposes sixteen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`,
@@ -99,6 +99,9 @@ A separate actor-only `OpenCombatTargetingAction` identifies no target or cell;
 Classic resolves the equipped source and target mode after handoff.
 An actor-only `EscapeCombatAction` requests the preserved escape attempt without
 encoding a range result, warning, confirmation choice, or flee outcome.
+An actor-only `OpenCombatScrollCaseAction` opens Classic's combat scroll chooser
+without identifying a case slot, scroll, spell, power, recipient, cell, or
+target.
 The focus-cycle command also carries Previous or Next.
 `OpenCombatItemsAction` independently carries the
 acting combatant and selected party member so neither identity can silently
@@ -133,6 +136,10 @@ Combat Escape is exposed through the same fresh active-party-actor gate and
 becomes the exact Classic `e` message `0x00000E65`. Presentation deliberately
 does not call or mirror Classic's mutating `getrange` helper or its condition
 and warning rules.
+Use Scroll is late-gated by a read-only mirror of Classic's visible equipped
+scroll-case control: the queued party actor must remain current, outside a spell
+flow, alive, and equipped in armor slot 13. It becomes the exact Classic `l`
+message `0x0000256C`; an empty equipped case still opens Classic's chooser.
 Validation fails closed, so stale or newly ineligible actions become inert.
 The original Classic guard/finish/delay mutations and turn
 advance remain authoritative, as do Center's existing non-turn-ending camera
@@ -165,6 +172,12 @@ position removal, `inbattle` and prestige mutation, light update,
 last-loyal-member coward/kill handling, and `getup` turn or post-combat flow.
 The semantic route chooses no confirmation response and claims no flee or turn
 equivalence.
+Classic remains authoritative for Use Scroll's `getscroll` modal, character and
+slot browsing, selection warnings, spell/power load, immediate accepted-scroll
+consumption, combat-spell validation, target modes and raw input, RNG, spell
+effects, movement/attack costs, and turn handling. A later target abort costs
+three movement and does not restore the scroll or award a spell-point refund;
+the semantic route claims no scroll-use equivalence.
 All other combat commands remain in the interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
@@ -269,7 +282,7 @@ Automated checks do not replace these release decisions:
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
   Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat
-  Target, and Combat Escape
+  Target, Combat Escape, and Use Scroll
   controls at compact and wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
@@ -304,6 +317,11 @@ Automated checks do not replace these release decisions:
   verify range 9 versus 10, no enemies, warning precedence, cancel/Stay versus
   Embrace, individual versus last-loyal escape, a fresh confirmation input,
   and Classic-owned field/queue/position/prestige/coward/turn effects;
+  verify Use Scroll is inert after the actor, queue slot, spell-flow state,
+  stamina, or equipped case changes and otherwise opens Classic's chooser;
+  verify empty cases, other-character browsing, cancel, accepted-scroll
+  consumption, combat-spell rejection, raw targeting and abort, movement/attack
+  costs, RNG/effects, and turn handling remain entirely in the Classic frame;
   verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;

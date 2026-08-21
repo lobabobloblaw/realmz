@@ -201,6 +201,7 @@ void test_combat_capture() {
   up = 0;
   lastshown = 0;
   c[0].armor[2] = 5;
+  c[0].armor[13] = 1;
   c[0].numitems = 1;
   c[0].items[0] = {.id = 77, .charge = 1};
   allweapons[5].itemid = 77;
@@ -236,6 +237,7 @@ void test_combat_capture() {
   CHECK(snapshot.combat->undo_available);
   CHECK(snapshot.combat->cast_spell_available);
   CHECK(snapshot.combat->target_available);
+  CHECK(snapshot.combat->use_scroll_available);
   CHECK(std::memcmp(&item, &item_before_capture, sizeof(item)) == 0);
   CHECK(snapshot.combat->acting_combatant == 0);
   CHECK(snapshot.combat->combatants.size() == 4);
@@ -252,6 +254,7 @@ void test_combat_capture() {
   CHECK(!snapshot.combat->undo_available);
   CHECK(snapshot.combat->cast_spell_available);
   CHECK(snapshot.combat->target_available);
+  CHECK(snapshot.combat->use_scroll_available);
 
   spellcasting = 1;
   snapshot = source.capture();
@@ -421,10 +424,95 @@ void test_combat_capture() {
 
   configure_valid_target();
 
+  const auto capture_use_scroll_available = [&] {
+    const character actor_before_capture = c[0];
+    const itemattr scratch_before_capture = item;
+    const std::array<char, 110> queue_before_capture = [] {
+      std::array<char, 110> copy{};
+      std::memcpy(copy.data(), q, sizeof(q));
+      return copy;
+    }();
+    const char selected_before_capture = charselectnew;
+    const short lastshown_before_capture = lastshown;
+    const short inspell_before_capture = inspell;
+    const char up_before_capture = up;
+    const auto captured = source.capture();
+    CHECK(captured.combat.has_value());
+    CHECK(std::memcmp(
+              &c[0], &actor_before_capture, sizeof(actor_before_capture)) ==
+        0);
+    CHECK(std::memcmp(
+              &item, &scratch_before_capture, sizeof(scratch_before_capture)) ==
+        0);
+    CHECK(std::memcmp(
+              q, queue_before_capture.data(), sizeof(q)) == 0);
+    CHECK(charselectnew == selected_before_capture);
+    CHECK(lastshown == lastshown_before_capture);
+    CHECK(inspell == inspell_before_capture);
+    CHECK(up == up_before_capture);
+    return captured.combat->use_scroll_available;
+  };
+
+  // The shell projects only the live case-opening gate. Scroll contents,
+  // Target visibility, animation, and spellcasting gates remain Classic-owned.
+  up = 0;
+  q[0] = 0;
+  charup = 0;
+  monsterturn = 0;
+  inspell = 0;
+  c[0].stamina = 18;
+  c[0].armor[13] = 1;
+  std::memset(c[0].scrollcase, 0, sizeof(c[0].scrollcase));
+  lastshown = -1;
+  CHECK(capture_use_scroll_available());
+  lastshown = 1;
+  CHECK(capture_use_scroll_available());
+  c[0].condition[COND_ANIMATED] = 1;
+  CHECK(capture_use_scroll_available());
+  c[0].condition[COND_CONFUSED] = 1;
+  c[0].condition[COND_SILENCED] = 1;
+  c[0].condition[COND_HELPLESS] = 1;
+  c[0].condition[COND_STUPID] = 1;
+  c[0].beenattacked = 1;
+  c[0].spellpoints = 0;
+  c[0].spellsofar = c[0].maxspellsattacks;
+  spellcasting = 1;
+  CHECK(capture_use_scroll_available());
+
+  spellcasting = 0;
+  c[0].condition[COND_ANIMATED] = 0;
+  c[0].condition[COND_CONFUSED] = 0;
+  c[0].condition[COND_SILENCED] = 0;
+  c[0].condition[COND_HELPLESS] = 0;
+  c[0].condition[COND_STUPID] = 0;
+  c[0].beenattacked = 0;
+  c[0].spellpoints = 9;
+  c[0].spellsofar = 0;
+  q[0] = 1;
+  CHECK(!capture_use_scroll_available());
+  q[0] = 0;
+  up = -1;
+  CHECK(!capture_use_scroll_available());
+  up = 110;
+  CHECK(!capture_use_scroll_available());
+  up = 0;
+  inspell = 1;
+  CHECK(!capture_use_scroll_available());
+  inspell = 0;
+  c[0].stamina = 0;
+  CHECK(!capture_use_scroll_available());
+  c[0].stamina = 18;
+  c[0].armor[13] = 0;
+  CHECK(!capture_use_scroll_available());
+  c[0].armor[13] = -1;
+  CHECK(capture_use_scroll_available());
+  c[0].armor[13] = 1;
+
   monsterturn = 1;
   snapshot = source.capture();
   CHECK(!snapshot.combat->cast_spell_available);
   CHECK(!snapshot.combat->target_available);
+  CHECK(!snapshot.combat->use_scroll_available);
   CHECK(snapshot.combat->acting_combatant == 11);
   CHECK(!snapshot.combat->combatants[0].active);
   CHECK(snapshot.combat->combatants[3].active);

@@ -918,12 +918,15 @@ void test_combat_primary_and_secondary_action_pages() {
         .open_combat_targeting_available = true,
         .escape_combat = CombatantId{2},
         .escape_combat_available = true,
+        .open_combat_scroll_case = CombatantId{2},
+        .open_combat_scroll_case_available = true,
     });
-    CHECK(special.size() == 4U);
+    CHECK(special.size() == 5U);
     const auto& special_back = special[0];
     const auto& cast = special[1];
     const auto& target = special[2];
     const auto& escape = special[3];
+    const auto& scroll = special[4];
     CHECK(special_back.region.value == 1118U);
     CHECK(special_back.kind == ShellControlKind::combat_action_page);
     CHECK(special_back.label == "BACK");
@@ -959,17 +962,31 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(escape.tab_order == 1121);
     CHECK(escape.enabled);
     CHECK(std::get<EscapeCombatAction>(escape.payload).combatant == 2);
+    CHECK(scroll.region.value == 1122U);
+    CHECK(scroll.kind == ShellControlKind::open_combat_scroll_case);
+    CHECK(scroll.label == "SCROLL");
+    CHECK(scroll.accessibility_label == "Open combat scroll chooser");
+    CHECK(scroll.focus_identifier == "focus.action.combat.scroll_case.open");
+    CHECK(scroll.tab_order == 1122);
+    CHECK(scroll.enabled);
+    CHECK(std::get<OpenCombatScrollCaseAction>(scroll.payload).combatant == 2);
     CHECK(special_panel.contains(special_back.bounds));
     CHECK(special_panel.contains(cast.bounds));
     CHECK(special_panel.contains(target.bounds));
     CHECK(special_panel.contains(escape.bounds));
+    CHECK(special_panel.contains(scroll.bounds));
     CHECK(!interiors_overlap(special_back.bounds, cast.bounds));
     CHECK(!interiors_overlap(special_back.bounds, target.bounds));
     CHECK(!interiors_overlap(cast.bounds, target.bounds));
     CHECK(!interiors_overlap(special_back.bounds, escape.bounds));
     CHECK(!interiors_overlap(cast.bounds, escape.bounds));
     CHECK(!interiors_overlap(target.bounds, escape.bounds));
+    CHECK(!interiors_overlap(special_back.bounds, scroll.bounds));
+    CHECK(!interiors_overlap(cast.bounds, scroll.bounds));
+    CHECK(!interiors_overlap(target.bounds, scroll.bounds));
+    CHECK(!interiors_overlap(escape.bounds, scroll.bounds));
     CHECK(escape.bounds.x > target.bounds.x);
+    CHECK(scroll.bounds.x > escape.bounds.x);
     const LogicalPoint target_pointer{
         target.bounds.x + target.bounds.width / 2.0,
         target.bounds.y + target.bounds.height / 2.0,
@@ -978,6 +995,7 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(!special_back.bounds.contains(target_pointer));
     CHECK(!cast.bounds.contains(target_pointer));
     CHECK(!escape.bounds.contains(target_pointer));
+    CHECK(!scroll.bounds.contains(target_pointer));
     const LogicalPoint escape_pointer{
         escape.bounds.x + escape.bounds.width / 2.0,
         escape.bounds.y + escape.bounds.height / 2.0,
@@ -986,6 +1004,16 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(!special_back.bounds.contains(escape_pointer));
     CHECK(!cast.bounds.contains(escape_pointer));
     CHECK(!target.bounds.contains(escape_pointer));
+    CHECK(!scroll.bounds.contains(escape_pointer));
+    const LogicalPoint scroll_pointer{
+        scroll.bounds.x + scroll.bounds.width / 2.0,
+        scroll.bounds.y + scroll.bounds.height / 2.0,
+    };
+    CHECK(scroll.bounds.contains(scroll_pointer));
+    CHECK(!special_back.bounds.contains(scroll_pointer));
+    CHECK(!cast.bounds.contains(scroll_pointer));
+    CHECK(!target.bounds.contains(scroll_pointer));
+    CHECK(!escape.bounds.contains(scroll_pointer));
   }
 
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
@@ -1234,6 +1262,21 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(!escape_combat_disabled[1].enabled);
   CHECK(std::get<EscapeCombatAction>(
       escape_combat_disabled[1].payload).combatant == 2);
+
+  const auto combat_scroll_case_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_scroll_case = CombatantId{2},
+  });
+  CHECK(combat_scroll_case_disabled.size() == 2U);
+  CHECK(combat_scroll_case_disabled[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(combat_scroll_case_disabled[1].kind ==
+      ShellControlKind::open_combat_scroll_case);
+  CHECK(!combat_scroll_case_disabled[1].enabled);
+  CHECK(std::get<OpenCombatScrollCaseAction>(
+      combat_scroll_case_disabled[1].payload).combatant == 2);
 
   const auto auto_only_primary = compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -1651,6 +1694,24 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_scroll_case_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_scroll_case = CombatantId{-1},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_scroll_case = CombatantId{256},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{-1},
   }).empty());
@@ -1829,6 +1890,19 @@ void test_combat_primary_and_secondary_action_pages() {
       .combat_action_page = CombatActionPage::special,
       .open_combat_targeting = CombatantId{2},
       .escape_combat = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .open_combat_scroll_case = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .escape_combat = CombatantId{2},
+      .open_combat_scroll_case = CombatantId{3},
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -2441,9 +2515,27 @@ void test_combat_primary_and_secondary_action_pages() {
       escape_special_minimum[0].bounds,
       escape_special_minimum[1].bounds));
 
+  const auto scroll_special_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_scroll_case = CombatantId{2},
+      .open_combat_scroll_case_available = true,
+  });
+  CHECK(scroll_special_minimum.size() == 2U);
+  CHECK(scroll_special_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(scroll_special_minimum[1].kind ==
+      ShellControlKind::open_combat_scroll_case);
+  CHECK(scroll_special_minimum[0].bounds.width == 44.0);
+  CHECK(scroll_special_minimum[1].bounds.width >= 44.0);
+  CHECK(!interiors_overlap(
+      scroll_special_minimum[0].bounds,
+      scroll_special_minimum[1].bounds));
+
   const auto complete_special_minimum = compute_shell_control_layout({
       .screen = ScreenContext::combat,
-      .action_panel = three_minimum,
+      .action_panel = four_minimum,
       .combat_action_page = CombatActionPage::special,
       .open_combat_spellbook = CombatantId{2},
       .open_combat_spellbook_available = true,
@@ -2451,8 +2543,10 @@ void test_combat_primary_and_secondary_action_pages() {
       .open_combat_targeting_available = true,
       .escape_combat = CombatantId{2},
       .escape_combat_available = true,
+      .open_combat_scroll_case = CombatantId{2},
+      .open_combat_scroll_case_available = true,
   });
-  CHECK(complete_special_minimum.size() == 4U);
+  CHECK(complete_special_minimum.size() == 5U);
   CHECK(complete_special_minimum[0].kind ==
       ShellControlKind::combat_action_page);
   CHECK(complete_special_minimum[1].kind ==
@@ -2461,6 +2555,8 @@ void test_combat_primary_and_secondary_action_pages() {
       ShellControlKind::open_combat_targeting);
   CHECK(complete_special_minimum[3].kind ==
       ShellControlKind::escape_combat);
+  CHECK(complete_special_minimum[4].kind ==
+      ShellControlKind::open_combat_scroll_case);
   for (const auto& control : complete_special_minimum) {
     CHECK(control.bounds.width >= 44.0);
     CHECK(control.bounds.height == 44.0);
@@ -2474,13 +2570,17 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(!interiors_overlap(
       complete_special_minimum[2].bounds,
       complete_special_minimum[3].bounds));
+  CHECK(!interiors_overlap(
+      complete_special_minimum[3].bounds,
+      complete_special_minimum[4].bounds));
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
-      .action_panel = {0.0, 0.0, 171.0, 120.0},
+      .action_panel = {0.0, 0.0, 221.0, 120.0},
       .combat_action_page = CombatActionPage::special,
       .open_combat_spellbook = CombatantId{2},
       .open_combat_targeting = CombatantId{2},
       .escape_combat = CombatantId{2},
+      .open_combat_scroll_case = CombatantId{2},
   }).empty());
 
   const auto auto_navigation_minimum = compute_shell_control_layout({

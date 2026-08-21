@@ -103,6 +103,9 @@ private:
     handlers.escape_combat = [](const EscapeCombatAction&) {
       return DispatchResult::handled();
     };
+    handlers.open_combat_scroll_case = [](const OpenCombatScrollCaseAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1166,12 +1169,23 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = EscapeCombatAction{2},
   };
+  const ShellControlPlacement scroll{
+      .region = ShellRegionId{1122},
+      .kind = ShellControlKind::open_combat_scroll_case,
+      .bounds = {524.0, 72.0, 160.0, 48.0},
+      .label = "SCROLL",
+      .accessibility_label = "Open combat scroll chooser",
+      .focus_identifier = "focus.action.combat.scroll_case.open",
+      .tab_order = 1122,
+      .enabled = true,
+      .payload = OpenCombatScrollCaseAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
   const std::vector utility{
       utility_back, auto_combatant, combat_range, bandage, undo, special_more};
-  const std::vector special{special_back, cast, target, escape};
+  const std::vector special{special_back, cast, target, escape, scroll};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1803,7 +1817,7 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       CombatActionPage::utility, CombatActionPage::special));
   CHECK(bridge.actions().size() == 8U);
 
-  CHECK(harness.recompose({escape, target, cast, special_back}));
+  CHECK(harness.recompose({scroll, escape, target, cast, special_back}));
   for (const auto& expected : special) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -2029,6 +2043,88 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!escape_route_release.shell.invoked_control);
   CHECK(!escape_route_release.dispatch);
   CHECK(bridge.actions().size() == 11U);
+
+  // SCROLL is actor-only and one-shot. The semantic route ends at the
+  // preserved lowercase-l handoff; Classic owns the chooser and all scroll,
+  // targeting, spell, and turn mutation.
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(scroll.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto scroll_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(scroll_release.shell.consumed);
+  CHECK(scroll_release.shell.invoked_control.has_value());
+  CHECK(scroll_release.shell.invoked_control->kind ==
+      ShellControlKind::open_combat_scroll_case);
+  CHECK(scroll_release.dispatch.has_value());
+  CHECK(scroll_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 12U);
+  CHECK(std::get<OpenCombatScrollCaseAction>(
+      bridge.actions()[11].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 12U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.keyboard().focused_identifier() == scroll.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[4].payload = OpenCombatScrollCaseAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_scroll_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_scroll_release.shell.consumed);
+  CHECK(!stale_scroll_release.shell.invoked_control);
+  CHECK(!stale_scroll_release.dispatch);
+  CHECK(bridge.actions().size() == 12U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(scroll.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[4].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_scroll_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_scroll_release.shell.consumed);
+  CHECK(!disabled_scroll_release.shell.invoked_control);
+  CHECK(!disabled_scroll_release.dispatch);
+  CHECK(bridge.actions().size() == 12U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(scroll.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(utility));
+  const auto scroll_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(scroll_page_release.shell.consumed);
+  CHECK(!scroll_page_release.shell.invoked_control);
+  CHECK(!scroll_page_release.dispatch);
+  CHECK(bridge.actions().size() == 12U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(scroll.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto scroll_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(scroll_route_release.shell.consumed);
+  CHECK(!scroll_route_release.shell.invoked_control);
+  CHECK(!scroll_route_release.dispatch);
+  CHECK(bridge.actions().size() == 12U);
 }
 
 using DescriptorMutation =

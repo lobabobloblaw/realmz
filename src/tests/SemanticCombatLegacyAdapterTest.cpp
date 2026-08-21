@@ -105,7 +105,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 15> combat_cases() {
+std::array<CombatCase, 16> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -201,6 +201,12 @@ std::array<CombatCase, 15> combat_cases() {
           .consume = RealmzConsumeSemanticEscapeCombatEvent,
           .classic_message = 0x00000E65U,
       },
+      CombatCase{
+          .tag = semantic_open_combat_scroll_case_tag(
+              1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticOpenCombatScrollCaseEvent,
+          .classic_message = 0x0000256CU,
+      },
   };
 }
 
@@ -273,6 +279,7 @@ void seed_active_party_combatant() {
   q[0] = 1;
   lastshown = 1;
   c[1].armor[2] = 1;
+  c[1].armor[13] = 1;
   c[1].numitems = 1;
   c[1].items[0] = {.id = 1, .charge = 1};
   allweapons[1].itemid = 1;
@@ -392,6 +399,44 @@ void test_unavailable_combat_targeting_is_rejected_once() {
   CHECK(output == kUnchangedMessage);
 }
 
+void test_unavailable_combat_scroll_case_is_rejected_once() {
+  for (int rejection = 0; rejection < 4; ++rejection) {
+    seed_active_party_combatant();
+    const uint32_t tag = semantic_open_combat_scroll_case_tag(
+        1, REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(tag == 0x55530301U);
+    complete_combat_scope();
+
+    switch (rejection) {
+      case 0:
+        q[0] = 0;
+        break;
+      case 1:
+        inspell = 1;
+        break;
+      case 2:
+        c[1].stamina = 0;
+        break;
+      case 3:
+        c[1].armor[13] = 0;
+        break;
+    }
+    uint32_t output = kUnchangedMessage;
+    CHECK(RealmzConsumeSemanticOpenCombatScrollCaseEvent(
+        REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+    CHECK(output == kUnchangedMessage);
+
+    // Repairing live state cannot reuse a consumed top-level authorization.
+    q[0] = 1;
+    inspell = 0;
+    c[1].stamina = 14;
+    c[1].armor[13] = 1;
+    CHECK(RealmzConsumeSemanticOpenCombatScrollCaseEvent(
+        REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+    CHECK(output == kUnchangedMessage);
+  }
+}
+
 void test_stale_acting_combatant_is_rejected() {
   for (const auto& action : combat_cases()) {
     seed_active_party_combatant();
@@ -442,6 +487,7 @@ int main() {
     test_undo_without_classic_canundo_is_rejected();
     test_unavailable_combat_spellbook_is_rejected_once();
     test_unavailable_combat_targeting_is_rejected_once();
+    test_unavailable_combat_scroll_case_is_rejected_once();
     test_stale_acting_combatant_is_rejected();
     test_non_gameplay_front_window_is_rejected();
     test_stale_selected_member_is_rejected();

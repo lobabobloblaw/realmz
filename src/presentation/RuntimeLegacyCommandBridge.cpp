@@ -32,6 +32,7 @@ constexpr uint32_t kUndoCombatantMessage = 0x00002075U;
 constexpr uint32_t kOpenCombatSpellbookMessage = 0x00000173U;
 constexpr uint32_t kOpenCombatTargetingMessage = 0x00001174U;
 constexpr uint32_t kEscapeCombatMessage = 0x00000E65U;
+constexpr uint32_t kOpenCombatScrollCaseMessage = 0x0000256CU;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -619,6 +620,44 @@ LegacyActionHandlers make_handlers(
     };
   }
 
+  if (combat_action_sinks.open_combat_scroll_case.has_value()) {
+    handlers.open_combat_scroll_case = [
+        context_provider,
+        open_combat_scroll_case_sink =
+            std::move(*combat_action_sinks.open_combat_scroll_case)](
+            const OpenCombatScrollCaseAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!open_combat_scroll_case_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy open-combat-scroll-case sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic combat "
+            "scroll use");
+      }
+      const auto message = legacy_key_message_for_open_combat_scroll_case(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Combat scroll use is not supported for this combatant in the "
+            "current legacy context");
+      }
+      if (!open_combat_scroll_case_sink(
+              action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic open-combat-scroll-case "
+            "action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
   return handlers;
 }
 
@@ -1143,6 +1182,16 @@ std::optional<uint32_t> legacy_key_message_for_escape_combat(
     return std::nullopt;
   }
   return kEscapeCombatMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_open_combat_scroll_case(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kOpenCombatScrollCaseMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

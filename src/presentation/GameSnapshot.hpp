@@ -161,6 +161,10 @@ struct CombatView {
   // current acting party combatant. Classic re-resolves equipment, targeting,
   // costs, RNG, and every mutation after the key handoff.
   bool target_available = false;
+  // Read-only projection of Classic's visible combat Scroll gate. Classic
+  // remains authoritative for the chooser, contents, targeting, consumption,
+  // costs, RNG, and every mutation after the key handoff.
+  bool use_scroll_available = false;
   int16_t round = 0;
   size_t visible_columns = 0;
   size_t visible_rows = 0;

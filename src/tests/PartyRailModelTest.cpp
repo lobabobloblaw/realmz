@@ -179,6 +179,7 @@ void test_combat_actions_track_the_active_party_combatant() {
       .undo_available = true,
       .cast_spell_available = true,
       .target_available = true,
+      .use_scroll_available = true,
       .round = 4,
       .acting_combatant = 1,
       .combatants = {
@@ -344,6 +345,18 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(escape_combat.focus_identifier !=
       combat_targeting.focus_identifier);
   CHECK(escape_combat.availability_reason->label == "Game rules apply");
+  const auto& combat_scroll_case =
+      action_with(model, ActionIntent::open_combat_scroll_case);
+  CHECK(combat_scroll_case.can_invoke());
+  CHECK(combat_scroll_case.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(combat_scroll_case.command == "action.combat.scroll_case.open");
+  CHECK(combat_scroll_case.label == "Use scroll");
+  CHECK(combat_scroll_case.combatant == guard.combatant);
+  CHECK(combat_scroll_case.tab_order == escape_combat.tab_order + 1);
+  CHECK(combat_scroll_case.focus_identifier !=
+      escape_combat.focus_identifier);
+  CHECK(combat_scroll_case.availability_reason->label == "Game rules apply");
   CHECK(model.combat_action_page == CombatActionPage::primary);
 
   const auto secondary_page_model = build_presentation_shell_model(
@@ -417,6 +430,18 @@ void test_combat_actions_track_the_active_party_combatant() {
       "Targeting is unavailable now");
   snapshot.combat->target_available = true;
 
+  snapshot.combat->use_scroll_available = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& unavailable_combat_scroll_case =
+      action_with(model, ActionIntent::open_combat_scroll_case);
+  CHECK(!unavailable_combat_scroll_case.can_invoke());
+  CHECK(unavailable_combat_scroll_case.availability ==
+      ActionAvailability::unavailable);
+  CHECK(unavailable_combat_scroll_case.combatant == 1);
+  CHECK(unavailable_combat_scroll_case.availability_reason->label ==
+      "Scroll use is unavailable now");
+  snapshot.combat->use_scroll_available = true;
+
   snapshot.party.members[0].movement =
       snapshot.party.members[0].movement_maximum;
   model = build_presentation_shell_model(snapshot);
@@ -477,6 +502,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::escape_combat);
   CHECK(escape_before_movement.can_invoke());
   CHECK(escape_before_movement.combatant == available_delay.combatant);
+  const auto& scroll_before_movement =
+      action_with(model, ActionIntent::open_combat_scroll_case);
+  CHECK(scroll_before_movement.can_invoke());
+  CHECK(scroll_before_movement.combatant == available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
   model = build_presentation_shell_model(snapshot);
@@ -536,6 +565,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::escape_combat);
   CHECK(unmatched_escape.can_invoke());
   CHECK(unmatched_escape.combatant == unmatched_delay.combatant);
+  const auto& unmatched_scroll =
+      action_with(model, ActionIntent::open_combat_scroll_case);
+  CHECK(unmatched_scroll.can_invoke());
+  CHECK(unmatched_scroll.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   auto no_selection = snapshot;
@@ -581,6 +614,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(no_selection_model, ActionIntent::escape_combat);
   CHECK(escape_without_selection.can_invoke());
   CHECK(escape_without_selection.combatant == 1);
+  const auto& scroll_without_selection =
+      action_with(no_selection_model, ActionIntent::open_combat_scroll_case);
+  CHECK(scroll_without_selection.can_invoke());
+  CHECK(scroll_without_selection.combatant == 1);
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
@@ -600,6 +637,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::open_combat_spellbook,
              ActionIntent::open_combat_targeting,
              ActionIntent::escape_combat,
+             ActionIntent::open_combat_scroll_case,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());

@@ -210,6 +210,15 @@ struct EscapeCombatAction {
   bool operator==(const EscapeCombatAction&) const = default;
 };
 
+// Opens the preserved Classic combat scroll case for the explicitly
+// identified acting party combatant. Classic remains authoritative for scroll
+// selection and consumption, targeting, costs, RNG, and turn handling.
+struct OpenCombatScrollCaseAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const OpenCombatScrollCaseAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -380,6 +389,7 @@ using UIActionPayload = std::variant<
     OpenCombatSpellbookAction,
     OpenCombatTargetingAction,
     EscapeCombatAction,
+    OpenCombatScrollCaseAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -442,6 +452,9 @@ struct UIAction {
       return "open_combat_targeting";
     } else if constexpr (std::is_same_v<Action, EscapeCombatAction>) {
       return "escape_combat";
+    } else if constexpr (
+        std::is_same_v<Action, OpenCombatScrollCaseAction>) {
+      return "open_combat_scroll_case";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

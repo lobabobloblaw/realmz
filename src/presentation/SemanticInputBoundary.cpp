@@ -84,6 +84,10 @@ constexpr uint32_t kSemanticEscapeCombatSignature = 0x52450000U;
 constexpr uint32_t kSemanticEscapeCombatMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticEscapeCombatSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticEscapeCombatIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticOpenCombatScrollCaseSignature = 0x55530000U;
+constexpr uint32_t kSemanticOpenCombatScrollCaseMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticOpenCombatScrollCaseSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticOpenCombatScrollCaseIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -193,6 +197,11 @@ struct DecodedOpenCombatTargeting {
 };
 
 struct DecodedEscapeCombat {
+  realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedOpenCombatScrollCase {
   realmz::presentation::CombatantId combatant;
   RealmzSemanticInputSurface surface;
 };
@@ -580,6 +589,24 @@ std::optional<DecodedEscapeCombat> decode_escape_combat(
   };
 }
 
+std::optional<DecodedOpenCombatScrollCase> decode_open_combat_scroll_case(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticOpenCombatScrollCaseMask) !=
+      kSemanticOpenCombatScrollCaseSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticOpenCombatScrollCaseSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedOpenCombatScrollCase{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticOpenCombatScrollCaseIdMask),
+      .surface = surface_value,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -645,6 +672,12 @@ bool is_combat_targeting_available(
     const realmz::presentation::GameSnapshot& snapshot,
     realmz::presentation::CombatantId) noexcept {
   return snapshot.combat && snapshot.combat->target_available;
+}
+
+bool is_combat_scroll_available(
+    const realmz::presentation::GameSnapshot& snapshot,
+    realmz::presentation::CombatantId) noexcept {
+  return snapshot.combat && snapshot.combat->use_scroll_available;
 }
 
 template <typename DecodedCombatant, typename MessageMapper>
@@ -973,6 +1006,18 @@ uint32_t semantic_escape_combat_tag(
       static_cast<uint32_t>(combatant);
 }
 
+uint32_t semantic_open_combat_scroll_case_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticOpenCombatScrollCaseSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -1247,6 +1292,17 @@ RealmzSemanticEscapeCombatTagSurface(uint32_t tagged_message) {
   return escape ? escape->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticOpenCombatScrollCaseTag(
+    uint32_t tagged_message) {
+  return decode_open_combat_scroll_case(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticOpenCombatScrollCaseTagSurface(uint32_t tagged_message) {
+  const auto scroll_case = decode_open_combat_scroll_case(tagged_message);
+  return scroll_case ? scroll_case->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -1268,7 +1324,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_undo_combatant(tagged_message) ||
           decode_open_combat_spellbook(tagged_message) ||
           decode_open_combat_targeting(tagged_message) ||
-          decode_escape_combat(tagged_message))
+          decode_escape_combat(tagged_message) ||
+          decode_open_combat_scroll_case(tagged_message))
       ? 1
       : 0;
 }
@@ -1334,6 +1391,10 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto escape = decode_escape_combat(tagged_message)) {
     return escape->surface;
+  }
+  if (const auto scroll_case =
+          decode_open_combat_scroll_case(tagged_message)) {
+    return scroll_case->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1773,4 +1834,16 @@ extern "C" uint8_t RealmzConsumeSemanticEscapeCombatEvent(
       decode_escape_combat(tagged_message),
       classic_key_message,
       realmz::presentation::legacy_key_message_for_escape_combat);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticOpenCombatScrollCaseEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  return consume_semantic_combatant_event(
+      expected_surface,
+      decode_open_combat_scroll_case(tagged_message),
+      classic_key_message,
+      realmz::presentation::legacy_key_message_for_open_combat_scroll_case,
+      is_combat_scroll_available);
 }

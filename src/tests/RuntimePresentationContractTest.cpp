@@ -83,6 +83,9 @@ static_assert(std::is_same_v<
     decltype(EscapeCombatAction::combatant),
     CombatantId>);
 static_assert(std::is_same_v<
+    decltype(OpenCombatScrollCaseAction::combatant),
+    CombatantId>);
+static_assert(std::is_same_v<
     decltype(AutoCombatantAction::combatant),
     CombatantId>);
 
@@ -303,6 +306,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.open_combat_spellbook = mutateEngine;
   handlers.open_combat_targeting = mutateEngine;
   handlers.escape_combat = mutateEngine;
+  handlers.open_combat_scroll_case = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -585,6 +589,21 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(escapeCombatUnsupported.status == DispatchStatus::unsupported);
   CHECK(escapeCombatUnsupported.detail ==
       "No legacy handler registered for escape_combat");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction openCombatScrollCaseAction{
+      .sequence = sequence++,
+      .payload = OpenCombatScrollCaseAction{1},
+  };
+  CHECK(action_name(openCombatScrollCaseAction.payload) ==
+      "open_combat_scroll_case");
+  const auto openCombatScrollCaseUnsupported =
+      unsupportedBridge.dispatch(openCombatScrollCaseAction);
+  CHECK(openCombatScrollCaseUnsupported.status ==
+      DispatchStatus::unsupported);
+  CHECK(openCombatScrollCaseUnsupported.detail ==
+      "No legacy handler registered for open_combat_scroll_case");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

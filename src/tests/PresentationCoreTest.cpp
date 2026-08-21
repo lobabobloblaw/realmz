@@ -293,8 +293,17 @@ void test_actions_and_events() {
   CHECK(std::get<EscapeCombatAction>(
             escape_combat.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction open_combat_scroll_case{
       .sequence = 27,
+      .payload = OpenCombatScrollCaseAction{2},
+  };
+  CHECK(action_name(open_combat_scroll_case.payload) ==
+      "open_combat_scroll_case");
+  CHECK(std::get<OpenCombatScrollCaseAction>(
+            open_combat_scroll_case.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 28,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -389,6 +398,7 @@ void test_command_bridge() {
   CombatantId open_combat_spellbook = -1;
   CombatantId open_combat_targeting = -1;
   CombatantId escape_combat = -1;
+  CombatantId open_combat_scroll_case = -1;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -451,6 +461,11 @@ void test_command_bridge() {
   handlers.escape_combat =
       [&escape_combat](const EscapeCombatAction& action) {
         escape_combat = action.combatant;
+        return DispatchResult::handled();
+      };
+  handlers.open_combat_scroll_case =
+      [&open_combat_scroll_case](const OpenCombatScrollCaseAction& action) {
+        open_combat_scroll_case = action.combatant;
         return DispatchResult::handled();
       };
 
@@ -639,6 +654,13 @@ void test_command_bridge() {
   });
   CHECK(escape_combat_handled.was_handled());
   CHECK(escape_combat == 15);
+
+  const auto open_combat_scroll_case_handled = bridge.dispatch(UIAction{
+      .sequence = 24,
+      .payload = OpenCombatScrollCaseAction{16},
+  });
+  CHECK(open_combat_scroll_case_handled.was_handled());
+  CHECK(open_combat_scroll_case == 16);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

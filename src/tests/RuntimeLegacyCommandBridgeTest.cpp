@@ -126,6 +126,15 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::escape_combat),
     std::optional<RuntimeLegacyEscapeCombatSink>>);
+static_assert(std::is_same_v<
+    RuntimeLegacyOpenCombatScrollCaseSink,
+    std::function<bool(
+        CombatantId,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::open_combat_scroll_case),
+    std::optional<RuntimeLegacyOpenCombatScrollCaseSink>>);
 static_assert(std::numeric_limits<PartyMemberId>::min() == 0);
 static_assert(std::numeric_limits<PartyMemberId>::max() == 0xFF);
 
@@ -4385,6 +4394,209 @@ void test_escape_combat_mapping_and_dispatch() {
       std::string::npos);
 }
 
+void test_open_combat_scroll_case_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int calls = 0;
+  bool accept = true;
+  CombatantId received_combatant = -1;
+  uint32_t received_message = 0;
+  const RuntimeLegacyOpenCombatScrollCaseSink sink =
+      [&calls, &accept, &received_combatant, &received_message, &context](
+          CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++calls;
+        received_combatant = combatant;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink = inventory_sink;
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink = save_sink;
+  const auto make_bridge = [&](RuntimeLegacyContextProvider provider,
+                               RuntimeLegacyOpenCombatScrollCaseSink value) {
+    return RuntimeLegacyCommandBridge(
+        std::move(provider), movement_sink, party_selection_sink,
+        inventory_sink, spellbook_sink, save_sink, load_sink,
+        RuntimeLegacyCombatActionSinks{
+            .open_combat_scroll_case = std::move(value),
+        });
+  };
+  auto bridge = make_bridge([&context] { return context; }, sink);
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    CHECK(legacy_key_message_for_open_combat_scroll_case(0, context) ==
+        0x0000256CU);
+    CHECK(legacy_key_message_for_open_combat_scroll_case(255, context) ==
+        0x0000256CU);
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 488,
+      .payload = OpenCombatScrollCaseAction{9},
+  }).status == DispatchStatus::handled);
+  CHECK(calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_message == 0x0000256CU);
+  for (const CombatantId boundary : {0, 255}) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 489,
+        .payload = OpenCombatScrollCaseAction{boundary},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(calls == 3);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title, ScreenContext::party_selection,
+      ScreenContext::party_creation, ScreenContext::exploration,
+      ScreenContext::dungeon, ScreenContext::inventory, ScreenContext::shop,
+      ScreenContext::encounter, ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_open_combat_scroll_case(9, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 490,
+        .payload = OpenCombatScrollCaseAction{9},
+    }).status == DispatchStatus::rejected);
+  }
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_open_combat_scroll_case(9, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 491,
+      .payload = OpenCombatScrollCaseAction{9},
+  }).status == DispatchStatus::rejected);
+  context.adaptive_eligible = true;
+
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(), CombatantId{-1},
+           CombatantId{256}, std::numeric_limits<CombatantId>::max(),
+       }) {
+    CHECK(!legacy_key_message_for_open_combat_scroll_case(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 492,
+        .payload = OpenCombatScrollCaseAction{invalid},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 3);
+
+  // Scroll, Target, and Escape share a callable shape but never a field.
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 493,
+      .payload = OpenCombatTargetingAction{9},
+  }).status == DispatchStatus::unsupported);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 494,
+      .payload = EscapeCombatAction{9},
+  }).status == DispatchStatus::unsupported);
+  RuntimeLegacyCommandBridge other_sinks_only(
+      [&context] { return context; }, movement_sink, party_selection_sink,
+      inventory_sink, spellbook_sink, save_sink, load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .open_combat_targeting = [](CombatantId, uint32_t,
+                                      const RuntimeLegacyCommandContext&) {
+            return true;
+          },
+          .escape_combat = [](CombatantId, uint32_t,
+                              const RuntimeLegacyCommandContext&) {
+            return true;
+          },
+      });
+  CHECK(other_sinks_only.dispatch(UIAction{
+      .sequence = 495,
+      .payload = OpenCombatScrollCaseAction{9},
+  }).status == DispatchStatus::unsupported);
+
+  accept = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 496,
+      .payload = OpenCombatScrollCaseAction{9},
+  }).status == DispatchStatus::failed);
+  CHECK(calls == 4);
+  accept = true;
+
+  auto missing_provider = make_bridge(RuntimeLegacyContextProvider{}, sink);
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 497,
+      .payload = OpenCombatScrollCaseAction{9},
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+
+  auto empty_sink = make_bridge(
+      [&context] { return context; },
+      RuntimeLegacyOpenCombatScrollCaseSink{});
+  const auto no_sink = empty_sink.dispatch(UIAction{
+      .sequence = 498,
+      .payload = OpenCombatScrollCaseAction{9},
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("open-combat-scroll-case sink") !=
+      std::string::npos);
+
+  RuntimeLegacyCommandBridge absent_sink(
+      [&context] { return context; }, movement_sink, party_selection_sink,
+      inventory_sink, spellbook_sink, save_sink, load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(absent_sink.dispatch(UIAction{
+      .sequence = 499,
+      .payload = OpenCombatScrollCaseAction{9},
+  }).status == DispatchStatus::unsupported);
+
+  auto provider_throws = make_bridge(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("scroll case provider failure");
+      },
+      sink);
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 500,
+      .payload = OpenCombatScrollCaseAction{9},
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("scroll case provider failure") !=
+      std::string::npos);
+
+  const RuntimeLegacyOpenCombatScrollCaseSink throwing_sink =
+      [](CombatantId, uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("scroll case sink failure");
+      };
+  auto sink_throws = make_bridge([&context] { return context; }, throwing_sink);
+  const auto sink_thrown = sink_throws.dispatch(UIAction{
+      .sequence = 501,
+      .payload = OpenCombatScrollCaseAction{9},
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("scroll case sink failure") !=
+      std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -4476,6 +4688,10 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 393,
           .payload = EscapeCombatAction{14},
       },
+      UIAction{
+          .sequence = 394,
+          .payload = OpenCombatScrollCaseAction{15},
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -4516,6 +4732,8 @@ void test_named_combat_sink_registration_semantics() {
           .open_combat_spellbook = RuntimeLegacyOpenCombatSpellbookSink{},
           .open_combat_targeting = RuntimeLegacyOpenCombatTargetingSink{},
           .escape_combat = RuntimeLegacyEscapeCombatSink{},
+          .open_combat_scroll_case =
+              RuntimeLegacyOpenCombatScrollCaseSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -4614,6 +4832,10 @@ void test_named_combat_sink_registration_semantics() {
   CHECK(sparse_combat_sinks.dispatch(UIAction{
       .sequence = 397,
       .payload = EscapeCombatAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 398,
+      .payload = OpenCombatScrollCaseAction{6},
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(center_calls == 1);
@@ -4980,6 +5202,7 @@ int main() {
     test_open_combat_spellbook_mapping_and_dispatch();
     test_open_combat_targeting_mapping_and_dispatch();
     test_escape_combat_mapping_and_dispatch();
+    test_open_combat_scroll_case_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

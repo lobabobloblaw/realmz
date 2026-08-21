@@ -336,6 +336,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticEscapeCombatEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic Escape input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic scroll-case input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -862,6 +866,32 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(escape_wrapper, "mouseDown") == 0,
       "public Escape enqueue must not synthesize Classic input");
 
+  const std::string push_scroll_case = function_body(
+      source, "push_semantic_open_combat_scroll_case_event");
+  const std::string compact_push_scroll_case =
+      without_whitespace(push_scroll_case);
+  require(count_identifier(push_scroll_case,
+              "RealmzIsSemanticOpenCombatScrollCaseTag") == 1,
+      "semantic scroll-case enqueue must validate exactly one tag");
+  require(count_identifier(push_scroll_case, "app1Evt") == 1,
+      "semantic scroll-case enqueue must use app1Evt exactly once");
+  require(count_identifier(push_scroll_case, "keyDown") == 0 &&
+          count_identifier(push_scroll_case, "mouseDown") == 0,
+      "semantic scroll-case enqueue must not synthesize Classic input");
+  require(compact_push_scroll_case.contains("ev.what=app1Evt;") &&
+          compact_push_scroll_case.contains("ev.message=tagged_message;"),
+      "semantic scroll-case must retain its tagged app1Evt payload");
+
+  const std::string scroll_case_wrapper = function_body(
+      source, "PushSemanticOpenCombatScrollCaseEvent");
+  require(without_whitespace(scroll_case_wrapper).contains(
+              "returnem.push_semantic_open_combat_scroll_case_event("
+              "tagged_message);"),
+      "public scroll-case enqueue must delegate to its tagged queue");
+  require(count_identifier(scroll_case_wrapper, "keyDown") == 0 &&
+          count_identifier(scroll_case_wrapper, "mouseDown") == 0,
+      "public scroll-case enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -990,17 +1020,21 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticEscapeCombatEvent") == 1,
       "semantic gameplay wrapper must have one late Escape consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 1,
+      "semantic gameplay wrapper must have one late scroll-case consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 20,
-      "semantic gameplay wrapper must recognize all twenty tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 17,
+  require(count_identifier(semantic_wrapper, "app1Evt") == 21,
+      "semantic gameplay wrapper must recognize all twenty-one tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 18,
       "only late movement, inventory, spellbook, guard, finish, delay, center, "
       "switch-weapon, cycle-focus, combat-items, Auto, Range, Bandage, Undo, "
-      "combat-spellbook, combat-targeting, or Escape validation may produce "
-      "keyDown");
+      "combat-spellbook, combat-targeting, Escape, or scroll-case validation "
+      "may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
@@ -1082,6 +1116,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticEscapeCombatEvent") == 1,
       "EventManager may consume semantic Escape input only inside its "
+      "gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 1,
+      "EventManager may consume semantic scroll-case input only inside its "
       "gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
@@ -1330,6 +1368,18 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", escape_keydown);
   const std::size_t escape_rejected_message = compact_semantic.find(
       "ret->message=0", escape_null);
+  const std::size_t scroll_case_branch = compact_semantic.find(
+      "RealmzIsSemanticOpenCombatScrollCaseTag(ret->message)",
+      escape_rejected_message);
+  const std::size_t scroll_case_consume = compact_semantic.find(
+      "RealmzConsumeSemanticOpenCombatScrollCaseEvent(",
+      scroll_case_branch);
+  const std::size_t scroll_case_keydown = compact_semantic.find(
+      "ret->what=keyDown", scroll_case_consume);
+  const std::size_t scroll_case_null = compact_semantic.find(
+      "ret->what=nullEvent", scroll_case_keydown);
+  const std::size_t scroll_case_rejected_message = compact_semantic.find(
+      "ret->message=0", scroll_case_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -1443,7 +1493,12 @@ void verify_event_manager(const fs::path& repository_root) {
           escape_consume != std::string::npos &&
           escape_keydown != std::string::npos &&
           escape_null != std::string::npos &&
-          escape_rejected_message != std::string::npos,
+          escape_rejected_message != std::string::npos &&
+          scroll_case_branch != std::string::npos &&
+          scroll_case_consume != std::string::npos &&
+          scroll_case_keydown != std::string::npos &&
+          scroll_case_null != std::string::npos &&
+          scroll_case_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -1552,7 +1607,12 @@ void verify_event_manager(const fs::path& repository_root) {
           escape_branch < escape_consume &&
           escape_consume < escape_keydown &&
           escape_keydown < escape_null &&
-          escape_null < escape_rejected_message,
+          escape_null < escape_rejected_message &&
+          escape_rejected_message < scroll_case_branch &&
+          scroll_case_branch < scroll_case_consume &&
+          scroll_case_consume < scroll_case_keydown &&
+          scroll_case_keydown < scroll_case_null &&
+          scroll_case_null < scroll_case_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
@@ -1584,6 +1644,12 @@ void verify_event_manager(const fs::path& repository_root) {
           escape_consume < escape_keydown,
       "Escape must leave semantic gameplay scope before its lowercase e "
       "handoff, leaving range checks, confirmation, and mutation in Classic");
+  require(scope_block_close < scroll_case_branch &&
+          scroll_case_branch < scroll_case_consume &&
+          scroll_case_consume < scroll_case_keydown,
+      "Use Scroll must leave semantic gameplay scope before its lowercase l "
+      "handoff, leaving the raw chooser, targeting, costs, and effects in "
+      "Classic");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
               "return(ret->what!=nullEvent);}"),
@@ -1777,6 +1843,9 @@ void verify_window_manager_named_combat_sinks(
            "legacy_key_message_for_escape_combat",
            "semantic_escape_combat_tag",
            "PushSemanticEscapeCombatEvent",
+           "legacy_key_message_for_open_combat_scroll_case",
+           "semantic_open_combat_scroll_case_tag",
+           "PushSemanticOpenCombatScrollCaseEvent",
        }) {
     require(count_identifier(invocation, identifier) == 1,
         std::string("runtime legacy bridge construction must contain exactly ") +
@@ -1865,6 +1934,11 @@ void verify_window_manager_named_combat_sinks(
       "legacy_key_message_for_escape_combat",
       "semantic_escape_combat_tag",
       "PushSemanticEscapeCombatEvent");
+  verify_field(
+      "open_combat_scroll_case",
+      "legacy_key_message_for_open_combat_scroll_case",
+      "semantic_open_combat_scroll_case_tag",
+      "PushSemanticOpenCombatScrollCaseEvent");
 }
 
 void verify_window_manager_shell_dispatch_freshness(
@@ -1914,9 +1988,13 @@ void verify_window_manager_shell_dispatch_freshness(
       "std::get_if<realmz::presentation::EscapeCombatAction>"
       "(&control.payload)",
       combat_targeting_payload);
+  const std::size_t scroll_case_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::OpenCombatScrollCaseAction>"
+      "(&control.payload)",
+      escape_payload);
   const std::size_t ordinary_branch = compact_dispatch.find(
       "}else{constautolive_control=std::ranges::find_if(",
-      escape_payload);
+      scroll_case_payload);
   const std::size_t current_controls = compact_dispatch.find(
       "this->remastered_shell_controls,", ordinary_branch);
   const std::size_t exact_enabled_descriptor = compact_dispatch.find(
@@ -1993,7 +2071,8 @@ void verify_window_manager_shell_dispatch_freshness(
       ".contains(control.bounds)",
       utility_page);
   const std::size_t special_action_guard = compact_dispatch.find(
-      "((open_combat_spellbook||open_combat_targeting||escape_combat)&&",
+      "((open_combat_spellbook||open_combat_targeting||escape_combat||"
+      "open_combat_scroll_case)&&",
       utility_layout);
   const std::size_t combat_spellbook_guard = compact_dispatch.find(
       "(open_combat_spellbook&&", special_action_guard);
@@ -2013,10 +2092,16 @@ void verify_window_manager_shell_dispatch_freshness(
       "control.kind!=realmz::presentation::ShellControlKind::"
       "escape_combat",
       escape_guard);
+  const std::size_t scroll_case_guard = compact_dispatch.find(
+      "(open_combat_scroll_case&&", escape_kind);
+  const std::size_t scroll_case_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "open_combat_scroll_case",
+      scroll_case_guard);
   const std::size_t special_page = compact_dispatch.find(
       "this->remastered_combat_action_page!="
       "realmz::presentation::CombatActionPage::special",
-      escape_kind);
+      scroll_case_kind);
   const std::size_t special_layout = compact_dispatch.find(
       "this->adaptive_shell_plan->adaptive_layout->action_bar"
       ".contains(control.bounds)",
@@ -2037,6 +2122,7 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_spellbook_payload != std::string::npos &&
           combat_targeting_payload != std::string::npos &&
           escape_payload != std::string::npos &&
+          scroll_case_payload != std::string::npos &&
           ordinary_branch != std::string::npos &&
           current_controls != std::string::npos &&
           exact_enabled_descriptor != std::string::npos &&
@@ -2070,6 +2156,8 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_targeting_kind != std::string::npos &&
           escape_guard != std::string::npos &&
           escape_kind != std::string::npos &&
+          scroll_case_guard != std::string::npos &&
+          scroll_case_kind != std::string::npos &&
           special_page != std::string::npos &&
           special_layout != std::string::npos &&
           reject != std::string::npos &&
@@ -2077,7 +2165,7 @@ void verify_window_manager_shell_dispatch_freshness(
           bridge_dispatch != std::string::npos,
       "bridge-bound shell dispatch must retain its live descriptor, fresh "
       "route, and Weapon/Cycle Focus/Combat Items/Auto/Range/Bandage/Undo/"
-      "Cast Spell/Target/Escape page-layout rejection gate");
+      "Cast Spell/Target/Escape/Use Scroll page-layout rejection gate");
   require(switch_payload < cycle_payload &&
           cycle_payload < combat_items_payload &&
           combat_items_payload < auto_payload &&
@@ -2087,7 +2175,8 @@ void verify_window_manager_shell_dispatch_freshness(
           undo_payload < combat_spellbook_payload &&
           combat_spellbook_payload < combat_targeting_payload &&
           combat_targeting_payload < escape_payload &&
-          escape_payload < ordinary_branch &&
+          escape_payload < scroll_case_payload &&
+          scroll_case_payload < ordinary_branch &&
           ordinary_branch < current_controls &&
           current_controls < exact_enabled_descriptor &&
           exact_enabled_descriptor < fresh_route &&
@@ -2112,11 +2201,15 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_spellbook_kind < combat_targeting_guard &&
           combat_targeting_guard < combat_targeting_kind &&
           combat_targeting_kind < escape_guard &&
-          escape_guard < escape_kind && escape_kind < special_page &&
+          escape_guard < escape_kind &&
+          escape_kind < scroll_case_guard &&
+          scroll_case_guard < scroll_case_kind &&
+          scroll_case_kind < special_page &&
           special_page < special_layout && special_layout < reject &&
           reject < action && action < bridge_dispatch,
       "cached shell descriptors and stale Weapon/Cycle Focus/Combat Items/"
-      "Auto/Range/Bandage/Undo/Cast Spell/Target/Escape routes must be "
+      "Auto/Range/Bandage/Undo/Cast Spell/Target/Escape/Use Scroll routes "
+      "must be "
       "rejected before any runtime "
       "legacy bridge dispatch");
 
@@ -2209,9 +2302,15 @@ void verify_window_manager_shell_dispatch_freshness(
       "escape_combat_action->can_invoke()&&snapshot_context_matches&&"
       "realmz::presentation::legacy_key_message_for_escape_combat(",
       composed_combat_targeting_eligibility);
+  const std::size_t composed_scroll_case_eligibility =
+      compact_composition.find(
+          "constboolopen_combat_scroll_case_available="
+          "open_combat_scroll_case&&snapshot.combat&&"
+          "snapshot.combat->use_scroll_available&&",
+          composed_escape_eligibility);
   const std::size_t composed_page = compact_composition.find(
       ".combat_action_page=shell_model->combat_action_page",
-      composed_escape_eligibility);
+      composed_scroll_case_eligibility);
   const std::size_t composed_auto = compact_composition.find(
       ".auto_combatant=auto_combatant", composed_page);
   const std::size_t composed_auto_available = compact_composition.find(
@@ -2256,9 +2355,17 @@ void verify_window_manager_shell_dispatch_freshness(
   const std::size_t composed_escape_available = compact_composition.find(
       ".escape_combat_available=escape_combat_available",
       composed_escape);
+  const std::size_t composed_scroll_case = compact_composition.find(
+      ".open_combat_scroll_case=open_combat_scroll_case",
+      composed_escape_available);
+  const std::size_t composed_scroll_case_available =
+      compact_composition.find(
+          ".open_combat_scroll_case_available="
+          "open_combat_scroll_case_available",
+          composed_scroll_case);
   const std::size_t live_controls = compact_composition.find(
       "constboolevery_enabled_control_is_live=std::ranges::all_of(",
-      composed_escape_available);
+      composed_scroll_case_available);
   const std::size_t live_page = compact_composition.find(
       "std::get_if<realmz::presentation::SetCombatActionPageAction>"
       "(&control.payload)",
@@ -2475,11 +2582,43 @@ void verify_window_manager_shell_dispatch_freshness(
       live_escape_member);
   const std::size_t live_escape_stamina = compact_composition.find(
       "combatant->stamina.current>0", live_escape_party_kind);
+  const std::size_t live_scroll_case = compact_composition.find(
+      "std::get_if<realmz::presentation::OpenCombatScrollCaseAction>"
+      "(&control.payload)",
+      live_escape_stamina);
+  const std::size_t live_scroll_case_kind = compact_composition.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "open_combat_scroll_case",
+      live_scroll_case);
+  const std::size_t live_scroll_case_available = compact_composition.find(
+      "!snapshot.combat->use_scroll_available", live_scroll_case_kind);
+  const std::size_t live_scroll_case_actor = compact_composition.find(
+      "snapshot.combat->acting_combatant!="
+      "open_combat_scroll_case->combatant",
+      live_scroll_case_available);
+  const std::size_t live_scroll_case_mapper = compact_composition.find(
+      "legacy_key_message_for_open_combat_scroll_case(",
+      live_scroll_case_actor);
+  const std::size_t live_scroll_case_combatant = compact_composition.find(
+      "std::ranges::find(snapshot.combat->combatants,"
+      "open_combat_scroll_case->combatant,",
+      live_scroll_case_mapper);
+  const std::size_t live_scroll_case_member = compact_composition.find(
+      "snapshot.party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(open_combat_scroll_case->combatant))",
+      live_scroll_case_combatant);
+  const std::size_t live_scroll_case_party_kind = compact_composition.find(
+      "combatant->kind=="
+      "realmz::presentation::CombatantKind::party_member",
+      live_scroll_case_member);
+  const std::size_t live_scroll_case_stamina = compact_composition.find(
+      "combatant->stamina.current>0", live_scroll_case_party_kind);
   require(composed_bandage_eligibility != std::string::npos &&
           composed_undo_eligibility != std::string::npos &&
           composed_combat_spellbook_eligibility != std::string::npos &&
           composed_combat_targeting_eligibility != std::string::npos &&
           composed_escape_eligibility != std::string::npos &&
+          composed_scroll_case_eligibility != std::string::npos &&
           composed_page != std::string::npos &&
           composed_auto != std::string::npos &&
           composed_auto_available != std::string::npos &&
@@ -2495,6 +2634,8 @@ void verify_window_manager_shell_dispatch_freshness(
           composed_combat_targeting_available != std::string::npos &&
           composed_escape != std::string::npos &&
           composed_escape_available != std::string::npos &&
+          composed_scroll_case != std::string::npos &&
+          composed_scroll_case_available != std::string::npos &&
           live_controls != std::string::npos &&
           live_page != std::string::npos &&
           live_page_transition != std::string::npos &&
@@ -2557,7 +2698,16 @@ void verify_window_manager_shell_dispatch_freshness(
           live_escape_combatant != std::string::npos &&
           live_escape_member != std::string::npos &&
           live_escape_party_kind != std::string::npos &&
-          live_escape_stamina != std::string::npos,
+          live_escape_stamina != std::string::npos &&
+          live_scroll_case != std::string::npos &&
+          live_scroll_case_kind != std::string::npos &&
+          live_scroll_case_available != std::string::npos &&
+          live_scroll_case_actor != std::string::npos &&
+          live_scroll_case_mapper != std::string::npos &&
+          live_scroll_case_combatant != std::string::npos &&
+          live_scroll_case_member != std::string::npos &&
+          live_scroll_case_party_kind != std::string::npos &&
+          live_scroll_case_stamina != std::string::npos,
       "combat utility/special composition must retain requests and live "
       "actor/capability validation");
   require(composed_bandage_eligibility < composed_undo_eligibility &&
@@ -2565,7 +2715,8 @@ void verify_window_manager_shell_dispatch_freshness(
           composed_combat_spellbook_eligibility <
               composed_combat_targeting_eligibility &&
           composed_combat_targeting_eligibility < composed_escape_eligibility &&
-          composed_escape_eligibility < composed_page &&
+          composed_escape_eligibility < composed_scroll_case_eligibility &&
+          composed_scroll_case_eligibility < composed_page &&
           composed_page < composed_auto &&
           composed_auto < composed_auto_available &&
           composed_auto_available < composed_range &&
@@ -2580,7 +2731,9 @@ void verify_window_manager_shell_dispatch_freshness(
           composed_combat_targeting < composed_combat_targeting_available &&
           composed_combat_targeting_available < composed_escape &&
           composed_escape < composed_escape_available &&
-          composed_escape_available < live_controls &&
+          composed_escape_available < composed_scroll_case &&
+          composed_scroll_case < composed_scroll_case_available &&
+          composed_scroll_case_available < live_controls &&
           live_controls < live_page && live_page < live_page_transition &&
           live_page_transition < live_auto && live_auto < live_auto_kind &&
           live_auto_kind < live_auto_actor &&
@@ -2640,7 +2793,16 @@ void verify_window_manager_shell_dispatch_freshness(
           live_escape_mapper < live_escape_combatant &&
           live_escape_combatant < live_escape_member &&
           live_escape_member < live_escape_party_kind &&
-          live_escape_party_kind < live_escape_stamina,
+          live_escape_party_kind < live_escape_stamina &&
+          live_escape_stamina < live_scroll_case &&
+          live_scroll_case < live_scroll_case_kind &&
+          live_scroll_case_kind < live_scroll_case_available &&
+          live_scroll_case_available < live_scroll_case_actor &&
+          live_scroll_case_actor < live_scroll_case_mapper &&
+          live_scroll_case_mapper < live_scroll_case_combatant &&
+          live_scroll_case_combatant < live_scroll_case_member &&
+          live_scroll_case_member < live_scroll_case_party_kind &&
+          live_scroll_case_party_kind < live_scroll_case_stamina,
       "combat utility/special controls must validate current page, actor, "
       "capability, and live snapshot before interaction");
   require(count_identifier(composition, "escape_available") == 0,
@@ -3365,6 +3527,80 @@ void verify_window_manager_shell_dispatch_freshness(
           escape_stamina < escape_route_accept,
       "Escape route eligibility must require the active combat scope and "
       "revalidate its fresh acting party combatant before acceptance");
+  const std::size_t scroll_case_route = compact_eligibility.find(
+      "std::get_if<realmz::presentation::OpenCombatScrollCaseAction>"
+      "(&control.payload)",
+      escape_route_accept);
+  const std::size_t scroll_case_surface_guard = compact_eligibility.find(
+      "if(!surface_matches_context||", scroll_case_route);
+  const std::size_t scroll_case_mapper = compact_eligibility.find(
+      "legacy_key_message_for_open_combat_scroll_case(",
+      scroll_case_surface_guard);
+  const std::size_t scroll_case_snapshot = compact_eligibility.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      scroll_case_mapper);
+  const std::size_t scroll_case_available = compact_eligibility.find(
+      "!snapshot->combat->use_scroll_available", scroll_case_snapshot);
+  const std::size_t scroll_case_acting_actor = compact_eligibility.find(
+      "snapshot->combat->acting_combatant!="
+      "open_combat_scroll_case->combatant",
+      scroll_case_available);
+  const std::size_t scroll_case_party_member = compact_eligibility.find(
+      "snapshot->party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(open_combat_scroll_case->combatant))",
+      scroll_case_acting_actor);
+  const std::size_t scroll_case_combatant_view = compact_eligibility.find(
+      "std::ranges::find(snapshot->combat->combatants,"
+      "open_combat_scroll_case->combatant,",
+      scroll_case_party_member);
+  const std::size_t scroll_case_membership_rejection =
+      compact_eligibility.find(
+          "if((combatant==snapshot->combat->combatants.end())||!member||",
+          scroll_case_combatant_view);
+  const std::size_t scroll_case_party_kind = compact_eligibility.find(
+      "combatant->kind!="
+      "realmz::presentation::CombatantKind::party_member",
+      scroll_case_membership_rejection);
+  const std::size_t scroll_case_active = compact_eligibility.find(
+      "!combatant->active", scroll_case_party_kind);
+  const std::size_t scroll_case_targetable = compact_eligibility.find(
+      "!combatant->targetable", scroll_case_active);
+  const std::size_t scroll_case_stamina = compact_eligibility.find(
+      "combatant->stamina.current<=0", scroll_case_targetable);
+  const std::size_t scroll_case_route_accept = compact_eligibility.find(
+      "continue;", scroll_case_stamina);
+  require(scroll_case_route != std::string::npos &&
+          scroll_case_surface_guard != std::string::npos &&
+          scroll_case_mapper != std::string::npos &&
+          scroll_case_snapshot != std::string::npos &&
+          scroll_case_available != std::string::npos &&
+          scroll_case_acting_actor != std::string::npos &&
+          scroll_case_party_member != std::string::npos &&
+          scroll_case_combatant_view != std::string::npos &&
+          scroll_case_membership_rejection != std::string::npos &&
+          scroll_case_party_kind != std::string::npos &&
+          scroll_case_active != std::string::npos &&
+          scroll_case_targetable != std::string::npos &&
+          scroll_case_stamina != std::string::npos &&
+          scroll_case_route_accept != std::string::npos,
+      "fresh Use Scroll eligibility must retain mapper, scroll capability, "
+      "actor, PartyView, and CombatView validation");
+  require(escape_route_accept < scroll_case_route &&
+          scroll_case_route < scroll_case_surface_guard &&
+          scroll_case_surface_guard < scroll_case_mapper &&
+          scroll_case_mapper < scroll_case_snapshot &&
+          scroll_case_snapshot < scroll_case_available &&
+          scroll_case_available < scroll_case_acting_actor &&
+          scroll_case_acting_actor < scroll_case_party_member &&
+          scroll_case_party_member < scroll_case_combatant_view &&
+          scroll_case_combatant_view < scroll_case_membership_rejection &&
+          scroll_case_membership_rejection < scroll_case_party_kind &&
+          scroll_case_party_kind < scroll_case_active &&
+          scroll_case_active < scroll_case_targetable &&
+          scroll_case_targetable < scroll_case_stamina &&
+          scroll_case_stamina < scroll_case_route_accept,
+      "Use Scroll route eligibility must revalidate the special-page actor "
+      "and projected scroll capability before accepting the control");
   require(count_identifier(compact_eligibility, "escape_available") == 0,
       "fresh Escape route eligibility must not depend on a synthetic Escape "
       "capability");
@@ -3468,6 +3704,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticEscapeCombatEvent") == 0,
       std::string(function_name) +
           " must leave tagged Escape consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged scroll-case consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -3501,6 +3741,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const std::string combat_source = code_only(combat_raw_source);
   const std::string combatchoice_source = code_only(read_file(
       legacy_root / "combatinfo-combatchoice.c"));
+  const std::string getscroll_source = code_only(read_file(
+      legacy_root / "getscroll.c"));
   const std::string items_source = code_only(read_file(
       legacy_root / "items.c"));
   const std::string centerstage_source = code_only(read_file(
@@ -3520,6 +3762,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const std::string combat_raw = function_body(combat_raw_source, "combat");
   const std::string combatchoice = function_body(
       combatchoice_source, "combatchoice");
+  const std::string getscroll = function_body(getscroll_source, "getscroll");
   const std::string items = function_body(items_source, "items");
   const std::string centerstage = function_body(
       centerstage_source, "centerstage");
@@ -3587,6 +3830,147 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           count_identifier(auto_case_branch, "Rand") == 0,
       "combat Auto key branch must only select the shared Classic command "
       "route");
+
+  const std::size_t scroll_case = auto_next_case;
+  const std::size_t scroll_next_case = compact_combat.find(
+      "case's':", scroll_case);
+  const std::size_t scroll_control = compact_combat.find(
+      "theControl=viewspellsbut;", scroll_case);
+  const std::size_t scroll_jump = compact_combat.find(
+      "gotojumpposs;", scroll_control);
+  const std::size_t scroll_break = compact_combat.find(
+      "break;", scroll_jump);
+  require(scroll_case != std::string::npos &&
+          scroll_next_case != std::string::npos &&
+          scroll_control != std::string::npos &&
+          scroll_jump != std::string::npos &&
+          scroll_break != std::string::npos,
+      "combat must retain the exact Classic Use Scroll control handoff");
+  require(scroll_case < scroll_control && scroll_control < scroll_jump &&
+          scroll_jump < scroll_break && scroll_break < scroll_next_case,
+      "combat Use Scroll must select viewspellsbut and jump to shared "
+      "combatchoice before Cast Spell");
+  const std::string scroll_case_branch = compact_combat.substr(
+      scroll_case, scroll_next_case - scroll_case);
+  require(scroll_case_branch.contains(
+              "theControl=viewspellsbut;gotojumpposs;break;") &&
+          count_identifier(scroll_case_branch, "getscroll") == 0 &&
+          count_identifier(scroll_case_branch, "WaitNextEvent") == 0 &&
+          count_identifier(scroll_case_branch, "ModalDialog") == 0,
+      "combat lowercase l must only select the preserved shared Classic "
+      "scroll route");
+
+  const std::string compact_scroll_combatchoice =
+      without_whitespace(combatchoice);
+  const std::size_t scroll_control_branch =
+      compact_scroll_combatchoice.find(
+          "if((theControl==viewspellsbut)&&(c[charup].armor[13])){");
+  const std::size_t scroll_getscroll = compact_scroll_combatchoice.find(
+      "if(getscroll()){", scroll_control_branch);
+  const std::size_t scroll_skipload = compact_scroll_combatchoice.find(
+      "skipload=TRUE;", scroll_getscroll);
+  const std::size_t scroll_goto_wand = compact_scroll_combatchoice.find(
+      "gotowand;", scroll_skipload);
+  const std::size_t scroll_wand = compact_scroll_combatchoice.find(
+      "wand:", scroll_goto_wand);
+  require(scroll_control_branch != std::string::npos &&
+          scroll_getscroll != std::string::npos &&
+          scroll_skipload != std::string::npos &&
+          scroll_goto_wand != std::string::npos &&
+          scroll_wand != std::string::npos &&
+          scroll_control_branch < scroll_getscroll &&
+          scroll_getscroll < scroll_skipload &&
+          scroll_skipload < scroll_goto_wand &&
+          scroll_goto_wand < scroll_wand,
+      "Classic combatchoice must call getscroll and route an accepted scroll "
+      "into the shared wand targeting path");
+
+  const std::string compact_getscroll = without_whitespace(getscroll);
+  const std::size_t scroll_modal_loop = compact_getscroll.find("for(;;){");
+  const std::size_t scroll_modal_flush = compact_getscroll.find(
+      "FlushEvents(everyEvent,0);", scroll_modal_loop);
+  const std::size_t scroll_modal = compact_getscroll.find(
+      "ModalDialog(0L,&itemHit);", scroll_modal_flush);
+  const std::size_t scroll_browse = compact_getscroll.find(
+      "charselectnew++;", scroll_modal);
+  const std::size_t scroll_cancel = compact_getscroll.find(
+      "if((itemHit==12)||(itemHit==1)){", scroll_modal);
+  const std::size_t scroll_cancel_inspell = compact_getscroll.find(
+      "inspell=0;", scroll_cancel);
+  const std::size_t scroll_cancel_out = compact_getscroll.find(
+      "gotoout;", scroll_cancel_inspell);
+  const std::size_t scroll_selected = compact_getscroll.find(
+      "if(c[charselectnew].scrollcase[itemHit-7].powerlevel){",
+      scroll_cancel_out);
+  const std::size_t scroll_copy_castnum = compact_getscroll.find(
+      "castnum=c[charselectnew].scrollcase[itemHit-7].castnum-1;",
+      scroll_selected);
+  const std::size_t scroll_copy_power = compact_getscroll.find(
+      "powerlevel=c[charselectnew].scrollcase[itemHit-7].powerlevel;",
+      scroll_copy_castnum);
+  const std::size_t scroll_loadspell = compact_getscroll.find(
+      "loadspell(castcaste,castlevel,castnum);", scroll_copy_power);
+  const std::size_t scroll_flag = compact_getscroll.find(
+      "usescroll=TRUE;", scroll_loadspell);
+  const std::size_t scroll_combat_validity = compact_getscroll.find(
+      "if((incombat)&&(!spellinfo.incombat)){", scroll_flag);
+  const std::size_t scroll_consume = compact_getscroll.find(
+      "c[charselectnew].scrollcase[itemHit-7].powerlevel=0;",
+      scroll_combat_validity);
+  const std::size_t scroll_accept_inspell = compact_getscroll.find(
+      "inspell=TRUE;", scroll_consume);
+  const std::size_t scroll_accept_out = compact_getscroll.find(
+      "gotoout;", scroll_accept_inspell);
+  const std::size_t scroll_return = compact_getscroll.find(
+      "return(inspell);", scroll_accept_out);
+  require(scroll_modal_loop != std::string::npos &&
+          scroll_modal_flush != std::string::npos &&
+          scroll_modal != std::string::npos &&
+          scroll_browse != std::string::npos &&
+          scroll_cancel != std::string::npos &&
+          scroll_cancel_inspell != std::string::npos &&
+          scroll_cancel_out != std::string::npos &&
+          scroll_selected != std::string::npos &&
+          scroll_copy_castnum != std::string::npos &&
+          scroll_copy_power != std::string::npos &&
+          scroll_loadspell != std::string::npos &&
+          scroll_flag != std::string::npos &&
+          scroll_combat_validity != std::string::npos &&
+          scroll_consume != std::string::npos &&
+          scroll_accept_inspell != std::string::npos &&
+          scroll_accept_out != std::string::npos &&
+          scroll_return != std::string::npos,
+      "Classic getscroll must retain its raw chooser, browsing, cancellation, "
+      "selection, validation, and accepted-scroll consumption route");
+  require(scroll_modal_loop < scroll_modal_flush &&
+          scroll_modal_flush < scroll_modal &&
+          scroll_modal < scroll_cancel &&
+          scroll_cancel < scroll_cancel_inspell &&
+          scroll_cancel_inspell < scroll_cancel_out &&
+          scroll_cancel_out < scroll_selected &&
+          scroll_selected < scroll_copy_castnum &&
+          scroll_copy_castnum < scroll_copy_power &&
+          scroll_copy_power < scroll_loadspell &&
+          scroll_loadspell < scroll_flag &&
+          scroll_flag < scroll_combat_validity &&
+          scroll_combat_validity < scroll_consume &&
+          scroll_consume < scroll_accept_inspell &&
+          scroll_accept_inspell < scroll_accept_out &&
+          scroll_accept_out < scroll_return,
+      "getscroll must leave cancellation non-consuming and clear an accepted "
+      "scroll before returning to shared wand targeting");
+  const std::string scroll_cancel_branch = compact_getscroll.substr(
+      scroll_cancel, scroll_cancel_out - scroll_cancel);
+  require(!scroll_cancel_branch.contains("scrollcase[") &&
+          !scroll_cancel_branch.contains("powerlevel=0"),
+      "cancelling getscroll before selection must not consume a scroll");
+  require(count_identifier(getscroll, "ModalDialog") == 1 &&
+          count_identifier(getscroll, "WaitNextEvent") == 0 &&
+          count_identifier(getscroll, "GetNextEvent") == 0,
+      "getscroll must own exactly one raw ModalDialog loop, not a top-level "
+      "semantic gameplay poll");
+  require_no_semantic_scope_or_consumer(getscroll, "getscroll");
+
   const std::size_t cast_case = compact_combat.find("case's':");
   const std::size_t cast_next_case = compact_combat.find(
       "case'u':", cast_case);
@@ -3672,14 +4056,34 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "if(key)gotogotkey;", weapon_mouse);
   const std::size_t shared_jumpposs = compact_combat.find(
       "jumpposs:combatchoice();", mouse_gotkey);
+  const std::size_t mouse_find_control = compact_combat.rfind(
+      "thePart=FindControl(point,screen,&theControl);", shared_jumpposs);
+  const std::size_t shared_empty_queue = compact_combat.find(
+      "emptyque();", shared_jumpposs);
+  const std::size_t shared_turn_check = compact_combat.find(
+      "if(c[charup].attacks<2)getup(FALSE);", shared_empty_queue);
   require(target_mouse != std::string::npos &&
           weapon_mouse != std::string::npos &&
           mouse_gotkey != std::string::npos &&
           shared_jumpposs != std::string::npos &&
+          mouse_find_control != std::string::npos &&
+          shared_empty_queue != std::string::npos &&
+          shared_turn_check != std::string::npos &&
           target_mouse < weapon_mouse && weapon_mouse < mouse_gotkey &&
-          mouse_gotkey < shared_jumpposs,
+          mouse_gotkey < shared_jumpposs &&
+          mouse_find_control < shared_jumpposs &&
+          shared_jumpposs < shared_empty_queue &&
+          shared_empty_queue < shared_turn_check,
       "Classic Target mouse hit must converge through gotkey before the same "
       "shared combatchoice route as keyboard t");
+  require(compact_combat.find("key='l'", mouse_find_control) ==
+          std::string::npos,
+      "Classic mouse dispatch must leave Use Scroll on the shared "
+      "FindControl/viewspellsbut path rather than inventing a second l map");
+  require(count_identifier(combat, "combatchoice") >= 2 &&
+          count_identifier(combat, "getup") >= 1,
+      "Classic combat must retain the post-combatchoice attack-based turn "
+      "decision for keyboard and FindControl routes");
 
   const std::string compact_target_combatchoice =
       without_whitespace(combatchoice);
@@ -3832,9 +4236,12 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           target_abort_inspell);
   require(target_abort_branch.contains("!usescroll") &&
           !target_abort_branch.contains(
-              "c[charup].items[itemnum].charge++"),
+              "c[charup].items[itemnum].charge++") &&
+          !target_abort_branch.contains("scrollcase[") &&
+          count_identifier(target_abort_branch, "attacks") == 0,
       "Target item charges must not be restored by the manual abort branch; "
-      "only non-scroll memorized spells may receive the guarded refund");
+      "an accepted scroll stays consumed, loses three movement, spends no "
+      "attack, and cannot receive the memorized-spell refund");
 
   const std::size_t target_launch_label = compact_target_combatchoice.find(
       "launch:", target_abort_return);
@@ -3870,10 +4277,27 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           target_launch_clear < target_launch_return,
       "Classic Target launch must apply its costs before spell resolution "
       "and target cleanup");
+  const std::string target_launch_branch =
+      compact_target_combatchoice.substr(
+          target_launch_label,
+          target_launch_return + std::string_view("return;").size() -
+              target_launch_label);
+  require(count_identifier(target_launch_branch, "movement") >= 2 &&
+          count_identifier(target_launch_branch, "attacks") >= 2 &&
+          count_identifier(target_launch_branch, "spellpoints") == 0 &&
+          count_identifier(target_launch_branch, "scrollcase") == 0,
+      "accepted scroll launch must spend twelve movement (with clamp) and "
+      "two attacks without spending spell points or restoring its charge");
   require(count_identifier(
               combatchoice, "RealmzConsumeSemanticOpenCombatTargetingEvent") ==
           0,
       "Classic combatchoice must not consume semantic Target tags");
+  require(count_identifier(combatchoice,
+              "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 0 &&
+          count_identifier(getscroll,
+              "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 0,
+      "Classic combatchoice/getscroll must own scroll choice and effects "
+      "without consuming semantic scroll-case tags");
 
   const std::size_t undo_case = cast_next_case;
   const std::size_t undo_next_case = compact_combat.find(
@@ -5002,6 +5426,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_combat_spellbook_consumer_count = 0;
   std::size_t global_combat_targeting_consumer_count = 0;
   std::size_t global_escape_consumer_count = 0;
+  std::size_t global_scroll_case_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -5058,6 +5483,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenCombatTargetingEvent");
     global_escape_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticEscapeCombatEvent");
+    global_scroll_case_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticOpenCombatScrollCaseEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -5113,6 +5540,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "directly");
   require(global_escape_consumer_count == 0,
       "legacy loops must not consume tagged semantic Escape input directly");
+  require(global_scroll_case_consumer_count == 0,
+      "legacy loops must not consume tagged semantic scroll-case input "
+      "directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -5164,6 +5594,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t combat_spellbook_consume_calls = 0;
   std::size_t combat_targeting_consume_calls = 0;
   std::size_t escape_consume_calls = 0;
+  std::size_t scroll_case_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -5231,6 +5662,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenCombatTargetingEvent");
     escape_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticEscapeCombatEvent");
+    scroll_case_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticOpenCombatScrollCaseEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -5299,6 +5732,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "RealmzConsumeSemanticOpenCombatTargetingEvent");
   require(escape_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticEscapeCombatEvent");
+  require(scroll_case_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticOpenCombatScrollCaseEvent");
 }
 
 } // namespace

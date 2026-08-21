@@ -120,6 +120,7 @@ enum class ActionIntent {
   open_combat_spellbook,
   open_combat_targeting,
   escape_combat,
+  open_combat_scroll_case,
   cancel,
   encounter_choice,
 };

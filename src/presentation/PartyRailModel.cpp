@@ -553,6 +553,24 @@ std::vector<ActionControlModel> build_actions(
     if (can_act) {
       result.back().combatant = acting->id;
     }
+    const bool can_open_combat_scroll_case =
+        can_act && snapshot.combat->use_scroll_available;
+    result.emplace_back(action(
+        ActionIntent::open_combat_scroll_case,
+        "action.combat.scroll_case.open",
+        "Use scroll",
+        can_open_combat_scroll_case
+            ? ActionAvailability::deferred_to_engine
+            : ActionAvailability::unavailable,
+        tab_order++,
+        can_open_combat_scroll_case
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{unavailable_token(
+                  can_act ? "Scroll use is unavailable now"
+                          : "Wait for an active party member")}));
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
   }
 
   if (encounter_active) {

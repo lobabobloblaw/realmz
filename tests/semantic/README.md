@@ -45,8 +45,8 @@ CXX=g++ tests/semantic/run-exploration-action-equivalence.sh
 The combat harness compares the direct Classic-key mapper request with the
 typed-action path through the real runtime bridge and semantic input boundary
 for Guard, Finish, Delay, Center, Switch Weapon, Center Previous, Center Next,
-Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat Target, and Combat
-Escape.
+Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat Target, Combat
+Escape, and Use Scroll.
 Test-owned semantic-event sinks retain the tags instead of running the
 production WindowManager/EventManager queue.
 Its test-owned pre-Classic state image verifies stable acting combatant and
@@ -77,7 +77,8 @@ condition checks or mutations, run Combat Cast's spell/power chooser, target
 loops, costs/refunds, resolution, or turn handling, resolve Target's equipment
 or quiver, consume/drop its item, choose its target mode, run its raw target
 loop, pay abort/launch costs, resolve its spell, evaluate or confirm Escape,
-perform flee mutations or turn flow, exercise RNG, or claim save equivalence.
+perform flee mutations or turn flow, browse/select/consume a scroll, run its
+targeting/effects/costs/turn flow, exercise RNG, or claim save equivalence.
 
 ## Classic combat-focus helper
 
@@ -120,7 +121,7 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first fifteen bounded combat controls are covered by the combat fixture and
+The first sixteen bounded combat controls are covered by the combat fixture and
 the presentation, runtime-bridge, semantic-boundary, top-level-loop, and
 keyboard contract tests. They verify that typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`, and
@@ -136,6 +137,8 @@ both the exploration `OpenSpellbookAction` and the fully specified
 does not identify an entity, area, or cell target.
 `EscapeCombatAction` carries only the actor and does not encode a range result,
 warning, confirmation response, or flee outcome.
+`OpenCombatScrollCaseAction` carries only the actor and does not identify a
+scroll-case slot, scroll, spell, power, recipient, cell, or target.
 `OpenCombatItemsAction` carries both the acting ID and selected party-member ID;
 delivery additionally requires that the same member still exists and remains
 selected.
@@ -179,28 +182,39 @@ uses only the fresh actor gate and becomes the exact Classic `e` message
 `0x00000E65`; Classic owns its range and condition checks, warning precedence,
 raw confirmation dialog, field/queue/position/prestige/coward mutations, and
 turn or post-combat flow. The fixture stops at that key handoff and claims no
-flee equivalence; every other combat command remains on the Classic input route.
+flee equivalence.
+Use Scroll mirrors Classic's visible equipped-case gate and becomes the exact
+Classic `l` message `0x0000256C`; Classic owns `getscroll`, modal browsing and
+selection, immediate accepted-scroll consumption, spell validation, targeting,
+RNG, effects, movement/attack costs, and turn handling. The fixture stops at
+the key handoff and claims no scroll-use equivalence; every remaining command
+stays on the Classic input route.
 
 `SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
 fixture-owned legacy globals flow through the real presentation-context and
 snapshot adapters before the semantic boundary emits those exact key records.
 It covers stale acting-combatant and non-gameplay-window rejection for all
-fifteen command records, plus stale selected-member rejection for Combat Items,
+sixteen command records, plus stale selected-member rejection for Combat Items,
 while leaving its output sentinel unchanged. It performs no Classic combat or
 inventory mutation, reads or writes no user data, and is not a camera, modal,
 automation, RNG, turn, full combat replay, or save-equivalence test.
 
 `SemanticTopLevelLoopContractTest` pins the untouched Classic `r`, `b`, `u`,
-`s`, `t`, and `e` branches and their ownership: the semantic gameplay scope has
-ended before each late key handoff, `showrange()` owns its raw dismissal wait,
+`s`, `t`, `e`, and `l` branches and their ownership: the semantic gameplay
+scope has ended before each late key handoff, `showrange()` owns its raw
+dismissal wait,
 `getchoice()` owns Bandage's raw member picker, Classic owns Undo's condition
-checks and mutations, the combat `s` branch still selects `castspellsbut`, and the `t`
-branch still selects `combatitem` before the shared `combatchoice()` path.
+checks and mutations, the combat `s` branch still selects `castspellsbut`, and
+the `t` branch still selects `combatitem` before the shared `combatchoice()` path.
 Classic's `e` branch still owns `getrange`, warning precedence, raw `question3`
 confirmation, confirmed flee mutations, and `getup`.
+Classic's `l` branch still selects `viewspellsbut`, then `combatchoice` owns
+`getscroll`, its modal loop, accepted-scroll consumption, the shared `wand`
+target/effect path, abort/success costs, and turn decision.
 Inactive-surface dequeue rejects later shell
 gameplay tags. This is source-contract evidence, not executable range-overlay,
-Bandage, Undo, Combat Cast, Combat Target, Combat Escape, or modal replay.
+Bandage, Undo, Combat Cast, Combat Target, Combat Escape, Use Scroll, or modal
+replay.
 
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:

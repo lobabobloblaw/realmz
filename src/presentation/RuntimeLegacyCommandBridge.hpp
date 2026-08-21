@@ -108,6 +108,10 @@ using RuntimeLegacyEscapeCombatSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenCombatScrollCaseSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Combat sinks are named because several callable signatures are intentionally
 // identical even though their commands are not interchangeable. The focus
@@ -131,6 +135,8 @@ struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacyOpenCombatSpellbookSink> open_combat_spellbook;
   std::optional<RuntimeLegacyOpenCombatTargetingSink> open_combat_targeting;
   std::optional<RuntimeLegacyEscapeCombatSink> escape_combat;
+  std::optional<RuntimeLegacyOpenCombatScrollCaseSink>
+      open_combat_scroll_case;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -280,6 +286,15 @@ legacy_key_message_for_open_combat_targeting(
 // mutation, RNG, and every subsequent turn or combat-exit effect.
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_escape_combat(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic lowercase "l" key record consumed by combat's
+// preserved Use Scroll branch. Only the stable acting combatant crosses this
+// boundary; Classic owns the chooser, selection/consumption, targeting, costs,
+// RNG, and every subsequent turn effect.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_open_combat_scroll_case(
     CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 

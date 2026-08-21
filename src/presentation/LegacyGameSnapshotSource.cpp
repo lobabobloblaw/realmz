@@ -184,6 +184,19 @@ bool active_party_actor_can_target(int party_count) noexcept {
       (first_matching_item->charge != 0);
 }
 
+bool active_party_actor_can_use_scroll(int party_count) noexcept {
+  const int actor_index = static_cast<int>(charup);
+  const int queue_index = static_cast<int>(up);
+  if (monsterturn || (actor_index < 0) || (actor_index >= party_count) ||
+      (queue_index < 0) || (queue_index >= 110) ||
+      (static_cast<int>(q[queue_index]) != actor_index) || (inspell != 0)) {
+    return false;
+  }
+
+  const auto& actor = c[actor_index];
+  return (actor.stamina > 0) && (actor.armor[13] != 0);
+}
+
 } // namespace
 
 GameSnapshot LegacyGameSnapshotSource::capture() const {
@@ -238,6 +251,8 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
     combat.undo_available = canundo != 0;
     combat.cast_spell_available = active_party_actor_can_cast(party_count);
     combat.target_available = active_party_actor_can_target(party_count);
+    combat.use_scroll_available =
+        active_party_actor_can_use_scroll(party_count);
     combat.round = static_cast<int16_t>(combatround);
     if (!monsterturn && (charup >= 0) && (charup < party_count)) {
       combat.acting_combatant = static_cast<CombatantId>(charup);

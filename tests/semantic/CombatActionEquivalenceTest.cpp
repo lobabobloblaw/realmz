@@ -56,6 +56,7 @@ enum class CombatCommand {
   open_combat_spellbook,
   open_combat_targeting,
   escape_combat,
+  open_combat_scroll_case,
   items,
 };
 
@@ -156,6 +157,12 @@ constexpr std::array kCombatCases{
         .expected_semantic_tag = 0x52450302U,
     },
     CombatCase{
+        .command = CombatCommand::open_combat_scroll_case,
+        .label = "Use Scroll",
+        .expected_classic_message = 0x0000256CU,
+        .expected_semantic_tag = 0x55530302U,
+    },
+    CombatCase{
         .command = CombatCommand::items,
         .label = "Combat Items",
         .expected_classic_message = 0x00002269U,
@@ -197,6 +204,7 @@ enum class StateByte : std::size_t {
   undo_available,
   cast_spell_available,
   target_available,
+  use_scroll_available,
   acting_combatant,
   actor_party_member_present,
   actor_combatant_present,
@@ -245,6 +253,7 @@ void reset_fixture_state() {
   set_state(StateByte::undo_available, 1);
   set_state(StateByte::cast_spell_available, 1);
   set_state(StateByte::target_available, 1);
+  set_state(StateByte::use_scroll_available, 1);
   set_state(
       StateByte::acting_combatant,
       static_cast<uint8_t>(kActingCombatant));
@@ -317,6 +326,8 @@ void reset_fixture_state() {
         .cast_spell_available =
             state(StateByte::cast_spell_available) != 0,
         .target_available = state(StateByte::target_available) != 0,
+        .use_scroll_available =
+            state(StateByte::use_scroll_available) != 0,
         .round = 3,
         .acting_combatant =
             static_cast<CombatantId>(state(StateByte::acting_combatant)),
@@ -383,6 +394,9 @@ void reset_fixture_state() {
     case CombatCommand::escape_combat:
       return legacy_key_message_for_escape_combat(
           kActingCombatant, kRuntimeContext);
+    case CombatCommand::open_combat_scroll_case:
+      return legacy_key_message_for_open_combat_scroll_case(
+          kActingCombatant, kRuntimeContext);
     case CombatCommand::items:
       if (!action_case.selected_member) {
         return std::nullopt;
@@ -447,6 +461,8 @@ void reset_fixture_state() {
       return OpenCombatTargetingAction{kActingCombatant};
     case CombatCommand::escape_combat:
       return EscapeCombatAction{kActingCombatant};
+    case CombatCommand::open_combat_scroll_case:
+      return OpenCombatScrollCaseAction{kActingCombatant};
     case CombatCommand::items:
       if (!action_case.selected_member) {
         throw std::logic_error("Combat Items case has no selected member");
@@ -728,6 +744,23 @@ void append_trace(
             tag);
         return tag != 0;
       },
+      .open_combat_scroll_case = [&traces](
+          CombatantId actor,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& context) {
+        const uint32_t tag = semantic_open_combat_scroll_case_tag(
+            actor, REALMZ_SEMANTIC_INPUT_COMBAT);
+        append_trace(
+            traces,
+            CombatCommand::open_combat_scroll_case,
+            actor,
+            std::nullopt,
+            std::nullopt,
+            message,
+            context,
+            tag);
+        return tag != 0;
+      },
   };
 
   return RuntimeLegacyCommandBridge(
@@ -825,6 +858,11 @@ void append_trace(
                  &classic_message) != 0;
     case CombatCommand::escape_combat:
       return RealmzConsumeSemanticEscapeCombatEvent(
+                 REALMZ_SEMANTIC_INPUT_COMBAT,
+                 tag,
+                 &classic_message) != 0;
+    case CombatCommand::open_combat_scroll_case:
+      return RealmzConsumeSemanticOpenCombatScrollCaseEvent(
                  REALMZ_SEMANTIC_INPUT_COMBAT,
                  tag,
                  &classic_message) != 0;
@@ -1003,7 +1041,7 @@ void test_combat_items_stops_at_modal_request_handoff() {
 
 void test_combat_range_stops_at_classic_modal_handoff() {
   const CombatCase& show_range =
-      kCombatCases[kCombatCases.size() - 7];
+      kCombatCases[kCombatCases.size() - 8];
   CHECK(show_range.command == CombatCommand::show_combat_range);
 
   reset_fixture_state();
@@ -1023,7 +1061,7 @@ void test_combat_range_stops_at_classic_modal_handoff() {
 }
 
 void test_bandage_stops_at_classic_target_picker_handoff() {
-  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 6];
+  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 7];
   CHECK(bandage.command == CombatCommand::bandage_combatant);
 
   reset_fixture_state();
@@ -1043,7 +1081,7 @@ void test_bandage_stops_at_classic_target_picker_handoff() {
 }
 
 void test_bandage_unavailable_rejection_is_single_use() {
-  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 6];
+  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 7];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(bandage, 600);
 
@@ -1062,7 +1100,7 @@ void test_bandage_unavailable_rejection_is_single_use() {
 }
 
 void test_undo_stops_at_classic_rollback_handoff() {
-  const CombatCase& undo = kCombatCases[kCombatCases.size() - 5];
+  const CombatCase& undo = kCombatCases[kCombatCases.size() - 6];
   CHECK(undo.command == CombatCommand::undo_combatant);
 
   reset_fixture_state();
@@ -1082,7 +1120,7 @@ void test_undo_stops_at_classic_rollback_handoff() {
 }
 
 void test_undo_unavailable_rejection_is_single_use() {
-  const CombatCase& undo = kCombatCases[kCombatCases.size() - 5];
+  const CombatCase& undo = kCombatCases[kCombatCases.size() - 6];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(undo, 800);
 
@@ -1101,7 +1139,7 @@ void test_undo_unavailable_rejection_is_single_use() {
 }
 
 void test_combat_spellbook_stops_at_classic_cast_handoff() {
-  const CombatCase& cast = kCombatCases[kCombatCases.size() - 4];
+  const CombatCase& cast = kCombatCases[kCombatCases.size() - 5];
   CHECK(cast.command == CombatCommand::open_combat_spellbook);
 
   reset_fixture_state();
@@ -1120,7 +1158,7 @@ void test_combat_spellbook_stops_at_classic_cast_handoff() {
 }
 
 void test_combat_spellbook_unavailable_rejection_is_single_use() {
-  const CombatCase& cast = kCombatCases[kCombatCases.size() - 4];
+  const CombatCase& cast = kCombatCases[kCombatCases.size() - 5];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(cast, 1000);
 
@@ -1139,7 +1177,7 @@ void test_combat_spellbook_unavailable_rejection_is_single_use() {
 }
 
 void test_combat_targeting_stops_at_classic_target_handoff() {
-  const CombatCase& target = kCombatCases[kCombatCases.size() - 3];
+  const CombatCase& target = kCombatCases[kCombatCases.size() - 4];
   CHECK(target.command == CombatCommand::open_combat_targeting);
 
   reset_fixture_state();
@@ -1158,7 +1196,7 @@ void test_combat_targeting_stops_at_classic_target_handoff() {
 }
 
 void test_combat_targeting_unavailable_rejection_is_single_use() {
-  const CombatCase& target = kCombatCases[kCombatCases.size() - 3];
+  const CombatCase& target = kCombatCases[kCombatCases.size() - 4];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(target, 1200);
 
@@ -1177,7 +1215,7 @@ void test_combat_targeting_unavailable_rejection_is_single_use() {
 }
 
 void test_escape_combat_stops_at_classic_key_handoff() {
-  const CombatCase& escape = kCombatCases[kCombatCases.size() - 2];
+  const CombatCase& escape = kCombatCases[kCombatCases.size() - 3];
   CHECK(escape.command == CombatCommand::escape_combat);
   CHECK(escape.expected_semantic_tag == 0x52450302U);
 
@@ -1195,6 +1233,51 @@ void test_escape_combat_stops_at_classic_key_handoff() {
   // The equivalence boundary ends at lowercase "e". Classic still owns the
   // range/condition checks, warning precedence, confirmation, retreat-state
   // mutations, reputation/loyalty/cowardice effects, killmon, and getup.
+}
+
+void test_open_combat_scroll_case_stops_at_classic_key_handoff() {
+  const CombatCase& scroll = kCombatCases[kCombatCases.size() - 2];
+  CHECK(scroll.command == CombatCommand::open_combat_scroll_case);
+  CHECK(scroll.expected_semantic_tag == 0x55530302U);
+
+  reset_fixture_state();
+  const PreClassicStateBytes initial_state = pre_classic_state;
+  const QueuedSemanticTrace queued = dispatch_semantic_action(scroll, 1400);
+
+  complete_combat_input_scope();
+  uint32_t output = kUnchangedClassicMessage;
+  CHECK(consume_semantic_request(
+      CombatCommand::open_combat_scroll_case,
+      queued.semantic_tag,
+      output));
+  CHECK(output == 0x0000256CU);
+  CHECK(pre_classic_state == initial_state);
+
+  // The equivalence boundary ends at lowercase "l". The semantic action has
+  // no scroll slot, spell, power, target, or recipient. Classic still owns
+  // getscroll, its raw modal loop, early charge consumption, wand targeting,
+  // movement/attack costs, effects, and turn handling.
+}
+
+void test_open_combat_scroll_case_unavailable_rejection_is_single_use() {
+  const CombatCase& scroll = kCombatCases[kCombatCases.size() - 2];
+  reset_fixture_state();
+  const QueuedSemanticTrace queued = dispatch_semantic_action(scroll, 1500);
+
+  set_state(StateByte::use_scroll_available, 0);
+  const PreClassicStateBytes unavailable_state = pre_classic_state;
+  complete_combat_input_scope();
+  uint32_t output = kUnchangedClassicMessage;
+  CHECK(!consume_semantic_request(
+      CombatCommand::open_combat_scroll_case,
+      queued.semantic_tag,
+      output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(pre_classic_state == unavailable_state);
+
+  set_state(StateByte::use_scroll_available, 1);
+  check_second_consume_is_unauthorized(
+      scroll, queued.semantic_tag, pre_classic_state, 1, 1);
 }
 
 } // namespace
@@ -1230,6 +1313,8 @@ int main() {
     test_combat_targeting_stops_at_classic_target_handoff();
     test_combat_targeting_unavailable_rejection_is_single_use();
     test_escape_combat_stops_at_classic_key_handoff();
+    test_open_combat_scroll_case_stops_at_classic_key_handoff();
+    test_open_combat_scroll_case_unavailable_rejection_is_single_use();
     RealmzInvalidateSemanticInputBoundary();
     std::cout << "CombatActionEquivalenceTest passed ("
               << checks_run << " checks)\n";

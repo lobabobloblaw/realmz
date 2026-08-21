@@ -34,6 +34,7 @@ constexpr uint32_t kCombatSpecialPageRegion = 1118U;
 constexpr uint32_t kOpenCombatSpellbookRegion = 1119U;
 constexpr uint32_t kOpenCombatTargetingRegion = 1120U;
 constexpr uint32_t kEscapeCombatRegion = 1121U;
+constexpr uint32_t kOpenCombatScrollCaseRegion = 1122U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -141,6 +142,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.open_combat_targeting);
   const bool valid_escape_combat = request.escape_combat &&
       valid_combatant(*request.escape_combat);
+  const bool valid_open_combat_scroll_case = request.open_combat_scroll_case &&
+      valid_combatant(*request.open_combat_scroll_case);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -157,6 +160,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.open_combat_spellbook,
       request.open_combat_targeting,
       request.escape_combat,
+      request.open_combat_scroll_case,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -193,7 +197,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const size_t special_combat_control_count =
       (request.open_combat_spellbook ? 1U : 0U) +
       (request.open_combat_targeting ? 1U : 0U) +
-      (request.escape_combat ? 1U : 0U);
+      (request.escape_combat ? 1U : 0U) +
+      (request.open_combat_scroll_case ? 1U : 0U);
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
@@ -205,7 +210,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_auto_combatant || valid_show_combat_range ||
       valid_bandage_combatant || valid_undo_combatant;
   const bool has_valid_special_action = valid_open_combat_spellbook ||
-      valid_open_combat_targeting || valid_escape_combat;
+      valid_open_combat_targeting || valid_escape_combat ||
+      valid_open_combat_scroll_case;
   const size_t combat_page_control_count = primary_combat_page
       ? ((has_valid_secondary_action || has_valid_utility_action ||
               has_valid_special_action)
@@ -255,7 +261,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.open_combat_spellbook_available ||
       request.open_combat_targeting ||
       request.open_combat_targeting_available || request.escape_combat ||
-      request.escape_combat_available || utility_combat_page ||
+      request.escape_combat_available || request.open_combat_scroll_case ||
+      request.open_combat_scroll_case_available || utility_combat_page ||
       special_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
@@ -284,7 +291,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           !valid_open_combat_spellbook) ||
       (request.open_combat_targeting_available &&
           !valid_open_combat_targeting) ||
-      (request.escape_combat_available && !valid_escape_combat)) {
+      (request.escape_combat_available && !valid_escape_combat) ||
+      (request.open_combat_scroll_case_available &&
+          !valid_open_combat_scroll_case)) {
     return {};
   }
 
@@ -494,6 +503,21 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .tab_order = 1121,
           .enabled = request.escape_combat_available,
           .payload = EscapeCombatAction{*request.escape_combat},
+      });
+      x += button_width + gap;
+    }
+    if (request.open_combat_scroll_case) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kOpenCombatScrollCaseRegion},
+          .kind = ShellControlKind::open_combat_scroll_case,
+          .bounds = {x, y, button_width, button_height},
+          .label = "SCROLL",
+          .accessibility_label = "Open combat scroll chooser",
+          .focus_identifier = "focus.action.combat.scroll_case.open",
+          .tab_order = 1122,
+          .enabled = request.open_combat_scroll_case_available,
+          .payload = OpenCombatScrollCaseAction{
+              *request.open_combat_scroll_case},
       });
     }
     return result;

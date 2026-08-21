@@ -153,6 +153,13 @@ uint8_t RealmzIsSemanticEscapeCombatTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticEscapeCombatTagSurface(
     uint32_t tagged_message);
 
+// Combat scroll-case tags carry only the acting combatant. Classic remains
+// authoritative for modal selection, scroll consumption, targeting, costs,
+// RNG, and every subsequent turn effect.
+uint8_t RealmzIsSemanticOpenCombatScrollCaseTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenCombatScrollCaseTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -316,6 +323,15 @@ uint8_t RealmzConsumeSemanticEscapeCombatEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant and the read-only combat Scroll
+// capability, then returns the preserved lowercase "l" key record. Classic
+// owns the chooser and every selection, consumption, targeting, RNG, cost, and
+// turn effect after handoff.
+uint8_t RealmzConsumeSemanticOpenCombatScrollCaseEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -403,6 +419,10 @@ enum class CombatFocusDirection;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_escape_combat_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_combat_scroll_case_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 
