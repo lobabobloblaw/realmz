@@ -74,6 +74,22 @@ void verify_early_child_dispatch(const fs::path& root) {
           std::string_view::npos,
       "replay child command line must be exact");
 
+  const std::string_view toolbox_body =
+      function_body(main_source, "void ToolBoxInit(void)");
+  const std::size_t preferences = toolbox_body.find("getpref()");
+  const std::size_t replay_policy = toolbox_body.find(
+      "if (RealmzSemanticReplayChildIsActive())", preferences);
+  const std::size_t mark_seen =
+      toolbox_body.find("seenit = TRUE", replay_policy);
+  const std::size_t menu_init = toolbox_body.find("MenuInit()", mark_seen);
+  require(preferences != std::string_view::npos &&
+          replay_policy != std::string_view::npos &&
+          mark_seen != std::string_view::npos &&
+          menu_init != std::string_view::npos &&
+          preferences < replay_policy && replay_policy < mark_seen &&
+          mark_seen < menu_init,
+      "replay startup must mark the About modal seen before MenuInit");
+
   const std::string child_source =
       read_file(root / "src/SemanticReplayChild.cpp");
   const std::string_view configure_body = function_body(
@@ -200,6 +216,31 @@ void verify_deterministic_runtime_hooks(const fs::path& root) {
 
   const std::string legacy_prefs_source =
       read_file(root / "src/realmz_orig/pref.c");
+  const std::string_view replay_preference_policy = function_body(
+      legacy_prefs_source,
+      "static void apply_semantic_replay_preference_policy(void)");
+  require(replay_preference_policy.find(
+              "RealmzSemanticReplayChildIsActive") !=
+              std::string_view::npos &&
+          replay_preference_policy.find("numchannel = -1") !=
+              std::string_view::npos &&
+          replay_preference_policy.find("volume = musicvolume = 0") !=
+              std::string_view::npos &&
+          replay_preference_policy.find("reducesound = nomusic = TRUE") !=
+              std::string_view::npos,
+      "replay preference reads must preserve the no-audio policy");
+  const std::size_t pc_getpref_position =
+      legacy_prefs_source.find("void getpref(void)");
+  require(pc_getpref_position != std::string::npos,
+      "PC getpref implementation is missing");
+  const std::string pc_getpref_source =
+      legacy_prefs_source.substr(pc_getpref_position);
+  const std::string_view pc_getpref =
+      function_body(pc_getpref_source, "void getpref(void)");
+  require(pc_getpref.find(
+              "apply_semantic_replay_preference_policy()") !=
+              std::string_view::npos,
+      "PC getpref must reapply replay preference policy");
   require(legacy_prefs_source.find(
               "UseResFile(Appl_Rsrc_Fork_Ref_Num)") != std::string::npos,
       "replay legacy preferences must use bundled PRFN defaults");
@@ -218,6 +259,10 @@ void verify_deterministic_runtime_hooks(const fs::path& root) {
   require(native_getpref.find("UseResFile(oldresfile)") <
           native_getpref.find("prefs = *(PrefHandle)data_handle"),
       "getpref must restore the app resource selection before conversion");
+  require(native_getpref.find(
+              "apply_semantic_replay_preference_policy()") !=
+              std::string_view::npos,
+      "native getpref must reapply replay preference policy");
   require(legacy_prefs_source.find(
               "if (RealmzSemanticReplayChildIsActive())\n    return (-1);") !=
           std::string::npos,

@@ -796,6 +796,7 @@ void ToolBoxInit(void) {
     volume = musicvolume = 0;
     reducesound = nomusic = TRUE;
     nofade = nologo = TRUE;
+    seenit = TRUE;
   } else {
     FlushEvents(everyEvent, 0);
     SystemTask();

@@ -3,6 +3,15 @@
 #include "SemanticReplayChild.h"
 #include "variables.h"
 
+static void apply_semantic_replay_preference_policy(void) {
+  if (!RealmzSemanticReplayChildIsActive())
+    return;
+
+  numchannel = -1;
+  volume = musicvolume = 0;
+  reducesound = nomusic = TRUE;
+}
+
 #ifdef PC
 #define MAGIC 'RLZ0'
 static FILE* fPref;
@@ -228,6 +237,7 @@ void getpref(void) {
   showserial = serial;
   MyrBitSetLong(&showserial, 6 + divine);
 
+  apply_semantic_replay_preference_policy();
   DisposeHandle(data_handle);
 }
 
@@ -459,6 +469,7 @@ void getpref(void) {
   Name_String[0] = 3;
   /* *** END CHANGES *** */
 
+  apply_semantic_replay_preference_policy();
   if (replay_defaults)
     DisposeHandle(data_handle);
   else {
