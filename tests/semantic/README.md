@@ -46,7 +46,7 @@ The combat harness compares the direct Classic-key mapper request with the
 typed-action path through the real runtime bridge and semantic input boundary
 for Guard, Finish, Delay, Center, Switch Weapon, Center Previous, Center Next,
 Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat Target, Combat
-Escape, and Use Scroll.
+Escape, Use Scroll, and Center Cursor.
 Test-owned semantic-event sinks retain the tags instead of running the
 production WindowManager/EventManager queue.
 Its test-owned pre-Classic state image verifies stable acting combatant and
@@ -79,6 +79,8 @@ or quiver, consume/drop its item, choose its target mode, run its raw target
 loop, pay abort/launch costs, resolve its spell, evaluate or confirm Escape,
 perform flee mutations or turn flow, browse/select/consume a scroll, run its
 targeting/effects/costs/turn flow, exercise RNG, or claim save equivalence.
+Center Cursor equivalence likewise stops at the exact lowercase-`m` handoff and
+the one-shot absolute cell; it does not reproduce `centerfield` or camera state.
 
 ## Classic combat-focus helper
 
@@ -121,7 +123,7 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first sixteen bounded combat controls are covered by the combat fixture and
+The first seventeen bounded combat controls are covered by the combat fixture and
 the presentation, runtime-bridge, semantic-boundary, top-level-loop, and
 keyboard contract tests. They verify that typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`, and
@@ -139,6 +141,8 @@ does not identify an entity, area, or cell target.
 warning, confirmation response, or flee outcome.
 `OpenCombatScrollCaseAction` carries only the actor and does not identify a
 scroll-case slot, scroll, spell, power, recipient, cell, or target.
+`CenterCombatCursorAction` carries the actor and an explicit absolute 0–89
+battlefield cell, never an `EventRecord.where` or ambient Classic mouse point.
 `OpenCombatItemsAction` carries both the acting ID and selected party-member ID;
 delivery additionally requires that the same member still exists and remains
 selected.
@@ -189,18 +193,25 @@ selection, immediate accepted-scroll consumption, spell validation, targeting,
 RNG, effects, movement/attack costs, and turn handling. The fixture stops at
 the key handoff and claims no scroll-use equivalence; every remaining command
 stays on the Classic input route.
+Center Cursor requires a fresh actor-bound hover sample from the visible combat
+crop and becomes the exact Classic `m` message `0x00002E6D`. The sample is
+retained across in-window shell or Classic chrome, cleared for outside-window
+or invalid pointer targets, and revalidated before use. Its absolute cell is
+staged once outside the key record, so a camera move cannot retarget it and a
+later physical `m` cannot reuse it. Classic retains `centerfield` and all
+camera and redraw effects; the fixture claims only the key-and-cell handoff.
 
 `SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
 fixture-owned legacy globals flow through the real presentation-context and
 snapshot adapters before the semantic boundary emits those exact key records.
 It covers stale acting-combatant and non-gameplay-window rejection for all
-sixteen command records, plus stale selected-member rejection for Combat Items,
+seventeen command records, plus stale selected-member rejection for Combat Items,
 while leaving its output sentinel unchanged. It performs no Classic combat or
 inventory mutation, reads or writes no user data, and is not a camera, modal,
 automation, RNG, turn, full combat replay, or save-equivalence test.
 
 `SemanticTopLevelLoopContractTest` pins the untouched Classic `r`, `b`, `u`,
-`s`, `t`, `e`, and `l` branches and their ownership: the semantic gameplay
+`s`, `t`, `e`, `l`, and `m` branches and their ownership: the semantic gameplay
 scope has ended before each late key handoff, `showrange()` owns its raw
 dismissal wait,
 `getchoice()` owns Bandage's raw member picker, Classic owns Undo's condition
@@ -211,6 +222,9 @@ confirmation, confirmed flee mutations, and `getup`.
 Classic's `l` branch still selects `viewspellsbut`, then `combatchoice` owns
 `getscroll`, its modal loop, accepted-scroll consumption, the shared `wand`
 target/effect path, abort/success costs, and turn decision.
+Classic's `m` branch consumes a semantic absolute cell at most once and falls
+back unchanged to `point.h / 32`, `point.v / 32` for physical input; no Classic
+mouse hit map synthesizes `m`.
 Inactive-surface dequeue rejects later shell
 gameplay tags. This is source-contract evidence, not executable range-overlay,
 Bandage, Undo, Combat Cast, Combat Target, Combat Escape, Use Scroll, or modal

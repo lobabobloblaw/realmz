@@ -85,6 +85,17 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(OpenCombatScrollCaseAction::combatant),
     CombatantId>);
+static_assert(std::is_same_v<decltype(CombatFieldCell::x), uint8_t>);
+static_assert(std::is_same_v<decltype(CombatFieldCell::y), uint8_t>);
+static_assert(std::is_same_v<
+    decltype(CenterCombatCursorAction::combatant),
+    CombatantId>);
+static_assert(std::is_same_v<
+    decltype(CenterCombatCursorAction::cell),
+    CombatFieldCell>);
+static_assert(std::is_aggregate_v<CombatFieldCell>);
+static_assert(std::is_aggregate_v<CenterCombatCursorAction>);
+static_assert(sizeof(CombatFieldCell) == 2);
 static_assert(std::is_same_v<
     decltype(AutoCombatantAction::combatant),
     CombatantId>);
@@ -307,6 +318,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.open_combat_targeting = mutateEngine;
   handlers.escape_combat = mutateEngine;
   handlers.open_combat_scroll_case = mutateEngine;
+  handlers.center_combat_cursor = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -604,6 +616,24 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
       DispatchStatus::unsupported);
   CHECK(openCombatScrollCaseUnsupported.detail ==
       "No legacy handler registered for open_combat_scroll_case");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction centerCombatCursorAction{
+      .sequence = sequence++,
+      .payload = CenterCombatCursorAction{
+          .combatant = 1,
+          .cell = {.x = 42, .y = 17},
+      },
+  };
+  CHECK(action_name(centerCombatCursorAction.payload) ==
+      "center_combat_cursor");
+  const auto centerCombatCursorUnsupported =
+      unsupportedBridge.dispatch(centerCombatCursorAction);
+  CHECK(centerCombatCursorUnsupported.status ==
+      DispatchStatus::unsupported);
+  CHECK(centerCombatCursorUnsupported.detail ==
+      "No legacy handler registered for center_combat_cursor");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

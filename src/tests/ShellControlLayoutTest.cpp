@@ -920,13 +920,16 @@ void test_combat_primary_and_secondary_action_pages() {
         .escape_combat_available = true,
         .open_combat_scroll_case = CombatantId{2},
         .open_combat_scroll_case_available = true,
+        .center_combat_cursor = CenterCombatCursorAction{2, {42, 17}},
+        .center_combat_cursor_available = true,
     });
-    CHECK(special.size() == 5U);
+    CHECK(special.size() == 6U);
     const auto& special_back = special[0];
     const auto& cast = special[1];
     const auto& target = special[2];
     const auto& escape = special[3];
     const auto& scroll = special[4];
+    const auto& cursor = special[5];
     CHECK(special_back.region.value == 1118U);
     CHECK(special_back.kind == ShellControlKind::combat_action_page);
     CHECK(special_back.label == "BACK");
@@ -970,11 +973,21 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(scroll.tab_order == 1122);
     CHECK(scroll.enabled);
     CHECK(std::get<OpenCombatScrollCaseAction>(scroll.payload).combatant == 2);
+    CHECK(cursor.region.value == 1123U);
+    CHECK(cursor.kind == ShellControlKind::center_combat_cursor);
+    CHECK(cursor.label == "CURSOR");
+    CHECK(cursor.accessibility_label == "Center combat view on cursor");
+    CHECK(cursor.focus_identifier == "focus.action.combat.center.cursor");
+    CHECK(cursor.tab_order == 1123);
+    CHECK(cursor.enabled);
+    CHECK(std::get<CenterCombatCursorAction>(cursor.payload) ==
+        (CenterCombatCursorAction{2, {42, 17}}));
     CHECK(special_panel.contains(special_back.bounds));
     CHECK(special_panel.contains(cast.bounds));
     CHECK(special_panel.contains(target.bounds));
     CHECK(special_panel.contains(escape.bounds));
     CHECK(special_panel.contains(scroll.bounds));
+    CHECK(special_panel.contains(cursor.bounds));
     CHECK(!interiors_overlap(special_back.bounds, cast.bounds));
     CHECK(!interiors_overlap(special_back.bounds, target.bounds));
     CHECK(!interiors_overlap(cast.bounds, target.bounds));
@@ -985,8 +998,18 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(!interiors_overlap(cast.bounds, scroll.bounds));
     CHECK(!interiors_overlap(target.bounds, scroll.bounds));
     CHECK(!interiors_overlap(escape.bounds, scroll.bounds));
+    CHECK(!interiors_overlap(special_back.bounds, cursor.bounds));
+    CHECK(!interiors_overlap(cast.bounds, cursor.bounds));
+    CHECK(!interiors_overlap(target.bounds, cursor.bounds));
+    CHECK(!interiors_overlap(escape.bounds, cursor.bounds));
+    CHECK(!interiors_overlap(scroll.bounds, cursor.bounds));
     CHECK(escape.bounds.x > target.bounds.x);
     CHECK(scroll.bounds.x > escape.bounds.x);
+    CHECK(cursor.bounds.x > scroll.bounds.x);
+    for (const auto& control : std::span{special}.subspan(1)) {
+      CHECK(control.bounds.width >= 44.0);
+      CHECK(control.bounds.height >= 44.0);
+    }
     const LogicalPoint target_pointer{
         target.bounds.x + target.bounds.width / 2.0,
         target.bounds.y + target.bounds.height / 2.0,
@@ -1014,6 +1037,17 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(!cast.bounds.contains(scroll_pointer));
     CHECK(!target.bounds.contains(scroll_pointer));
     CHECK(!escape.bounds.contains(scroll_pointer));
+    CHECK(!cursor.bounds.contains(scroll_pointer));
+    const LogicalPoint cursor_pointer{
+        cursor.bounds.x + cursor.bounds.width / 2.0,
+        cursor.bounds.y + cursor.bounds.height / 2.0,
+    };
+    CHECK(cursor.bounds.contains(cursor_pointer));
+    CHECK(!special_back.bounds.contains(cursor_pointer));
+    CHECK(!cast.bounds.contains(cursor_pointer));
+    CHECK(!target.bounds.contains(cursor_pointer));
+    CHECK(!escape.bounds.contains(cursor_pointer));
+    CHECK(!scroll.bounds.contains(cursor_pointer));
   }
 
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
@@ -1277,6 +1311,22 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(!combat_scroll_case_disabled[1].enabled);
   CHECK(std::get<OpenCombatScrollCaseAction>(
       combat_scroll_case_disabled[1].payload).combatant == 2);
+
+  const auto center_combat_cursor_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{2, {42, 17}},
+  });
+  CHECK(center_combat_cursor_disabled.size() == 2U);
+  CHECK(center_combat_cursor_disabled[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(center_combat_cursor_disabled[1].kind ==
+      ShellControlKind::center_combat_cursor);
+  CHECK(!center_combat_cursor_disabled[1].enabled);
+  CHECK(std::get<CenterCombatCursorAction>(
+      center_combat_cursor_disabled[1].payload) ==
+      (CenterCombatCursorAction{2, {42, 17}}));
 
   const auto auto_only_primary = compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -1712,6 +1762,50 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{-1, {42, 17}},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{256, {42, 17}},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{2, {90, 17}},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{2, {42, 90}},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{2, {0, 0}},
+      .center_combat_cursor_available = true,
+  }).size() == 2U);
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{2, {89, 89}},
+      .center_combat_cursor_available = true,
+  }).size() == 2U);
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{-1},
   }).empty());
@@ -1903,6 +1997,19 @@ void test_combat_primary_and_secondary_action_pages() {
       .combat_action_page = CombatActionPage::special,
       .escape_combat = CombatantId{2},
       .open_combat_scroll_case = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .center_combat_cursor = CenterCombatCursorAction{3, {42, 17}},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_scroll_case = CombatantId{2},
+      .center_combat_cursor = CenterCombatCursorAction{3, {42, 17}},
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -2101,6 +2208,7 @@ void test_combat_primary_and_secondary_action_pages() {
   }).empty());
 
   const LogicalRect four_minimum{0.0, 0.0, 222.0, 120.0};
+  const LogicalRect five_minimum{0.0, 0.0, 272.0, 120.0};
   const auto four_controls = compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = four_minimum,
@@ -2533,9 +2641,27 @@ void test_combat_primary_and_secondary_action_pages() {
       scroll_special_minimum[0].bounds,
       scroll_special_minimum[1].bounds));
 
+  const auto cursor_special_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .combat_action_page = CombatActionPage::special,
+      .center_combat_cursor = CenterCombatCursorAction{2, {42, 17}},
+      .center_combat_cursor_available = true,
+  });
+  CHECK(cursor_special_minimum.size() == 2U);
+  CHECK(cursor_special_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(cursor_special_minimum[1].kind ==
+      ShellControlKind::center_combat_cursor);
+  CHECK(cursor_special_minimum[0].bounds.width == 44.0);
+  CHECK(cursor_special_minimum[1].bounds.width >= 44.0);
+  CHECK(!interiors_overlap(
+      cursor_special_minimum[0].bounds,
+      cursor_special_minimum[1].bounds));
+
   const auto complete_special_minimum = compute_shell_control_layout({
       .screen = ScreenContext::combat,
-      .action_panel = four_minimum,
+      .action_panel = five_minimum,
       .combat_action_page = CombatActionPage::special,
       .open_combat_spellbook = CombatantId{2},
       .open_combat_spellbook_available = true,
@@ -2545,8 +2671,10 @@ void test_combat_primary_and_secondary_action_pages() {
       .escape_combat_available = true,
       .open_combat_scroll_case = CombatantId{2},
       .open_combat_scroll_case_available = true,
+      .center_combat_cursor = CenterCombatCursorAction{2, {42, 17}},
+      .center_combat_cursor_available = true,
   });
-  CHECK(complete_special_minimum.size() == 5U);
+  CHECK(complete_special_minimum.size() == 6U);
   CHECK(complete_special_minimum[0].kind ==
       ShellControlKind::combat_action_page);
   CHECK(complete_special_minimum[1].kind ==
@@ -2557,6 +2685,8 @@ void test_combat_primary_and_secondary_action_pages() {
       ShellControlKind::escape_combat);
   CHECK(complete_special_minimum[4].kind ==
       ShellControlKind::open_combat_scroll_case);
+  CHECK(complete_special_minimum[5].kind ==
+      ShellControlKind::center_combat_cursor);
   for (const auto& control : complete_special_minimum) {
     CHECK(control.bounds.width >= 44.0);
     CHECK(control.bounds.height == 44.0);
@@ -2573,14 +2703,18 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(!interiors_overlap(
       complete_special_minimum[3].bounds,
       complete_special_minimum[4].bounds));
+  CHECK(!interiors_overlap(
+      complete_special_minimum[4].bounds,
+      complete_special_minimum[5].bounds));
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
-      .action_panel = {0.0, 0.0, 221.0, 120.0},
+      .action_panel = {0.0, 0.0, 271.0, 120.0},
       .combat_action_page = CombatActionPage::special,
       .open_combat_spellbook = CombatantId{2},
       .open_combat_targeting = CombatantId{2},
       .escape_combat = CombatantId{2},
       .open_combat_scroll_case = CombatantId{2},
+      .center_combat_cursor = CenterCombatCursorAction{2, {42, 17}},
   }).empty());
 
   const auto auto_navigation_minimum = compute_shell_control_layout({

@@ -160,6 +160,13 @@ uint8_t RealmzIsSemanticOpenCombatScrollCaseTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenCombatScrollCaseTagSurface(
     uint32_t tagged_message);
 
+// Center-on-cursor tags carry the acting combatant plus an absolute field
+// cell. They are valid only on the combat surface and never encode the cell in
+// an EventRecord mouse position.
+uint8_t RealmzIsSemanticCenterCombatCursorTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticCenterCombatCursorTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -332,6 +339,16 @@ uint8_t RealmzConsumeSemanticOpenCombatScrollCaseEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live party actor and a sane current battlefield viewport,
+// then returns the preserved lowercase "m" key and the queued absolute cell.
+// The cell need not remain inside the current viewport after a camera move.
+uint8_t RealmzConsumeSemanticCenterCombatCursorEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message,
+    uint8_t* absolute_x,
+    uint8_t* absolute_y);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -341,6 +358,7 @@ namespace realmz::presentation {
 
 enum class MovementCommand;
 enum class CombatFocusDirection;
+struct CombatFieldCell;
 
 [[nodiscard]] uint32_t semantic_movement_tag(
     MovementCommand command,
@@ -424,6 +442,11 @@ enum class CombatFocusDirection;
 
 [[nodiscard]] uint32_t semantic_open_combat_scroll_case_tag(
     CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_center_combat_cursor_tag(
+    CombatantId combatant,
+    CombatFieldCell cell,
     RealmzSemanticInputSurface surface) noexcept;
 
 } // namespace realmz::presentation

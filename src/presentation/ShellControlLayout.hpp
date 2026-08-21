@@ -32,6 +32,7 @@ enum class ShellControlKind {
   open_combat_targeting,
   escape_combat,
   open_combat_scroll_case,
+  center_combat_cursor,
   drawer_tab,
 };
 
@@ -95,6 +96,8 @@ struct ShellControlLayoutRequest {
   bool escape_combat_available = false;
   std::optional<CombatantId> open_combat_scroll_case;
   bool open_combat_scroll_case_available = false;
+  std::optional<CenterCombatCursorAction> center_combat_cursor;
+  bool center_combat_cursor_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

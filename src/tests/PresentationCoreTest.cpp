@@ -302,8 +302,22 @@ void test_actions_and_events() {
   CHECK(std::get<OpenCombatScrollCaseAction>(
             open_combat_scroll_case.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction center_combat_cursor{
       .sequence = 28,
+      .payload = CenterCombatCursorAction{
+          .combatant = 2,
+          .cell = {.x = 42, .y = 17},
+      },
+  };
+  CHECK(action_name(center_combat_cursor.payload) ==
+      "center_combat_cursor");
+  const auto& center_cursor =
+      std::get<CenterCombatCursorAction>(center_combat_cursor.payload);
+  CHECK(center_cursor.combatant == 2);
+  CHECK(center_cursor.cell == (CombatFieldCell{.x = 42, .y = 17}));
+
+  UIAction casting{
+      .sequence = 29,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -399,6 +413,8 @@ void test_command_bridge() {
   CombatantId open_combat_targeting = -1;
   CombatantId escape_combat = -1;
   CombatantId open_combat_scroll_case = -1;
+  CombatantId center_combat_cursor = -1;
+  CombatFieldCell center_combat_cursor_cell{};
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -466,6 +482,13 @@ void test_command_bridge() {
   handlers.open_combat_scroll_case =
       [&open_combat_scroll_case](const OpenCombatScrollCaseAction& action) {
         open_combat_scroll_case = action.combatant;
+        return DispatchResult::handled();
+      };
+  handlers.center_combat_cursor =
+      [&center_combat_cursor, &center_combat_cursor_cell](
+          const CenterCombatCursorAction& action) {
+        center_combat_cursor = action.combatant;
+        center_combat_cursor_cell = action.cell;
         return DispatchResult::handled();
       };
 
@@ -661,6 +684,18 @@ void test_command_bridge() {
   });
   CHECK(open_combat_scroll_case_handled.was_handled());
   CHECK(open_combat_scroll_case == 16);
+
+  const auto center_combat_cursor_handled = bridge.dispatch(UIAction{
+      .sequence = 25,
+      .payload = CenterCombatCursorAction{
+          .combatant = 17,
+          .cell = {.x = 42, .y = 17},
+      },
+  });
+  CHECK(center_combat_cursor_handled.was_handled());
+  CHECK(center_combat_cursor == 17);
+  CHECK(center_combat_cursor_cell ==
+      (CombatFieldCell{.x = 42, .y = 17}));
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

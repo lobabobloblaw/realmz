@@ -12,6 +12,7 @@ void combat(short suprise, short mode) {
   short targetnew, spellloop, targetsleft;
   Rect targetrect;
   Boolean didcast, sliding = FALSE;
+  uint8_t semantic_center_x, semantic_center_y;
 
   DisableItem(gScenario, 0);
   DisableItem(gParty, 0);
@@ -828,7 +829,13 @@ void combat(short suprise, short mode) {
                 buttonrect.left = 470 + leftshift;
                 buttonrect.right = buttonrect.left + 50;
                 downbutton(TRUE);
-                centerfield((point.h) / 32, (point.v) / 32);
+                if (TakeSemanticCenterCombatCursorCell(
+                        &semantic_center_x, &semantic_center_y))
+                  centerfield(
+                      semantic_center_x - fieldx,
+                      semantic_center_y - fieldy);
+                else
+                  centerfield((point.h) / 32, (point.v) / 32);
                 upbutton(TRUE);
                 break;
 

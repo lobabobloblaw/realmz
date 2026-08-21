@@ -31,8 +31,8 @@ the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
-Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, Escape, and Use Scroll
-controls carry the stable active-party combatant ID in typed
+Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, Escape, Use Scroll,
+and Center Cursor controls carry the stable active-party combatant ID in typed
 `GuardCombatantAction`, `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`,
@@ -44,6 +44,9 @@ Target identifies no recipient or cell. An actor-only `EscapeCombatAction`
 requests Classic's existing escape attempt without predicting its result. The
 actor-only `OpenCombatScrollCaseAction` opens the equipped combat scroll-case
 chooser without selecting a scroll, spell, power, or target. The
+`CenterCombatCursorAction` additionally carries the absolute 0–89 battlefield
+cell sampled from the visible Classic gameplay crop; it never reuses the
+ambient mouse point. The
 combat Items control carries both that acting ID and the stable selected
 party-member ID in an `OpenCombatItemsAction`. Their combat-only guarded routes
 late-validate the fresh acting combatant and fail closed before returning the
@@ -67,6 +70,12 @@ returns the exact Classic `t` message `0x00001174`. Combat Escape uses only the
 fresh live-actor gate and returns the exact Classic `e` message `0x00000E65`.
 Use Scroll mirrors Classic's visible equipped-case gate and returns the exact
 Classic `l` message `0x0000256C`.
+Center Cursor is exposed only while a fresh battlefield hover remains bound to
+the same actor and viewport. That sample survives only the in-window trip
+across Classic or shell chrome and is cleared outside the window. It returns
+the exact Classic `m` message
+`0x00002E6D` with its cell staged separately from `EventRecord.where`; physical
+`m` input keeps Classic's original mouse-point behavior.
 The weapon action does not encode a desired set, and focus
 cycling does not encode a destination. The preserved Classic handlers
 remain authoritative for the Guard, Finish, and Delay combat-state mutations
@@ -92,6 +101,8 @@ Classic owns Use Scroll's modal character and slot browsing, selection and
 early scroll consumption, spell validation, targeting, RNG, spell effects,
 movement/attack costs, and turn handling. Cancelling a later target does not
 restore the selected scroll.
+Classic also owns Center Cursor's existing `centerfield` bounds, camera,
+redraw, range-overlay, and button effects after the absolute cell handoff.
 These bounded routes are not a camera,
 range-overlay, bandage-target, spell-selection, target-selection, undo mutation,
 escape confirmation, scroll selection, combat, modal, automation, RNG, turn,

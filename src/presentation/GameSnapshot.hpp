@@ -166,6 +166,8 @@ struct CombatView {
   // costs, RNG, and every mutation after the key handoff.
   bool use_scroll_available = false;
   int16_t round = 0;
+  int32_t field_origin_x = 0;
+  int32_t field_origin_y = 0;
   size_t visible_columns = 0;
   size_t visible_rows = 0;
   std::optional<CombatantId> acting_combatant;

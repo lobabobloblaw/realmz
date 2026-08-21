@@ -4,6 +4,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "presentation/LegacyGameSnapshotSource.hpp"
 #include "presentation/LegacyPresentationContext.h"
@@ -256,6 +257,20 @@ bool consume_open_combat_scroll_case(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_center_combat_cursor(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output,
+    uint8_t& absolute_x,
+    uint8_t& absolute_y) {
+  return RealmzConsumeSemanticCenterCombatCursorEvent(
+             expected_surface,
+             tag,
+             &output,
+             &absolute_x,
+             &absolute_y) != 0;
+}
+
 uint32_t semantic_cycle_previous_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept {
@@ -404,6 +419,10 @@ void configure_valid_shared_combat() {
       .target_available = true,
       .use_scroll_available = true,
       .round = 3,
+      .field_origin_x = 20,
+      .field_origin_y = 30,
+      .visible_columns = 15,
+      .visible_rows = 13,
       .acting_combatant = 1,
       .combatants = {
           CombatantView{
@@ -2009,6 +2028,96 @@ void test_open_combat_scroll_case_tag_encoding_and_collisions() {
   }
 }
 
+void test_center_combat_cursor_tag_encoding_and_collisions() {
+  constexpr CombatFieldCell example_cell{.x = 42, .y = 17};
+  const uint32_t example = semantic_center_combat_cursor_tag(
+      3, example_cell, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(example == 0x4D032A11U);
+  CHECK((example & 0xFF000000U) == 0x4D000000U);
+  CHECK(((example >> 16U) & 0xFFU) == 3);
+  CHECK(((example >> 8U) & 0xFFU) == 42);
+  CHECK((example & 0xFFU) == 17);
+  CHECK(RealmzIsSemanticCenterCombatCursorTag(example) != 0);
+  CHECK(RealmzSemanticCenterCombatCursorTagSurface(example) ==
+      REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(RealmzIsSemanticGameplayTag(example) != 0);
+  CHECK(RealmzSemanticGameplayTagSurface(example) ==
+      REALMZ_SEMANTIC_INPUT_COMBAT);
+
+  std::set<uint32_t> tags;
+  for (const auto [combatant, cell] : {
+           std::pair{CombatantId{0}, CombatFieldCell{.x = 0, .y = 0}},
+           std::pair{CombatantId{1}, CombatFieldCell{.x = 1, .y = 2}},
+           std::pair{CombatantId{109}, CombatFieldCell{.x = 44, .y = 55}},
+           std::pair{CombatantId{255}, CombatFieldCell{.x = 89, .y = 89}},
+       }) {
+    const uint32_t tag = semantic_center_combat_cursor_tag(
+        combatant, cell, REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(tag != 0);
+    CHECK((tag & 0xFF000000U) == 0x4D000000U);
+    CHECK(((tag >> 16U) & 0xFFU) == static_cast<uint32_t>(combatant));
+    CHECK(((tag >> 8U) & 0xFFU) == cell.x);
+    CHECK((tag & 0xFFU) == cell.y);
+    CHECK(RealmzIsSemanticCenterCombatCursorTag(tag) != 0);
+    CHECK(RealmzSemanticCenterCombatCursorTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+    CHECK(RealmzSemanticGameplayTagSurface(tag) ==
+        REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenCombatScrollCaseTag(tag) == 0);
+    CHECK(tags.emplace(tag).second);
+  }
+  CHECK(tags.size() == 4);
+
+  const std::array other_tags{
+      semantic_movement_tag(
+          MovementCommand::north, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_center_active_combatant_tag(
+          3, REALMZ_SEMANTIC_INPUT_COMBAT),
+      semantic_open_combat_items_tag(
+          3, 3, REALMZ_SEMANTIC_INPUT_COMBAT),
+      semantic_open_combat_scroll_case_tag(
+          3, REALMZ_SEMANTIC_INPUT_COMBAT),
+  };
+  for (const uint32_t other_tag : other_tags) {
+    CHECK(other_tag != 0);
+    CHECK(RealmzIsSemanticCenterCombatCursorTag(other_tag) == 0);
+    CHECK(RealmzSemanticCenterCombatCursorTagSurface(other_tag) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  CHECK(semantic_center_combat_cursor_tag(
+            -1, example_cell, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_center_combat_cursor_tag(
+            256, example_cell, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_center_combat_cursor_tag(
+            3, {.x = 90, .y = 0}, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_center_combat_cursor_tag(
+            3, {.x = 0, .y = 90}, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_center_combat_cursor_tag(
+            3, example_cell, REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_center_combat_cursor_tag(
+            3, example_cell, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  CHECK(semantic_center_combat_cursor_tag(
+            3, example_cell, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0);
+
+  for (const uint32_t malformed : {
+           0U,
+           0x4C032A11U,
+           0x4D035A11U,
+           0x4D032A5AU,
+           0x4DFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticCenterCombatCursorTag(malformed) == 0);
+    CHECK(RealmzSemanticCenterCombatCursorTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+    CHECK(RealmzIsSemanticGameplayTag(malformed) == 0);
+    CHECK(RealmzSemanticGameplayTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+}
+
 void test_scope_lifecycle_and_sticky_nested_failure() {
   RealmzEndSemanticInputSurface();
   CHECK(RealmzCurrentSemanticInputSurface() == REALMZ_SEMANTIC_INPUT_NONE);
@@ -3248,6 +3357,201 @@ void test_open_combat_scroll_case_route_and_availability_boundaries() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_center_combat_cursor_route_and_viewport_boundaries() {
+  constexpr CombatFieldCell queued_cell{.x = 5, .y = 4};
+  const uint32_t center_cursor = semantic_center_combat_cursor_tag(
+      1, queued_cell, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(center_cursor == 0x4D010504U);
+
+  reset_valid_shared_combat();
+  uint32_t classic_message = kUnchangedClassicMessage;
+  uint8_t absolute_x = 0xA5;
+  uint8_t absolute_y = 0x5A;
+  CHECK(!consume_center_combat_cursor(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      center_cursor,
+      classic_message,
+      absolute_x,
+      absolute_y));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(absolute_x == 0xA5);
+  CHECK(absolute_y == 0x5A);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  // Every output is mandatory. A malformed call spends its authorization
+  // without reading either live context or the detached snapshot.
+  for (int missing_output = 0; missing_output < 3; ++missing_output) {
+    reset_valid_shared_combat();
+    classic_message = kUnchangedClassicMessage;
+    absolute_x = 0xA5;
+    absolute_y = 0x5A;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+    CHECK(RealmzConsumeSemanticCenterCombatCursorEvent(
+              REALMZ_SEMANTIC_INPUT_COMBAT,
+              center_cursor,
+              missing_output == 0 ? nullptr : &classic_message,
+              missing_output == 1 ? nullptr : &absolute_x,
+              missing_output == 2 ? nullptr : &absolute_y) == 0);
+    CHECK(classic_message == kUnchangedClassicMessage);
+    CHECK(absolute_x == 0xA5);
+    CHECK(absolute_y == 0x5A);
+    CHECK(legacy_capture_calls == 0);
+    CHECK(snapshot_capture_calls == 0);
+    CHECK(!consume_center_combat_cursor(
+        REALMZ_SEMANTIC_INPUT_COMBAT,
+        center_cursor,
+        classic_message,
+        absolute_x,
+        absolute_y));
+    CHECK(legacy_capture_calls == 0);
+    CHECK(snapshot_capture_calls == 0);
+  }
+
+  // The absolute payload survives a camera-origin change after queueing and
+  // need not lie inside the fresh viewport.
+  reset_valid_shared_combat();
+  captured_snapshot.combat->field_origin_x = 70;
+  captured_snapshot.combat->field_origin_y = 60;
+  captured_snapshot.combat->visible_columns = 15;
+  captured_snapshot.combat->visible_rows = 13;
+  classic_message = kUnchangedClassicMessage;
+  absolute_x = 0xA5;
+  absolute_y = 0x5A;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(consume_center_combat_cursor(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      center_cursor,
+      classic_message,
+      absolute_x,
+      absolute_y));
+  CHECK(classic_message == 0x00002E6DU);
+  CHECK(absolute_x == queued_cell.x);
+  CHECK(absolute_y == queued_cell.y);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  classic_message = kUnchangedClassicMessage;
+  absolute_x = 0xA5;
+  absolute_y = 0x5A;
+  CHECK(!consume_center_combat_cursor(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      center_cursor,
+      classic_message,
+      absolute_x,
+      absolute_y));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(absolute_x == 0xA5);
+  CHECK(absolute_y == 0x5A);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // The complete active-party gate applies independently of viewport checks.
+  for (const auto rejection : kSharedCombatRejections) {
+    reset_valid_shared_combat();
+    const GameSnapshot valid_snapshot = captured_snapshot;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+    apply_shared_combat_rejection(rejection);
+    classic_message = kUnchangedClassicMessage;
+    absolute_x = 0xA5;
+    absolute_y = 0x5A;
+    CHECK(!consume_center_combat_cursor(
+        REALMZ_SEMANTIC_INPUT_COMBAT,
+        center_cursor,
+        classic_message,
+        absolute_x,
+        absolute_y));
+    CHECK(classic_message == kUnchangedClassicMessage);
+    CHECK(absolute_x == 0xA5);
+    CHECK(absolute_y == 0x5A);
+    CHECK(legacy_capture_calls == 1);
+    CHECK(snapshot_capture_calls == 1);
+
+    captured_snapshot = valid_snapshot;
+    CHECK(!consume_center_combat_cursor(
+        REALMZ_SEMANTIC_INPUT_COMBAT,
+        center_cursor,
+        classic_message,
+        absolute_x,
+        absolute_y));
+    CHECK(legacy_capture_calls == 1);
+    CHECK(snapshot_capture_calls == 1);
+  }
+
+  struct ViewportCase {
+    int32_t origin_x;
+    int32_t origin_y;
+    std::size_t columns;
+    std::size_t rows;
+    bool accepted;
+  };
+  constexpr std::array viewport_cases{
+      ViewportCase{0, 0, 1, 1, true},
+      ViewportCase{75, 77, 15, 13, true},
+      ViewportCase{-1, 0, 15, 13, false},
+      ViewportCase{0, -1, 15, 13, false},
+      ViewportCase{0, 0, 0, 13, false},
+      ViewportCase{0, 0, 15, 0, false},
+      ViewportCase{76, 0, 15, 13, false},
+      ViewportCase{0, 78, 15, 13, false},
+      ViewportCase{0, 0, 91, 1, false},
+      ViewportCase{0, 0, 1, 91, false},
+  };
+  for (const auto& viewport : viewport_cases) {
+    reset_valid_shared_combat();
+    captured_snapshot.combat->field_origin_x = viewport.origin_x;
+    captured_snapshot.combat->field_origin_y = viewport.origin_y;
+    captured_snapshot.combat->visible_columns = viewport.columns;
+    captured_snapshot.combat->visible_rows = viewport.rows;
+    classic_message = kUnchangedClassicMessage;
+    absolute_x = 0xA5;
+    absolute_y = 0x5A;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+    const bool consumed = consume_center_combat_cursor(
+        REALMZ_SEMANTIC_INPUT_COMBAT,
+        center_cursor,
+        classic_message,
+        absolute_x,
+        absolute_y);
+    CHECK(consumed == viewport.accepted);
+    if (viewport.accepted) {
+      CHECK(classic_message == 0x00002E6DU);
+      CHECK(absolute_x == queued_cell.x);
+      CHECK(absolute_y == queued_cell.y);
+    } else {
+      CHECK(classic_message == kUnchangedClassicMessage);
+      CHECK(absolute_x == 0xA5);
+      CHECK(absolute_y == 0x5A);
+    }
+  }
+
+  reset_valid_shared_combat();
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  classic_message = kUnchangedClassicMessage;
+  absolute_x = 0xA5;
+  absolute_y = 0x5A;
+  CHECK(!consume_center_combat_cursor(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      semantic_center_active_combatant_tag(
+          1, REALMZ_SEMANTIC_INPUT_COMBAT),
+      classic_message,
+      absolute_x,
+      absolute_y));
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_valid_shared_combat();
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(!consume_center_combat_cursor(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      center_cursor,
+      classic_message,
+      absolute_x,
+      absolute_y));
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void test_open_combat_items_late_validation_and_exact_translation() {
   reset_valid_shared_combat();
   const uint32_t open_items = semantic_open_combat_items_tag(
@@ -3983,6 +4287,7 @@ int main() {
     test_open_combat_targeting_tag_encoding_and_collisions();
     test_escape_combat_tag_encoding_and_collisions();
     test_open_combat_scroll_case_tag_encoding_and_collisions();
+    test_center_combat_cursor_tag_encoding_and_collisions();
     test_scope_lifecycle_and_sticky_nested_failure();
     test_explicit_invalidation_is_sticky_through_scope_cleanup();
     test_top_level_bracket_and_exact_outdoor_translation();
@@ -4000,6 +4305,7 @@ int main() {
     test_open_combat_targeting_route_and_availability_boundaries();
     test_escape_combat_route_boundaries();
     test_open_combat_scroll_case_route_and_availability_boundaries();
+    test_center_combat_cursor_route_and_viewport_boundaries();
     test_open_combat_items_late_validation_and_exact_translation();
     test_guard_combatant_late_validation_and_exact_translation();
     test_finish_combatant_late_validation_and_exact_translation();

@@ -6,6 +6,7 @@
 #include <cstring>
 #include <deque>
 #include <limits>
+#include <optional>
 #include <phosg/Strings.hh>
 
 #include "Types.hpp"
@@ -14,6 +15,27 @@
 #include "presentation/SemanticInputBoundary.h"
 
 static phosg::PrefixedLogger em_log("[EventManager] ", DEFAULT_LOG_LEVEL);
+
+struct PendingSemanticCenterCombatCursorCell {
+  uint8_t x;
+  uint8_t y;
+};
+
+static std::optional<PendingSemanticCenterCombatCursorCell>
+    pending_semantic_center_combat_cursor_cell;
+
+static void clear_pending_semantic_center_combat_cursor_cell() noexcept {
+  pending_semantic_center_combat_cursor_cell.reset();
+}
+
+static void stage_semantic_center_combat_cursor_cell(
+    uint8_t absolute_x,
+    uint8_t absolute_y) noexcept {
+  pending_semantic_center_combat_cursor_cell = {
+      .x = absolute_x,
+      .y = absolute_y,
+  };
+}
 
 static constexpr uint16_t EVMOD_RIGHT_CONTROL_KEY_DOWN = 0x8000;
 static constexpr uint16_t EVMOD_RIGHT_OPTION_KEY_DOWN = 0x4000;
@@ -844,6 +866,27 @@ public:
     return true;
   }
 
+  bool push_semantic_center_combat_cursor_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticCenterCombatCursorTag(tagged_message)) {
+      return false;
+    }
+    // Keep the absolute field cell inside the tag until the guarded combat
+    // loop revalidates the actor and current viewport. It is never copied into
+    // EventRecord.where or the ambient Classic mouse point.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = {};
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic center combat cursor (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.modifiers);
+    return true;
+  }
+
   void discard_semantic_gameplay_events() {
     std::erase_if(this->event_queue, [](const EventRecord& candidate) {
       return (candidate.what == app1Evt) &&
@@ -1151,6 +1194,7 @@ void FlushEvents(int16_t which_mask, uint16_t stop_mask) {
   }
 
   em_log.debug_f("FlushEvents(0x{:04X}, 0x{:04X})", which_mask, stop_mask);
+  clear_pending_semantic_center_combat_cursor_cell();
   em.flush_events();
 }
 
@@ -1161,6 +1205,7 @@ Boolean GetNextEvent(int16_t which_mask, EventRecord* ret) {
     throw std::logic_error(std::format("which_mask ({:04X}) masks out some events in GetNextEvent", which_mask));
   }
 
+  clear_pending_semantic_center_combat_cursor_cell();
   *ret = em.get_next_event(0);
   return (ret->what != nullEvent);
 }
@@ -1181,6 +1226,8 @@ Boolean GetNextSemanticGameplayEvent(
     throw std::logic_error(
         "GetNextSemanticGameplayEvent requires a gameplay surface");
   }
+
+  clear_pending_semantic_center_combat_cursor_cell();
 
   const bool remastered =
       WindowManager::instance().get_presentation_mode() ==
@@ -1487,6 +1534,27 @@ Boolean GetNextSemanticGameplayEvent(
       ret->what = nullEvent;
       ret->message = 0;
     }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticCenterCombatCursorTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    uint8_t absolute_x = 0;
+    uint8_t absolute_y = 0;
+    if (still_remastered && RealmzConsumeSemanticCenterCombatCursorEvent(
+            surface,
+            ret->message,
+            &classic_key_message,
+            &absolute_x,
+            &absolute_y)) {
+      // Stage the absolute cell only after all late validation succeeds. The
+      // Classic switch receives the exact lowercase "m" key record while the
+      // field cell remains independent of EventRecord.where and global point.
+      stage_semantic_center_combat_cursor_cell(absolute_x, absolute_y);
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
   } else {
     // Authorization belongs only to the event returned by this wrapper. Do
     // not leave a completed scope available after an ordinary Classic event.
@@ -1505,6 +1573,7 @@ Boolean WaitNextEvent(int16_t which_mask, EventRecord* ret, uint32_t sleep, RgnH
     throw std::logic_error("mouse_rgn must be null");
   }
 
+  clear_pending_semantic_center_combat_cursor_cell();
   *ret = em.get_next_event(sleep);
   return (ret->what != nullEvent);
 }
@@ -1625,7 +1694,25 @@ Boolean PushSemanticOpenCombatScrollCaseEvent(uint32_t tagged_message) {
   return em.push_semantic_open_combat_scroll_case_event(tagged_message);
 }
 
+Boolean PushSemanticCenterCombatCursorEvent(uint32_t tagged_message) {
+  return em.push_semantic_center_combat_cursor_event(tagged_message);
+}
+
+Boolean TakeSemanticCenterCombatCursorCell(
+    uint8_t* absolute_x,
+    uint8_t* absolute_y) {
+  const auto pending = pending_semantic_center_combat_cursor_cell;
+  clear_pending_semantic_center_combat_cursor_cell();
+  if (!pending || !absolute_x || !absolute_y) {
+    return 0;
+  }
+  *absolute_x = pending->x;
+  *absolute_y = pending->y;
+  return 1;
+}
+
 void CancelSemanticGameplayInput(void) {
+  clear_pending_semantic_center_combat_cursor_cell();
   RealmzInvalidateSemanticInputBoundary();
   em.discard_semantic_gameplay_events();
 }

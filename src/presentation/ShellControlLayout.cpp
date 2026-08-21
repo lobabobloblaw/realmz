@@ -35,6 +35,7 @@ constexpr uint32_t kOpenCombatSpellbookRegion = 1119U;
 constexpr uint32_t kOpenCombatTargetingRegion = 1120U;
 constexpr uint32_t kEscapeCombatRegion = 1121U;
 constexpr uint32_t kOpenCombatScrollCaseRegion = 1122U;
+constexpr uint32_t kCenterCombatCursorRegion = 1123U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -144,6 +145,15 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.escape_combat);
   const bool valid_open_combat_scroll_case = request.open_combat_scroll_case &&
       valid_combatant(*request.open_combat_scroll_case);
+  const std::optional<CombatantId> center_combat_cursor_combatant =
+      request.center_combat_cursor
+      ? std::optional<CombatantId>{
+            request.center_combat_cursor->combatant}
+      : std::nullopt;
+  const bool valid_center_combat_cursor = request.center_combat_cursor &&
+      valid_combatant(request.center_combat_cursor->combatant) &&
+      request.center_combat_cursor->cell.x <= 89U &&
+      request.center_combat_cursor->cell.y <= 89U;
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -161,6 +171,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.open_combat_targeting,
       request.escape_combat,
       request.open_combat_scroll_case,
+      center_combat_cursor_combatant,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -198,7 +209,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.open_combat_spellbook ? 1U : 0U) +
       (request.open_combat_targeting ? 1U : 0U) +
       (request.escape_combat ? 1U : 0U) +
-      (request.open_combat_scroll_case ? 1U : 0U);
+      (request.open_combat_scroll_case ? 1U : 0U) +
+      (request.center_combat_cursor ? 1U : 0U);
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
@@ -211,7 +223,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_bandage_combatant || valid_undo_combatant;
   const bool has_valid_special_action = valid_open_combat_spellbook ||
       valid_open_combat_targeting || valid_escape_combat ||
-      valid_open_combat_scroll_case;
+      valid_open_combat_scroll_case || valid_center_combat_cursor;
   const size_t combat_page_control_count = primary_combat_page
       ? ((has_valid_secondary_action || has_valid_utility_action ||
               has_valid_special_action)
@@ -262,7 +274,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.open_combat_targeting ||
       request.open_combat_targeting_available || request.escape_combat ||
       request.escape_combat_available || request.open_combat_scroll_case ||
-      request.open_combat_scroll_case_available || utility_combat_page ||
+      request.open_combat_scroll_case_available ||
+      request.center_combat_cursor ||
+      request.center_combat_cursor_available || utility_combat_page ||
       special_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
@@ -293,7 +307,10 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           !valid_open_combat_targeting) ||
       (request.escape_combat_available && !valid_escape_combat) ||
       (request.open_combat_scroll_case_available &&
-          !valid_open_combat_scroll_case)) {
+          !valid_open_combat_scroll_case) ||
+      (request.center_combat_cursor && !valid_center_combat_cursor) ||
+      (request.center_combat_cursor_available &&
+          !valid_center_combat_cursor)) {
     return {};
   }
 
@@ -518,6 +535,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .enabled = request.open_combat_scroll_case_available,
           .payload = OpenCombatScrollCaseAction{
               *request.open_combat_scroll_case},
+      });
+      x += button_width + gap;
+    }
+    if (request.center_combat_cursor) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kCenterCombatCursorRegion},
+          .kind = ShellControlKind::center_combat_cursor,
+          .bounds = {x, y, button_width, button_height},
+          .label = "CURSOR",
+          .accessibility_label = "Center combat view on cursor",
+          .focus_identifier = "focus.action.combat.center.cursor",
+          .tab_order = 1123,
+          .enabled = request.center_combat_cursor_available,
+          .payload = *request.center_combat_cursor,
       });
     }
     return result;

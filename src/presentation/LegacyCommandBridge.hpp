@@ -83,6 +83,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<OpenCombatTargetingAction> open_combat_targeting;
   LegacyActionHandler<EscapeCombatAction> escape_combat;
   LegacyActionHandler<OpenCombatScrollCaseAction> open_combat_scroll_case;
+  LegacyActionHandler<CenterCombatCursorAction> center_combat_cursor;
   LegacyActionHandler<InventoryAction> inventory;
   LegacyActionHandler<CastSpellAction> cast_spell;
   LegacyActionHandler<TradeAction> trade;

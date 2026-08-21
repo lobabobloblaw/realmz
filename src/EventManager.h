@@ -115,6 +115,14 @@ Boolean PushSemanticOpenCombatSpellbookEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenCombatTargetingEvent(uint32_t tagged_message);
 Boolean PushSemanticEscapeCombatEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenCombatScrollCaseEvent(uint32_t tagged_message);
+Boolean PushSemanticCenterCombatCursorEvent(uint32_t tagged_message);
+
+// Removes and returns the absolute cell staged for the current semantic
+// lowercase-"m" handoff. The value is one-shot and is cleared before every
+// subsequent event poll or semantic-input cancellation.
+Boolean TakeSemanticCenterCombatCursorCell(
+    uint8_t* absolute_x,
+    uint8_t* absolute_y);
 
 // Cancels active authorization and removes every queued presentation command.
 // Used by presentation-mode transitions, including native-menu callbacks.

@@ -86,7 +86,7 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes sixteen bounded semantic controls: typed `GuardCombatantAction`,
+Combat exposes seventeen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`,
@@ -102,6 +102,9 @@ encoding a range result, warning, confirmation choice, or flee outcome.
 An actor-only `OpenCombatScrollCaseAction` opens Classic's combat scroll chooser
 without identifying a case slot, scroll, spell, power, recipient, cell, or
 target.
+`CenterCombatCursorAction` carries the actor and one absolute battlefield cell
+sampled from the visible Classic crop; it does not carry or mutate an ambient
+mouse position.
 The focus-cycle command also carries Previous or Next.
 `OpenCombatItemsAction` independently carries the
 acting combatant and selected party member so neither identity can silently
@@ -140,6 +143,11 @@ Use Scroll is late-gated by a read-only mirror of Classic's visible equipped
 scroll-case control: the queued party actor must remain current, outside a spell
 flow, alive, and equipped in armor slot 13. It becomes the exact Classic `l`
 message `0x0000256C`; an empty equipped case still opens Classic's chooser.
+Center Cursor exists only after a hover sample inside the fresh combat viewport
+has been bound to the current party actor, field origin, and dimensions. It
+becomes the exact Classic `m` message `0x00002E6D`; the absolute 0–89 cell is
+delivered through a one-shot typed handoff rather than `EventRecord.where` or
+Classic's global `point`. A stale actor, viewport, surface, or sample is inert.
 Validation fails closed, so stale or newly ineligible actions become inert.
 The original Classic guard/finish/delay mutations and turn
 advance remain authoritative, as do Center's existing non-turn-ending camera
@@ -178,6 +186,10 @@ consumption, combat-spell validation, target modes and raw input, RNG, spell
 effects, movement/attack costs, and turn handling. A later target abort costs
 three movement and does not restore the scroll or award a spell-point refund;
 the semantic route claims no scroll-use equivalence.
+Classic remains authoritative for Center Cursor's `centerfield` clamping,
+camera mutation, redraw, overlay, and button feedback. The semantic route only
+converts the queued absolute cell back to Classic's current field-relative
+coordinates; the unchanged physical `m` branch still uses `point / 32`.
 All other combat commands remain in the interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
@@ -282,7 +294,7 @@ Automated checks do not replace these release decisions:
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
   Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat
-  Target, Combat Escape, and Use Scroll
+  Target, Combat Escape, Use Scroll, and Center Cursor
   controls at compact and wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
@@ -322,6 +334,12 @@ Automated checks do not replace these release decisions:
   verify empty cases, other-character browsing, cancel, accepted-scroll
   consumption, combat-spell rejection, raw targeting and abort, movement/attack
   costs, RNG/effects, and turn handling remain entirely in the Classic frame;
+  verify Center Cursor samples pixel 31 versus 32 correctly, retains a valid
+  sample while moving across in-window chrome to the shell button, clears it
+  for outside-window or non-finite pointer input, rejects
+  actor/surface/origin/viewport changes, survives a camera move after queueing
+  by using its absolute cell, never writes `EventRecord.where` or global
+  `point`, and leaves physical `m` behavior unchanged;
   verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;

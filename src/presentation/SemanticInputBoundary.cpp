@@ -88,6 +88,11 @@ constexpr uint32_t kSemanticOpenCombatScrollCaseSignature = 0x55530000U;
 constexpr uint32_t kSemanticOpenCombatScrollCaseMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenCombatScrollCaseSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenCombatScrollCaseIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticCenterCombatCursorSignature = 0x4D000000U;
+constexpr uint32_t kSemanticCenterCombatCursorMask = 0xFF000000U;
+constexpr uint32_t kSemanticCenterCombatCursorActorMask = 0x00FF0000U;
+constexpr uint32_t kSemanticCenterCombatCursorXMask = 0x0000FF00U;
+constexpr uint32_t kSemanticCenterCombatCursorYMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -203,6 +208,12 @@ struct DecodedEscapeCombat {
 
 struct DecodedOpenCombatScrollCase {
   realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedCenterCombatCursor {
+  realmz::presentation::CombatantId combatant;
+  realmz::presentation::CombatFieldCell cell;
   RealmzSemanticInputSurface surface;
 };
 
@@ -607,6 +618,27 @@ std::optional<DecodedOpenCombatScrollCase> decode_open_combat_scroll_case(
   };
 }
 
+std::optional<DecodedCenterCombatCursor> decode_center_combat_cursor(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticCenterCombatCursorMask) !=
+      kSemanticCenterCombatCursorSignature) {
+    return std::nullopt;
+  }
+  const auto absolute_x = static_cast<uint8_t>(
+      (tagged_message & kSemanticCenterCombatCursorXMask) >> 8U);
+  const auto absolute_y = static_cast<uint8_t>(
+      tagged_message & kSemanticCenterCombatCursorYMask);
+  if ((absolute_x > 89) || (absolute_y > 89)) {
+    return std::nullopt;
+  }
+  return DecodedCenterCombatCursor{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          (tagged_message & kSemanticCenterCombatCursorActorMask) >> 16U),
+      .cell = {.x = absolute_x, .y = absolute_y},
+      .surface = REALMZ_SEMANTIC_INPUT_COMBAT,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -680,6 +712,46 @@ bool is_combat_scroll_available(
   return snapshot.combat && snapshot.combat->use_scroll_available;
 }
 
+bool is_live_active_party_combatant(
+    const realmz::presentation::GameSnapshot& snapshot,
+    realmz::presentation::CombatantId combatant_id) noexcept {
+  if (!snapshot.combat || !snapshot.combat->active ||
+      (snapshot.combat->acting_combatant != combatant_id)) {
+    return false;
+  }
+  const auto combatant = std::ranges::find(
+      snapshot.combat->combatants,
+      combatant_id,
+      &realmz::presentation::CombatantView::id);
+  const auto* party_member =
+      (combatant_id >= 0) && (combatant_id <= 0xFF)
+      ? snapshot.party.member(
+            static_cast<realmz::presentation::PartyMemberId>(combatant_id))
+      : nullptr;
+  return party_member &&
+      (combatant != snapshot.combat->combatants.end()) &&
+      (combatant->kind == realmz::presentation::CombatantKind::party_member) &&
+      combatant->active && combatant->targetable &&
+      (combatant->stamina.current > 0);
+}
+
+bool has_sane_current_battlefield_viewport(
+    const realmz::presentation::GameSnapshot& snapshot,
+    realmz::presentation::CombatantId) noexcept {
+  if (!snapshot.combat || (snapshot.combat->field_origin_x < 0) ||
+      (snapshot.combat->field_origin_y < 0) ||
+      (snapshot.combat->visible_columns == 0) ||
+      (snapshot.combat->visible_rows == 0) ||
+      (snapshot.combat->visible_columns > 90) ||
+      (snapshot.combat->visible_rows > 90)) {
+    return false;
+  }
+  return snapshot.combat->field_origin_x <=
+          90 - static_cast<int32_t>(snapshot.combat->visible_columns) &&
+      snapshot.combat->field_origin_y <=
+          90 - static_cast<int32_t>(snapshot.combat->visible_rows);
+}
+
 template <typename DecodedCombatant, typename MessageMapper>
 uint8_t consume_semantic_combatant_event(
     RealmzSemanticInputSurface expected_surface,
@@ -705,26 +777,8 @@ uint8_t consume_semantic_combatant_event(
   try {
     const auto snapshot =
         realmz::presentation::LegacyGameSnapshotSource().capture();
-    if ((snapshot.screen != screen) || !snapshot.combat ||
-        !snapshot.combat->active ||
-        (snapshot.combat->acting_combatant != decoded->combatant)) {
-      return 0;
-    }
-    const auto combatant = std::ranges::find(
-        snapshot.combat->combatants,
-        decoded->combatant,
-        &realmz::presentation::CombatantView::id);
-    const auto* party_member =
-        (decoded->combatant >= 0) && (decoded->combatant <= 0xFF)
-        ? snapshot.party.member(
-              static_cast<realmz::presentation::PartyMemberId>(
-                  decoded->combatant))
-        : nullptr;
-    if (!party_member ||
-        (combatant == snapshot.combat->combatants.end()) ||
-        (combatant->kind != realmz::presentation::CombatantKind::party_member) ||
-        !combatant->active || !combatant->targetable ||
-        (combatant->stamina.current <= 0)) {
+    if ((snapshot.screen != screen) ||
+        !is_live_active_party_combatant(snapshot, decoded->combatant)) {
       return 0;
     }
     if (required_selected_member) {
@@ -1018,6 +1072,21 @@ uint32_t semantic_open_combat_scroll_case_tag(
       static_cast<uint32_t>(combatant);
 }
 
+uint32_t semantic_center_combat_cursor_tag(
+    CombatantId combatant,
+    CombatFieldCell cell,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF) || (cell.x > 89) ||
+      (cell.y > 89)) {
+    return 0;
+  }
+  return kSemanticCenterCombatCursorSignature |
+      (static_cast<uint32_t>(combatant) << 16U) |
+      (static_cast<uint32_t>(cell.x) << 8U) |
+      static_cast<uint32_t>(cell.y);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -1303,6 +1372,19 @@ RealmzSemanticOpenCombatScrollCaseTagSurface(uint32_t tagged_message) {
   return scroll_case ? scroll_case->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticCenterCombatCursorTag(
+    uint32_t tagged_message) {
+  return decode_center_combat_cursor(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticCenterCombatCursorTagSurface(uint32_t tagged_message) {
+  const auto center_cursor = decode_center_combat_cursor(tagged_message);
+  return center_cursor
+      ? center_cursor->surface
+      : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -1325,7 +1407,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_open_combat_spellbook(tagged_message) ||
           decode_open_combat_targeting(tagged_message) ||
           decode_escape_combat(tagged_message) ||
-          decode_open_combat_scroll_case(tagged_message))
+          decode_open_combat_scroll_case(tagged_message) ||
+          decode_center_combat_cursor(tagged_message))
       ? 1
       : 0;
 }
@@ -1395,6 +1478,10 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   if (const auto scroll_case =
           decode_open_combat_scroll_case(tagged_message)) {
     return scroll_case->surface;
+  }
+  if (const auto center_cursor =
+          decode_center_combat_cursor(tagged_message)) {
+    return center_cursor->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1846,4 +1933,57 @@ extern "C" uint8_t RealmzConsumeSemanticOpenCombatScrollCaseEvent(
       classic_key_message,
       realmz::presentation::legacy_key_message_for_open_combat_scroll_case,
       is_combat_scroll_available);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticCenterCombatCursorEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message,
+    uint8_t* absolute_x,
+    uint8_t* absolute_y) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!classic_key_message || !absolute_x || !absolute_y || !authorized) {
+    return 0;
+  }
+  const auto center_cursor = decode_center_combat_cursor(tagged_message);
+  if (!center_cursor || (center_cursor->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if ((snapshot.screen != screen) ||
+        !is_live_active_party_combatant(
+            snapshot, center_cursor->combatant) ||
+        !has_sane_current_battlefield_viewport(
+            snapshot, center_cursor->combatant)) {
+      return 0;
+    }
+    const auto message = realmz::presentation::
+        legacy_key_message_for_center_combat_cursor(
+            center_cursor->combatant,
+            center_cursor->cell,
+            {
+                .screen = screen,
+                .world_presentation = snapshot.world.presentation,
+                .adaptive_eligible = true,
+            });
+    if (!message) {
+      return 0;
+    }
+    *classic_key_message = *message;
+    *absolute_x = center_cursor->cell.x;
+    *absolute_y = center_cursor->cell.y;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
 }

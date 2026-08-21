@@ -33,6 +33,7 @@ void check(bool condition, const char* expression, int line) {
 constexpr CombatantId kActingCombatant = 2;
 constexpr PartyMemberId kSelectedMember = 4;
 constexpr PartyMemberId kReplacementSelectedMember = 5;
+constexpr CombatFieldCell kCursorCell{.x = 42, .y = 17};
 constexpr uint32_t kUnchangedClassicMessage = 0xA5A5A5A5U;
 
 constexpr RuntimeLegacyCommandContext kRuntimeContext{
@@ -50,6 +51,7 @@ enum class CombatCommand {
   previous,
   next,
   auto_combatant,
+  center_combat_cursor,
   show_combat_range,
   bandage_combatant,
   undo_combatant,
@@ -67,6 +69,7 @@ struct CombatCase {
   uint32_t expected_semantic_tag = 0;
   std::optional<CombatFocusDirection> direction;
   std::optional<PartyMemberId> selected_member;
+  std::optional<CombatFieldCell> cell;
 };
 
 constexpr std::array kCombatCases{
@@ -119,6 +122,13 @@ constexpr std::array kCombatCases{
         .label = "Auto",
         .expected_classic_message = 0x00000061U,
         .expected_semantic_tag = 0x52410302U,
+    },
+    CombatCase{
+        .command = CombatCommand::center_combat_cursor,
+        .label = "Center Cursor",
+        .expected_classic_message = 0x00002E6DU,
+        .expected_semantic_tag = 0x4D022A11U,
+        .cell = kCursorCell,
     },
     CombatCase{
         .command = CombatCommand::show_combat_range,
@@ -176,6 +186,7 @@ struct ClassicRequestTrace {
   CombatantId actor = 0;
   std::optional<CombatFocusDirection> direction;
   std::optional<PartyMemberId> selected_member;
+  std::optional<CombatFieldCell> cell;
   uint32_t key_message = 0;
   RuntimeLegacyCommandContext context;
 
@@ -213,6 +224,10 @@ enum class StateByte : std::size_t {
   actor_stamina,
   actor_movement,
   actor_movement_maximum,
+  field_origin_x,
+  field_origin_y,
+  visible_columns,
+  visible_rows,
   selected_member,
   canary_0,
   canary_1,
@@ -264,6 +279,10 @@ void reset_fixture_state() {
   set_state(StateByte::actor_stamina, 12);
   set_state(StateByte::actor_movement, 9);
   set_state(StateByte::actor_movement_maximum, 9);
+  set_state(StateByte::field_origin_x, 70);
+  set_state(StateByte::field_origin_y, 60);
+  set_state(StateByte::visible_columns, 15);
+  set_state(StateByte::visible_rows, 13);
   set_state(StateByte::selected_member, kSelectedMember);
   set_state(StateByte::canary_0, 0x5A);
   set_state(StateByte::canary_1, 0xC3);
@@ -329,6 +348,10 @@ void reset_fixture_state() {
         .use_scroll_available =
             state(StateByte::use_scroll_available) != 0,
         .round = 3,
+        .field_origin_x = state(StateByte::field_origin_x),
+        .field_origin_y = state(StateByte::field_origin_y),
+        .visible_columns = state(StateByte::visible_columns),
+        .visible_rows = state(StateByte::visible_rows),
         .acting_combatant =
             static_cast<CombatantId>(state(StateByte::acting_combatant)),
     };
@@ -376,6 +399,12 @@ void reset_fixture_state() {
     case CombatCommand::auto_combatant:
       return legacy_key_message_for_auto_combatant(
           kActingCombatant, kRuntimeContext);
+    case CombatCommand::center_combat_cursor:
+      if (!action_case.cell) {
+        return std::nullopt;
+      }
+      return legacy_key_message_for_center_combat_cursor(
+          kActingCombatant, *action_case.cell, kRuntimeContext);
     case CombatCommand::show_combat_range:
       return legacy_key_message_for_show_combat_range(
           kActingCombatant, kRuntimeContext);
@@ -421,6 +450,7 @@ void reset_fixture_state() {
       .actor = kActingCombatant,
       .direction = action_case.direction,
       .selected_member = action_case.selected_member,
+      .cell = action_case.cell,
       .key_message = *message,
       .context = kRuntimeContext,
   };
@@ -449,6 +479,14 @@ void reset_fixture_state() {
       };
     case CombatCommand::auto_combatant:
       return AutoCombatantAction{kActingCombatant};
+    case CombatCommand::center_combat_cursor:
+      if (!action_case.cell) {
+        throw std::logic_error("Center Cursor case has no field cell");
+      }
+      return CenterCombatCursorAction{
+          .combatant = kActingCombatant,
+          .cell = *action_case.cell,
+      };
     case CombatCommand::show_combat_range:
       return ShowCombatRangeAction{kActingCombatant};
     case CombatCommand::bandage_combatant:
@@ -483,13 +521,15 @@ void append_trace(
     std::optional<PartyMemberId> selected_member,
     uint32_t message,
     const RuntimeLegacyCommandContext& context,
-    uint32_t tag) {
+    uint32_t tag,
+    std::optional<CombatFieldCell> cell = std::nullopt) {
   traces.emplace_back(QueuedSemanticTrace{
       .classic_request = ClassicRequestTrace{
           .command = command,
           .actor = actor,
           .direction = direction,
           .selected_member = selected_member,
+          .cell = cell,
           .key_message = message,
           .context = context,
       },
@@ -761,6 +801,25 @@ void append_trace(
             tag);
         return tag != 0;
       },
+      .center_combat_cursor = [&traces](
+          CombatantId actor,
+          CombatFieldCell cell,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& context) {
+        const uint32_t tag = semantic_center_combat_cursor_tag(
+            actor, cell, REALMZ_SEMANTIC_INPUT_COMBAT);
+        append_trace(
+            traces,
+            CombatCommand::center_combat_cursor,
+            actor,
+            std::nullopt,
+            std::nullopt,
+            message,
+            context,
+            tag,
+            cell);
+        return tag != 0;
+      },
   };
 
   return RuntimeLegacyCommandBridge(
@@ -793,7 +852,8 @@ void append_trace(
 [[nodiscard]] bool consume_semantic_request(
     CombatCommand command,
     uint32_t tag,
-    uint32_t& classic_message) {
+    uint32_t& classic_message,
+    CombatFieldCell* absolute_cell = nullptr) {
   switch (command) {
     case CombatCommand::guard:
       return RealmzConsumeSemanticGuardCombatantEvent(
@@ -831,6 +891,20 @@ void append_trace(
                  REALMZ_SEMANTIC_INPUT_COMBAT,
                  tag,
                  &classic_message) != 0;
+    case CombatCommand::center_combat_cursor: {
+      uint8_t absolute_x = 0xA5;
+      uint8_t absolute_y = 0x5A;
+      const bool consumed = RealmzConsumeSemanticCenterCombatCursorEvent(
+          REALMZ_SEMANTIC_INPUT_COMBAT,
+          tag,
+          &classic_message,
+          &absolute_x,
+          &absolute_y) != 0;
+      if (consumed && absolute_cell) {
+        *absolute_cell = {.x = absolute_x, .y = absolute_y};
+      }
+      return consumed;
+    }
     case CombatCommand::show_combat_range:
       return RealmzConsumeSemanticShowCombatRangeEvent(
                  REALMZ_SEMANTIC_INPUT_COMBAT,
@@ -937,10 +1011,19 @@ void test_exact_request_equivalence_and_success_is_single_use() {
 
     complete_combat_input_scope();
     uint32_t consumed_message = kUnchangedClassicMessage;
+    CombatFieldCell consumed_cell{.x = 0xA5, .y = 0x5A};
     CHECK(consume_semantic_request(
-        action_case.command, queued.semantic_tag, consumed_message));
+        action_case.command,
+        queued.semantic_tag,
+        consumed_message,
+        &consumed_cell));
     CHECK(consumed_message == direct.key_message);
     CHECK(consumed_message == action_case.expected_classic_message);
+    if (action_case.cell) {
+      CHECK(consumed_cell == *action_case.cell);
+    } else {
+      CHECK(consumed_cell == (CombatFieldCell{.x = 0xA5, .y = 0x5A}));
+    }
     CHECK(legacy_context_capture_calls == 1);
     CHECK(snapshot_capture_calls == 1);
     CHECK(pre_classic_state == initial_state);
@@ -964,6 +1047,7 @@ void test_stale_actor_rejection_is_single_use_for_every_action() {
     CHECK(queued.classic_request.direction == action_case.direction);
     CHECK(queued.classic_request.selected_member ==
         action_case.selected_member);
+    CHECK(queued.classic_request.cell == action_case.cell);
 
     // The live turn changes after queueing. The tag must not silently retarget
     // to the new actor, and the failed attempt must spend its authorization.
@@ -1037,6 +1121,40 @@ void test_combat_items_stops_at_modal_request_handoff() {
   // This is the complete claim of the fixture: the preserved lowercase "i"
   // request reached the Classic modal handoff. No item choice, live-engine
   // mutation, turn effect, or save equivalence is simulated here.
+}
+
+void test_center_combat_cursor_stops_at_key_and_cell_handoff() {
+  const CombatCase& center_cursor =
+      kCombatCases[kCombatCases.size() - 9];
+  CHECK(center_cursor.command == CombatCommand::center_combat_cursor);
+  CHECK(center_cursor.cell == kCursorCell);
+  CHECK(center_cursor.expected_semantic_tag == 0x4D022A11U);
+
+  reset_fixture_state();
+  const QueuedSemanticTrace queued =
+      dispatch_semantic_action(center_cursor, 350);
+  CHECK(queued.classic_request.cell == kCursorCell);
+
+  // Move the camera after queueing. The absolute cell is intentionally outside
+  // this still-sane viewport and must remain byte-for-byte unchanged.
+  set_state(StateByte::field_origin_x, 75);
+  set_state(StateByte::field_origin_y, 77);
+  const PreClassicStateBytes handoff_state = pre_classic_state;
+  complete_combat_input_scope();
+  uint32_t output = kUnchangedClassicMessage;
+  CombatFieldCell absolute_cell{.x = 0xA5, .y = 0x5A};
+  CHECK(consume_semantic_request(
+      CombatCommand::center_combat_cursor,
+      queued.semantic_tag,
+      output,
+      &absolute_cell));
+  CHECK(output == 0x00002E6DU);
+  CHECK(absolute_cell == kCursorCell);
+  CHECK(pre_classic_state == handoff_state);
+
+  // The fixture ends at the exact lowercase "m" plus absolute-cell handoff.
+  // It makes no centerfield, camera-origin, redraw, or save-state equivalence
+  // claim; all of those effects remain owned by the preserved Classic branch.
 }
 
 void test_combat_range_stops_at_classic_modal_handoff() {
@@ -1303,6 +1421,7 @@ int main() {
     test_stale_actor_rejection_is_single_use_for_every_action();
     test_combat_items_stale_selected_member_is_single_use();
     test_combat_items_stops_at_modal_request_handoff();
+    test_center_combat_cursor_stops_at_key_and_cell_handoff();
     test_combat_range_stops_at_classic_modal_handoff();
     test_bandage_stops_at_classic_target_picker_handoff();
     test_bandage_unavailable_rejection_is_single_use();

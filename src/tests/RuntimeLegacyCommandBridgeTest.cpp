@@ -135,6 +135,16 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::open_combat_scroll_case),
     std::optional<RuntimeLegacyOpenCombatScrollCaseSink>>);
+static_assert(std::is_same_v<
+    RuntimeLegacyCenterCombatCursorSink,
+    std::function<bool(
+        CombatantId,
+        CombatFieldCell,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::center_combat_cursor),
+    std::optional<RuntimeLegacyCenterCombatCursorSink>>);
 static_assert(std::numeric_limits<PartyMemberId>::min() == 0);
 static_assert(std::numeric_limits<PartyMemberId>::max() == 0xFF);
 
@@ -4597,6 +4607,278 @@ void test_open_combat_scroll_case_mapping_and_dispatch() {
       std::string::npos);
 }
 
+void test_center_combat_cursor_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int calls = 0;
+  bool accept = true;
+  CombatantId received_combatant = -1;
+  CombatFieldCell received_cell{};
+  uint32_t received_message = 0;
+  const RuntimeLegacyCenterCombatCursorSink sink =
+      [&calls,
+       &accept,
+       &received_combatant,
+       &received_cell,
+       &received_message,
+       &context](
+          CombatantId combatant,
+          CombatFieldCell cell,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++calls;
+        received_combatant = combatant;
+        received_cell = cell;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink = inventory_sink;
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink = save_sink;
+  const auto make_bridge = [&](RuntimeLegacyContextProvider provider,
+                               RuntimeLegacyCenterCombatCursorSink value) {
+    return RuntimeLegacyCommandBridge(
+        std::move(provider), movement_sink, party_selection_sink,
+        inventory_sink, spellbook_sink, save_sink, load_sink,
+        RuntimeLegacyCombatActionSinks{
+            .center_combat_cursor = std::move(value),
+        });
+  };
+  auto bridge = make_bridge([&context] { return context; }, sink);
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    CHECK(legacy_key_message_for_center_combat_cursor(
+              0, {.x = 0, .y = 0}, context) == 0x00002E6DU);
+    CHECK(legacy_key_message_for_center_combat_cursor(
+              255, {.x = 89, .y = 89}, context) == 0x00002E6DU);
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 502,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  }).status == DispatchStatus::handled);
+  CHECK(calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_cell == (CombatFieldCell{.x = 42, .y = 17}));
+  CHECK(received_message == 0x00002E6DU);
+
+  for (const auto [combatant, cell] : {
+           std::pair{CombatantId{0}, CombatFieldCell{.x = 0, .y = 0}},
+           std::pair{CombatantId{255}, CombatFieldCell{.x = 89, .y = 89}},
+       }) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 503,
+        .payload = CenterCombatCursorAction{
+            .combatant = combatant,
+            .cell = cell,
+        },
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(calls == 3);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title, ScreenContext::party_selection,
+      ScreenContext::party_creation, ScreenContext::exploration,
+      ScreenContext::dungeon, ScreenContext::inventory, ScreenContext::shop,
+      ScreenContext::encounter, ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_center_combat_cursor(
+        9, {.x = 42, .y = 17}, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 504,
+        .payload = CenterCombatCursorAction{
+            .combatant = 9,
+            .cell = {.x = 42, .y = 17},
+        },
+    }).status == DispatchStatus::rejected);
+  }
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_center_combat_cursor(
+      9, {.x = 42, .y = 17}, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 505,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  }).status == DispatchStatus::rejected);
+  context.adaptive_eligible = true;
+
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(), CombatantId{-1},
+           CombatantId{256}, std::numeric_limits<CombatantId>::max(),
+       }) {
+    CHECK(!legacy_key_message_for_center_combat_cursor(
+        invalid, {.x = 42, .y = 17}, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 506,
+        .payload = CenterCombatCursorAction{
+            .combatant = invalid,
+            .cell = {.x = 42, .y = 17},
+        },
+    }).status == DispatchStatus::rejected);
+  }
+  for (const CombatFieldCell invalid : {
+           CombatFieldCell{.x = 90, .y = 0},
+           CombatFieldCell{.x = 0, .y = 90},
+           CombatFieldCell{.x = 255, .y = 89},
+           CombatFieldCell{.x = 89, .y = 255},
+       }) {
+    CHECK(!legacy_key_message_for_center_combat_cursor(9, invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 507,
+        .payload = CenterCombatCursorAction{
+            .combatant = 9,
+            .cell = invalid,
+        },
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 3);
+
+  // This route is independent from every same-purpose or same-key-shape sink.
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 508,
+      .payload = CenterActiveCombatantAction{9},
+  }).status == DispatchStatus::unsupported);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 509,
+      .payload = OpenCombatScrollCaseAction{9},
+  }).status == DispatchStatus::unsupported);
+  RuntimeLegacyCommandBridge other_sinks_only(
+      [&context] { return context; }, movement_sink, party_selection_sink,
+      inventory_sink, spellbook_sink, save_sink, load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .center_active_combatant = [](
+              CombatantId, uint32_t, const RuntimeLegacyCommandContext&) {
+            return true;
+          },
+          .open_combat_scroll_case = [](
+              CombatantId, uint32_t, const RuntimeLegacyCommandContext&) {
+            return true;
+          },
+      });
+  CHECK(other_sinks_only.dispatch(UIAction{
+      .sequence = 510,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  }).status == DispatchStatus::unsupported);
+
+  accept = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 511,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  }).status == DispatchStatus::failed);
+  CHECK(calls == 4);
+  accept = true;
+
+  auto missing_provider = make_bridge(RuntimeLegacyContextProvider{}, sink);
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 512,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+
+  auto empty_sink = make_bridge(
+      [&context] { return context; },
+      RuntimeLegacyCenterCombatCursorSink{});
+  const auto no_sink = empty_sink.dispatch(UIAction{
+      .sequence = 513,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("center-combat-cursor sink") !=
+      std::string::npos);
+
+  RuntimeLegacyCommandBridge absent_sink(
+      [&context] { return context; }, movement_sink, party_selection_sink,
+      inventory_sink, spellbook_sink, save_sink, load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(absent_sink.dispatch(UIAction{
+      .sequence = 514,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  }).status == DispatchStatus::unsupported);
+
+  auto provider_throws = make_bridge(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("center cursor provider failure");
+      },
+      sink);
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 515,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("center cursor provider failure") !=
+      std::string::npos);
+
+  const RuntimeLegacyCenterCombatCursorSink throwing_sink =
+      [](CombatantId,
+          CombatFieldCell,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("center cursor sink failure");
+      };
+  auto sink_throws = make_bridge([&context] { return context; }, throwing_sink);
+  const auto sink_thrown = sink_throws.dispatch(UIAction{
+      .sequence = 516,
+      .payload = CenterCombatCursorAction{
+          .combatant = 9,
+          .cell = {.x = 42, .y = 17},
+      },
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("center cursor sink failure") !=
+      std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -4692,6 +4974,13 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 394,
           .payload = OpenCombatScrollCaseAction{15},
       },
+      UIAction{
+          .sequence = 395,
+          .payload = CenterCombatCursorAction{
+              .combatant = 16,
+              .cell = {.x = 42, .y = 17},
+          },
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -4734,6 +5023,7 @@ void test_named_combat_sink_registration_semantics() {
           .escape_combat = RuntimeLegacyEscapeCombatSink{},
           .open_combat_scroll_case =
               RuntimeLegacyOpenCombatScrollCaseSink{},
+          .center_combat_cursor = RuntimeLegacyCenterCombatCursorSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -4836,6 +5126,13 @@ void test_named_combat_sink_registration_semantics() {
   CHECK(sparse_combat_sinks.dispatch(UIAction{
       .sequence = 398,
       .payload = OpenCombatScrollCaseAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 399,
+      .payload = CenterCombatCursorAction{
+          .combatant = 6,
+          .cell = {.x = 42, .y = 17},
+      },
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(center_calls == 1);
@@ -5203,6 +5500,7 @@ int main() {
     test_open_combat_targeting_mapping_and_dispatch();
     test_escape_combat_mapping_and_dispatch();
     test_open_combat_scroll_case_mapping_and_dispatch();
+    test_center_combat_cursor_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

@@ -135,6 +135,18 @@ private:
       remastered_active_drawer;
   realmz::presentation::CombatActionPage remastered_combat_action_page =
       realmz::presentation::CombatActionPage::primary;
+  struct RemasteredCombatCursorSample {
+    realmz::presentation::CombatantId combatant = 0;
+    realmz::presentation::CombatFieldCell cell;
+    int32_t field_origin_x = 0;
+    int32_t field_origin_y = 0;
+    size_t visible_columns = 0;
+    size_t visible_rows = 0;
+
+    bool operator==(const RemasteredCombatCursorSample&) const = default;
+  };
+  std::optional<RemasteredCombatCursorSample>
+      remastered_combat_cursor_sample;
   std::unique_ptr<realmz::presentation::RuntimeLegacyCommandBridge>
       runtime_legacy_command_bridge;
   realmz::presentation::ActionSequence next_shell_action_sequence = 1;
@@ -249,6 +261,10 @@ private:
   void present_remastered_frame() override;
   void dispatch_remastered_shell_control(
       const realmz::presentation::ShellControlPlacement& control);
+  [[nodiscard]] bool refresh_remastered_combat_cursor_sample(
+      const realmz::presentation::RemasteredPointerTarget& target);
+  [[nodiscard]] bool remastered_combat_cursor_sample_matches(
+      const realmz::presentation::GameSnapshot& snapshot) const noexcept;
   [[nodiscard]] bool remastered_shell_keyboard_route_is_eligible() const;
   void print_window_stack() const;
   void verify_window_stack() const;

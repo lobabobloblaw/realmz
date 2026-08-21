@@ -202,6 +202,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
+  CHECK(model.actions.size() == 22U);
   const auto& guard = action_with(model, ActionIntent::guard);
   CHECK(guard.can_invoke());
   CHECK(guard.availability == ActionAvailability::deferred_to_engine);
@@ -357,6 +358,19 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(combat_scroll_case.focus_identifier !=
       escape_combat.focus_identifier);
   CHECK(combat_scroll_case.availability_reason->label == "Game rules apply");
+  const auto& center_combat_cursor =
+      action_with(model, ActionIntent::center_combat_cursor);
+  CHECK(center_combat_cursor.can_invoke());
+  CHECK(center_combat_cursor.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(center_combat_cursor.command == "action.combat.center.cursor");
+  CHECK(center_combat_cursor.label == "Center Cursor");
+  CHECK(center_combat_cursor.combatant == guard.combatant);
+  CHECK(center_combat_cursor.tab_order == combat_scroll_case.tab_order + 1);
+  CHECK(center_combat_cursor.focus_identifier !=
+      combat_scroll_case.focus_identifier);
+  CHECK(center_combat_cursor.availability_reason->label ==
+      "Game rules apply");
   CHECK(model.combat_action_page == CombatActionPage::primary);
 
   const auto secondary_page_model = build_presentation_shell_model(
@@ -506,6 +520,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::open_combat_scroll_case);
   CHECK(scroll_before_movement.can_invoke());
   CHECK(scroll_before_movement.combatant == available_delay.combatant);
+  const auto& cursor_before_movement =
+      action_with(model, ActionIntent::center_combat_cursor);
+  CHECK(cursor_before_movement.can_invoke());
+  CHECK(cursor_before_movement.combatant == available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
   model = build_presentation_shell_model(snapshot);
@@ -569,6 +587,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::open_combat_scroll_case);
   CHECK(unmatched_scroll.can_invoke());
   CHECK(unmatched_scroll.combatant == unmatched_delay.combatant);
+  const auto& unmatched_cursor =
+      action_with(model, ActionIntent::center_combat_cursor);
+  CHECK(unmatched_cursor.can_invoke());
+  CHECK(unmatched_cursor.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   auto no_selection = snapshot;
@@ -618,6 +640,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(no_selection_model, ActionIntent::open_combat_scroll_case);
   CHECK(scroll_without_selection.can_invoke());
   CHECK(scroll_without_selection.combatant == 1);
+  const auto& cursor_without_selection =
+      action_with(no_selection_model, ActionIntent::center_combat_cursor);
+  CHECK(cursor_without_selection.can_invoke());
+  CHECK(cursor_without_selection.combatant == 1);
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
@@ -638,6 +664,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::open_combat_targeting,
              ActionIntent::escape_combat,
              ActionIntent::open_combat_scroll_case,
+             ActionIntent::center_combat_cursor,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());

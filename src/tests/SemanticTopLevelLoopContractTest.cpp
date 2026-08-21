@@ -340,6 +340,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic scroll-case input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticCenterCombatCursorEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged center-cursor input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -892,6 +896,34 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(scroll_case_wrapper, "mouseDown") == 0,
       "public scroll-case enqueue must not synthesize Classic input");
 
+  const std::string push_center_cursor = function_body(
+      source, "push_semantic_center_combat_cursor_event");
+  const std::string compact_push_center_cursor =
+      without_whitespace(push_center_cursor);
+  require(count_identifier(push_center_cursor,
+              "RealmzIsSemanticCenterCombatCursorTag") == 1,
+      "semantic center-cursor enqueue must validate exactly one tag");
+  require(count_identifier(push_center_cursor, "app1Evt") == 1,
+      "semantic center-cursor enqueue must use app1Evt exactly once");
+  require(count_identifier(push_center_cursor, "keyDown") == 0 &&
+          count_identifier(push_center_cursor, "mouseDown") == 0,
+      "semantic center-cursor enqueue must not synthesize Classic input");
+  require(compact_push_center_cursor.contains("ev.what=app1Evt;") &&
+          compact_push_center_cursor.contains("ev.message=tagged_message;") &&
+          compact_push_center_cursor.contains("ev.where={};"),
+      "semantic center-cursor must retain only its tagged payload and must "
+      "not encode a cell in EventRecord.where");
+
+  const std::string center_cursor_wrapper = function_body(
+      source, "PushSemanticCenterCombatCursorEvent");
+  require(without_whitespace(center_cursor_wrapper).contains(
+              "returnem.push_semantic_center_combat_cursor_event("
+              "tagged_message);"),
+      "public center-cursor enqueue must delegate to its tagged queue");
+  require(count_identifier(center_cursor_wrapper, "keyDown") == 0 &&
+          count_identifier(center_cursor_wrapper, "mouseDown") == 0,
+      "public center-cursor enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -1024,17 +1056,21 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 1,
       "semantic gameplay wrapper must have one late scroll-case consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticCenterCombatCursorEvent") == 1,
+      "semantic gameplay wrapper must have one late center-cursor consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 21,
-      "semantic gameplay wrapper must recognize all twenty-one tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 18,
+  require(count_identifier(semantic_wrapper, "app1Evt") == 22,
+      "semantic gameplay wrapper must recognize all twenty-two tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 19,
       "only late movement, inventory, spellbook, guard, finish, delay, center, "
       "switch-weapon, cycle-focus, combat-items, Auto, Range, Bandage, Undo, "
-      "combat-spellbook, combat-targeting, Escape, or scroll-case validation "
-      "may produce keyDown");
+      "combat-spellbook, combat-targeting, Escape, scroll-case, or "
+      "center-cursor validation may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
@@ -1120,6 +1156,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 1,
       "EventManager may consume semantic scroll-case input only inside its "
+      "gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticCenterCombatCursorEvent") == 1,
+      "EventManager may consume semantic center-cursor input only inside its "
       "gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
@@ -1380,6 +1420,21 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", scroll_case_keydown);
   const std::size_t scroll_case_rejected_message = compact_semantic.find(
       "ret->message=0", scroll_case_null);
+  const std::size_t center_cursor_branch = compact_semantic.find(
+      "RealmzIsSemanticCenterCombatCursorTag(ret->message)",
+      scroll_case_rejected_message);
+  const std::size_t center_cursor_consume = compact_semantic.find(
+      "RealmzConsumeSemanticCenterCombatCursorEvent(",
+      center_cursor_branch);
+  const std::size_t center_cursor_stage = compact_semantic.find(
+      "stage_semantic_center_combat_cursor_cell(absolute_x,absolute_y);",
+      center_cursor_consume);
+  const std::size_t center_cursor_keydown = compact_semantic.find(
+      "ret->what=keyDown", center_cursor_stage);
+  const std::size_t center_cursor_null = compact_semantic.find(
+      "ret->what=nullEvent", center_cursor_keydown);
+  const std::size_t center_cursor_rejected_message = compact_semantic.find(
+      "ret->message=0", center_cursor_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -1498,7 +1553,13 @@ void verify_event_manager(const fs::path& repository_root) {
           scroll_case_consume != std::string::npos &&
           scroll_case_keydown != std::string::npos &&
           scroll_case_null != std::string::npos &&
-          scroll_case_rejected_message != std::string::npos,
+          scroll_case_rejected_message != std::string::npos &&
+          center_cursor_branch != std::string::npos &&
+          center_cursor_consume != std::string::npos &&
+          center_cursor_stage != std::string::npos &&
+          center_cursor_keydown != std::string::npos &&
+          center_cursor_null != std::string::npos &&
+          center_cursor_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -1612,7 +1673,13 @@ void verify_event_manager(const fs::path& repository_root) {
           scroll_case_branch < scroll_case_consume &&
           scroll_case_consume < scroll_case_keydown &&
           scroll_case_keydown < scroll_case_null &&
-          scroll_case_null < scroll_case_rejected_message,
+          scroll_case_null < scroll_case_rejected_message &&
+          scroll_case_rejected_message < center_cursor_branch &&
+          center_cursor_branch < center_cursor_consume &&
+          center_cursor_consume < center_cursor_stage &&
+          center_cursor_stage < center_cursor_keydown &&
+          center_cursor_keydown < center_cursor_null &&
+          center_cursor_null < center_cursor_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
@@ -1650,6 +1717,12 @@ void verify_event_manager(const fs::path& repository_root) {
       "Use Scroll must leave semantic gameplay scope before its lowercase l "
       "handoff, leaving the raw chooser, targeting, costs, and effects in "
       "Classic");
+  require(scope_block_close < center_cursor_branch &&
+          center_cursor_branch < center_cursor_consume &&
+          center_cursor_consume < center_cursor_stage &&
+          center_cursor_stage < center_cursor_keydown,
+      "Center Cursor must leave semantic gameplay scope before its lowercase "
+      "m handoff and stage its absolute cell only after late validation");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
               "return(ret->what!=nullEvent);}"),
@@ -1662,6 +1735,15 @@ void verify_event_manager(const fs::path& repository_root) {
       "GetNextEvent must use the guarded EventManager dequeue path");
   require(count_identifier(wait_next, "get_next_event") == 1,
       "WaitNextEvent must use the guarded EventManager dequeue path");
+  require(count_identifier(
+              get_next, "clear_pending_semantic_center_combat_cursor_cell") ==
+          1 &&
+          count_identifier(wait_next,
+              "clear_pending_semantic_center_combat_cursor_cell") == 1 &&
+          count_identifier(semantic_wrapper,
+              "clear_pending_semantic_center_combat_cursor_cell") == 1,
+      "every ordinary, raw, or semantic event poll must clear a stale staged "
+      "center-cursor cell before dequeuing another event");
   require(compact_wait_next.contains(
               "*ret=em.get_next_event(sleep);"
               "return(ret->what!=nullEvent);"),
@@ -1679,6 +1761,26 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               cancel, "discard_semantic_gameplay_events") == 1,
       "semantic cancellation must discard queued gameplay input once");
+  require(count_identifier(
+              cancel, "clear_pending_semantic_center_combat_cursor_cell") == 1,
+      "semantic cancellation must clear a staged center-cursor cell once");
+  const std::string take_cursor = function_body(
+      source, "TakeSemanticCenterCombatCursorCell");
+  const std::string compact_take_cursor = without_whitespace(take_cursor);
+  require(count_identifier(take_cursor,
+              "clear_pending_semantic_center_combat_cursor_cell") == 1 &&
+          compact_take_cursor.contains(
+              "constautopending=pending_semantic_center_combat_cursor_cell;") &&
+          compact_take_cursor.contains("if(!pending||!absolute_x||!absolute_y)") &&
+          compact_take_cursor.contains("*absolute_x=pending->x;") &&
+          compact_take_cursor.contains("*absolute_y=pending->y;"),
+      "the Classic center-cursor cell handoff must clear before validating "
+      "outputs and return the staged absolute coordinates at most once");
+  const std::string flush = function_body(source, "FlushEvents");
+  require(count_identifier(flush,
+              "clear_pending_semantic_center_combat_cursor_cell") == 1,
+      "Classic event flushing must also make any staged semantic cursor cell "
+      "inert");
   const std::size_t invalidate = compact_cancel.find(
       "RealmzInvalidateSemanticInputBoundary()");
   const std::size_t discard = compact_cancel.find(
@@ -1846,6 +1948,9 @@ void verify_window_manager_named_combat_sinks(
            "legacy_key_message_for_open_combat_scroll_case",
            "semantic_open_combat_scroll_case_tag",
            "PushSemanticOpenCombatScrollCaseEvent",
+           "legacy_key_message_for_center_combat_cursor",
+           "semantic_center_combat_cursor_tag",
+           "PushSemanticCenterCombatCursorEvent",
        }) {
     require(count_identifier(invocation, identifier) == 1,
         std::string("runtime legacy bridge construction must contain exactly ") +
@@ -1939,6 +2044,11 @@ void verify_window_manager_named_combat_sinks(
       "legacy_key_message_for_open_combat_scroll_case",
       "semantic_open_combat_scroll_case_tag",
       "PushSemanticOpenCombatScrollCaseEvent");
+  verify_field(
+      "center_combat_cursor",
+      "legacy_key_message_for_center_combat_cursor",
+      "semantic_center_combat_cursor_tag",
+      "PushSemanticCenterCombatCursorEvent");
 }
 
 void verify_window_manager_shell_dispatch_freshness(
@@ -1992,9 +2102,13 @@ void verify_window_manager_shell_dispatch_freshness(
       "std::get_if<realmz::presentation::OpenCombatScrollCaseAction>"
       "(&control.payload)",
       escape_payload);
+  const std::size_t center_cursor_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::CenterCombatCursorAction>"
+      "(&control.payload)",
+      scroll_case_payload);
   const std::size_t ordinary_branch = compact_dispatch.find(
       "}else{constautolive_control=std::ranges::find_if(",
-      scroll_case_payload);
+      center_cursor_payload);
   const std::size_t current_controls = compact_dispatch.find(
       "this->remastered_shell_controls,", ordinary_branch);
   const std::size_t exact_enabled_descriptor = compact_dispatch.find(
@@ -2072,7 +2186,7 @@ void verify_window_manager_shell_dispatch_freshness(
       utility_page);
   const std::size_t special_action_guard = compact_dispatch.find(
       "((open_combat_spellbook||open_combat_targeting||escape_combat||"
-      "open_combat_scroll_case)&&",
+      "open_combat_scroll_case||center_combat_cursor)&&",
       utility_layout);
   const std::size_t combat_spellbook_guard = compact_dispatch.find(
       "(open_combat_spellbook&&", special_action_guard);
@@ -2098,10 +2212,16 @@ void verify_window_manager_shell_dispatch_freshness(
       "control.kind!=realmz::presentation::ShellControlKind::"
       "open_combat_scroll_case",
       scroll_case_guard);
+  const std::size_t center_cursor_guard = compact_dispatch.find(
+      "(center_combat_cursor&&", scroll_case_kind);
+  const std::size_t center_cursor_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "center_combat_cursor",
+      center_cursor_guard);
   const std::size_t special_page = compact_dispatch.find(
       "this->remastered_combat_action_page!="
       "realmz::presentation::CombatActionPage::special",
-      scroll_case_kind);
+      center_cursor_kind);
   const std::size_t special_layout = compact_dispatch.find(
       "this->adaptive_shell_plan->adaptive_layout->action_bar"
       ".contains(control.bounds)",
@@ -2123,6 +2243,7 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_targeting_payload != std::string::npos &&
           escape_payload != std::string::npos &&
           scroll_case_payload != std::string::npos &&
+          center_cursor_payload != std::string::npos &&
           ordinary_branch != std::string::npos &&
           current_controls != std::string::npos &&
           exact_enabled_descriptor != std::string::npos &&
@@ -2158,6 +2279,8 @@ void verify_window_manager_shell_dispatch_freshness(
           escape_kind != std::string::npos &&
           scroll_case_guard != std::string::npos &&
           scroll_case_kind != std::string::npos &&
+          center_cursor_guard != std::string::npos &&
+          center_cursor_kind != std::string::npos &&
           special_page != std::string::npos &&
           special_layout != std::string::npos &&
           reject != std::string::npos &&
@@ -2165,7 +2288,8 @@ void verify_window_manager_shell_dispatch_freshness(
           bridge_dispatch != std::string::npos,
       "bridge-bound shell dispatch must retain its live descriptor, fresh "
       "route, and Weapon/Cycle Focus/Combat Items/Auto/Range/Bandage/Undo/"
-      "Cast Spell/Target/Escape/Use Scroll page-layout rejection gate");
+      "Cast Spell/Target/Escape/Use Scroll/Center Cursor page-layout "
+      "rejection gate");
   require(switch_payload < cycle_payload &&
           cycle_payload < combat_items_payload &&
           combat_items_payload < auto_payload &&
@@ -2176,7 +2300,8 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_spellbook_payload < combat_targeting_payload &&
           combat_targeting_payload < escape_payload &&
           escape_payload < scroll_case_payload &&
-          scroll_case_payload < ordinary_branch &&
+          scroll_case_payload < center_cursor_payload &&
+          center_cursor_payload < ordinary_branch &&
           ordinary_branch < current_controls &&
           current_controls < exact_enabled_descriptor &&
           exact_enabled_descriptor < fresh_route &&
@@ -2204,12 +2329,14 @@ void verify_window_manager_shell_dispatch_freshness(
           escape_guard < escape_kind &&
           escape_kind < scroll_case_guard &&
           scroll_case_guard < scroll_case_kind &&
-          scroll_case_kind < special_page &&
+          scroll_case_kind < center_cursor_guard &&
+          center_cursor_guard < center_cursor_kind &&
+          center_cursor_kind < special_page &&
           special_page < special_layout && special_layout < reject &&
           reject < action && action < bridge_dispatch,
       "cached shell descriptors and stale Weapon/Cycle Focus/Combat Items/"
-      "Auto/Range/Bandage/Undo/Cast Spell/Target/Escape/Use Scroll routes "
-      "must be "
+      "Auto/Range/Bandage/Undo/Cast Spell/Target/Escape/Use Scroll/Center "
+      "Cursor routes must be "
       "rejected before any runtime "
       "legacy bridge dispatch");
 
@@ -3606,6 +3733,312 @@ void verify_window_manager_shell_dispatch_freshness(
       "capability");
 }
 
+void verify_center_combat_cursor_contract(
+    const fs::path& repository_root) {
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const auto qualified_member_body = [&window_source](
+                                         std::string_view function_name) {
+    const std::string qualified =
+        "WindowManager::" + std::string(function_name);
+    const std::size_t name = window_source.find(qualified);
+    require(name != std::string::npos,
+        std::string("could not find WindowManager definition: ") +
+            std::string(function_name));
+    const std::size_t parameters_open = window_source.find(
+        '(', name + qualified.size());
+    require(parameters_open != std::string::npos,
+        std::string("WindowManager definition has no parameters: ") +
+            std::string(function_name));
+    const std::size_t parameters_close = matching_delimiter(
+        window_source, parameters_open, '(', ')');
+    const std::size_t body_open = window_source.find(
+        '{', parameters_close + 1);
+    const std::size_t declaration_end = window_source.find(
+        ';', parameters_close + 1);
+    require(body_open != std::string::npos &&
+            (declaration_end == std::string::npos ||
+                body_open < declaration_end),
+        std::string("WindowManager definition has no body: ") +
+            std::string(function_name));
+    const std::size_t body_close = matching_delimiter(
+        window_source, body_open, '{', '}');
+    return window_source.substr(
+        body_open, body_close - body_open + 1);
+  };
+  const std::string refresh = function_body(
+      window_source, "refresh_remastered_combat_cursor_sample");
+  const std::string compact_refresh = without_whitespace(refresh);
+
+  require(count_identifier(refresh, "LegacyGameSnapshotSource") == 1 &&
+          count_identifier(refresh, "LegacyPointerTarget") == 1 &&
+          count_identifier(refresh, "kClassicGameplayCrop") >= 3 &&
+          count_identifier(refresh, "kClassicTileExtent") == 2,
+      "cursor sampling must use one fresh snapshot and only the mapped "
+      "Classic gameplay target with 32-pixel tile arithmetic");
+  require(compact_refresh.contains(
+              "this->presentation_host.mode()!=realmz::presentation::"
+              "PresentationMode::remastered") &&
+          compact_refresh.contains(
+              "RealmzCurrentSemanticInputSurface()!=REALMZ_SEMANTIC_INPUT_"
+              "COMBAT") &&
+          compact_refresh.contains(
+              "this->adaptive_shell_plan->screen!="
+              "realmz::presentation::ScreenContext::combat") &&
+          compact_refresh.contains(
+              "!context.adaptive_eligible||context.screen!="
+              "realmz::presentation::ScreenContext::combat"),
+      "cursor sampling must fail closed outside the remastered adaptive "
+      "combat surface and runtime context");
+
+  const std::size_t outside_target = compact_refresh.find(
+      "std::holds_alternative<realmz::presentation::"
+      "OutsideWindowTarget>(target)");
+  const std::size_t outside_clear = compact_refresh.find(
+      "returnclear_and_report();", outside_target);
+  const std::size_t legacy_target = compact_refresh.find(
+      "constauto*legacy=std::get_if<realmz::presentation::"
+      "LegacyPointerTarget>(&target)", outside_clear);
+  const std::size_t gameplay_crop = compact_refresh.find(
+      "realmz::presentation::kClassicGameplayCrop.contains("
+      "legacy->classic_point)",
+      legacy_target);
+  const std::size_t retain_chrome = compact_refresh.find(
+      "returnfalse;", gameplay_crop);
+  const std::size_t snapshot_capture = compact_refresh.find(
+      "snapshot=realmz::presentation::LegacyGameSnapshotSource().capture()",
+      retain_chrome);
+  const std::size_t local_x = compact_refresh.find(
+      "constdoublelocal_x=legacy->classic_point.x-"
+      "realmz::presentation::kClassicGameplayCrop.x",
+      snapshot_capture);
+  const std::size_t local_y = compact_refresh.find(
+      "constdoublelocal_y=legacy->classic_point.y-"
+      "realmz::presentation::kClassicGameplayCrop.y",
+      local_x);
+  const std::size_t column = compact_refresh.find(
+      "std::floor(local_x/realmz::presentation::kClassicTileExtent)",
+      local_y);
+  const std::size_t row = compact_refresh.find(
+      "std::floor(local_y/realmz::presentation::kClassicTileExtent)",
+      column);
+  const std::size_t visible_bounds = compact_refresh.find(
+      "column>=snapshot.combat->visible_columns||"
+      "row>=snapshot.combat->visible_rows",
+      row);
+  const std::size_t absolute_x = compact_refresh.find(
+      "static_cast<size_t>(snapshot.combat->field_origin_x)+column",
+      visible_bounds);
+  const std::size_t absolute_y = compact_refresh.find(
+      "static_cast<size_t>(snapshot.combat->field_origin_y)+row",
+      absolute_x);
+  const std::size_t field_bounds = compact_refresh.find(
+      "if(cell_x>89U||cell_y>89U)", absolute_y);
+  const std::size_t store_sample = compact_refresh.find(
+      "this->remastered_combat_cursor_sample="
+      "RemasteredCombatCursorSample{",
+      field_bounds);
+  require(outside_target != std::string::npos &&
+          outside_clear != std::string::npos &&
+          legacy_target != std::string::npos &&
+          gameplay_crop != std::string::npos &&
+          retain_chrome != std::string::npos &&
+          snapshot_capture != std::string::npos &&
+          local_x != std::string::npos && local_y != std::string::npos &&
+          column != std::string::npos && row != std::string::npos &&
+          visible_bounds != std::string::npos &&
+          absolute_x != std::string::npos &&
+          absolute_y != std::string::npos &&
+          field_bounds != std::string::npos &&
+          store_sample != std::string::npos &&
+          outside_target < outside_clear && outside_clear < legacy_target &&
+          legacy_target < gameplay_crop && gameplay_crop < retain_chrome &&
+          retain_chrome < snapshot_capture && snapshot_capture < local_x &&
+          local_x < local_y && local_y < column && column < row &&
+          row < visible_bounds && visible_bounds < absolute_x &&
+          absolute_x < absolute_y && absolute_y < field_bounds &&
+          field_bounds < store_sample,
+      "cursor sampling must clear outside-window input, cheaply retain valid "
+      "in-window chrome, then subtract the gameplay crop (including its "
+      "vertical offset), floor by tile size, add the viewport origin, and "
+      "reject cells outside both the viewport and the 90x90 field");
+  require(compact_refresh.contains(
+              "returnprevious!=this->remastered_combat_cursor_sample;"),
+      "gameplay sampling must report whether its actor-bound absolute cell "
+      "changed");
+
+  const std::string matches = qualified_member_body(
+      "remastered_combat_cursor_sample_matches");
+  const std::string compact_matches = without_whitespace(matches);
+  for (const auto contract : {
+           "snapshot.screen!=realmz::presentation::ScreenContext::combat",
+           "!snapshot.combat||!snapshot.combat->active",
+           "snapshot.combat->acting_combatant!=sample->combatant",
+           "sample->field_origin_x!=snapshot.combat->field_origin_x",
+           "sample->field_origin_y!=snapshot.combat->field_origin_y",
+           "sample->visible_columns!=snapshot.combat->visible_columns",
+           "sample->visible_rows!=snapshot.combat->visible_rows",
+           "sample->cell.x<snapshot.combat->field_origin_x",
+           "sample->cell.y<snapshot.combat->field_origin_y",
+           "combatant->active&&combatant->targetable&&"
+           "combatant->stamina.current>0",
+       }) {
+    require(compact_matches.contains(contract),
+        std::string("combat cursor freshness is missing: ") + contract);
+  }
+  require(count_identifier(matches, "PartyMemberId") == 1 &&
+          count_identifier(matches, "CombatantKind") == 1,
+      "combat cursor freshness must bind the active actor to live party and "
+      "combatant projections");
+
+  const std::string pointer_motion = function_body(
+      window_source, "map_remastered_pointer_motion");
+  const std::string pointer_begin = function_body(
+      window_source, "begin_remastered_pointer");
+  const std::string pointer_end = function_body(
+      window_source, "end_remastered_pointer");
+  require(count_identifier(pointer_motion,
+              "refresh_remastered_combat_cursor_sample") == 1 &&
+          count_identifier(pointer_begin,
+              "refresh_remastered_combat_cursor_sample") == 1 &&
+          count_identifier(pointer_end,
+              "refresh_remastered_combat_cursor_sample") == 1,
+      "pointer motion, press, and release must each refresh the cursor sample "
+      "exactly once");
+  const std::string compact_end = without_whitespace(pointer_end);
+  const std::size_t end_refresh = compact_end.find(
+      "this->refresh_remastered_combat_cursor_sample(target)");
+  const std::size_t end_dispatch = compact_end.find(
+      "this->dispatch_remastered_shell_control(*pressed_control)");
+  require(end_refresh != std::string::npos &&
+          end_dispatch != std::string::npos && end_refresh < end_dispatch,
+      "pointer release must refresh the absolute cursor cell before shell "
+      "dispatch");
+
+  const std::string composition = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_composition = without_whitespace(composition);
+  require(compact_composition.contains(
+              "this->remastered_combat_cursor_sample_matches(snapshot)") &&
+          compact_composition.contains(
+              "this->remastered_combat_cursor_sample->combatant=="
+              "*center_combat_cursor_combatant") &&
+          compact_composition.contains(
+              ".cell=this->remastered_combat_cursor_sample->cell") &&
+          compact_composition.contains(
+              "center_combat_cursor_action->can_invoke()") &&
+          compact_composition.contains(
+              "legacy_key_message_for_center_combat_cursor("),
+      "frame composition must bind Center Cursor to a fresh modeled actor, "
+      "sampled absolute cell, and valid mapper route");
+
+  const std::string keyboard_eligibility = qualified_member_body(
+      "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(
+      keyboard_eligibility);
+  require(compact_keyboard.contains(
+              "std::get_if<realmz::presentation::CenterCombatCursorAction>("
+              "&control.payload)") &&
+          compact_keyboard.contains(
+              "this->remastered_combat_action_page!="
+              "realmz::presentation::CombatActionPage::special") &&
+          compact_keyboard.contains(
+              "!this->remastered_combat_cursor_sample_matches(*snapshot)") &&
+          compact_keyboard.contains(
+              "this->remastered_combat_cursor_sample->cell!="
+              "center_combat_cursor->cell") &&
+          count_identifier(keyboard_eligibility,
+              "legacy_key_message_for_center_combat_cursor") == 1,
+      "keyboard eligibility must revalidate the special-page payload, fresh "
+      "sample, actor/cell identity, and mapper");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t center_dispatch = compact_dispatch.find(
+      "if(center_combat_cursor){");
+  const std::size_t dispatch_sample = compact_dispatch.find(
+      "this->remastered_combat_cursor_sample_matches(snapshot)",
+      center_dispatch);
+  const std::size_t dispatch_model = compact_dispatch.find(
+      "build_presentation_shell_model(", dispatch_sample);
+  const std::size_t dispatch_modeled_action = compact_dispatch.find(
+      "ActionIntent::center_combat_cursor", dispatch_model);
+  const std::size_t dispatch_action = compact_dispatch.find(
+      "constrealmz::presentation::UIActionaction{", dispatch_modeled_action);
+  require(center_dispatch != std::string::npos &&
+          dispatch_sample != std::string::npos &&
+          dispatch_model != std::string::npos &&
+          dispatch_modeled_action != std::string::npos &&
+          dispatch_action != std::string::npos &&
+          center_dispatch < dispatch_sample &&
+          dispatch_sample < dispatch_model &&
+          dispatch_model < dispatch_modeled_action &&
+          dispatch_modeled_action < dispatch_action &&
+          compact_dispatch.find(
+              "this->remastered_combat_action_page!="
+              "realmz::presentation::CombatActionPage::special",
+              center_dispatch) < dispatch_sample &&
+          compact_dispatch.find(
+              "legacy_key_message_for_center_combat_cursor(",
+              center_dispatch) < dispatch_sample,
+      "Center Cursor dispatch must revalidate mapper, page, snapshot, sample, "
+      "and rebuilt model before creating a UI action");
+
+  const std::string combat_raw = function_body(read_file(
+      repository_root / "src/realmz_orig/combat.c"), "combat");
+  const std::string compact_combat = without_whitespace(combat_raw);
+  const std::size_t center_case = compact_combat.find("case'm':");
+  const std::size_t next_case = compact_combat.find("case'n':", center_case);
+  require(center_case != std::string::npos &&
+          next_case != std::string::npos && center_case < next_case,
+      "Classic combat must retain its physical m Center Cursor branch");
+  const std::string center_branch = compact_combat.substr(
+      center_case, next_case - center_case);
+  const std::size_t raw_center_case = combat_raw.find("case 'm':");
+  const std::size_t raw_next_case = combat_raw.find(
+      "case 'n':", raw_center_case);
+  require(raw_center_case != std::string::npos &&
+          raw_next_case != std::string::npos &&
+          raw_center_case < raw_next_case,
+      "Classic combat source is missing the bounded raw m command branch");
+  const std::string raw_center_branch = combat_raw.substr(
+      raw_center_case, raw_next_case - raw_center_case);
+  const std::size_t take_cell = center_branch.find(
+      "TakeSemanticCenterCombatCursorCell(&semantic_center_x,"
+      "&semantic_center_y)");
+  const std::size_t semantic_center = center_branch.find(
+      "centerfield(semantic_center_x-fieldx,semantic_center_y-fieldy)",
+      take_cell);
+  const std::size_t physical_center = center_branch.find(
+      "centerfield((point.h)/32,(point.v)/32)", semantic_center);
+  const std::size_t take_count = count_identifier(
+      raw_center_branch, "TakeSemanticCenterCombatCursorCell");
+  const std::size_t center_count = count_identifier(
+      raw_center_branch, "centerfield");
+  require(take_count == 1 && center_count == 2,
+      "Classic m must consume exactly one staged cursor cell and invoke "
+      "centerfield exactly once per semantic/physical branch (found " +
+          std::to_string(take_count) + " consumes and " +
+          std::to_string(center_count) + " centers)");
+  require(take_cell != std::string::npos &&
+          semantic_center != std::string::npos &&
+          physical_center != std::string::npos,
+      "Classic m must retain the exact absolute-cell translation and "
+      "physical point/32 fallback expressions");
+  require(take_cell < semantic_center && semantic_center < physical_center,
+      "Classic m must consume the staged cell before semantic centering and "
+      "place the physical point/32 fallback afterward");
+  require(!compact_combat.contains("key='m'") &&
+          !compact_combat.contains("key=(char)'m'") &&
+          count_identifier(combat_raw,
+              "RealmzConsumeSemanticCenterCombatCursorEvent") == 0 &&
+          count_identifier(combat_raw,
+              "RealmzIsSemanticCenterCombatCursorTag") == 0,
+      "Classic combat must not synthesize m from the mouse or consume the "
+      "semantic tag directly");
+}
+
 void verify_top_level_loop(
     std::string_view body,
     std::string_view function_name,
@@ -3708,6 +4141,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticOpenCombatScrollCaseEvent") == 0,
       std::string(function_name) +
           " must leave tagged scroll-case consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticCenterCombatCursorEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged center-cursor consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -5427,6 +5864,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_combat_targeting_consumer_count = 0;
   std::size_t global_escape_consumer_count = 0;
   std::size_t global_scroll_case_consumer_count = 0;
+  std::size_t global_center_cursor_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -5485,6 +5923,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticEscapeCombatEvent");
     global_scroll_case_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenCombatScrollCaseEvent");
+    global_center_cursor_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticCenterCombatCursorEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -5543,6 +5983,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   require(global_scroll_case_consumer_count == 0,
       "legacy loops must not consume tagged semantic scroll-case input "
       "directly");
+  require(global_center_cursor_consumer_count == 0,
+      "legacy loops must not consume tagged semantic center-cursor input "
+      "directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -5595,6 +6038,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t combat_targeting_consume_calls = 0;
   std::size_t escape_consume_calls = 0;
   std::size_t scroll_case_consume_calls = 0;
+  std::size_t center_cursor_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -5664,6 +6108,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticEscapeCombatEvent");
     scroll_case_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenCombatScrollCaseEvent");
+    center_cursor_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticCenterCombatCursorEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -5735,6 +6181,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   require(scroll_case_consume_calls == 0,
       "only EventManager may call "
       "RealmzConsumeSemanticOpenCombatScrollCaseEvent");
+  require(center_cursor_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticCenterCombatCursorEvent");
 }
 
 } // namespace
@@ -5750,6 +6199,7 @@ int main(int argc, char** argv) {
         "repository root argument is not a directory");
     verify_event_manager(repository_root);
     verify_party_selection_adapter(repository_root);
+    verify_center_combat_cursor_contract(repository_root);
     verify_legacy_loop_ownership(repository_root);
     verify_production_call_ownership(repository_root);
     verify_window_manager_named_combat_sinks(repository_root);

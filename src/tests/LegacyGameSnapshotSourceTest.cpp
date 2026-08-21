@@ -19,6 +19,8 @@ short canundo = 0;
 short nummon = 0;
 int32_t partyx = 0;
 int32_t partyy = 0;
+int32_t fieldx = 0;
+int32_t fieldy = 0;
 int32_t landlevel = 0;
 int32_t dunglevel = 0;
 int32_t moneypool[3] = {};
@@ -50,6 +52,7 @@ struct itemattr allarmor[200] = {};
 struct itemattr allhelms[200] = {};
 struct itemattr allmagic[200] = {};
 struct itemattr allsupply[200] = {};
+Rect lookrect = {};
 }
 
 using namespace realmz::presentation;
@@ -77,7 +80,8 @@ void reset_legacy_state() {
   monsterturn = 0;
   canundo = 0;
   nummon = 0;
-  partyx = partyy = landlevel = dunglevel = 0;
+  partyx = partyy = fieldx = fieldy = landlevel = dunglevel = 0;
+  lookrect = {};
   std::memset(moneypool, 0, sizeof(moneypool));
   charnum = -1;
   charselectnew = charup = monsterup = -1;
@@ -195,6 +199,9 @@ void test_combat_capture() {
   incombat = 1;
   canundo = 1;
   combatround = 5;
+  fieldx = 12;
+  fieldy = 34;
+  lookrect = {.top = 8, .left = 16, .bottom = 424, .right = 496};
   charup = 0;
   c[0].maxspellsattacks = 2;
   q[0] = 0;
@@ -210,6 +217,9 @@ void test_combat_capture() {
   item.sp2 = 2222;
   item.charge = -17;
   const itemattr item_before_capture = item;
+  const int32_t fieldx_before_capture = fieldx;
+  const int32_t fieldy_before_capture = fieldy;
+  const Rect lookrect_before_capture = lookrect;
   monsterup = 1;
   pos[0][0] = 2;
   pos[0][1] = 3;
@@ -238,6 +248,14 @@ void test_combat_capture() {
   CHECK(snapshot.combat->cast_spell_available);
   CHECK(snapshot.combat->target_available);
   CHECK(snapshot.combat->use_scroll_available);
+  CHECK(snapshot.combat->field_origin_x == 12);
+  CHECK(snapshot.combat->field_origin_y == 34);
+  CHECK(snapshot.combat->visible_columns == 15);
+  CHECK(snapshot.combat->visible_rows == 13);
+  CHECK(fieldx == fieldx_before_capture);
+  CHECK(fieldy == fieldy_before_capture);
+  CHECK(std::memcmp(
+            &lookrect, &lookrect_before_capture, sizeof(lookrect)) == 0);
   CHECK(std::memcmp(&item, &item_before_capture, sizeof(item)) == 0);
   CHECK(snapshot.combat->acting_combatant == 0);
   CHECK(snapshot.combat->combatants.size() == 4);
@@ -247,6 +265,28 @@ void test_combat_capture() {
   CHECK(snapshot.combat->combatants[3].kind == CombatantKind::ally);
   CHECK(snapshot.combat->combatants[3].name == "Guard");
   CHECK(snapshot.combat->combatants[3].cell_x == 10);
+
+  fieldx = 44;
+  fieldy = 55;
+  lookrect = {.top = 100, .left = 200, .bottom = 99, .right = 199};
+  auto invalid_geometry = source.capture();
+  CHECK(invalid_geometry.combat->field_origin_x == 44);
+  CHECK(invalid_geometry.combat->field_origin_y == 55);
+  CHECK(invalid_geometry.combat->visible_columns == 0);
+  CHECK(invalid_geometry.combat->visible_rows == 0);
+  CHECK(snapshot.combat->field_origin_x == 12);
+  CHECK(snapshot.combat->field_origin_y == 34);
+  CHECK(snapshot.combat->visible_columns == 15);
+  CHECK(snapshot.combat->visible_rows == 13);
+
+  lookrect = {.top = 10, .left = 20, .bottom = 41, .right = 51};
+  invalid_geometry = source.capture();
+  CHECK(invalid_geometry.combat->visible_columns == 0);
+  CHECK(invalid_geometry.combat->visible_rows == 0);
+
+  fieldx = fieldx_before_capture;
+  fieldy = fieldy_before_capture;
+  lookrect = lookrect_before_capture;
 
   canundo = 0;
   snapshot = source.capture();

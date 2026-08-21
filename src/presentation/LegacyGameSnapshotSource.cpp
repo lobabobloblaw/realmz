@@ -21,6 +21,8 @@ extern short monsterturn;
 extern short nummon;
 extern int32_t partyx;
 extern int32_t partyy;
+extern int32_t fieldx;
+extern int32_t fieldy;
 extern int32_t landlevel;
 extern int32_t dunglevel;
 extern int32_t moneypool[3];
@@ -51,6 +53,7 @@ extern struct monster monster[100];
 extern char pos[6][2];
 extern char monpos[100][2];
 extern struct encount2 enc2;
+extern Rect lookrect;
 }
 
 namespace realmz::presentation {
@@ -254,6 +257,18 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
     combat.use_scroll_available =
         active_party_actor_can_use_scroll(party_count);
     combat.round = static_cast<int16_t>(combatround);
+    combat.field_origin_x = fieldx;
+    combat.field_origin_y = fieldy;
+    const int32_t visible_width = std::max<int32_t>(
+        0,
+        static_cast<int32_t>(lookrect.right) -
+            static_cast<int32_t>(lookrect.left));
+    const int32_t visible_height = std::max<int32_t>(
+        0,
+        static_cast<int32_t>(lookrect.bottom) -
+            static_cast<int32_t>(lookrect.top));
+    combat.visible_columns = static_cast<std::size_t>(visible_width / 32);
+    combat.visible_rows = static_cast<std::size_t>(visible_height / 32);
     if (!monsterturn && (charup >= 0) && (charup < party_count)) {
       combat.acting_combatant = static_cast<CombatantId>(charup);
     } else if (monsterturn && (monsterup >= 0) && (monsterup < nummon)) {

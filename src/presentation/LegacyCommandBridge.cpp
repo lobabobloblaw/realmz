@@ -142,6 +142,11 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
           this->handlers_.open_combat_scroll_case,
           payload,
           "open_combat_scroll_case");
+    } else if constexpr (std::is_same_v<Action, CenterCombatCursorAction>) {
+      return invoke_handler(
+          this->handlers_.center_combat_cursor,
+          payload,
+          "center_combat_cursor");
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return invoke_handler(this->handlers_.inventory, payload, "inventory");
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

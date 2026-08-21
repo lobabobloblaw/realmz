@@ -219,6 +219,25 @@ struct OpenCombatScrollCaseAction {
   bool operator==(const OpenCombatScrollCaseAction&) const = default;
 };
 
+// Absolute battlefield coordinates remain stable if the Classic camera moves
+// between pointer sampling and command delivery.
+struct CombatFieldCell {
+  uint8_t x = 0;
+  uint8_t y = 0;
+
+  bool operator==(const CombatFieldCell&) const = default;
+};
+
+// Recenters the preserved Classic combat view on an explicitly sampled field
+// cell. The stable actor prevents a queued camera command from crossing a turn;
+// Classic remains authoritative for camera bounds, drawing, and button state.
+struct CenterCombatCursorAction {
+  CombatantId combatant = 0;
+  CombatFieldCell cell;
+
+  bool operator==(const CenterCombatCursorAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -390,6 +409,7 @@ using UIActionPayload = std::variant<
     OpenCombatTargetingAction,
     EscapeCombatAction,
     OpenCombatScrollCaseAction,
+    CenterCombatCursorAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -455,6 +475,8 @@ struct UIAction {
     } else if constexpr (
         std::is_same_v<Action, OpenCombatScrollCaseAction>) {
       return "open_combat_scroll_case";
+    } else if constexpr (std::is_same_v<Action, CenterCombatCursorAction>) {
+      return "center_combat_cursor";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

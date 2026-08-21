@@ -106,6 +106,9 @@ private:
     handlers.open_combat_scroll_case = [](const OpenCombatScrollCaseAction&) {
       return DispatchResult::handled();
     };
+    handlers.center_combat_cursor = [](const CenterCombatCursorAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1180,12 +1183,24 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = OpenCombatScrollCaseAction{2},
   };
+  const ShellControlPlacement cursor{
+      .region = ShellRegionId{1123},
+      .kind = ShellControlKind::center_combat_cursor,
+      .bounds = {692.0, 72.0, 160.0, 48.0},
+      .label = "CURSOR",
+      .accessibility_label = "Center combat view on cursor",
+      .focus_identifier = "focus.action.combat.center.cursor",
+      .tab_order = 1123,
+      .enabled = true,
+      .payload = CenterCombatCursorAction{2, {42, 17}},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
   const std::vector utility{
       utility_back, auto_combatant, combat_range, bandage, undo, special_more};
-  const std::vector special{special_back, cast, target, escape, scroll};
+  const std::vector special{
+      special_back, cast, target, escape, scroll, cursor};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1817,7 +1832,8 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       CombatActionPage::utility, CombatActionPage::special));
   CHECK(bridge.actions().size() == 8U);
 
-  CHECK(harness.recompose({scroll, escape, target, cast, special_back}));
+  CHECK(harness.recompose(
+      {cursor, scroll, escape, target, cast, special_back}));
   for (const auto& expected : special) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -1825,6 +1841,22 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
         expected.focus_identifier);
     release_tab(harness);
   }
+  CHECK(harness.focus(scroll.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() ==
+      cursor.focus_identifier);
+  release_tab(harness);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() ==
+      special_back.focus_identifier);
+  release_tab(harness);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::tab, kTabToken, true)).shell.consumed);
+  CHECK(harness.keyboard().focused_identifier() ==
+      cursor.focus_identifier);
+  release_tab(harness);
   CHECK(harness.focus(special_back.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
@@ -2125,6 +2157,134 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!scroll_route_release.shell.invoked_control);
   CHECK(!scroll_route_release.dispatch);
   CHECK(bridge.actions().size() == 12U);
+
+  // CURSOR is a distinct actor-and-absolute-cell command. WindowManager's
+  // pointer sampler and live viewport guard sit outside this keyboard-neutral
+  // harness; descriptor identity still makes any recomposition change cancel
+  // the captured activation before dispatch.
+  CHECK(!harness.recompose(special));
+  (void)harness.focus(cursor.focus_identifier);
+  CHECK(harness.keyboard().focused_identifier() == cursor.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto cursor_space_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(cursor_space_release.shell.consumed);
+  CHECK(cursor_space_release.shell.invoked_control.has_value());
+  CHECK(cursor_space_release.shell.invoked_control->kind ==
+      ShellControlKind::center_combat_cursor);
+  CHECK(cursor_space_release.dispatch.has_value());
+  CHECK(cursor_space_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 13U);
+  CHECK(std::holds_alternative<CenterCombatCursorAction>(
+      bridge.actions()[12].payload));
+  CHECK(std::get<CenterCombatCursorAction>(
+      bridge.actions()[12].payload) ==
+      (CenterCombatCursorAction{2, {42, 17}}));
+  CHECK(std::holds_alternative<OpenCombatScrollCaseAction>(
+      bridge.actions()[11].payload));
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 13U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.keyboard().focused_identifier() == cursor.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.handle(key_down(
+      ShellKeyboardKey::enter, kEnterToken, false, true)).shell.consumed);
+  const auto cursor_enter_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(cursor_enter_release.shell.consumed);
+  CHECK(cursor_enter_release.shell.invoked_control.has_value());
+  CHECK(cursor_enter_release.dispatch.has_value());
+  CHECK(cursor_enter_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 14U);
+  CHECK(std::get<CenterCombatCursorAction>(
+      bridge.actions()[13].payload) ==
+      (CenterCombatCursorAction{2, {42, 17}}));
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 14U);
+
+  CHECK(!harness.recompose(special));
+  (void)harness.focus(cursor.focus_identifier);
+  CHECK(harness.keyboard().focused_identifier() == cursor.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[5].payload = CenterCombatCursorAction{3, {42, 17}};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_cursor_actor_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_cursor_actor_release.shell.consumed);
+  CHECK(!stale_cursor_actor_release.shell.invoked_control);
+  CHECK(!stale_cursor_actor_release.dispatch);
+  CHECK(bridge.actions().size() == 14U);
+
+  CHECK(!harness.recompose(special));
+  (void)harness.focus(cursor.focus_identifier);
+  CHECK(harness.keyboard().focused_identifier() == cursor.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[5].payload = CenterCombatCursorAction{2, {43, 17}};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_cursor_cell_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_cursor_cell_release.shell.consumed);
+  CHECK(!stale_cursor_cell_release.shell.invoked_control);
+  CHECK(!stale_cursor_cell_release.dispatch);
+  CHECK(bridge.actions().size() == 14U);
+
+  CHECK(!harness.recompose(special));
+  (void)harness.focus(cursor.focus_identifier);
+  CHECK(harness.keyboard().focused_identifier() == cursor.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[5].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_cursor_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_cursor_release.shell.consumed);
+  CHECK(!disabled_cursor_release.shell.invoked_control);
+  CHECK(!disabled_cursor_release.dispatch);
+  CHECK(bridge.actions().size() == 14U);
+
+  CHECK(!harness.recompose(special));
+  (void)harness.focus(cursor.focus_identifier);
+  CHECK(harness.keyboard().focused_identifier() == cursor.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(utility));
+  const auto cursor_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(cursor_page_release.shell.consumed);
+  CHECK(!cursor_page_release.shell.invoked_control);
+  CHECK(!cursor_page_release.dispatch);
+  CHECK(bridge.actions().size() == 14U);
+
+  CHECK(!harness.recompose(special));
+  (void)harness.focus(cursor.focus_identifier);
+  CHECK(harness.keyboard().focused_identifier() == cursor.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto cursor_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(cursor_route_release.shell.consumed);
+  CHECK(!cursor_route_release.shell.invoked_control);
+  CHECK(!cursor_route_release.dispatch);
+  CHECK(bridge.actions().size() == 14U);
 }
 
 using DescriptorMutation =

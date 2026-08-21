@@ -121,6 +121,7 @@ enum class ActionIntent {
   open_combat_targeting,
   escape_combat,
   open_combat_scroll_case,
+  center_combat_cursor,
   cancel,
   encounter_choice,
 };

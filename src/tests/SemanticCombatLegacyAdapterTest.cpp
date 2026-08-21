@@ -39,6 +39,8 @@ short inspell = 0;
 short lastshown = -1;
 int32_t partyx = 0;
 int32_t partyy = 0;
+int32_t fieldx = 0;
+int32_t fieldy = 0;
 int32_t landlevel = 0;
 int32_t dunglevel = 0;
 int32_t moneypool[3] = {};
@@ -70,6 +72,7 @@ struct itemattr allarmor[200] = {};
 struct itemattr allhelms[200] = {};
 struct itemattr allmagic[200] = {};
 struct itemattr allsupply[200] = {};
+Rect lookrect = {};
 
 CGrafPtr FrontWindow(void) {
   return front_window;
@@ -105,7 +108,17 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 16> combat_cases() {
+uint8_t consume_center_combat_cursor_as_key(
+    RealmzSemanticInputSurface surface,
+    uint32_t tag,
+    uint32_t* classic_message) {
+  uint8_t absolute_x = 0;
+  uint8_t absolute_y = 0;
+  return RealmzConsumeSemanticCenterCombatCursorEvent(
+      surface, tag, classic_message, &absolute_x, &absolute_y);
+}
+
+std::array<CombatCase, 17> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -207,6 +220,12 @@ std::array<CombatCase, 16> combat_cases() {
           .consume = RealmzConsumeSemanticOpenCombatScrollCaseEvent,
           .classic_message = 0x0000256CU,
       },
+      CombatCase{
+          .tag = semantic_center_combat_cursor_tag(
+              1, {.x = 42, .y = 17}, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = consume_center_combat_cursor_as_key,
+          .classic_message = 0x00002E6DU,
+      },
   };
 }
 
@@ -225,6 +244,9 @@ void reset_legacy_globals() {
   lastshown = -1;
   partyx = 0;
   partyy = 0;
+  fieldx = 0;
+  fieldy = 0;
+  lookrect = {};
   landlevel = 0;
   dunglevel = 0;
   std::memset(moneypool, 0, sizeof(moneypool));
@@ -269,6 +291,9 @@ void seed_active_party_combatant() {
   charselectnew = 1;
   charup = 1;
   combatround = 3;
+  fieldx = 20;
+  fieldy = 30;
+  lookrect = {.top = 0, .left = 0, .bottom = 416, .right = 480};
   c[1].stamina = 14;
   c[1].staminamax = 20;
   c[1].inbattle = 1;
@@ -305,6 +330,83 @@ void test_exact_combat_action_messages() {
     CHECK(action.consume(
         REALMZ_SEMANTIC_INPUT_COMBAT, action.tag, &output) != 0);
     CHECK(output == action.classic_message);
+  }
+}
+
+void test_center_cursor_absolute_cell_and_viewport_projection() {
+  constexpr CombatFieldCell queued_cell{.x = 42, .y = 17};
+  seed_active_party_combatant();
+  const uint32_t tag = semantic_center_combat_cursor_tag(
+      1, queued_cell, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(tag == 0x4D012A11U);
+
+  // Change the live camera after queueing. The absolute cell remains stable
+  // and is accepted even though it no longer lies inside this valid viewport.
+  fieldx = 70;
+  fieldy = 60;
+  complete_combat_scope();
+  uint32_t output = kUnchangedMessage;
+  uint8_t absolute_x = 0xA5;
+  uint8_t absolute_y = 0x5A;
+  CHECK(RealmzConsumeSemanticCenterCombatCursorEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      tag,
+      &output,
+      &absolute_x,
+      &absolute_y));
+  CHECK(output == 0x00002E6DU);
+  CHECK(absolute_x == queued_cell.x);
+  CHECK(absolute_y == queued_cell.y);
+
+  output = kUnchangedMessage;
+  absolute_x = 0xA5;
+  absolute_y = 0x5A;
+  CHECK(!RealmzConsumeSemanticCenterCombatCursorEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT,
+      tag,
+      &output,
+      &absolute_x,
+      &absolute_y));
+  CHECK(output == kUnchangedMessage);
+  CHECK(absolute_x == 0xA5);
+  CHECK(absolute_y == 0x5A);
+
+  for (int invalid_viewport = 0; invalid_viewport < 6;
+       ++invalid_viewport) {
+    seed_active_party_combatant();
+    switch (invalid_viewport) {
+      case 0:
+        fieldx = -1;
+        break;
+      case 1:
+        fieldy = -1;
+        break;
+      case 2:
+        lookrect.right = 31;
+        break;
+      case 3:
+        lookrect.bottom = 31;
+        break;
+      case 4:
+        fieldx = 76;
+        break;
+      case 5:
+        fieldy = 78;
+        break;
+    }
+    complete_combat_scope();
+    output = kUnchangedMessage;
+    absolute_x = 0xA5;
+    absolute_y = 0x5A;
+    CHECK(!RealmzConsumeSemanticCenterCombatCursorEvent(
+        REALMZ_SEMANTIC_INPUT_COMBAT,
+        tag,
+        &output,
+        &absolute_x,
+        &absolute_y));
+    CHECK(output == kUnchangedMessage);
+    CHECK(absolute_x == 0xA5);
+    CHECK(absolute_y == 0x5A);
   }
 }
 
@@ -482,6 +584,7 @@ void test_stale_selected_member_is_rejected() {
 int main() {
   try {
     test_exact_combat_action_messages();
+    test_center_cursor_absolute_cell_and_viewport_projection();
     test_moved_combatant_delay_is_rejected();
     test_bandage_without_classic_canundo_is_rejected();
     test_undo_without_classic_canundo_is_rejected();

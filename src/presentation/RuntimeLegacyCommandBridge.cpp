@@ -33,6 +33,7 @@ constexpr uint32_t kOpenCombatSpellbookMessage = 0x00000173U;
 constexpr uint32_t kOpenCombatTargetingMessage = 0x00001174U;
 constexpr uint32_t kEscapeCombatMessage = 0x00000E65U;
 constexpr uint32_t kOpenCombatScrollCaseMessage = 0x0000256CU;
+constexpr uint32_t kCenterCombatCursorMessage = 0x00002E6DU;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -658,6 +659,44 @@ LegacyActionHandlers make_handlers(
     };
   }
 
+  if (combat_action_sinks.center_combat_cursor.has_value()) {
+    handlers.center_combat_cursor = [
+        context_provider,
+        center_combat_cursor_sink =
+            std::move(*combat_action_sinks.center_combat_cursor)](
+            const CenterCombatCursorAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!center_combat_cursor_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy center-combat-cursor sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic cursor "
+            "centering");
+      }
+      const auto message = legacy_key_message_for_center_combat_cursor(
+          action.combatant, action.cell, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Cursor centering is not supported for this combatant or field "
+            "cell in the current legacy context");
+      }
+      if (!center_combat_cursor_sink(
+              action.combatant, action.cell, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic center-combat-cursor "
+            "action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
   return handlers;
 }
 
@@ -1192,6 +1231,18 @@ std::optional<uint32_t> legacy_key_message_for_open_combat_scroll_case(
     return std::nullopt;
   }
   return kOpenCombatScrollCaseMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_center_combat_cursor(
+    CombatantId combatant,
+    CombatFieldCell cell,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF) || (cell.x > 89) ||
+      (cell.y > 89)) {
+    return std::nullopt;
+  }
+  return kCenterCombatCursorMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

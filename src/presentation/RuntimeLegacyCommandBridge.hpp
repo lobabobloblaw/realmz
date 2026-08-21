@@ -112,6 +112,11 @@ using RuntimeLegacyOpenCombatScrollCaseSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyCenterCombatCursorSink = std::function<bool(
+    CombatantId,
+    CombatFieldCell,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Combat sinks are named because several callable signatures are intentionally
 // identical even though their commands are not interchangeable. The focus
@@ -137,6 +142,7 @@ struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacyEscapeCombatSink> escape_combat;
   std::optional<RuntimeLegacyOpenCombatScrollCaseSink>
       open_combat_scroll_case;
+  std::optional<RuntimeLegacyCenterCombatCursorSink> center_combat_cursor;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -296,6 +302,16 @@ legacy_key_message_for_escape_combat(
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_open_combat_scroll_case(
     CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic lowercase "m" key record consumed by combat's
+// preserved Center-on-Cursor branch. The absolute field cell travels out of
+// band from the key record so the ambient Classic mouse point is never used by
+// a semantic command.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_center_combat_cursor(
+    CombatantId combatant,
+    CombatFieldCell cell,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Live UIAction boundary for the migrated command subset. The bridge queues
