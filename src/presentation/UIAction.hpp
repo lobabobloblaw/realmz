@@ -190,6 +190,16 @@ struct OpenCombatSpellbookAction {
   bool operator==(const OpenCombatSpellbookAction&) const = default;
 };
 
+// Begins the preserved Classic Target flow for the explicitly identified
+// acting party combatant. The live equipped item determines whether Classic
+// selects a combatant, cell, area, multiple targets, or resolves automatically;
+// no target choice or combat mutation crosses this boundary.
+struct OpenCombatTargetingAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const OpenCombatTargetingAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -358,6 +368,7 @@ using UIActionPayload = std::variant<
     BandageCombatantAction,
     UndoCombatantAction,
     OpenCombatSpellbookAction,
+    OpenCombatTargetingAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -416,6 +427,8 @@ struct UIAction {
       return "undo_combatant";
     } else if constexpr (std::is_same_v<Action, OpenCombatSpellbookAction>) {
       return "open_combat_spellbook";
+    } else if constexpr (std::is_same_v<Action, OpenCombatTargetingAction>) {
+      return "open_combat_targeting";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

@@ -328,6 +328,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticOpenCombatSpellbookEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic combat-spellbook input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenCombatTargetingEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic combat-targeting input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -802,6 +806,33 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(combat_spellbook_wrapper, "mouseDown") == 0,
       "public combat-spellbook enqueue must not synthesize Classic input");
 
+  const std::string push_combat_targeting = function_body(
+      source, "push_semantic_open_combat_targeting_event");
+  const std::string compact_push_combat_targeting =
+      without_whitespace(push_combat_targeting);
+  require(count_identifier(push_combat_targeting,
+              "RealmzIsSemanticOpenCombatTargetingTag") == 1,
+      "semantic combat-targeting enqueue must validate exactly one tag");
+  require(count_identifier(push_combat_targeting, "app1Evt") == 1,
+      "semantic combat-targeting enqueue must use app1Evt exactly once");
+  require(count_identifier(push_combat_targeting, "keyDown") == 0 &&
+          count_identifier(push_combat_targeting, "mouseDown") == 0,
+      "semantic combat-targeting enqueue must not synthesize Classic input");
+  require(compact_push_combat_targeting.contains("ev.what=app1Evt;") &&
+          compact_push_combat_targeting.contains(
+              "ev.message=tagged_message;"),
+      "semantic combat-targeting must retain its tagged app1Evt payload");
+
+  const std::string combat_targeting_wrapper = function_body(
+      source, "PushSemanticOpenCombatTargetingEvent");
+  require(without_whitespace(combat_targeting_wrapper).contains(
+              "returnem.push_semantic_open_combat_targeting_event("
+              "tagged_message);"),
+      "public combat-targeting enqueue must delegate to tagged queue");
+  require(count_identifier(combat_targeting_wrapper, "keyDown") == 0 &&
+          count_identifier(combat_targeting_wrapper, "mouseDown") == 0,
+      "public combat-targeting enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -922,16 +953,20 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticOpenCombatSpellbookEvent") == 1,
       "semantic gameplay wrapper must have one late combat-spellbook consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticOpenCombatTargetingEvent") == 1,
+      "semantic gameplay wrapper must have one late combat-targeting consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 18,
-      "semantic gameplay wrapper must recognize all eighteen tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 15,
+  require(count_identifier(semantic_wrapper, "app1Evt") == 19,
+      "semantic gameplay wrapper must recognize all nineteen tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 16,
       "only late movement, inventory, spellbook, guard, finish, delay, center, "
       "switch-weapon, cycle-focus, combat-items, Auto, Range, Bandage, Undo, "
-      "or combat-spellbook validation may produce keyDown");
+      "combat-spellbook, or combat-targeting validation may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
@@ -1005,6 +1040,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenCombatSpellbookEvent") == 1,
       "EventManager may consume semantic combat-spellbook input only inside "
+      "its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticOpenCombatTargetingEvent") == 1,
+      "EventManager may consume semantic combat-targeting input only inside "
       "its gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
@@ -1230,6 +1269,18 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", combat_spellbook_keydown);
   const std::size_t combat_spellbook_rejected_message = compact_semantic.find(
       "ret->message=0", combat_spellbook_null);
+  const std::size_t combat_targeting_branch = compact_semantic.find(
+      "RealmzIsSemanticOpenCombatTargetingTag(ret->message)",
+      combat_spellbook_rejected_message);
+  const std::size_t combat_targeting_consume = compact_semantic.find(
+      "RealmzConsumeSemanticOpenCombatTargetingEvent(",
+      combat_targeting_branch);
+  const std::size_t combat_targeting_keydown = compact_semantic.find(
+      "ret->what=keyDown", combat_targeting_consume);
+  const std::size_t combat_targeting_null = compact_semantic.find(
+      "ret->what=nullEvent", combat_targeting_keydown);
+  const std::size_t combat_targeting_rejected_message = compact_semantic.find(
+      "ret->message=0", combat_targeting_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -1333,7 +1384,12 @@ void verify_event_manager(const fs::path& repository_root) {
           combat_spellbook_consume != std::string::npos &&
           combat_spellbook_keydown != std::string::npos &&
           combat_spellbook_null != std::string::npos &&
-          combat_spellbook_rejected_message != std::string::npos,
+          combat_spellbook_rejected_message != std::string::npos &&
+          combat_targeting_branch != std::string::npos &&
+          combat_targeting_consume != std::string::npos &&
+          combat_targeting_keydown != std::string::npos &&
+          combat_targeting_null != std::string::npos &&
+          combat_targeting_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -1432,7 +1488,12 @@ void verify_event_manager(const fs::path& repository_root) {
           combat_spellbook_branch < combat_spellbook_consume &&
           combat_spellbook_consume < combat_spellbook_keydown &&
           combat_spellbook_keydown < combat_spellbook_null &&
-          combat_spellbook_null < combat_spellbook_rejected_message,
+          combat_spellbook_null < combat_spellbook_rejected_message &&
+          combat_spellbook_rejected_message < combat_targeting_branch &&
+          combat_targeting_branch < combat_targeting_consume &&
+          combat_targeting_consume < combat_targeting_keydown &&
+          combat_targeting_keydown < combat_targeting_null &&
+          combat_targeting_null < combat_targeting_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
@@ -1454,6 +1515,11 @@ void verify_event_manager(const fs::path& repository_root) {
           combat_spellbook_consume < combat_spellbook_keydown,
       "Combat spellbook must leave semantic gameplay scope before its "
       "lowercase s handoff, leaving cancast and the spell modal in Classic");
+  require(scope_block_close < combat_targeting_branch &&
+          combat_targeting_branch < combat_targeting_consume &&
+          combat_targeting_consume < combat_targeting_keydown,
+      "Combat targeting must leave semantic gameplay scope before its "
+      "lowercase t handoff, leaving quiver choice and targeting in Classic");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
               "return(ret->what!=nullEvent);}"),
@@ -1641,6 +1707,9 @@ void verify_window_manager_named_combat_sinks(
            "legacy_key_message_for_open_combat_spellbook",
            "semantic_open_combat_spellbook_tag",
            "PushSemanticOpenCombatSpellbookEvent",
+           "legacy_key_message_for_open_combat_targeting",
+           "semantic_open_combat_targeting_tag",
+           "PushSemanticOpenCombatTargetingEvent",
        }) {
     require(count_identifier(invocation, identifier) == 1,
         std::string("runtime legacy bridge construction must contain exactly ") +
@@ -1719,6 +1788,11 @@ void verify_window_manager_named_combat_sinks(
       "legacy_key_message_for_open_combat_spellbook",
       "semantic_open_combat_spellbook_tag",
       "PushSemanticOpenCombatSpellbookEvent");
+  verify_field(
+      "open_combat_targeting",
+      "legacy_key_message_for_open_combat_targeting",
+      "semantic_open_combat_targeting_tag",
+      "PushSemanticOpenCombatTargetingEvent");
 }
 
 void verify_window_manager_shell_dispatch_freshness(
@@ -1760,9 +1834,13 @@ void verify_window_manager_shell_dispatch_freshness(
       "std::get_if<realmz::presentation::OpenCombatSpellbookAction>"
       "(&control.payload)",
       undo_payload);
+  const std::size_t combat_targeting_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::OpenCombatTargetingAction>"
+      "(&control.payload)",
+      combat_spellbook_payload);
   const std::size_t ordinary_branch = compact_dispatch.find(
       "}else{constautolive_control=std::ranges::find_if(",
-      combat_spellbook_payload);
+      combat_targeting_payload);
   const std::size_t current_controls = compact_dispatch.find(
       "this->remastered_shell_controls,", ordinary_branch);
   const std::size_t exact_enabled_descriptor = compact_dispatch.find(
@@ -1844,10 +1922,16 @@ void verify_window_manager_shell_dispatch_freshness(
       "control.kind!=realmz::presentation::ShellControlKind::"
       "open_combat_spellbook",
       combat_spellbook_guard);
+  const std::size_t combat_targeting_guard = compact_dispatch.find(
+      "(open_combat_targeting&&", combat_spellbook_kind);
+  const std::size_t combat_targeting_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "open_combat_targeting",
+      combat_targeting_guard);
   const std::size_t special_page = compact_dispatch.find(
       "this->remastered_combat_action_page!="
       "realmz::presentation::CombatActionPage::special",
-      combat_spellbook_kind);
+      combat_targeting_kind);
   const std::size_t special_layout = compact_dispatch.find(
       "this->adaptive_shell_plan->adaptive_layout->action_bar"
       ".contains(control.bounds)",
@@ -1866,6 +1950,7 @@ void verify_window_manager_shell_dispatch_freshness(
           bandage_payload != std::string::npos &&
           undo_payload != std::string::npos &&
           combat_spellbook_payload != std::string::npos &&
+          combat_targeting_payload != std::string::npos &&
           ordinary_branch != std::string::npos &&
           current_controls != std::string::npos &&
           exact_enabled_descriptor != std::string::npos &&
@@ -1894,6 +1979,8 @@ void verify_window_manager_shell_dispatch_freshness(
           utility_layout != std::string::npos &&
           combat_spellbook_guard != std::string::npos &&
           combat_spellbook_kind != std::string::npos &&
+          combat_targeting_guard != std::string::npos &&
+          combat_targeting_kind != std::string::npos &&
           special_page != std::string::npos &&
           special_layout != std::string::npos &&
           reject != std::string::npos &&
@@ -1901,7 +1988,7 @@ void verify_window_manager_shell_dispatch_freshness(
           bridge_dispatch != std::string::npos,
       "bridge-bound shell dispatch must retain its live descriptor, fresh "
       "route, and Weapon/Cycle Focus/Combat Items/Auto/Range/Bandage/Undo/"
-      "Cast Spell page-layout rejection gate");
+      "Cast Spell/Target page-layout rejection gate");
   require(switch_payload < cycle_payload &&
           cycle_payload < combat_items_payload &&
           combat_items_payload < auto_payload &&
@@ -1909,7 +1996,8 @@ void verify_window_manager_shell_dispatch_freshness(
           range_payload < bandage_payload &&
           bandage_payload < undo_payload &&
           undo_payload < combat_spellbook_payload &&
-          combat_spellbook_payload < ordinary_branch &&
+          combat_spellbook_payload < combat_targeting_payload &&
+          combat_targeting_payload < ordinary_branch &&
           ordinary_branch < current_controls &&
           current_controls < exact_enabled_descriptor &&
           exact_enabled_descriptor < fresh_route &&
@@ -1930,11 +2018,13 @@ void verify_window_manager_shell_dispatch_freshness(
           undo_kind < utility_page && utility_page < utility_layout &&
           utility_layout < combat_spellbook_guard &&
           combat_spellbook_guard < combat_spellbook_kind &&
-          combat_spellbook_kind < special_page &&
+          combat_spellbook_kind < combat_targeting_guard &&
+          combat_targeting_guard < combat_targeting_kind &&
+          combat_targeting_kind < special_page &&
           special_page < special_layout && special_layout < reject &&
           reject < action && action < bridge_dispatch,
       "cached shell descriptors and stale Weapon/Cycle Focus/Combat Items/"
-      "Auto/Range/Bandage/Undo/Cast Spell routes must be rejected before any runtime "
+      "Auto/Range/Bandage/Undo/Cast Spell/Target routes must be rejected before any runtime "
       "legacy bridge dispatch");
 
   const std::string action_source = code_only(read_file(
@@ -2015,9 +2105,15 @@ void verify_window_manager_shell_dispatch_freshness(
           "open_combat_spellbook&&snapshot.combat&&"
           "snapshot.combat->cast_spell_available&&",
           composed_undo_eligibility);
+  const std::size_t composed_combat_targeting_eligibility =
+      compact_composition.find(
+          "constboolopen_combat_targeting_available="
+          "open_combat_targeting&&snapshot.combat&&"
+          "snapshot.combat->target_available&&",
+          composed_combat_spellbook_eligibility);
   const std::size_t composed_page = compact_composition.find(
       ".combat_action_page=shell_model->combat_action_page",
-      composed_combat_spellbook_eligibility);
+      composed_combat_targeting_eligibility);
   const std::size_t composed_auto = compact_composition.find(
       ".auto_combatant=auto_combatant", composed_page);
   const std::size_t composed_auto_available = compact_composition.find(
@@ -2048,9 +2144,17 @@ void verify_window_manager_shell_dispatch_freshness(
           ".open_combat_spellbook_available="
           "open_combat_spellbook_available",
           composed_combat_spellbook);
+  const std::size_t composed_combat_targeting = compact_composition.find(
+      ".open_combat_targeting=open_combat_targeting",
+      composed_combat_spellbook_available);
+  const std::size_t composed_combat_targeting_available =
+      compact_composition.find(
+          ".open_combat_targeting_available="
+          "open_combat_targeting_available",
+          composed_combat_targeting);
   const std::size_t live_controls = compact_composition.find(
       "constboolevery_enabled_control_is_live=std::ranges::all_of(",
-      composed_combat_spellbook_available);
+      composed_combat_targeting_available);
   const std::size_t live_page = compact_composition.find(
       "std::get_if<realmz::presentation::SetCombatActionPageAction>"
       "(&control.payload)",
@@ -2206,9 +2310,45 @@ void verify_window_manager_shell_dispatch_freshness(
           live_combat_spellbook_member);
   const std::size_t live_combat_spellbook_stamina = compact_composition.find(
       "combatant->stamina.current>0", live_combat_spellbook_party_kind);
+  const std::size_t live_combat_targeting = compact_composition.find(
+      "std::get_if<realmz::presentation::OpenCombatTargetingAction>"
+      "(&control.payload)",
+      live_combat_spellbook_stamina);
+  const std::size_t live_combat_targeting_kind = compact_composition.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "open_combat_targeting",
+      live_combat_targeting);
+  const std::size_t live_combat_targeting_available =
+      compact_composition.find(
+          "!snapshot.combat->target_available",
+          live_combat_targeting_kind);
+  const std::size_t live_combat_targeting_actor = compact_composition.find(
+      "snapshot.combat->acting_combatant!="
+      "open_combat_targeting->combatant",
+      live_combat_targeting_available);
+  const std::size_t live_combat_targeting_mapper = compact_composition.find(
+      "legacy_key_message_for_open_combat_targeting(",
+      live_combat_targeting_actor);
+  const std::size_t live_combat_targeting_combatant =
+      compact_composition.find(
+          "std::ranges::find(snapshot.combat->combatants,"
+          "open_combat_targeting->combatant,",
+          live_combat_targeting_mapper);
+  const std::size_t live_combat_targeting_member = compact_composition.find(
+      "snapshot.party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(open_combat_targeting->combatant))",
+      live_combat_targeting_combatant);
+  const std::size_t live_combat_targeting_party_kind =
+      compact_composition.find(
+          "combatant->kind=="
+          "realmz::presentation::CombatantKind::party_member",
+          live_combat_targeting_member);
+  const std::size_t live_combat_targeting_stamina = compact_composition.find(
+      "combatant->stamina.current>0", live_combat_targeting_party_kind);
   require(composed_bandage_eligibility != std::string::npos &&
           composed_undo_eligibility != std::string::npos &&
           composed_combat_spellbook_eligibility != std::string::npos &&
+          composed_combat_targeting_eligibility != std::string::npos &&
           composed_page != std::string::npos &&
           composed_auto != std::string::npos &&
           composed_auto_available != std::string::npos &&
@@ -2220,6 +2360,8 @@ void verify_window_manager_shell_dispatch_freshness(
           composed_undo_available != std::string::npos &&
           composed_combat_spellbook != std::string::npos &&
           composed_combat_spellbook_available != std::string::npos &&
+          composed_combat_targeting != std::string::npos &&
+          composed_combat_targeting_available != std::string::npos &&
           live_controls != std::string::npos &&
           live_page != std::string::npos &&
           live_page_transition != std::string::npos &&
@@ -2265,12 +2407,23 @@ void verify_window_manager_shell_dispatch_freshness(
           live_combat_spellbook_combatant != std::string::npos &&
           live_combat_spellbook_member != std::string::npos &&
           live_combat_spellbook_party_kind != std::string::npos &&
-          live_combat_spellbook_stamina != std::string::npos,
+          live_combat_spellbook_stamina != std::string::npos &&
+          live_combat_targeting != std::string::npos &&
+          live_combat_targeting_kind != std::string::npos &&
+          live_combat_targeting_available != std::string::npos &&
+          live_combat_targeting_actor != std::string::npos &&
+          live_combat_targeting_mapper != std::string::npos &&
+          live_combat_targeting_combatant != std::string::npos &&
+          live_combat_targeting_member != std::string::npos &&
+          live_combat_targeting_party_kind != std::string::npos &&
+          live_combat_targeting_stamina != std::string::npos,
       "combat utility/special composition must retain requests and live "
       "actor/capability validation");
   require(composed_bandage_eligibility < composed_undo_eligibility &&
           composed_undo_eligibility < composed_combat_spellbook_eligibility &&
-          composed_combat_spellbook_eligibility < composed_page &&
+          composed_combat_spellbook_eligibility <
+              composed_combat_targeting_eligibility &&
+          composed_combat_targeting_eligibility < composed_page &&
           composed_page < composed_auto &&
           composed_auto < composed_auto_available &&
           composed_auto_available < composed_range &&
@@ -2281,7 +2434,9 @@ void verify_window_manager_shell_dispatch_freshness(
           composed_undo < composed_undo_available &&
           composed_undo_available < composed_combat_spellbook &&
           composed_combat_spellbook < composed_combat_spellbook_available &&
-          composed_combat_spellbook_available < live_controls &&
+          composed_combat_spellbook_available < composed_combat_targeting &&
+          composed_combat_targeting < composed_combat_targeting_available &&
+          composed_combat_targeting_available < live_controls &&
           live_controls < live_page && live_page < live_page_transition &&
           live_page_transition < live_auto && live_auto < live_auto_kind &&
           live_auto_kind < live_auto_actor &&
@@ -2324,7 +2479,16 @@ void verify_window_manager_shell_dispatch_freshness(
           live_combat_spellbook_mapper < live_combat_spellbook_combatant &&
           live_combat_spellbook_combatant < live_combat_spellbook_member &&
           live_combat_spellbook_member < live_combat_spellbook_party_kind &&
-          live_combat_spellbook_party_kind < live_combat_spellbook_stamina,
+          live_combat_spellbook_party_kind < live_combat_spellbook_stamina &&
+          live_combat_spellbook_stamina < live_combat_targeting &&
+          live_combat_targeting < live_combat_targeting_kind &&
+          live_combat_targeting_kind < live_combat_targeting_available &&
+          live_combat_targeting_available < live_combat_targeting_actor &&
+          live_combat_targeting_actor < live_combat_targeting_mapper &&
+          live_combat_targeting_mapper < live_combat_targeting_combatant &&
+          live_combat_targeting_combatant < live_combat_targeting_member &&
+          live_combat_targeting_member < live_combat_targeting_party_kind &&
+          live_combat_targeting_party_kind < live_combat_targeting_stamina,
       "combat utility/special controls must validate current page, actor, "
       "capability, and live snapshot before interaction");
 
@@ -2899,6 +3063,85 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_spellbook_stamina < combat_spellbook_route_accept,
       "Combat Spellbook route eligibility must revalidate the special-page "
       "actor and cast capability before accepting the control");
+
+  const std::size_t combat_targeting_route = compact_eligibility.find(
+      "std::get_if<realmz::presentation::OpenCombatTargetingAction>"
+      "(&control.payload)",
+      combat_spellbook_route_accept);
+  const std::size_t combat_targeting_surface_guard =
+      compact_eligibility.find(
+          "if(!surface_matches_context||", combat_targeting_route);
+  const std::size_t combat_targeting_mapper = compact_eligibility.find(
+      "legacy_key_message_for_open_combat_targeting(",
+      combat_targeting_surface_guard);
+  const std::size_t combat_targeting_snapshot = compact_eligibility.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      combat_targeting_mapper);
+  const std::size_t combat_targeting_available = compact_eligibility.find(
+      "!snapshot->combat->target_available", combat_targeting_snapshot);
+  const std::size_t combat_targeting_acting_actor = compact_eligibility.find(
+      "snapshot->combat->acting_combatant!="
+      "open_combat_targeting->combatant",
+      combat_targeting_available);
+  const std::size_t combat_targeting_party_member = compact_eligibility.find(
+      "snapshot->party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(open_combat_targeting->combatant))",
+      combat_targeting_acting_actor);
+  const std::size_t combat_targeting_combatant_view =
+      compact_eligibility.find(
+          "std::ranges::find(snapshot->combat->combatants,"
+          "open_combat_targeting->combatant,",
+          combat_targeting_party_member);
+  const std::size_t combat_targeting_membership_rejection =
+      compact_eligibility.find(
+          "if((combatant==snapshot->combat->combatants.end())||!member||",
+          combat_targeting_combatant_view);
+  const std::size_t combat_targeting_party_kind = compact_eligibility.find(
+      "combatant->kind!="
+      "realmz::presentation::CombatantKind::party_member",
+      combat_targeting_membership_rejection);
+  const std::size_t combat_targeting_active = compact_eligibility.find(
+      "!combatant->active", combat_targeting_party_kind);
+  const std::size_t combat_targeting_targetable = compact_eligibility.find(
+      "!combatant->targetable", combat_targeting_active);
+  const std::size_t combat_targeting_stamina = compact_eligibility.find(
+      "combatant->stamina.current<=0", combat_targeting_targetable);
+  const std::size_t combat_targeting_route_accept = compact_eligibility.find(
+      "continue;", combat_targeting_stamina);
+  require(combat_targeting_route != std::string::npos &&
+          combat_targeting_surface_guard != std::string::npos &&
+          combat_targeting_mapper != std::string::npos &&
+          combat_targeting_snapshot != std::string::npos &&
+          combat_targeting_available != std::string::npos &&
+          combat_targeting_acting_actor != std::string::npos &&
+          combat_targeting_party_member != std::string::npos &&
+          combat_targeting_combatant_view != std::string::npos &&
+          combat_targeting_membership_rejection != std::string::npos &&
+          combat_targeting_party_kind != std::string::npos &&
+          combat_targeting_active != std::string::npos &&
+          combat_targeting_targetable != std::string::npos &&
+          combat_targeting_stamina != std::string::npos &&
+          combat_targeting_route_accept != std::string::npos,
+      "fresh combat-targeting eligibility must retain mapper, target "
+      "capability, actor, PartyView, and CombatView validation");
+  require(combat_spellbook_route_accept < combat_targeting_route &&
+          combat_targeting_route < combat_targeting_surface_guard &&
+          combat_targeting_surface_guard < combat_targeting_mapper &&
+          combat_targeting_mapper < combat_targeting_snapshot &&
+          combat_targeting_snapshot < combat_targeting_available &&
+          combat_targeting_available < combat_targeting_acting_actor &&
+          combat_targeting_acting_actor < combat_targeting_party_member &&
+          combat_targeting_party_member < combat_targeting_combatant_view &&
+          combat_targeting_combatant_view <
+              combat_targeting_membership_rejection &&
+          combat_targeting_membership_rejection <
+              combat_targeting_party_kind &&
+          combat_targeting_party_kind < combat_targeting_active &&
+          combat_targeting_active < combat_targeting_targetable &&
+          combat_targeting_targetable < combat_targeting_stamina &&
+          combat_targeting_stamina < combat_targeting_route_accept,
+      "Combat Target route eligibility must revalidate the special-page "
+      "actor and target capability before accepting the control");
 }
 
 void verify_top_level_loop(
@@ -2991,6 +3234,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticOpenCombatSpellbookEvent") == 0,
       std::string(function_name) +
           " must leave tagged combat-spellbook consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticOpenCombatTargetingEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged combat-targeting consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -3156,6 +3403,243 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
               "RealmzConsumeSemanticOpenCombatSpellbookEvent") == 0,
       "Classic combatchoice must retain spell validation, targeting, and "
       "mutation ownership without consuming semantic tags");
+
+  const std::size_t target_case = compact_combat.find("case't':");
+  const std::size_t target_control = compact_combat.find(
+      "theControl=combatitem;", target_case);
+  const std::size_t target_break = compact_combat.find(
+      "break;", target_control);
+  const std::size_t target_switch_end = compact_combat.find(
+      "if(whichset)", target_break);
+  require(target_case != std::string::npos &&
+          target_control != std::string::npos &&
+          target_break != std::string::npos &&
+          target_switch_end != std::string::npos &&
+          target_case < target_control && target_control < target_break &&
+          target_break < target_switch_end,
+      "combat must retain the exact Classic Target control handoff");
+  const std::string target_case_branch = compact_combat.substr(
+      target_case, target_switch_end - target_case);
+  require(target_case_branch.contains(
+              "downbutton(TRUE);theControl=combatitem;break;"),
+      "combat Target key branch must only select combatitem before the shared "
+      "Classic command route");
+  require(count_identifier(target_case_branch, "combatchoice") == 0 &&
+          count_identifier(target_case_branch, "Rand") == 0 &&
+          count_identifier(target_case_branch, "loaditem") == 0 &&
+          count_identifier(target_case_branch, "charge") == 0,
+      "combat Target key selection must not absorb Classic targeting rules");
+
+  const std::size_t target_mouse = compact_combat.find(
+      "if(PtInRect(point,&buttonrect))key='t';", target_switch_end);
+  const std::size_t weapon_mouse = compact_combat.find(
+      "if(PtInRect(point,&buttonrect))key='w';", target_mouse);
+  const std::size_t mouse_gotkey = compact_combat.find(
+      "if(key)gotogotkey;", weapon_mouse);
+  const std::size_t shared_jumpposs = compact_combat.find(
+      "jumpposs:combatchoice();", mouse_gotkey);
+  require(target_mouse != std::string::npos &&
+          weapon_mouse != std::string::npos &&
+          mouse_gotkey != std::string::npos &&
+          shared_jumpposs != std::string::npos &&
+          target_mouse < weapon_mouse && weapon_mouse < mouse_gotkey &&
+          mouse_gotkey < shared_jumpposs,
+      "Classic Target mouse hit must converge through gotkey before the same "
+      "shared combatchoice route as keyboard t");
+
+  const std::string compact_target_combatchoice =
+      without_whitespace(combatchoice);
+  const std::size_t target_control_branch = compact_target_combatchoice.find(
+      "if((theControl==combatitem)&&(lastshown==q[up])){");
+  const std::size_t target_source_slot = compact_target_combatchoice.find(
+      "loaditem(c[charup].armor[2]);", target_control_branch);
+  const std::size_t target_quiver = compact_target_combatchoice.find(
+      "loaditem(c[charup].armor[10]);", target_source_slot);
+  const std::size_t target_toggled_slot = compact_target_combatchoice.find(
+      "loaditem(c[charup].armor[15]);", target_quiver);
+  const std::size_t target_spell_gate = compact_target_combatchoice.find(
+      "if(item.sp2>1100){", target_toggled_slot);
+  const std::size_t target_inventory_loop = compact_target_combatchoice.find(
+      "for(t=0;t<c[charup].numitems;t++){", target_spell_gate);
+  const std::size_t target_matching_item = compact_target_combatchoice.find(
+      "if(c[charup].items[t].id==item.itemid)break;",
+      target_inventory_loop);
+  const std::size_t target_charge_gate = compact_target_combatchoice.find(
+      "if(!c[charup].items[t].charge){", target_matching_item);
+  const std::size_t target_random_power = compact_target_combatchoice.find(
+      "if(powerlevel==8)powerlevel=Rand(7);", target_charge_gate);
+  const std::size_t target_animated_range_gate =
+      compact_target_combatchoice.find(
+      "if(!getrange(charup,c[charup].traiter,FALSE))",
+      target_random_power);
+  const std::size_t target_animated_random_choice =
+      compact_target_combatchoice.find(
+          "c[charup].target=randrange(0,maxloopminus);",
+          target_animated_range_gate);
+  const std::size_t target_charge_mutation = compact_target_combatchoice.find(
+      "c[charup].items[itemnum].charge--;",
+      target_animated_random_choice);
+  const std::size_t target_cast = compact_target_combatchoice.find(
+      "cast(targetnum,charup);", target_charge_mutation);
+  require(target_control_branch != std::string::npos &&
+          target_source_slot != std::string::npos &&
+          target_quiver != std::string::npos &&
+          target_toggled_slot != std::string::npos &&
+          target_spell_gate != std::string::npos &&
+          target_inventory_loop != std::string::npos &&
+          target_matching_item != std::string::npos &&
+          target_charge_gate != std::string::npos &&
+          target_random_power != std::string::npos &&
+          target_animated_range_gate != std::string::npos &&
+          target_animated_random_choice != std::string::npos &&
+          target_charge_mutation != std::string::npos &&
+          target_cast != std::string::npos,
+      "Classic combatchoice must retain Target source, quiver, first item, "
+      "charge, animated targeting/RNG, and cast ownership");
+  require(target_control_branch < target_source_slot &&
+          target_source_slot < target_quiver &&
+          target_quiver < target_toggled_slot &&
+          target_toggled_slot < target_spell_gate &&
+          target_spell_gate < target_inventory_loop &&
+          target_inventory_loop < target_matching_item &&
+          target_matching_item < target_charge_gate &&
+          target_charge_gate < target_random_power &&
+          target_random_power < target_animated_range_gate &&
+          target_animated_range_gate < target_animated_random_choice &&
+          target_animated_random_choice < target_charge_mutation &&
+          target_charge_mutation < target_cast,
+      "Classic Target command must preserve its ordered rule and mutation "
+      "pipeline after the semantic handoff");
+
+  const std::size_t target_usescroll = compact_target_combatchoice.find(
+      "usescroll=TRUE;", target_spell_gate);
+  const std::size_t target_manual_charge_mutation = target_charge_mutation;
+  const std::size_t target_manual_drop = compact_target_combatchoice.find(
+      "dropitem(charup,itemused,itemnum,1,FALSE);",
+      target_manual_charge_mutation);
+  const std::size_t target_items_handoff = compact_target_combatchoice.find(
+      "if(theControl==itemsbut){", target_manual_drop);
+  const std::size_t target_goto_wand = compact_target_combatchoice.find(
+      "gotowand;", target_items_handoff);
+  const std::size_t target_wand_label = compact_target_combatchoice.find(
+      "wand:", target_goto_wand);
+  const std::size_t target_manual_loop = compact_target_combatchoice.find(
+      "while(gDone==FALSE){", target_wand_label);
+  const std::size_t target_manual_wait = compact_target_combatchoice.find(
+      "WaitNextEvent(everyEvent,&gTheEvent,0L,NIL);",
+      target_manual_loop);
+  const std::size_t target_manual_event_switch =
+      compact_target_combatchoice.find(
+          "switch(gTheEvent.what){", target_manual_wait);
+  require(target_usescroll != std::string::npos &&
+          target_manual_charge_mutation != std::string::npos &&
+          target_manual_drop != std::string::npos &&
+          target_items_handoff != std::string::npos &&
+          target_goto_wand != std::string::npos &&
+          target_wand_label != std::string::npos &&
+          target_manual_loop != std::string::npos &&
+          target_manual_wait != std::string::npos &&
+          target_manual_event_switch != std::string::npos,
+      "Classic Target must retain its non-animated charge/drop handoff into "
+      "the shared manual targeting event loop");
+  require(target_usescroll < target_manual_charge_mutation &&
+          target_manual_charge_mutation < target_manual_drop &&
+          target_manual_drop < target_items_handoff &&
+          target_items_handoff < target_goto_wand &&
+          target_goto_wand < target_wand_label &&
+          target_wand_label < target_manual_loop &&
+          target_manual_loop < target_manual_wait &&
+          target_manual_wait < target_manual_event_switch &&
+          target_manual_event_switch < target_cast,
+      "Classic must consume/drop the Target item before entering its raw "
+      "manual WaitNextEvent targeting loop");
+  require(count_identifier(combatchoice, "WaitNextEvent") == 1 &&
+          count_identifier(combatchoice, "GetNextEvent") == 0,
+      "Classic manual targeting must retain exactly one raw WaitNextEvent "
+      "loop without substituting a top-level event poll");
+
+  const std::size_t target_abort_inspell = compact_target_combatchoice.find(
+      "inspell=infocombat=FALSE;", target_manual_event_switch);
+  const std::size_t target_abort_done = compact_target_combatchoice.find(
+      "gDone=TRUE;", target_abort_inspell);
+  const std::size_t target_abort_movement = compact_target_combatchoice.find(
+      "c[charup].movement-=3;", target_abort_done);
+  const std::size_t target_abort_clear = compact_target_combatchoice.find(
+      "cleartarget();", target_abort_movement);
+  const std::size_t target_abort_refund = compact_target_combatchoice.find(
+      "if((!usescroll)&&(memoryspell==TRUE))c[charup].spellpoints+="
+      "(.66*(spellinfo.cost*powerlevel));",
+      target_abort_clear);
+  const std::size_t target_abort_reset = compact_target_combatchoice.find(
+      "usescroll=memoryspell=FALSE;", target_abort_refund);
+  const std::size_t target_abort_return = compact_target_combatchoice.find(
+      "return;", target_abort_reset);
+  require(target_abort_inspell != std::string::npos &&
+          target_abort_done != std::string::npos &&
+          target_abort_movement != std::string::npos &&
+          target_abort_clear != std::string::npos &&
+          target_abort_refund != std::string::npos &&
+          target_abort_reset != std::string::npos &&
+          target_abort_return != std::string::npos,
+      "Classic manual Target abort must retain its state cleanup, movement "
+      "cost, and scroll-aware refund guard");
+  require(target_manual_event_switch < target_abort_inspell &&
+          target_abort_inspell < target_abort_done &&
+          target_abort_done < target_abort_movement &&
+          target_abort_movement < target_abort_clear &&
+          target_abort_clear < target_abort_refund &&
+          target_abort_refund < target_abort_reset &&
+          target_abort_reset < target_abort_return,
+      "Classic Target abort must charge three movement and apply its refund "
+      "guard before clearing the item-spell flags");
+  const std::string target_abort_branch = compact_target_combatchoice.substr(
+      target_abort_inspell,
+      target_abort_return + std::string_view("return;").size() -
+          target_abort_inspell);
+  require(target_abort_branch.contains("!usescroll") &&
+          !target_abort_branch.contains(
+              "c[charup].items[itemnum].charge++"),
+      "Target item charges must not be restored by the manual abort branch; "
+      "only non-scroll memorized spells may receive the guarded refund");
+
+  const std::size_t target_launch_label = compact_target_combatchoice.find(
+      "launch:", target_abort_return);
+  const std::size_t target_launch_movement =
+      compact_target_combatchoice.find(
+          "c[charup].movement-=12;", target_launch_label);
+  const std::size_t target_launch_clamp = compact_target_combatchoice.find(
+      "if(c[charup].movement<0)c[charup].movement=0;",
+      target_launch_movement);
+  const std::size_t target_launch_attacks = compact_target_combatchoice.find(
+      "c[charup].attacks-=2;", target_launch_clamp);
+  const std::size_t target_launch_cast = compact_target_combatchoice.find(
+      "cast(targetnum,charup);", target_launch_attacks);
+  const std::size_t target_launch_clear = compact_target_combatchoice.find(
+      "cleartarget();", target_launch_cast);
+  const std::size_t target_launch_return = compact_target_combatchoice.find(
+      "return;", target_launch_clear);
+  require(target_launch_label != std::string::npos &&
+          target_launch_movement != std::string::npos &&
+          target_launch_clamp != std::string::npos &&
+          target_launch_attacks != std::string::npos &&
+          target_launch_cast != std::string::npos &&
+          target_launch_clear != std::string::npos &&
+          target_launch_return != std::string::npos,
+      "Classic manual Target launch must retain its movement/attack costs, "
+      "cast, and target cleanup");
+  require(target_abort_return < target_launch_label &&
+          target_launch_label < target_launch_movement &&
+          target_launch_movement < target_launch_clamp &&
+          target_launch_clamp < target_launch_attacks &&
+          target_launch_attacks < target_launch_cast &&
+          target_launch_cast < target_launch_clear &&
+          target_launch_clear < target_launch_return,
+      "Classic Target launch must apply its costs before spell resolution "
+      "and target cleanup");
+  require(count_identifier(
+              combatchoice, "RealmzConsumeSemanticOpenCombatTargetingEvent") ==
+          0,
+      "Classic combatchoice must not consume semantic Target tags");
 
   const std::size_t undo_case = cast_next_case;
   const std::size_t undo_next_case = compact_combat.find(
@@ -4075,6 +4559,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_bandage_consumer_count = 0;
   std::size_t global_undo_consumer_count = 0;
   std::size_t global_combat_spellbook_consumer_count = 0;
+  std::size_t global_combat_targeting_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -4127,6 +4612,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticUndoCombatantEvent");
     global_combat_spellbook_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenCombatSpellbookEvent");
+    global_combat_targeting_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticOpenCombatTargetingEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -4177,6 +4664,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   require(global_combat_spellbook_consumer_count == 0,
       "legacy loops must not consume tagged semantic combat-spellbook input "
       "directly");
+  require(global_combat_targeting_consumer_count == 0,
+      "legacy loops must not consume tagged semantic combat-targeting input "
+      "directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
@@ -4226,6 +4716,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t bandage_consume_calls = 0;
   std::size_t undo_consume_calls = 0;
   std::size_t combat_spellbook_consume_calls = 0;
+  std::size_t combat_targeting_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -4289,6 +4780,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticUndoCombatantEvent");
     combat_spellbook_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenCombatSpellbookEvent");
+    combat_targeting_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticOpenCombatTargetingEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -4352,6 +4845,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   require(combat_spellbook_consume_calls == 0,
       "only EventManager may call "
       "RealmzConsumeSemanticOpenCombatSpellbookEvent");
+  require(combat_targeting_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticOpenCombatTargetingEvent");
 }
 
 } // namespace

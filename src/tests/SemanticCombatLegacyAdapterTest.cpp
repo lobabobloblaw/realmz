@@ -35,6 +35,8 @@ short fat = 0;
 short incombat = 0;
 short monsterturn = 0;
 short nummon = 0;
+short inspell = 0;
+short lastshown = -1;
 int32_t partyx = 0;
 int32_t partyy = 0;
 int32_t landlevel = 0;
@@ -45,6 +47,8 @@ char charselectnew = -1;
 char charup = -1;
 char monsterup = -1;
 char combatround = 0;
+char up = 0;
+char q[110] = {};
 char head = 1;
 char encountflag = 0;
 char viewtype = 1;
@@ -60,6 +64,12 @@ struct monster monster[100] = {};
 char pos[6][2] = {};
 char monpos[100][2] = {};
 struct encount2 enc2 = {};
+struct itemattr item = {};
+struct itemattr allweapons[200] = {};
+struct itemattr allarmor[200] = {};
+struct itemattr allhelms[200] = {};
+struct itemattr allmagic[200] = {};
+struct itemattr allsupply[200] = {};
 
 CGrafPtr FrontWindow(void) {
   return front_window;
@@ -95,7 +105,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 13> combat_cases() {
+std::array<CombatCase, 14> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -179,6 +189,12 @@ std::array<CombatCase, 13> combat_cases() {
           .consume = RealmzConsumeSemanticOpenCombatSpellbookEvent,
           .classic_message = 0x00000173U,
       },
+      CombatCase{
+          .tag = semantic_open_combat_targeting_tag(
+              1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticOpenCombatTargetingEvent,
+          .classic_message = 0x00001174U,
+      },
   };
 }
 
@@ -193,6 +209,8 @@ void reset_legacy_globals() {
   incombat = 0;
   monsterturn = 0;
   nummon = 0;
+  inspell = 0;
+  lastshown = -1;
   partyx = 0;
   partyy = 0;
   landlevel = 0;
@@ -203,6 +221,8 @@ void reset_legacy_globals() {
   charup = -1;
   monsterup = -1;
   combatround = 0;
+  up = 0;
+  std::memset(q, 0, sizeof(q));
   head = 1;
   encountflag = 0;
   viewtype = 1;
@@ -218,6 +238,12 @@ void reset_legacy_globals() {
   std::memset(pos, 0, sizeof(pos));
   std::memset(monpos, 0, sizeof(monpos));
   std::memset(&enc2, 0, sizeof(enc2));
+  std::memset(&item, 0, sizeof(item));
+  std::memset(allweapons, 0, sizeof(allweapons));
+  std::memset(allarmor, 0, sizeof(allarmor));
+  std::memset(allhelms, 0, sizeof(allhelms));
+  std::memset(allmagic, 0, sizeof(allmagic));
+  std::memset(allsupply, 0, sizeof(allsupply));
 }
 
 void seed_active_party_combatant() {
@@ -238,6 +264,13 @@ void seed_active_party_combatant() {
   c[1].movementmax = 9;
   c[1].spellpoints = 8;
   c[1].maxspellsattacks = 2;
+  q[0] = 1;
+  lastshown = 1;
+  c[1].armor[2] = 1;
+  c[1].numitems = 1;
+  c[1].items[0] = {.id = 1, .charge = 1};
+  allweapons[1].itemid = 1;
+  allweapons[1].sp2 = 1101;
 }
 
 void complete_combat_scope() {
@@ -334,6 +367,25 @@ void test_unavailable_combat_spellbook_is_rejected_once() {
   CHECK(output == kUnchangedMessage);
 }
 
+void test_unavailable_combat_targeting_is_rejected_once() {
+  seed_active_party_combatant();
+  const uint32_t tag = semantic_open_combat_targeting_tag(
+      1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(tag == 0x52540301U);
+  complete_combat_scope();
+
+  inspell = 1;
+  uint32_t output = kUnchangedMessage;
+  CHECK(RealmzConsumeSemanticOpenCombatTargetingEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+
+  inspell = 0;
+  CHECK(RealmzConsumeSemanticOpenCombatTargetingEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+}
+
 void test_stale_acting_combatant_is_rejected() {
   for (const auto& action : combat_cases()) {
     seed_active_party_combatant();
@@ -383,6 +435,7 @@ int main() {
     test_bandage_without_classic_canundo_is_rejected();
     test_undo_without_classic_canundo_is_rejected();
     test_unavailable_combat_spellbook_is_rejected_once();
+    test_unavailable_combat_targeting_is_rejected_once();
     test_stale_acting_combatant_is_rejected();
     test_non_gameplay_front_window_is_rejected();
     test_stale_selected_member_is_rejected();

@@ -80,6 +80,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<BandageCombatantAction> bandage_combatant;
   LegacyActionHandler<UndoCombatantAction> undo_combatant;
   LegacyActionHandler<OpenCombatSpellbookAction> open_combat_spellbook;
+  LegacyActionHandler<OpenCombatTargetingAction> open_combat_targeting;
   LegacyActionHandler<InventoryAction> inventory;
   LegacyActionHandler<CastSpellAction> cast_spell;
   LegacyActionHandler<TradeAction> trade;

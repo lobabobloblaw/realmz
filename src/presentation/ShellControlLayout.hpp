@@ -29,6 +29,7 @@ enum class ShellControlKind {
   bandage_combatant,
   undo_combatant,
   open_combat_spellbook,
+  open_combat_targeting,
   drawer_tab,
 };
 
@@ -86,6 +87,8 @@ struct ShellControlLayoutRequest {
   bool undo_combatant_available = false;
   std::optional<CombatantId> open_combat_spellbook;
   bool open_combat_spellbook_available = false;
+  std::optional<CombatantId> open_combat_targeting;
+  bool open_combat_targeting_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

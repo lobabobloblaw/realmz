@@ -521,6 +521,24 @@ std::vector<ActionControlModel> build_actions(
     if (can_act) {
       result.back().combatant = acting->id;
     }
+    const bool can_open_combat_targeting =
+        can_act && snapshot.combat->target_available;
+    result.emplace_back(action(
+        ActionIntent::open_combat_targeting,
+        "action.combat.targeting.open",
+        "Target",
+        can_open_combat_targeting
+            ? ActionAvailability::deferred_to_engine
+            : ActionAvailability::unavailable,
+        tab_order++,
+        can_open_combat_targeting
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{unavailable_token(
+                  can_act ? "Targeting is unavailable now"
+                          : "Wait for an active party member")}));
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
   }
 
   if (encounter_active) {

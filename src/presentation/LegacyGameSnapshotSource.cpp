@@ -15,6 +15,8 @@ extern short currentscenario;
 extern short canundo;
 extern short fat;
 extern short incombat;
+extern short inspell;
+extern short lastshown;
 extern short monsterturn;
 extern short nummon;
 extern int32_t partyx;
@@ -25,6 +27,8 @@ extern int32_t moneypool[3];
 extern char charnum;
 extern char charselectnew;
 extern char charup;
+extern char q[110];
+extern char up;
 extern char monsterup;
 extern char combatround;
 extern char head;
@@ -38,6 +42,11 @@ extern Boolean intemple;
 extern Boolean indung;
 extern Boolean spellcasting;
 extern struct character c[6];
+extern struct itemattr allweapons[200];
+extern struct itemattr allarmor[200];
+extern struct itemattr allhelms[200];
+extern struct itemattr allmagic[200];
+extern struct itemattr allsupply[200];
 extern struct monster monster[100];
 extern char pos[6][2];
 extern char monpos[100][2];
@@ -123,6 +132,58 @@ bool active_party_actor_can_cast(int party_count) noexcept {
       (actor.spellsofar < actor.maxspellsattacks);
 }
 
+const itemattr* item_attributes_for_id(short raw_id) noexcept {
+  const int signed_id = static_cast<int>(raw_id);
+  const int item_id = signed_id < 0 ? -signed_id : signed_id;
+  if (item_id >= 1000) {
+    return nullptr;
+  }
+
+  const std::size_t index = static_cast<std::size_t>(item_id % 200);
+  switch (item_id / 200) {
+    case 0:
+      return &allweapons[index];
+    case 1:
+      return &allarmor[index];
+    case 2:
+      return &allhelms[index];
+    case 3:
+      return &allmagic[index];
+    case 4:
+      return &allsupply[index];
+    default:
+      return nullptr;
+  }
+}
+
+bool active_party_actor_can_target(int party_count) noexcept {
+  const int actor_index = static_cast<int>(charup);
+  const int queue_index = static_cast<int>(up);
+  if (monsterturn || (actor_index < 0) || (actor_index >= party_count) ||
+      (queue_index < 0) || (queue_index >= 110) ||
+      (static_cast<int>(q[queue_index]) != actor_index) ||
+      (lastshown != actor_index) || (inspell != 0)) {
+    return false;
+  }
+
+  const auto& actor = c[actor_index];
+  const short source_id = actor.armor[actor.toggle ? 15 : 2];
+  const auto* attributes = item_attributes_for_id(source_id);
+  if (!attributes || (attributes->sp2 <= 1100)) {
+    return false;
+  }
+
+  const int item_count = std::clamp<int>(actor.numitems, 0, 30);
+  const auto first_matching_item = std::find_if(
+      actor.items,
+      actor.items + item_count,
+      [attributes](const item& candidate) {
+        return candidate.id == attributes->itemid;
+      });
+  return (first_matching_item != actor.items + item_count) &&
+      (first_matching_item->charge != 0);
+}
+
 } // namespace
 
 GameSnapshot LegacyGameSnapshotSource::capture() const {
@@ -176,6 +237,7 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
     combat.bandage_available = canundo != 0;
     combat.undo_available = canundo != 0;
     combat.cast_spell_available = active_party_actor_can_cast(party_count);
+    combat.target_available = active_party_actor_can_target(party_count);
     combat.round = static_cast<int16_t>(combatround);
     if (!monsterturn && (charup >= 0) && (charup < party_count)) {
       combat.acting_combatant = static_cast<CombatantId>(charup);

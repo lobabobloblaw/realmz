@@ -759,6 +759,8 @@ void test_combat_primary_and_secondary_action_pages() {
         .undo_combatant_available = true,
         .open_combat_spellbook = CombatantId{2},
         .open_combat_spellbook_available = true,
+        .open_combat_targeting = CombatantId{2},
+        .open_combat_targeting_available = true,
     });
     CHECK(utility.size() == 6U);
     const auto& utility_back = utility[0];
@@ -910,10 +912,13 @@ void test_combat_primary_and_secondary_action_pages() {
         .combat_action_page = CombatActionPage::special,
         .open_combat_spellbook = CombatantId{2},
         .open_combat_spellbook_available = true,
+        .open_combat_targeting = CombatantId{2},
+        .open_combat_targeting_available = true,
     });
-    CHECK(special.size() == 2U);
+    CHECK(special.size() == 3U);
     const auto& special_back = special[0];
     const auto& cast = special[1];
+    const auto& target = special[2];
     CHECK(special_back.region.value == 1118U);
     CHECK(special_back.kind == ShellControlKind::combat_action_page);
     CHECK(special_back.label == "BACK");
@@ -933,9 +938,27 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(cast.tab_order == 1119);
     CHECK(cast.enabled);
     CHECK(std::get<OpenCombatSpellbookAction>(cast.payload).combatant == 2);
+    CHECK(target.region.value == 1120U);
+    CHECK(target.kind == ShellControlKind::open_combat_targeting);
+    CHECK(target.label == "TARGET");
+    CHECK(target.accessibility_label == "Begin combat targeting");
+    CHECK(target.focus_identifier == "focus.action.combat.targeting.open");
+    CHECK(target.tab_order == 1120);
+    CHECK(target.enabled);
+    CHECK(std::get<OpenCombatTargetingAction>(target.payload).combatant == 2);
     CHECK(special_panel.contains(special_back.bounds));
     CHECK(special_panel.contains(cast.bounds));
+    CHECK(special_panel.contains(target.bounds));
     CHECK(!interiors_overlap(special_back.bounds, cast.bounds));
+    CHECK(!interiors_overlap(special_back.bounds, target.bounds));
+    CHECK(!interiors_overlap(cast.bounds, target.bounds));
+    const LogicalPoint target_pointer{
+        target.bounds.x + target.bounds.width / 2.0,
+        target.bounds.y + target.bounds.height / 2.0,
+    };
+    CHECK(target.bounds.contains(target_pointer));
+    CHECK(!special_back.bounds.contains(target_pointer));
+    CHECK(!cast.bounds.contains(target_pointer));
   }
 
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
@@ -1148,6 +1171,24 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(!combat_spellbook_disabled[1].enabled);
   CHECK(std::get<OpenCombatSpellbookAction>(
       combat_spellbook_disabled[1].payload).combatant == 2);
+
+  const auto combat_targeting_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_targeting = CombatantId{2},
+  });
+  CHECK(combat_targeting_disabled.size() == 2U);
+  CHECK(combat_targeting_disabled[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(std::get<SetCombatActionPageAction>(
+      combat_targeting_disabled[0].payload).page ==
+      CombatActionPage::utility);
+  CHECK(combat_targeting_disabled[1].kind ==
+      ShellControlKind::open_combat_targeting);
+  CHECK(!combat_targeting_disabled[1].enabled);
+  CHECK(std::get<OpenCombatTargetingAction>(
+      combat_targeting_disabled[1].payload).combatant == 2);
 
   const auto auto_only_primary = compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -1529,6 +1570,24 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_targeting_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_targeting = CombatantId{-1},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_targeting = CombatantId{256},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{-1},
   }).empty());
@@ -1681,6 +1740,19 @@ void test_combat_primary_and_secondary_action_pages() {
       .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .open_combat_spellbook = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .open_combat_targeting = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{2},
+      .open_combat_targeting = CombatantId{3},
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -2256,6 +2328,58 @@ void test_combat_primary_and_secondary_action_pages() {
       .action_panel = {0.0, 0.0, 121.0, 120.0},
       .combat_action_page = CombatActionPage::special,
       .open_combat_spellbook = CombatantId{2},
+  }).empty());
+
+  const auto targeting_special_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_targeting = CombatantId{2},
+      .open_combat_targeting_available = true,
+  });
+  CHECK(targeting_special_minimum.size() == 2U);
+  CHECK(targeting_special_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(targeting_special_minimum[1].kind ==
+      ShellControlKind::open_combat_targeting);
+  CHECK(targeting_special_minimum[0].bounds.width == 44.0);
+  CHECK(targeting_special_minimum[1].bounds.width >= 44.0);
+  CHECK(!interiors_overlap(
+      targeting_special_minimum[0].bounds,
+      targeting_special_minimum[1].bounds));
+
+  const auto complete_special_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{2},
+      .open_combat_spellbook_available = true,
+      .open_combat_targeting = CombatantId{2},
+      .open_combat_targeting_available = true,
+  });
+  CHECK(complete_special_minimum.size() == 3U);
+  CHECK(complete_special_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(complete_special_minimum[1].kind ==
+      ShellControlKind::open_combat_spellbook);
+  CHECK(complete_special_minimum[2].kind ==
+      ShellControlKind::open_combat_targeting);
+  for (const auto& control : complete_special_minimum) {
+    CHECK(control.bounds.width >= 44.0);
+    CHECK(control.bounds.height == 44.0);
+  }
+  CHECK(!interiors_overlap(
+      complete_special_minimum[0].bounds,
+      complete_special_minimum[1].bounds));
+  CHECK(!interiors_overlap(
+      complete_special_minimum[1].bounds,
+      complete_special_minimum[2].bounds));
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = {0.0, 0.0, 121.0, 120.0},
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{2},
+      .open_combat_targeting = CombatantId{2},
   }).empty());
 
   const auto auto_navigation_minimum = compute_shell_control_layout({

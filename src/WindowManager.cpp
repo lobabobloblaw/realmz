@@ -1733,6 +1733,29 @@ void WindowManager::create_sdl_window() {
                     return tag &&
                         PushSemanticOpenCombatSpellbookEvent(tag);
                   },
+              .open_combat_targeting =
+                  [](realmz::presentation::CombatantId combatant,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                        (context.screen ==
+                            realmz::presentation::ScreenContext::combat);
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_open_combat_targeting(
+                            combatant, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_open_combat_targeting_tag(
+                            combatant, surface);
+                    return tag &&
+                        PushSemanticOpenCombatTargetingEvent(tag);
+                  },
           });
   this->configure_window_for_presentation_mode();
 
@@ -2440,6 +2463,12 @@ void draw_shell_panel_contents(
           return control.kind == realmz::presentation::
               ShellControlKind::open_combat_spellbook;
         });
+    const bool has_semantic_open_combat_targeting = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind == realmz::presentation::
+              ShellControlKind::open_combat_targeting;
+        });
     std::string action_summary =
         "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
     if (has_semantic_movement) {
@@ -2463,7 +2492,8 @@ void draw_shell_panel_contents(
         has_semantic_combat_items || has_semantic_auto_combatant ||
         has_semantic_show_combat_range || has_semantic_bandage_combatant ||
         has_semantic_undo_combatant ||
-        has_semantic_open_combat_spellbook) {
+        has_semantic_open_combat_spellbook ||
+        has_semantic_open_combat_targeting) {
       action_summary = "SEMANTIC COMBAT";
       if (has_semantic_guard) {
         action_summary += " + GUARD";
@@ -2501,6 +2531,9 @@ void draw_shell_panel_contents(
       if (has_semantic_open_combat_spellbook) {
         action_summary += " + CAST";
       }
+      if (has_semantic_open_combat_targeting) {
+        action_summary += " + TARGET";
+      }
     }
     double action_summary_width = width;
     for (const auto& control : controls) {
@@ -2520,7 +2553,8 @@ void draw_shell_panel_contents(
         has_semantic_combat_focus_cycle || has_semantic_combat_items ||
         has_semantic_auto_combatant || has_semantic_show_combat_range ||
         has_semantic_bandage_combatant || has_semantic_undo_combatant ||
-        has_semantic_open_combat_spellbook) {
+        has_semantic_open_combat_spellbook ||
+        has_semantic_open_combat_targeting) {
       for (const auto& control : controls) {
         if ((control.kind !=
                 realmz::presentation::ShellControlKind::movement) &&
@@ -2557,7 +2591,9 @@ void draw_shell_panel_contents(
             (control.kind != realmz::presentation::
                     ShellControlKind::undo_combatant) &&
             (control.kind != realmz::presentation::
-                    ShellControlKind::open_combat_spellbook)) {
+                    ShellControlKind::open_combat_spellbook) &&
+            (control.kind != realmz::presentation::
+                    ShellControlKind::open_combat_targeting)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -3166,6 +3202,12 @@ void WindowManager::present_remastered_frame() {
             return action.intent == realmz::presentation::
                 ActionIntent::open_combat_spellbook;
           });
+      const auto open_combat_targeting_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent == realmz::presentation::
+                ActionIntent::open_combat_targeting;
+          });
       const auto modeled_switch_weapon_combatant =
           (switch_weapon_action != shell_model->actions.end())
           ? switch_weapon_action->combatant
@@ -3205,6 +3247,10 @@ void WindowManager::present_remastered_frame() {
       const auto modeled_open_combat_spellbook =
           (open_combat_spellbook_action != shell_model->actions.end())
           ? open_combat_spellbook_action->combatant
+          : std::nullopt;
+      const auto modeled_open_combat_targeting =
+          (open_combat_targeting_action != shell_model->actions.end())
+          ? open_combat_targeting_action->combatant
           : std::nullopt;
       const auto live_combat_party_actor =
           [&snapshot, snapshot_context_matches, legacy_context, screen](
@@ -3251,6 +3297,8 @@ void WindowManager::present_remastered_frame() {
           live_combat_party_actor(modeled_undo_combatant);
       const auto open_combat_spellbook =
           live_combat_party_actor(modeled_open_combat_spellbook);
+      const auto open_combat_targeting =
+          live_combat_party_actor(modeled_open_combat_targeting);
       const auto* combat_items_member =
           modeled_combat_items_member
           ? snapshot.party.member(*modeled_combat_items_member)
@@ -3281,6 +3329,7 @@ void WindowManager::present_remastered_frame() {
                bandage_combatant,
                undo_combatant,
                open_combat_spellbook,
+               open_combat_targeting,
            }) {
         if (!combatant) {
           continue;
@@ -3298,11 +3347,11 @@ void WindowManager::present_remastered_frame() {
               realmz::presentation::CombatActionPage::utility &&
           !auto_combatant && !show_combat_range_combatant &&
           !bandage_combatant && !undo_combatant &&
-          !open_combat_spellbook;
+          !open_combat_spellbook && !open_combat_targeting;
       const bool unavailable_special_page =
           this->remastered_combat_action_page ==
               realmz::presentation::CombatActionPage::special &&
-          !open_combat_spellbook;
+          !open_combat_spellbook && !open_combat_targeting;
       if ((invalid_paged_combat_actions &&
               this->remastered_combat_action_page !=
                   realmz::presentation::CombatActionPage::primary) ||
@@ -3414,6 +3463,21 @@ void WindowManager::present_remastered_frame() {
                           legacy_context.adaptive_eligible != 0,
                   })
                   .has_value();
+      const bool open_combat_targeting_available =
+          open_combat_targeting && snapshot.combat &&
+          snapshot.combat->target_available &&
+          open_combat_targeting_action->can_invoke() &&
+          snapshot_context_matches &&
+          realmz::presentation::
+              legacy_key_message_for_open_combat_targeting(
+                  *open_combat_targeting,
+                  {
+                      .screen = screen,
+                      .world_presentation = snapshot.world.presentation,
+                      .adaptive_eligible =
+                          legacy_context.adaptive_eligible != 0,
+                  })
+                  .has_value();
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -3460,6 +3524,9 @@ void WindowManager::present_remastered_frame() {
               .open_combat_spellbook = open_combat_spellbook,
               .open_combat_spellbook_available =
                   open_combat_spellbook_available,
+              .open_combat_targeting = open_combat_targeting,
+              .open_combat_targeting_available =
+                  open_combat_targeting_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -3967,6 +4034,36 @@ void WindowManager::present_remastered_frame() {
                 const auto* member = snapshot.party.member(
                     static_cast<realmz::presentation::PartyMemberId>(
                         open_combat_spellbook->combatant));
+                return combatant != snapshot.combat->combatants.end() &&
+                    member &&
+                    combatant->kind ==
+                        realmz::presentation::CombatantKind::party_member &&
+                    combatant->active && combatant->targetable &&
+                    combatant->stamina.current > 0;
+              }
+              if (const auto* open_combat_targeting =
+                      std::get_if<realmz::presentation::
+                          OpenCombatTargetingAction>(&control.payload)) {
+                if (control.kind != realmz::presentation::ShellControlKind::
+                        open_combat_targeting ||
+                    !snapshot.combat || !snapshot.combat->active ||
+                    !snapshot.combat->target_available ||
+                    snapshot.combat->acting_combatant !=
+                        open_combat_targeting->combatant ||
+                    (open_combat_targeting->combatant < 0) ||
+                    (open_combat_targeting->combatant > 0xFF) ||
+                    !realmz::presentation::
+                        legacy_key_message_for_open_combat_targeting(
+                            open_combat_targeting->combatant, context)) {
+                  return false;
+                }
+                const auto combatant = std::ranges::find(
+                    snapshot.combat->combatants,
+                    open_combat_targeting->combatant,
+                    &realmz::presentation::CombatantView::id);
+                const auto* member = snapshot.party.member(
+                    static_cast<realmz::presentation::PartyMemberId>(
+                        open_combat_targeting->combatant));
                 return combatant != snapshot.combat->combatants.end() &&
                     member &&
                     combatant->kind ==
@@ -4934,6 +5031,50 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       }
       continue;
     }
+    if (const auto* open_combat_targeting =
+            std::get_if<realmz::presentation::OpenCombatTargetingAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind != realmz::presentation::ShellControlKind::
+              open_combat_targeting ||
+          (open_combat_targeting->combatant < 0) ||
+          (open_combat_targeting->combatant > 0xFF) ||
+          !realmz::presentation::
+              legacy_key_message_for_open_combat_targeting(
+                  open_combat_targeting->combatant, context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) || !snapshot->combat ||
+          !snapshot->combat->active ||
+          !snapshot->combat->target_available ||
+          snapshot->combat->acting_combatant !=
+              open_combat_targeting->combatant) {
+        return false;
+      }
+      const auto* member = snapshot->party.member(
+          static_cast<realmz::presentation::PartyMemberId>(
+              open_combat_targeting->combatant));
+      const auto combatant = std::ranges::find(
+          snapshot->combat->combatants,
+          open_combat_targeting->combatant,
+          &realmz::presentation::CombatantView::id);
+      if ((combatant == snapshot->combat->combatants.end()) || !member ||
+          (combatant->kind !=
+              realmz::presentation::CombatantKind::party_member) ||
+          !combatant->active || !combatant->targetable ||
+          (combatant->stamina.current <= 0)) {
+        return false;
+      }
+      continue;
+    }
     return false;
   }
   return found_enabled;
@@ -5030,6 +5171,9 @@ void WindowManager::dispatch_remastered_shell_control(
           &control.payload);
   const auto* open_combat_spellbook =
       std::get_if<realmz::presentation::OpenCombatSpellbookAction>(
+          &control.payload);
+  const auto* open_combat_targeting =
+      std::get_if<realmz::presentation::OpenCombatTargetingAction>(
           &control.payload);
   if (drawer) {
     const bool valid_requested_panel = !drawer->panel ||
@@ -5128,9 +5272,13 @@ void WindowManager::dispatch_remastered_shell_control(
                     realmz::presentation::ScreenContext::combat ||
                 !this->adaptive_shell_plan->adaptive_layout->action_bar
                      .contains(control.bounds))) ||
-        (open_combat_spellbook &&
-            (control.kind != realmz::presentation::ShellControlKind::
-                    open_combat_spellbook ||
+        ((open_combat_spellbook || open_combat_targeting) &&
+            ((open_combat_spellbook &&
+                 control.kind != realmz::presentation::ShellControlKind::
+                     open_combat_spellbook) ||
+                (open_combat_targeting &&
+                    control.kind != realmz::presentation::ShellControlKind::
+                        open_combat_targeting) ||
                 this->remastered_combat_action_page !=
                     realmz::presentation::CombatActionPage::special ||
                 !this->adaptive_shell_plan ||

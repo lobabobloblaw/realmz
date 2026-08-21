@@ -178,6 +178,7 @@ void test_combat_actions_track_the_active_party_combatant() {
       .bandage_available = true,
       .undo_available = true,
       .cast_spell_available = true,
+      .target_available = true,
       .round = 4,
       .acting_combatant = 1,
       .combatants = {
@@ -319,6 +320,18 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(combat_spellbook.tab_order == undo.tab_order + 1);
   CHECK(combat_spellbook.focus_identifier != undo.focus_identifier);
   CHECK(combat_spellbook.availability_reason->label == "Game rules apply");
+  const auto& combat_targeting =
+      action_with(model, ActionIntent::open_combat_targeting);
+  CHECK(combat_targeting.can_invoke());
+  CHECK(combat_targeting.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(combat_targeting.command == "action.combat.targeting.open");
+  CHECK(combat_targeting.label == "Target");
+  CHECK(combat_targeting.combatant == guard.combatant);
+  CHECK(combat_targeting.tab_order == combat_spellbook.tab_order + 1);
+  CHECK(combat_targeting.focus_identifier !=
+      combat_spellbook.focus_identifier);
+  CHECK(combat_targeting.availability_reason->label == "Game rules apply");
   CHECK(model.combat_action_page == CombatActionPage::primary);
 
   const auto secondary_page_model = build_presentation_shell_model(
@@ -380,6 +393,18 @@ void test_combat_actions_track_the_active_party_combatant() {
       "Spell casting is unavailable now");
   snapshot.combat->cast_spell_available = true;
 
+  snapshot.combat->target_available = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& unavailable_combat_targeting =
+      action_with(model, ActionIntent::open_combat_targeting);
+  CHECK(!unavailable_combat_targeting.can_invoke());
+  CHECK(unavailable_combat_targeting.availability ==
+      ActionAvailability::unavailable);
+  CHECK(unavailable_combat_targeting.combatant == 1);
+  CHECK(unavailable_combat_targeting.availability_reason->label ==
+      "Targeting is unavailable now");
+  snapshot.combat->target_available = true;
+
   snapshot.party.members[0].movement =
       snapshot.party.members[0].movement_maximum;
   model = build_presentation_shell_model(snapshot);
@@ -430,6 +455,11 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::open_combat_spellbook);
   CHECK(combat_spellbook_before_movement.can_invoke());
   CHECK(combat_spellbook_before_movement.combatant ==
+      available_delay.combatant);
+  const auto& combat_targeting_before_movement =
+      action_with(model, ActionIntent::open_combat_targeting);
+  CHECK(combat_targeting_before_movement.can_invoke());
+  CHECK(combat_targeting_before_movement.combatant ==
       available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
@@ -482,6 +512,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::open_combat_spellbook);
   CHECK(unmatched_combat_spellbook.can_invoke());
   CHECK(unmatched_combat_spellbook.combatant == unmatched_delay.combatant);
+  const auto& unmatched_combat_targeting =
+      action_with(model, ActionIntent::open_combat_targeting);
+  CHECK(unmatched_combat_targeting.can_invoke());
+  CHECK(unmatched_combat_targeting.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   auto no_selection = snapshot;
@@ -519,6 +553,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(no_selection_model, ActionIntent::open_combat_spellbook);
   CHECK(combat_spellbook_without_selection.can_invoke());
   CHECK(combat_spellbook_without_selection.combatant == 1);
+  const auto& combat_targeting_without_selection =
+      action_with(no_selection_model, ActionIntent::open_combat_targeting);
+  CHECK(combat_targeting_without_selection.can_invoke());
+  CHECK(combat_targeting_without_selection.combatant == 1);
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
@@ -536,6 +574,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::bandage_combatant,
              ActionIntent::undo_combatant,
              ActionIntent::open_combat_spellbook,
+             ActionIntent::open_combat_targeting,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());

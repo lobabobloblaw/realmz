@@ -86,7 +86,7 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes thirteen bounded semantic controls: typed `GuardCombatantAction`,
+Combat exposes fourteen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`,
@@ -95,6 +95,8 @@ commands each carry the stable active-party combatant ID through distinct
 combat-only tagged events. A distinct actor-only
 `OpenCombatSpellbookAction` opens the preserved combat spell flow without
 reusing the exploration `OpenSpellbookAction` or selecting a spell or target.
+A separate actor-only `OpenCombatTargetingAction` identifies no target or cell;
+Classic resolves the equipped source and target mode after handoff.
 The focus-cycle command also carries Previous or Next.
 `OpenCombatItemsAction` independently carries the
 acting combatant and selected party member so neither identity can silently
@@ -121,6 +123,10 @@ Classic `u` message `0x00002075`.
 Combat Cast is late-gated by a read-only projection of the current Classic
 `cancast` prerequisites and becomes the exact Classic `s` message
 `0x00000173`.
+Combat Target is late-gated by a read-only mirror of Classic's visible Target
+control: the active queued actor must still be displayed, no spell flow may be
+open, and the toggled base item must still encode a charged targeting spell.
+It becomes the exact Classic `t` message `0x00001174`.
 Validation fails closed, so stale or newly ineligible actions become inert.
 The original Classic guard/finish/delay mutations and turn
 advance remain authoritative, as do Center's existing non-turn-ending camera
@@ -139,9 +145,14 @@ claims no mutation or turn equivalence. Classic owns Undo's further condition
 checks and every position, field, queue, redraw, and turn-state mutation; the
 semantic route claims no undo-mutation equivalence. Classic remains
 authoritative for Combat Cast's repeated `cancast` check, spell/power chooser,
-target loops,
-spell-point charges and refunds, RNG, resolution, redraws, movement/attack
-costs, and turn handling; the semantic route claims none of that equivalence.
+target loops, spell-point charges and refunds, RNG, resolution, redraws,
+movement/attack costs, and turn handling; the semantic route claims none of
+that equivalence.
+Classic remains authoritative for Target's equipment and quiver resolution,
+target type, charge consumption and item drops, RNG, raw target loops,
+abort/launch costs, spell effects, redraws, and turn handling. A charge or RNG
+decision may occur before a manual target is chosen, and an aborted target flow
+does not imply a semantic refund.
 All other combat commands remain in the interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
@@ -245,7 +256,8 @@ Automated checks do not replace these release decisions:
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
-  Previous/Next, Combat Items, Auto, Range, Bandage, Undo, and Combat Cast
+  Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, and
+  Combat Target
   controls at compact and wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
@@ -271,6 +283,10 @@ Automated checks do not replace these release decisions:
   prerequisite changes and otherwise reaches the preserved Classic chooser,
   including cancel, target, cost/refund, resolution, and turn paths entirely
   inside the Classic frame;
+  verify Combat Target is inert after the actor, displayed/queued body, spell
+  flow, toggled source, encoded spell, or source charge changes and otherwise
+  reaches Classic's equipment/quiver resolution, target modes, raw target loop,
+  charge/drop and RNG paths, abort/launch costs, resolution, and turn handling;
   verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;

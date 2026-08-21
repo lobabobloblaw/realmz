@@ -139,6 +139,13 @@ uint8_t RealmzIsSemanticOpenCombatSpellbookTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenCombatSpellbookTagSurface(
     uint32_t tagged_message);
 
+// Combat-targeting tags carry only the acting combatant. Classic remains
+// authoritative for live equipment resolution, target selection, costs, RNG,
+// and every resulting combat-state mutation.
+uint8_t RealmzIsSemanticOpenCombatTargetingTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenCombatTargetingTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -286,6 +293,14 @@ uint8_t RealmzConsumeSemanticOpenCombatSpellbookEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant and the read-only Target
+// capability, then returns the preserved lowercase "t" key record. Classic
+// owns equipment/quiver resolution, targeting, costs, RNG, and every mutation.
+uint8_t RealmzConsumeSemanticOpenCombatTargetingEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -365,6 +380,10 @@ enum class CombatFocusDirection;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_open_combat_spellbook_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_combat_targeting_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 

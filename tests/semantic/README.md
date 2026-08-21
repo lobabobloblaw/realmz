@@ -45,9 +45,9 @@ CXX=g++ tests/semantic/run-exploration-action-equivalence.sh
 The combat harness compares the direct Classic-key mapper request with the
 typed-action path through the real runtime bridge and semantic input boundary
 for Guard, Finish, Delay, Center, Switch Weapon, Center Previous, Center Next,
-Combat Items, Auto, Range, Bandage, Undo, and Combat Cast. Test-owned
-semantic-event sinks retain the tags instead of running the production
-WindowManager/EventManager queue.
+Combat Items, Auto, Range, Bandage, Undo, Combat Cast, and Combat Target.
+Test-owned semantic-event sinks retain the tags instead of running the
+production WindowManager/EventManager queue.
 Its test-owned pre-Classic state image verifies stable acting combatant and
 selected-member identities, exact semantic tags and Classic key records,
 unchanged fixture bytes, single-use consumption, and fail-closed stale identity
@@ -73,7 +73,9 @@ combat mutation, choose or use an item, replay a modal, execute Auto's
 automation or turn, execute Range's overlay or raw dismissal wait, run
 Bandage's party-member picker or mutation and turn advance, execute Undo's
 condition checks or mutations, run Combat Cast's spell/power chooser, target
-loops, costs/refunds, resolution, or turn handling, exercise RNG, or claim save
+loops, costs/refunds, resolution, or turn handling, resolve Target's equipment
+or quiver, consume/drop its item, choose its target mode, run its raw target
+loop, pay abort/launch costs, resolve its spell, exercise RNG, or claim save
 equivalence.
 
 ## Classic combat-focus helper
@@ -117,7 +119,7 @@ opening any compatibility flow leaves its snapshot and save-facing bytes
 unchanged. It does not select a save slot, replace live state, reproduce, or
 alter Realmz's binary save format.
 
-The first thirteen bounded combat controls are covered by the combat fixture and
+The first fourteen bounded combat controls are covered by the combat fixture and
 the presentation, runtime-bridge, semantic-boundary, top-level-loop, and
 keyboard contract tests. They verify that typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`, and
@@ -129,7 +131,8 @@ against the fresh acting party member with fail-closed rejection. The cycle
 command also preserves its Previous or Next direction. A distinct
 `OpenCombatSpellbookAction` carries only that actor and remains separate from
 both the exploration `OpenSpellbookAction` and the fully specified
-`CastSpellAction`.
+`CastSpellAction`. `OpenCombatTargetingAction` also carries only the actor; it
+does not identify an entity, area, or cell target.
 `OpenCombatItemsAction` carries both the acting ID and selected party-member ID;
 delivery additionally requires that the same member still exists and remains
 selected.
@@ -164,25 +167,32 @@ projection of Classic's current `cancast` prerequisites and becomes the exact
 Classic `s` message `0x00000173`; Classic owns its repeated gate, chooser,
 targeting, costs and refunds, RNG, resolution, redraws, and turn handling. This
 fixture stops before all of those behaviors and claims no combat-spell
-equivalence; every other combat command remains on the Classic input route.
+equivalence. Combat Target mirrors Classic's visible Target gate and becomes
+the exact Classic `t` message `0x00001174`; Classic then owns equipment/quiver
+resolution, target type and selection, charges/drops, RNG, raw modal input,
+abort/launch costs, spell effects, redraws, and turn handling. The fixture stops
+before all of those behaviors and claims no targeting equivalence; every other
+combat command remains on the Classic input route.
 
 `SemanticCombatLegacyAdapterTest` closes the narrow adapter-composition seam:
 fixture-owned legacy globals flow through the real presentation-context and
 snapshot adapters before the semantic boundary emits those exact key records.
 It covers stale acting-combatant and non-gameplay-window rejection for all
-thirteen command records, plus stale selected-member rejection for Combat Items,
+fourteen command records, plus stale selected-member rejection for Combat Items,
 while leaving its output sentinel unchanged. It performs no Classic combat or
 inventory mutation, reads or writes no user data, and is not a camera, modal,
 automation, RNG, turn, full combat replay, or save-equivalence test.
 
-`SemanticTopLevelLoopContractTest` pins the untouched Classic `r`, `b`, `u`, and
-`s` branches and their ownership: the semantic gameplay scope has ended before
-each late key handoff, `showrange()` owns its raw dismissal wait, `getchoice()`
+`SemanticTopLevelLoopContractTest` pins the untouched Classic `r`, `b`, `u`,
+`s`, and `t` branches and their ownership: the semantic gameplay scope has
+ended before each late key handoff, `showrange()` owns its raw dismissal wait,
+`getchoice()`
 owns Bandage's raw member picker, Classic owns Undo's condition checks and
-mutations, and the combat `s` branch still selects `castspellsbut` before the
-shared `combatchoice()` path. Inactive-surface dequeue rejects later shell
+mutations, the combat `s` branch still selects `castspellsbut`, and the `t`
+branch still selects `combatitem` before the shared `combatchoice()` path.
+Inactive-surface dequeue rejects later shell
 gameplay tags. This is source-contract evidence, not executable range-overlay,
-Bandage, Undo, Combat Cast, or modal replay.
+Bandage, Undo, Combat Cast, Combat Target, or modal replay.
 
 The full live equivalence test should land with authorized save fixtures and
 the remaining production handlers. It should:

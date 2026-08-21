@@ -12,6 +12,8 @@ extern "C" {
 short currentscenario = 0;
 short fat = 0;
 short incombat = 0;
+short inspell = 0;
+short lastshown = -1;
 short monsterturn = 0;
 short canundo = 0;
 short nummon = 0;
@@ -25,6 +27,8 @@ char charselectnew = -1;
 char charup = -1;
 char monsterup = -1;
 char combatround = 0;
+char q[110] = {};
+char up = 0;
 char head = 1;
 char encountflag = 0;
 char viewtype = 1;
@@ -40,6 +44,12 @@ struct monster monster[100] = {};
 char pos[6][2] = {};
 char monpos[100][2] = {};
 struct encount2 enc2 = {};
+struct itemattr item = {};
+struct itemattr allweapons[200] = {};
+struct itemattr allarmor[200] = {};
+struct itemattr allhelms[200] = {};
+struct itemattr allmagic[200] = {};
+struct itemattr allsupply[200] = {};
 }
 
 using namespace realmz::presentation;
@@ -62,6 +72,8 @@ void reset_legacy_state() {
   currentscenario = 0;
   fat = 0;
   incombat = 0;
+  inspell = 0;
+  lastshown = -1;
   monsterturn = 0;
   canundo = 0;
   nummon = 0;
@@ -70,6 +82,8 @@ void reset_legacy_state() {
   charnum = -1;
   charselectnew = charup = monsterup = -1;
   combatround = 0;
+  std::memset(q, 0, sizeof(q));
+  up = 0;
   head = 1;
   encountflag = 0;
   viewtype = 1;
@@ -80,6 +94,12 @@ void reset_legacy_state() {
   std::memset(pos, 0, sizeof(pos));
   std::memset(monpos, 0, sizeof(monpos));
   std::memset(&enc2, 0, sizeof(enc2));
+  std::memset(&item, 0, sizeof(item));
+  std::memset(allweapons, 0, sizeof(allweapons));
+  std::memset(allarmor, 0, sizeof(allarmor));
+  std::memset(allhelms, 0, sizeof(allhelms));
+  std::memset(allmagic, 0, sizeof(allmagic));
+  std::memset(allsupply, 0, sizeof(allsupply));
 }
 
 void set_name(char* destination, std::size_t capacity, const char* name) {
@@ -177,6 +197,18 @@ void test_combat_capture() {
   combatround = 5;
   charup = 0;
   c[0].maxspellsattacks = 2;
+  q[0] = 0;
+  up = 0;
+  lastshown = 0;
+  c[0].armor[2] = 5;
+  c[0].numitems = 1;
+  c[0].items[0] = {.id = 77, .charge = 1};
+  allweapons[5].itemid = 77;
+  allweapons[5].sp2 = 1101;
+  item.itemid = 909;
+  item.sp2 = 2222;
+  item.charge = -17;
+  const itemattr item_before_capture = item;
   monsterup = 1;
   pos[0][0] = 2;
   pos[0][1] = 3;
@@ -203,6 +235,8 @@ void test_combat_capture() {
   CHECK(snapshot.combat->bandage_available);
   CHECK(snapshot.combat->undo_available);
   CHECK(snapshot.combat->cast_spell_available);
+  CHECK(snapshot.combat->target_available);
+  CHECK(std::memcmp(&item, &item_before_capture, sizeof(item)) == 0);
   CHECK(snapshot.combat->acting_combatant == 0);
   CHECK(snapshot.combat->combatants.size() == 4);
   CHECK(snapshot.combat->combatants[0].active);
@@ -217,6 +251,7 @@ void test_combat_capture() {
   CHECK(!snapshot.combat->bandage_available);
   CHECK(!snapshot.combat->undo_available);
   CHECK(snapshot.combat->cast_spell_available);
+  CHECK(snapshot.combat->target_available);
 
   spellcasting = 1;
   snapshot = source.capture();
@@ -262,14 +297,134 @@ void test_combat_capture() {
   charup = -1;
   snapshot = source.capture();
   CHECK(!snapshot.combat->cast_spell_available);
+  CHECK(!snapshot.combat->target_available);
   charup = static_cast<char>(charnum + 1);
   snapshot = source.capture();
   CHECK(!snapshot.combat->cast_spell_available);
+  CHECK(!snapshot.combat->target_available);
   charup = 0;
+
+  const auto clear_target_attributes = [] {
+    std::memset(allweapons, 0, sizeof(allweapons));
+    std::memset(allarmor, 0, sizeof(allarmor));
+    std::memset(allhelms, 0, sizeof(allhelms));
+    std::memset(allmagic, 0, sizeof(allmagic));
+    std::memset(allsupply, 0, sizeof(allsupply));
+  };
+  const auto configure_valid_target = [&](short source_id = 5) {
+    clear_target_attributes();
+    up = 0;
+    q[0] = 0;
+    lastshown = 0;
+    inspell = 0;
+    c[0].toggle = 0;
+    c[0].armor[2] = source_id;
+    c[0].armor[15] = 0;
+    c[0].numitems = 1;
+    std::memset(c[0].items, 0, sizeof(c[0].items));
+    c[0].items[0] = {.id = 77, .charge = 1};
+    allweapons[5].itemid = 77;
+    allweapons[5].sp2 = 1101;
+  };
+  const auto capture_target_available = [&] {
+    const auto captured = source.capture();
+    CHECK(captured.combat.has_value());
+    CHECK(std::memcmp(&item, &item_before_capture, sizeof(item)) == 0);
+    return captured.combat->target_available;
+  };
+
+  configure_valid_target();
+  q[0] = 1;
+  CHECK(!capture_target_available());
+  q[0] = 0;
+  lastshown = 1;
+  CHECK(!capture_target_available());
+  lastshown = 0;
+  inspell = 1;
+  CHECK(!capture_target_available());
+  inspell = 0;
+  up = -1;
+  CHECK(!capture_target_available());
+  up = 110;
+  CHECK(!capture_target_available());
+  up = 0;
+
+  struct AttributeCollectionCase {
+    short source_id;
+    itemattr* attributes;
+  };
+  const std::array attribute_collections{
+      AttributeCollectionCase{0, allweapons},
+      AttributeCollectionCase{200, allarmor},
+      AttributeCollectionCase{400, allhelms},
+      AttributeCollectionCase{600, allmagic},
+      AttributeCollectionCase{800, allsupply},
+  };
+  for (const auto& collection : attribute_collections) {
+    configure_valid_target(collection.source_id);
+    clear_target_attributes();
+    collection.attributes[0].itemid = 77;
+    collection.attributes[0].sp2 = 1101;
+    CHECK(capture_target_available());
+  }
+
+  configure_valid_target(200);
+  clear_target_attributes();
+  allarmor[0].itemid = 77;
+  allarmor[0].sp2 = 1101;
+  c[0].armor[2] = -200;
+  CHECK(capture_target_available());
+
+  configure_valid_target();
+  c[0].armor[2] = 1000;
+  c[0].armor[15] = 205;
+  allarmor[5].itemid = 88;
+  allarmor[5].sp2 = 1101;
+  c[0].items[0] = {.id = 88, .charge = 1};
+  c[0].toggle = 1;
+  CHECK(capture_target_available());
+  c[0].toggle = 0;
+  CHECK(!capture_target_available());
+
+  configure_valid_target();
+  allweapons[5].sp2 = 1100;
+  CHECK(!capture_target_available());
+  allweapons[5].sp2 = 1101;
+  c[0].numitems = 2;
+  c[0].items[0] = {.id = 77, .charge = 0};
+  c[0].items[1] = {.id = 77, .charge = 1};
+  CHECK(!capture_target_available());
+  c[0].items[0].charge = -1;
+  CHECK(capture_target_available());
+  c[0].items[0].id = 66;
+  CHECK(capture_target_available());
+  c[0].numitems = 1;
+  CHECK(!capture_target_available());
+  c[0].numitems = 30;
+  std::memset(c[0].items, 0, sizeof(c[0].items));
+  c[0].items[29] = {.id = 77, .charge = -3};
+  CHECK(capture_target_available());
+  c[0].numitems = 31;
+  CHECK(capture_target_available());
+  c[0].numitems = -1;
+  CHECK(!capture_target_available());
+
+  configure_valid_target();
+  c[0].armor[2] = 1000;
+  CHECK(!capture_target_available());
+  c[0].armor[2] = -1000;
+  CHECK(!capture_target_available());
+  c[0].armor[2] = 5;
+  allweapons[5].itemid = 0;
+  CHECK(!capture_target_available());
+  CHECK(std::memcmp(&item, &item_before_capture, sizeof(item)) == 0);
+
+  configure_valid_target();
 
   monsterturn = 1;
   snapshot = source.capture();
   CHECK(!snapshot.combat->cast_spell_available);
+  CHECK(!snapshot.combat->target_available);
   CHECK(snapshot.combat->acting_combatant == 11);
   CHECK(!snapshot.combat->combatants[0].active);
   CHECK(snapshot.combat->combatants[3].active);

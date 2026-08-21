@@ -32,6 +32,7 @@ constexpr uint32_t kBandageCombatantRegion = 1116U;
 constexpr uint32_t kUndoCombatantRegion = 1117U;
 constexpr uint32_t kCombatSpecialPageRegion = 1118U;
 constexpr uint32_t kOpenCombatSpellbookRegion = 1119U;
+constexpr uint32_t kOpenCombatTargetingRegion = 1120U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -135,6 +136,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.undo_combatant);
   const bool valid_open_combat_spellbook = request.open_combat_spellbook &&
       valid_combatant(*request.open_combat_spellbook);
+  const bool valid_open_combat_targeting = request.open_combat_targeting &&
+      valid_combatant(*request.open_combat_targeting);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -149,6 +152,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.bandage_combatant,
       request.undo_combatant,
       request.open_combat_spellbook,
+      request.open_combat_targeting,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -183,7 +187,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.bandage_combatant ? 1U : 0U) +
       (request.undo_combatant ? 1U : 0U);
   const size_t special_combat_control_count =
-      request.open_combat_spellbook ? 1U : 0U;
+      (request.open_combat_spellbook ? 1U : 0U) +
+      (request.open_combat_targeting ? 1U : 0U);
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
@@ -194,7 +199,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const bool has_valid_utility_action =
       valid_auto_combatant || valid_show_combat_range ||
       valid_bandage_combatant || valid_undo_combatant;
-  const bool has_valid_special_action = valid_open_combat_spellbook;
+  const bool has_valid_special_action = valid_open_combat_spellbook ||
+      valid_open_combat_targeting;
   const size_t combat_page_control_count = primary_combat_page
       ? ((has_valid_secondary_action || has_valid_utility_action ||
               has_valid_special_action)
@@ -241,7 +247,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.bandage_combatant_available || request.undo_combatant ||
       request.undo_combatant_available || secondary_combat_page ||
       request.open_combat_spellbook ||
-      request.open_combat_spellbook_available || utility_combat_page ||
+      request.open_combat_spellbook_available ||
+      request.open_combat_targeting ||
+      request.open_combat_targeting_available || utility_combat_page ||
       special_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
@@ -267,7 +275,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.bandage_combatant_available && !valid_bandage_combatant) ||
       (request.undo_combatant_available && !valid_undo_combatant) ||
       (request.open_combat_spellbook_available &&
-          !valid_open_combat_spellbook)) {
+          !valid_open_combat_spellbook) ||
+      (request.open_combat_targeting_available &&
+          !valid_open_combat_targeting)) {
     return {};
   }
 
@@ -448,6 +458,21 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .enabled = request.open_combat_spellbook_available,
           .payload = OpenCombatSpellbookAction{
               *request.open_combat_spellbook},
+      });
+      x += button_width + gap;
+    }
+    if (request.open_combat_targeting) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kOpenCombatTargetingRegion},
+          .kind = ShellControlKind::open_combat_targeting,
+          .bounds = {x, y, button_width, button_height},
+          .label = "TARGET",
+          .accessibility_label = "Begin combat targeting",
+          .focus_identifier = "focus.action.combat.targeting.open",
+          .tab_order = 1120,
+          .enabled = request.open_combat_targeting_available,
+          .payload = OpenCombatTargetingAction{
+              *request.open_combat_targeting},
       });
     }
     return result;

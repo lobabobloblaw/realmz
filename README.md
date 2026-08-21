@@ -31,15 +31,16 @@ the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
-Previous/Next, Auto, Range, Bandage, and Undo controls each carry the stable
-active-party combatant ID in typed
+Previous/Next, Auto, Range, Bandage, Undo, Cast, and Target controls carry the
+stable active-party combatant ID in typed
 `GuardCombatantAction`, `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`,
 `ShowCombatRangeAction`, `BandageCombatantAction`, and `UndoCombatantAction`
-commands. The neighboring combat Cast control carries that same stable actor in
-a distinct `OpenCombatSpellbookAction`; it does not reuse the exploration
-`OpenSpellbookAction` or choose a spell or target. The combat Items
+commands. Combat Cast and Target carry that actor in distinct
+`OpenCombatSpellbookAction` and `OpenCombatTargetingAction` commands. Cast does
+not reuse the exploration `OpenSpellbookAction` or choose a spell or target;
+Target identifies no recipient or cell. The combat Items
 control carries both that acting ID and the stable selected party-member ID in
 an `OpenCombatItemsAction`. Their combat-only guarded routes late-validate the
 fresh acting combatant and fail closed before returning the exact preserved
@@ -58,7 +59,8 @@ Classic `b` message `0x00000B62`. Undo is independently late-gated by the same
 fresh Classic `canundo` state and returns the exact Classic `u` message
 `0x00002075`. Combat Cast revalidates a read-only projection of Classic's
 current `cancast` prerequisites and returns the exact Classic `s` message
-`0x00000173`.
+`0x00000173`. Combat Target mirrors Classic's visible Target-button gate and
+returns the exact Classic `t` message `0x00001174`.
 The weapon action does not encode a desired set, and focus
 cycling does not encode a destination. The preserved Classic handlers
 remain authoritative for the Guard, Finish, and Delay combat-state mutations
@@ -74,10 +76,13 @@ portrait refresh, and turn advance. Classic also owns Undo's further condition
 checks and every position, field, queue, redraw, and turn-state mutation.
 Classic owns Combat Cast's authoritative `cancast` check, spell and power
 chooser, targeting loops, spell-point charges and refunds, RNG, resolution,
-redraws, movement/attack costs, and turn handling. These bounded routes are not
-a camera, range-overlay, bandage-target, spell-selection, targeting, undo
-mutation, combat, modal, automation, RNG, turn, or save replay; other combat
-commands remain inside the interactive Classic frame.
+redraws, movement/attack costs, and turn handling. Classic also owns Target's
+live equipment and quiver resolution, target-mode selection, charge consumption
+and item drops, RNG, raw target loops, abort/launch costs, spell resolution,
+redraws, and turn handling. These bounded routes are not a camera,
+range-overlay, bandage-target, spell-selection, target-selection, undo mutation,
+combat, modal, automation, RNG, turn, or save replay; other combat commands
+remain inside the interactive Classic frame.
 The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a

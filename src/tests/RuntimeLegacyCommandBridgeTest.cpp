@@ -108,6 +108,15 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::open_combat_spellbook),
     std::optional<RuntimeLegacyOpenCombatSpellbookSink>>);
+static_assert(std::is_same_v<
+    RuntimeLegacyOpenCombatTargetingSink,
+    std::function<bool(
+        CombatantId,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::open_combat_targeting),
+    std::optional<RuntimeLegacyOpenCombatTargetingSink>>);
 static_assert(std::numeric_limits<PartyMemberId>::min() == 0);
 static_assert(std::numeric_limits<PartyMemberId>::max() == 0xFF);
 
@@ -3980,6 +3989,190 @@ void test_open_combat_spellbook_mapping_and_dispatch() {
       std::string::npos);
 }
 
+void test_open_combat_targeting_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int calls = 0;
+  bool accept = true;
+  CombatantId received_combatant = -1;
+  uint32_t received_message = 0;
+  const RuntimeLegacyOpenCombatTargetingSink sink =
+      [&calls, &accept, &received_combatant, &received_message, &context](
+          CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++calls;
+        received_combatant = combatant;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const auto make_bridge = [&](RuntimeLegacyContextProvider provider,
+                               RuntimeLegacyOpenCombatTargetingSink value) {
+    return RuntimeLegacyCommandBridge(
+        std::move(provider), movement_sink, party_selection_sink,
+        inventory_sink, spellbook_sink, save_sink, load_sink,
+        RuntimeLegacyCombatActionSinks{
+            .open_combat_targeting = std::move(value),
+        });
+  };
+  auto bridge = make_bridge([&context] { return context; }, sink);
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    CHECK(legacy_key_message_for_open_combat_targeting(0, context) ==
+        0x00001174U);
+    CHECK(legacy_key_message_for_open_combat_targeting(255, context) ==
+        0x00001174U);
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 464,
+      .payload = OpenCombatTargetingAction{9},
+  }).status == DispatchStatus::handled);
+  CHECK(calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_message == 0x00001174U);
+
+  for (const CombatantId boundary : {0, 255}) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 465,
+        .payload = OpenCombatTargetingAction{boundary},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(calls == 3);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title, ScreenContext::party_selection,
+      ScreenContext::party_creation, ScreenContext::exploration,
+      ScreenContext::dungeon, ScreenContext::inventory, ScreenContext::shop,
+      ScreenContext::encounter, ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_open_combat_targeting(9, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 466,
+        .payload = OpenCombatTargetingAction{9},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 3);
+
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_open_combat_targeting(9, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 467,
+      .payload = OpenCombatTargetingAction{9},
+  }).status == DispatchStatus::rejected);
+  context.adaptive_eligible = true;
+
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(), CombatantId{-1},
+           CombatantId{256}, std::numeric_limits<CombatantId>::max(),
+       }) {
+    CHECK(!legacy_key_message_for_open_combat_targeting(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 468,
+        .payload = OpenCombatTargetingAction{invalid},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 3);
+
+  accept = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 469,
+      .payload = OpenCombatTargetingAction{9},
+  }).status == DispatchStatus::failed);
+  CHECK(calls == 4);
+  accept = true;
+
+  auto missing_provider = make_bridge(RuntimeLegacyContextProvider{}, sink);
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 470,
+      .payload = OpenCombatTargetingAction{9},
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+
+  auto empty_sink = make_bridge(
+      [&context] { return context; }, RuntimeLegacyOpenCombatTargetingSink{});
+  const auto no_sink = empty_sink.dispatch(UIAction{
+      .sequence = 471,
+      .payload = OpenCombatTargetingAction{9},
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("open-combat-targeting sink") !=
+      std::string::npos);
+
+  RuntimeLegacyCommandBridge absent_sink(
+      [&context] { return context; }, movement_sink, party_selection_sink,
+      inventory_sink, spellbook_sink, save_sink, load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(absent_sink.dispatch(UIAction{
+      .sequence = 472,
+      .payload = OpenCombatTargetingAction{9},
+  }).status == DispatchStatus::unsupported);
+
+  auto provider_throws = make_bridge(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("combat targeting provider failure");
+      },
+      sink);
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 473,
+      .payload = OpenCombatTargetingAction{9},
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("combat targeting provider failure") !=
+      std::string::npos);
+
+  const RuntimeLegacyOpenCombatTargetingSink throwing_sink =
+      [](CombatantId, uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("combat targeting sink failure");
+      };
+  auto sink_throws = make_bridge([&context] { return context; }, throwing_sink);
+  const auto sink_thrown = sink_throws.dispatch(UIAction{
+      .sequence = 474,
+      .payload = OpenCombatTargetingAction{9},
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("combat targeting sink failure") !=
+      std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -4063,6 +4256,10 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 391,
           .payload = OpenCombatSpellbookAction{12},
       },
+      UIAction{
+          .sequence = 392,
+          .payload = OpenCombatTargetingAction{13},
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -4101,6 +4298,7 @@ void test_named_combat_sink_registration_semantics() {
           .bandage_combatant = RuntimeLegacyBandageCombatantSink{},
           .undo_combatant = RuntimeLegacyUndoCombatantSink{},
           .open_combat_spellbook = RuntimeLegacyOpenCombatSpellbookSink{},
+          .open_combat_targeting = RuntimeLegacyOpenCombatTargetingSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -4551,6 +4749,7 @@ int main() {
     test_bandage_combatant_mapping_and_dispatch();
     test_undo_combatant_mapping_and_dispatch();
     test_open_combat_spellbook_mapping_and_dispatch();
+    test_open_combat_targeting_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

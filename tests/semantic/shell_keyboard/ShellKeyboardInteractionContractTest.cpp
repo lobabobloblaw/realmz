@@ -97,6 +97,9 @@ private:
     handlers.open_combat_spellbook = [](const OpenCombatSpellbookAction&) {
       return DispatchResult::handled();
     };
+    handlers.open_combat_targeting = [](const OpenCombatTargetingAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1138,12 +1141,23 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = OpenCombatSpellbookAction{2},
   };
+  const ShellControlPlacement target{
+      .region = ShellRegionId{1120},
+      .kind = ShellControlKind::open_combat_targeting,
+      .bounds = {188.0, 72.0, 160.0, 48.0},
+      .label = "TARGET",
+      .accessibility_label = "Begin combat targeting",
+      .focus_identifier = "focus.action.combat.targeting.open",
+      .tab_order = 1120,
+      .enabled = true,
+      .payload = OpenCombatTargetingAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
   const std::vector utility{
       utility_back, auto_combatant, combat_range, bandage, undo, special_more};
-  const std::vector special{special_back, cast};
+  const std::vector special{special_back, cast, target};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1775,7 +1789,7 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       CombatActionPage::utility, CombatActionPage::special));
   CHECK(bridge.actions().size() == 8U);
 
-  CHECK(harness.recompose({cast, special_back}));
+  CHECK(harness.recompose({target, cast, special_back}));
   for (const auto& expected : special) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -1838,6 +1852,87 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!stale_cast_release.shell.invoked_control);
   CHECK(!stale_cast_release.dispatch);
   CHECK(bridge.actions().size() == 9U);
+
+  // TARGET is a distinct actor-only dispatch. Classic still owns quiver
+  // selection, charge consumption, RNG, target choice, and combat mutation.
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(target.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto target_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(target_release.shell.consumed);
+  CHECK(target_release.shell.invoked_control.has_value());
+  CHECK(target_release.shell.invoked_control->kind ==
+      ShellControlKind::open_combat_targeting);
+  CHECK(target_release.dispatch.has_value());
+  CHECK(target_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 10U);
+  CHECK(std::get<OpenCombatTargetingAction>(
+      bridge.actions()[9].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 10U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.keyboard().focused_identifier() == target.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[2].payload = OpenCombatTargetingAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_target_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_target_release.shell.consumed);
+  CHECK(!stale_target_release.shell.invoked_control);
+  CHECK(!stale_target_release.dispatch);
+  CHECK(bridge.actions().size() == 10U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(target.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[2].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_target_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_target_release.shell.consumed);
+  CHECK(!disabled_target_release.shell.invoked_control);
+  CHECK(!disabled_target_release.dispatch);
+  CHECK(bridge.actions().size() == 10U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(target.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(utility));
+  const auto target_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(target_page_release.shell.consumed);
+  CHECK(!target_page_release.shell.invoked_control);
+  CHECK(!target_page_release.dispatch);
+  CHECK(bridge.actions().size() == 10U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(target.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto target_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(target_route_release.shell.consumed);
+  CHECK(!target_route_release.shell.invoked_control);
+  CHECK(!target_route_release.dispatch);
+  CHECK(bridge.actions().size() == 10U);
 }
 
 using DescriptorMutation =

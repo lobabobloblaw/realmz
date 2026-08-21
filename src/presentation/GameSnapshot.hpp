@@ -157,6 +157,10 @@ struct CombatView {
   // Read-only projection of Classic's cancast gate for the current acting
   // party combatant. The preserved chooser repeats the authoritative checks.
   bool cast_spell_available = false;
+  // Read-only projection of Classic's visible Target-button gate for the
+  // current acting party combatant. Classic re-resolves equipment, targeting,
+  // costs, RNG, and every mutation after the key handoff.
+  bool target_available = false;
   int16_t round = 0;
   size_t visible_columns = 0;
   size_t visible_rows = 0;

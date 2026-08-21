@@ -772,6 +772,30 @@ public:
     return true;
   }
 
+  bool push_semantic_open_combat_targeting_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticOpenCombatTargetingTag(tagged_message)) {
+      return false;
+    }
+    // Preserve the actor until the guarded combat loop rechecks turn ownership
+    // and the read-only visible Target capability. The lowercase "t" handoff
+    // leaves equipment resolution, targeting, charges/drops, costs, RNG, and
+    // every mutation in the preserved Classic flow.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic open combat targeting (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   void discard_semantic_gameplay_events() {
     std::erase_if(this->event_queue, [](const EventRecord& candidate) {
       return (candidate.what == app1Evt) &&
@@ -1376,6 +1400,19 @@ Boolean GetNextSemanticGameplayEvent(
       ret->what = nullEvent;
       ret->message = 0;
     }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticOpenCombatTargetingTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticOpenCombatTargetingEvent(
+            surface, ret->message, &classic_key_message)) {
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      // Never allow a stale Target request to enter Classic's equipment or
+      // nested targeting flow after actor, surface, or capability changes.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
   } else {
     // Authorization belongs only to the event returned by this wrapper. Do
     // not leave a completed scope available after an ordinary Classic event.
@@ -1500,6 +1537,10 @@ Boolean PushSemanticUndoCombatantEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticOpenCombatSpellbookEvent(uint32_t tagged_message) {
   return em.push_semantic_open_combat_spellbook_event(tagged_message);
+}
+
+Boolean PushSemanticOpenCombatTargetingEvent(uint32_t tagged_message) {
+  return em.push_semantic_open_combat_targeting_event(tagged_message);
 }
 
 void CancelSemanticGameplayInput(void) {
