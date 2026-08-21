@@ -174,7 +174,7 @@ three omitted references are rebuilt from the authorized Mac 7.1.2 baseline.
 
 Committed fixtures must be synthetic or redistributable under the project license. Retail saves, user characters, and the authorized City baseline must not be committed merely for test convenience. Record the SHA-256, byte size, source class, license/authorization basis, and whether bytes may be redistributed. Tests that require private fixtures must accept an explicit local path and digest, skip with a clear reason when absent, and never rewrite the supplied source.
 
-### Private semantic replay fixtures
+### Private semantic replay foundation
 
 `scripts/semantic_replay_fixture.py` is the first, byte-handling stage of the
 live semantic-replay milestone. It accepts no default save location: callers
@@ -207,12 +207,21 @@ python3 scripts/semantic_replay_fixture.py verify \
 Stage verified bytes into two new, independent roots:
 
 ```sh
+install -d -m 700 \
+  /new/temporary/classic-user-root/Save \
+  /new/temporary/semantic-user-root/Save
+
 python3 scripts/semantic_replay_fixture.py stage \
   --manifest /path/to/fixture-manifest.json \
   --source-root /path/to/user-owned-fixture \
-  --classic-root /new/temporary/classic-root \
-  --semantic-root /new/temporary/semantic-root
+  --classic-root '/new/temporary/classic-user-root/Save/Game A' \
+  --semantic-root '/new/temporary/semantic-user-root/Save/Game A'
 ```
+
+Here `A` is the slot declared by the example manifest. The `Save` directories
+are caller-owned trust boundaries and the two `Game A` destinations must not
+already exist. The process runner below receives the user-root paths, not the
+slot paths.
 
 Staging refuses existing, aliased, or nested destinations. It creates two
 byte-exact copies with identities independent from the source and from one
@@ -239,19 +248,58 @@ process renames the open directory. Retained roots may contain private fixture
 bytes and require deliberate cleanup by the caller after the parent namespace
 and reported names have been reviewed.
 
-Both successful commands emit machine-readable JSON containing
+Both successful fixture commands emit machine-readable JSON containing
 `"semantic_equivalence":"not_evaluated"`. Verification and staging establish
-fixture identity and isolation only: they do not launch Realmz, drive Classic
-or semantic actions, compare snapshots, compare saves, or claim live replay
-equivalence. The synthetic-only regression suite is:
+fixture identity and isolation only.
+
+`scripts/semantic_replay_runner.py` adds the process-isolation layer. Its
+version-1 request, child-config, child-result, and run-envelope contracts are
+the four `tests/semantic/semantic-replay-*.schema.json` files. Invoke it only
+with an explicit request:
+
+```sh
+python3 scripts/semantic_replay_runner.py \
+  --request /path/to/semantic-replay-request.json
+```
+
+The request names one absolute physical executable, two distinct and
+non-nested user-data roots, an existing input slot, a fresh output slot, a
+normalized action sequence, a timeout, and explicit 64-bit RNG seed and stream
+values. The runner starts the exact executable in separate Classic-then-
+semantic process groups without a shell. Both children receive the same action
+and RNG inputs, write-disabled preferences, user-root-only input lookup, a
+fresh output-slot policy, and the `next_semantic_gameplay_poll` settlement
+barrier; presentation is Classic for the first run and Remastered for the
+second. Configs and results live in private protocol directories, and identity,
+size, route, process, nonce, and output-slot checks fail closed. The explicitly
+named executable is trusted code: process sessions isolate legacy globals and
+support same-session process termination, but they are not a sandbox and cannot
+contain a child that deliberately daemonizes into another session.
+
+Protocol workspaces are mode `0700`, retained, and reported under
+`workspace_retention` on both success and post-creation failure. The runner
+never recursively deletes them because a same-user process can replace a path
+between an identity check and deletion. Clean up an authoritative reported path
+only after reviewing it. If `path_authoritative` is false, the candidate may be
+a replacement and the original workspace may remain at an unknown renamed
+location; inspect the parent namespace deliberately rather than deleting the
+candidate automatically. These workspaces contain protocol configs and results,
+not staged fixture bytes.
+
+The Realmz executable does not yet implement `--semantic-replay-child`.
+Synthetic tests pin the parent protocol, but their child-reported state and
+save hashes are deliberately not compared. Even a successful runner invocation
+therefore emits `"runner_scope":"process_isolation_only"` and
+`"semantic_equivalence":"not_evaluated"`; it is not evidence of engine or save
+equivalence. The synthetic-only replay foundation suite is:
 
 ```sh
 python3 -m unittest discover \
   -s tests/semantic \
-  -p 'test_semantic_replay_fixture.py' \
+  -p 'test_semantic_replay_*.py' \
   -v
 ```
 
 ## Automated check
 
-Run `scripts/verify-source-baseline.sh --mode development` during implementation. It verifies ancestry and pins without rejecting intentional working changes, validates a complete asset census when present, and validates any content approval records. `scripts/run-core-tests.sh` also runs the synthetic replay-fixture suite by default; set `REALMZ_SKIP_PYTHON_TESTS=1` only when a caller deliberately runs the Python gates separately. `--mode release` additionally requires a clean checkout and both City and music approvals.
+Run `scripts/verify-source-baseline.sh --mode development` during implementation. It verifies ancestry and pins without rejecting intentional working changes, validates a complete asset census when present, and validates any content approval records. `scripts/run-core-tests.sh` also runs the synthetic replay foundation suites by default; set `REALMZ_SKIP_PYTHON_TESTS=1` only when a caller deliberately runs the Python gates separately. `--mode release` additionally requires a clean checkout and both City and music approvals.

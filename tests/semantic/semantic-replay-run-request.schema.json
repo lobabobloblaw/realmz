@@ -1,0 +1,120 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/semantic-replay-run-request-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "action": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "maxProperties": 32,
+          "propertyNames": {
+            "maxLength": 64,
+            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*$"
+          },
+          "type": "object"
+        },
+        "kind": {
+          "maxLength": 64,
+          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*$",
+          "type": "string"
+        },
+        "ordinal": {
+          "maximum": 4095,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ordinal",
+        "kind",
+        "arguments"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A process-isolation-only replay request. The runner does not evaluate engine equivalence.",
+  "properties": {
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/action"
+      },
+      "maxItems": 4096,
+      "type": "array"
+    },
+    "classic_user_data_root": {
+      "description": "Absolute, physical, normalized existing directory; full rules are enforced by the runner.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "executable": {
+      "description": "Absolute, physical, normalized executable path used for both children.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "input_slot": {
+      "pattern": "^[A-J]$",
+      "type": "string"
+    },
+    "output_slot": {
+      "pattern": "^[A-J]$",
+      "type": "string"
+    },
+    "rng_seed": {
+      "description": "Deterministic 64-bit RNG seed shared by both children.",
+      "pattern": "^[0-9a-f]{16}$",
+      "type": "string"
+    },
+    "rng_stream": {
+      "description": "Deterministic 64-bit RNG stream selector shared by both children.",
+      "pattern": "^[0-9a-f]{16}$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "semantic_user_data_root": {
+      "description": "Absolute, physical, normalized existing directory distinct from and non-nested with the Classic root.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "timeout_seconds": {
+      "maximum": 300,
+      "minimum": 0.05,
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema_version",
+    "executable",
+    "classic_user_data_root",
+    "semantic_user_data_root",
+    "input_slot",
+    "output_slot",
+    "actions",
+    "timeout_seconds",
+    "rng_seed",
+    "rng_stream"
+  ],
+  "title": "Realmz semantic replay run request v1",
+  "type": "object"
+}

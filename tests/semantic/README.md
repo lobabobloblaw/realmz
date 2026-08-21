@@ -230,7 +230,7 @@ gameplay tags. This is source-contract evidence, not executable range-overlay,
 Bandage, Undo, Combat Cast, Combat Target, Combat Escape, Use Scroll, or modal
 replay.
 
-## Replay-fixture foundation
+## Replay foundation
 
 Center Cursor is the terminal bounded production handler in the current
 ordered semantic-control slice. Live engine equivalence is a separate, larger
@@ -257,12 +257,20 @@ Or stage it into two new, independent roots for later Classic and semantic
 runs:
 
 ```sh
+install -d -m 700 \
+  /new/temporary/classic-user-root/Save \
+  /new/temporary/semantic-user-root/Save
+
 python3 scripts/semantic_replay_fixture.py stage \
   --manifest /path/to/fixture-manifest.json \
   --source-root /path/to/authorized-fixture \
-  --classic-root /new/temporary/classic-root \
-  --semantic-root /new/temporary/semantic-root
+  --classic-root '/new/temporary/classic-user-root/Save/Game A' \
+  --semantic-root '/new/temporary/semantic-user-root/Save/Game A'
 ```
+
+The example manifest declares slot `A`. Its two `Save` parents are explicit
+caller-owned trust boundaries, and the new `Game A` paths become the isolated
+input slots. The process runner receives the two user-root paths.
 
 The verifier and stager are descriptor-anchored and fail closed on symlinks,
 special files, mutations, or untrusted ancestor replacement races. The stager
@@ -281,20 +289,56 @@ deletion. A namespace-tainted name may be missing or may refer to a
 replacement because no race-free path recovery exists after another process
 renames an open directory. Retained roots may contain private fixture bytes
 and require deliberate caller cleanup after the parent namespace and reported
-names have been reviewed. The synthetic regression suite runs directly and
-through the project quality gates on both Linux and macOS:
+names have been reviewed.
+
+Step 2 process isolation is available in `scripts/semantic_replay_runner.py`.
+The four `semantic-replay-*.schema.json` files close its version-1 request,
+child-config, child-result, and run-envelope contracts. A request explicitly
+names one physical executable, the two distinct user-data roots, existing input
+and fresh output slots, normalized actions, a timeout, and fixed 64-bit RNG seed
+and stream values. Run it with:
+
+```sh
+python3 scripts/semantic_replay_runner.py \
+  --request /path/to/semantic-replay-request.json
+```
+
+The parent launches the exact executable twice, without a shell, in separate
+Classic-then-semantic process groups. It pins independent user-data roots,
+Classic and Remastered presentation, disabled preference writes, no bundled
+save fallback, fresh output slots, identical actions and RNG inputs, and a
+settlement barrier at the next semantic gameplay poll. Private configs and
+strict child results are bounded and identity-checked. The named executable is
+trusted code; separate process sessions isolate global engine state and support
+same-session process termination, but do not sandbox a child that deliberately
+daemonizes.
+
+Every mode-`0700` protocol workspace is retained and reported under
+`workspace_retention`; automatic recursive cleanup is forbidden because a
+same-user process could replace the pathname between checking and deletion.
+Clean up only an authoritative reported path after inspection. A
+non-authoritative candidate may be a replacement while the original workspace
+remains under an unknown renamed path. Protocol workspaces contain configs and
+results, not staged fixture bytes.
+
+The Realmz binary does not yet implement `--semantic-replay-child`; the current
+tests use a synthetic child and do not compare its reported state or save
+hashes.
+
+The synthetic replay foundation suites run directly and through the project
+quality gates on both Linux and macOS:
 
 ```sh
 python3 -m unittest discover \
   -s tests/semantic \
-  -p 'test_semantic_replay_fixture.py' \
+  -p 'test_semantic_replay_*.py' \
   -v
 ```
 
-Successful `verify` and `stage` results intentionally report
-`"semantic_equivalence":"not_evaluated"`. This foundation performs no engine
-launch, action playback, snapshot comparison, or save comparison and therefore
-makes no live replay claim.
+Successful fixture and runner results intentionally report
+`"semantic_equivalence":"not_evaluated"`; runner results additionally report
+`"runner_scope":"process_isolation_only"`. The foundation therefore makes no
+live engine or save-equivalence claim.
 
 ## Live replay roadmap
 
@@ -303,7 +347,8 @@ The remaining milestone work is to:
 1. Select a provenance-reviewed Tutorial fixture manifest and use the
    foundation to verify the source and create isolated Classic and semantic
    copies. This is byte-identity and isolation plumbing only.
-2. Start each copy in a separate process because the legacy engine is global.
+2. Implement the native `--semantic-replay-child` entry point on the now-pinned
+   separate-process protocol.
 3. Drive one process through Classic scan-code/portrait inputs and the other
    through the semantic bridge using the same normalized action sequence.
 4. Capture a snapshot after every settled action and compare world position,
