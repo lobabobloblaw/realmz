@@ -74,6 +74,9 @@ static_assert(std::is_same_v<
     decltype(OpenCombatItemsAction::member),
     PartyMemberId>);
 static_assert(std::is_same_v<
+    decltype(OpenCombatSpellbookAction::combatant),
+    CombatantId>);
+static_assert(std::is_same_v<
     decltype(AutoCombatantAction::combatant),
     CombatantId>);
 
@@ -291,6 +294,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.show_combat_range = mutateEngine;
   handlers.bandage_combatant = mutateEngine;
   handlers.undo_combatant = mutateEngine;
+  handlers.open_combat_spellbook = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -531,6 +535,20 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   CHECK(undoCombatantUnsupported.status == DispatchStatus::unsupported);
   CHECK(undoCombatantUnsupported.detail ==
       "No legacy handler registered for undo_combatant");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction openCombatSpellbookAction{
+      .sequence = sequence++,
+      .payload = OpenCombatSpellbookAction{1},
+  };
+  CHECK(action_name(openCombatSpellbookAction.payload) ==
+      "open_combat_spellbook");
+  const auto openCombatSpellbookUnsupported =
+      unsupportedBridge.dispatch(openCombatSpellbookAction);
+  CHECK(openCombatSpellbookUnsupported.status == DispatchStatus::unsupported);
+  CHECK(openCombatSpellbookUnsupported.detail ==
+      "No legacy handler registered for open_combat_spellbook");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

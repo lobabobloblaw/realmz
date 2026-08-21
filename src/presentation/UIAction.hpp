@@ -181,6 +181,15 @@ struct UndoCombatantAction {
   bool operator==(const UndoCombatantAction&) const = default;
 };
 
+// Opens the preserved Classic combat spell chooser for the explicitly
+// identified acting party combatant. Spell selection, targeting, costs,
+// refunds, RNG, and every combat-state mutation remain inside Classic.
+struct OpenCombatSpellbookAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const OpenCombatSpellbookAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -281,6 +290,7 @@ enum class CombatActionPage {
   primary,
   secondary,
   utility,
+  special,
 };
 
 // Combat pages form a bounded linear navigation path. Keeping this predicate
@@ -296,7 +306,10 @@ enum class CombatActionPage {
       return (to == CombatActionPage::primary) ||
           (to == CombatActionPage::utility);
     case CombatActionPage::utility:
-      return to == CombatActionPage::secondary;
+      return (to == CombatActionPage::secondary) ||
+          (to == CombatActionPage::special);
+    case CombatActionPage::special:
+      return to == CombatActionPage::utility;
   }
   return false;
 }
@@ -344,6 +357,7 @@ using UIActionPayload = std::variant<
     ShowCombatRangeAction,
     BandageCombatantAction,
     UndoCombatantAction,
+    OpenCombatSpellbookAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -400,6 +414,8 @@ struct UIAction {
       return "bandage_combatant";
     } else if constexpr (std::is_same_v<Action, UndoCombatantAction>) {
       return "undo_combatant";
+    } else if constexpr (std::is_same_v<Action, OpenCombatSpellbookAction>) {
+      return "open_combat_spellbook";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

@@ -96,6 +96,10 @@ using RuntimeLegacyUndoCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenCombatSpellbookSink = std::function<bool(
+    CombatantId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 
 // Combat sinks are named because several callable signatures are intentionally
 // identical even though their commands are not interchangeable. The focus
@@ -116,6 +120,7 @@ struct RuntimeLegacyCombatActionSinks {
   std::optional<RuntimeLegacyShowCombatRangeSink> show_combat_range;
   std::optional<RuntimeLegacyBandageCombatantSink> bandage_combatant;
   std::optional<RuntimeLegacyUndoCombatantSink> undo_combatant;
+  std::optional<RuntimeLegacyOpenCombatSpellbookSink> open_combat_spellbook;
 };
 
 // Returns the exact Classic Mac key message already consumed by the preserved
@@ -238,6 +243,15 @@ legacy_key_message_for_bandage_combatant(
 // Classic remains authoritative for condition checks and every mutation.
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_undo_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic lowercase "s" key record consumed by combat's
+// preserved Cast Spell branch. Only the stable acting combatant crosses this
+// boundary; Classic owns the chooser, targeting, costs/refunds, RNG, and every
+// resulting combat-state mutation.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_open_combat_spellbook(
     CombatantId combatant,
     const RuntimeLegacyCommandContext& context) noexcept;
 

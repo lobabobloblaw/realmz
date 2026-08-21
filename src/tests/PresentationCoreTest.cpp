@@ -267,8 +267,17 @@ void test_actions_and_events() {
   CHECK(std::get<UndoCombatantAction>(
             undo_combatant.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction open_combat_spellbook{
       .sequence = 24,
+      .payload = OpenCombatSpellbookAction{2},
+  };
+  CHECK(action_name(open_combat_spellbook.payload) ==
+      "open_combat_spellbook");
+  CHECK(std::get<OpenCombatSpellbookAction>(
+            open_combat_spellbook.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 25,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -313,11 +322,16 @@ void test_combat_action_page_transitions() {
       CombatActionPage::secondary, CombatActionPage::utility));
   static_assert(is_valid_combat_action_page_transition(
       CombatActionPage::utility, CombatActionPage::secondary));
+  static_assert(is_valid_combat_action_page_transition(
+      CombatActionPage::utility, CombatActionPage::special));
+  static_assert(is_valid_combat_action_page_transition(
+      CombatActionPage::special, CombatActionPage::utility));
 
   constexpr std::array pages{
       CombatActionPage::primary,
       CombatActionPage::secondary,
       CombatActionPage::utility,
+      CombatActionPage::special,
   };
   for (const auto from : pages) {
     for (const auto to : pages) {
@@ -328,7 +342,10 @@ void test_combat_action_page_transitions() {
               ((to == CombatActionPage::primary) ||
                   (to == CombatActionPage::utility))) ||
           ((from == CombatActionPage::utility) &&
-              (to == CombatActionPage::secondary));
+              ((to == CombatActionPage::secondary) ||
+                  (to == CombatActionPage::special))) ||
+          ((from == CombatActionPage::special) &&
+              (to == CombatActionPage::utility));
       CHECK(is_valid_combat_action_page_transition(from, to) == expected);
     }
   }
@@ -352,6 +369,7 @@ void test_command_bridge() {
   CombatantId range_combatant = -1;
   CombatantId bandage_combatant = -1;
   CombatantId undo_combatant = -1;
+  CombatantId open_combat_spellbook = -1;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -399,6 +417,11 @@ void test_command_bridge() {
   handlers.undo_combatant =
       [&undo_combatant](const UndoCombatantAction& action) {
         undo_combatant = action.combatant;
+        return DispatchResult::handled();
+      };
+  handlers.open_combat_spellbook =
+      [&open_combat_spellbook](const OpenCombatSpellbookAction& action) {
+        open_combat_spellbook = action.combatant;
         return DispatchResult::handled();
       };
 
@@ -566,6 +589,13 @@ void test_command_bridge() {
   });
   CHECK(undo_handled.was_handled());
   CHECK(undo_combatant == 12);
+
+  const auto open_combat_spellbook_handled = bridge.dispatch(UIAction{
+      .sequence = 21,
+      .payload = OpenCombatSpellbookAction{13},
+  });
+  CHECK(open_combat_spellbook_handled.was_handled());
+  CHECK(open_combat_spellbook == 13);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

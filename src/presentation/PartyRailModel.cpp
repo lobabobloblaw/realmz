@@ -503,6 +503,24 @@ std::vector<ActionControlModel> build_actions(
     if (can_act) {
       result.back().combatant = acting->id;
     }
+    const bool can_open_combat_spellbook =
+        can_act && snapshot.combat->cast_spell_available;
+    result.emplace_back(action(
+        ActionIntent::open_combat_spellbook,
+        "action.combat.spellbook.open",
+        "Cast spell",
+        can_open_combat_spellbook
+            ? ActionAvailability::deferred_to_engine
+            : ActionAvailability::unavailable,
+        tab_order++,
+        can_open_combat_spellbook
+            ? std::optional<StateTokenModel>{engine_rules_token()}
+            : std::optional<StateTokenModel>{unavailable_token(
+                  can_act ? "Spell casting is unavailable now"
+                          : "Wait for an active party member")}));
+    if (can_act) {
+      result.back().combatant = acting->id;
+    }
   }
 
   if (encounter_active) {
@@ -779,7 +797,8 @@ PresentationShellModel build_presentation_shell_model(
       (snapshot.screen == ScreenContext::combat) &&
           ((preferences.combat_action_page == CombatActionPage::primary) ||
               (preferences.combat_action_page == CombatActionPage::secondary) ||
-              (preferences.combat_action_page == CombatActionPage::utility))
+              (preferences.combat_action_page == CombatActionPage::utility) ||
+              (preferences.combat_action_page == CombatActionPage::special))
       ? preferences.combat_action_page
       : CombatActionPage::primary;
   result.party_rail = build_party_rail_model(snapshot);

@@ -154,6 +154,9 @@ struct CombatView {
   // the preserved combat Undo command. Keeping this distinct prevents UI code
   // from coupling Undo eligibility to Bandage presentation state.
   bool undo_available = false;
+  // Read-only projection of Classic's cancast gate for the current acting
+  // party combatant. The preserved chooser repeats the authoritative checks.
+  bool cast_spell_available = false;
   int16_t round = 0;
   size_t visible_columns = 0;
   size_t visible_rows = 0;

@@ -757,13 +757,16 @@ void test_combat_primary_and_secondary_action_pages() {
         .bandage_combatant_available = true,
         .undo_combatant = CombatantId{2},
         .undo_combatant_available = true,
+        .open_combat_spellbook = CombatantId{2},
+        .open_combat_spellbook_available = true,
     });
-    CHECK(utility.size() == 5U);
+    CHECK(utility.size() == 6U);
     const auto& utility_back = utility[0];
     const auto& auto_control = utility[1];
     const auto& range_control = utility[2];
     const auto& bandage_control = utility[3];
     const auto& undo_control = utility[4];
+    const auto& special_more = utility[5];
     CHECK(utility_back.region.value == 1108U);
     CHECK(utility_back.kind == ShellControlKind::combat_action_page);
     CHECK(utility_back.label == "BACK");
@@ -818,11 +821,23 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(undo_control.enabled);
     CHECK(std::get<UndoCombatantAction>(
         undo_control.payload).combatant == 2);
+    CHECK(special_more.region.value == 1118U);
+    CHECK(special_more.kind == ShellControlKind::combat_action_page);
+    CHECK(special_more.label == "MORE");
+    CHECK(special_more.accessibility_label == "Open special combat actions");
+    CHECK(special_more.focus_identifier == "focus.action.combat.special");
+    CHECK(special_more.tab_order == 1118);
+    CHECK(special_more.enabled);
+    CHECK(std::get<SetCombatActionPageAction>(special_more.payload).page ==
+        CombatActionPage::special);
+    CHECK(is_valid_combat_action_page_transition(
+        CombatActionPage::utility, CombatActionPage::special));
     CHECK(panel.contains(utility_back.bounds));
     CHECK(panel.contains(auto_control.bounds));
     CHECK(panel.contains(range_control.bounds));
     CHECK(panel.contains(bandage_control.bounds));
     CHECK(panel.contains(undo_control.bounds));
+    CHECK(panel.contains(special_more.bounds));
     CHECK(utility_back.bounds.width == 44.0);
     CHECK(utility_back.bounds.height == 44.0);
     CHECK(auto_control.bounds.width >= 44.0);
@@ -884,6 +899,43 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(!auto_control.bounds.contains(undo_pointer));
     CHECK(!range_control.bounds.contains(undo_pointer));
     CHECK(!bandage_control.bounds.contains(undo_pointer));
+  }
+
+  {
+    const LogicalRect special_panel{16.0, 600.0, 900.0, 150.0};
+    const auto special = compute_shell_control_layout({
+        .screen = ScreenContext::combat,
+        .world_presentation = WorldPresentation::none,
+        .action_panel = special_panel,
+        .combat_action_page = CombatActionPage::special,
+        .open_combat_spellbook = CombatantId{2},
+        .open_combat_spellbook_available = true,
+    });
+    CHECK(special.size() == 2U);
+    const auto& special_back = special[0];
+    const auto& cast = special[1];
+    CHECK(special_back.region.value == 1118U);
+    CHECK(special_back.kind == ShellControlKind::combat_action_page);
+    CHECK(special_back.label == "BACK");
+    CHECK(special_back.accessibility_label ==
+        "Return to utility combat actions");
+    CHECK(special_back.focus_identifier == "focus.action.combat.special");
+    CHECK(special_back.tab_order == 1118);
+    CHECK(std::get<SetCombatActionPageAction>(special_back.payload).page ==
+        CombatActionPage::utility);
+    CHECK(is_valid_combat_action_page_transition(
+        CombatActionPage::special, CombatActionPage::utility));
+    CHECK(cast.region.value == 1119U);
+    CHECK(cast.kind == ShellControlKind::open_combat_spellbook);
+    CHECK(cast.label == "CAST");
+    CHECK(cast.accessibility_label == "Open combat spell chooser");
+    CHECK(cast.focus_identifier == "focus.action.combat.spellbook.open");
+    CHECK(cast.tab_order == 1119);
+    CHECK(cast.enabled);
+    CHECK(std::get<OpenCombatSpellbookAction>(cast.payload).combatant == 2);
+    CHECK(special_panel.contains(special_back.bounds));
+    CHECK(special_panel.contains(cast.bounds));
+    CHECK(!interiors_overlap(special_back.bounds, cast.bounds));
   }
 
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
@@ -1078,6 +1130,24 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(!undo_disabled[1].enabled);
   CHECK(std::get<UndoCombatantAction>(
       undo_disabled[1].payload).combatant == 2);
+
+  const auto combat_spellbook_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{2},
+  });
+  CHECK(combat_spellbook_disabled.size() == 2U);
+  CHECK(combat_spellbook_disabled[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(std::get<SetCombatActionPageAction>(
+      combat_spellbook_disabled[0].payload).page ==
+      CombatActionPage::utility);
+  CHECK(combat_spellbook_disabled[1].kind ==
+      ShellControlKind::open_combat_spellbook);
+  CHECK(!combat_spellbook_disabled[1].enabled);
+  CHECK(std::get<OpenCombatSpellbookAction>(
+      combat_spellbook_disabled[1].payload).combatant == 2);
 
   const auto auto_only_primary = compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -1441,6 +1511,24 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{-1},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{256},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{-1},
   }).empty());
@@ -1587,6 +1675,12 @@ void test_combat_primary_and_secondary_action_pages() {
       .combat_action_page = CombatActionPage::utility,
       .bandage_combatant = CombatantId{2},
       .undo_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .open_combat_spellbook = CombatantId{3},
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -2138,6 +2232,31 @@ void test_combat_primary_and_secondary_action_pages() {
         .undo_combatant = CombatantId{2},
     }).empty());
   }
+
+  const auto combat_spellbook_special_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{2},
+      .open_combat_spellbook_available = true,
+  });
+  CHECK(combat_spellbook_special_minimum.size() == 2U);
+  CHECK(combat_spellbook_special_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(combat_spellbook_special_minimum[1].kind ==
+      ShellControlKind::open_combat_spellbook);
+  CHECK(combat_spellbook_special_minimum[0].bounds.width == 44.0);
+  CHECK(combat_spellbook_special_minimum[1].bounds.width >= 44.0);
+  CHECK(combat_spellbook_special_minimum[1].bounds.width <= 160.0);
+  CHECK(!interiors_overlap(
+      combat_spellbook_special_minimum[0].bounds,
+      combat_spellbook_special_minimum[1].bounds));
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = {0.0, 0.0, 121.0, 120.0},
+      .combat_action_page = CombatActionPage::special,
+      .open_combat_spellbook = CombatantId{2},
+  }).empty());
 
   const auto auto_navigation_minimum = compute_shell_control_layout({
       .screen = ScreenContext::combat,

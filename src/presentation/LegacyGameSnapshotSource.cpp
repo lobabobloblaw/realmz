@@ -36,6 +36,7 @@ extern Boolean inbooty;
 extern Boolean inshop;
 extern Boolean intemple;
 extern Boolean indung;
+extern Boolean spellcasting;
 extern struct character c[6];
 extern struct monster monster[100];
 extern char pos[6][2];
@@ -105,6 +106,23 @@ std::vector<int16_t> active_conditions(const short (&conditions)[40]) {
   return result;
 }
 
+bool active_party_actor_can_cast(int party_count) noexcept {
+  if (monsterturn || (charup < 0) || (charup >= party_count) ||
+      (spellcasting != 0)) {
+    return false;
+  }
+
+  const auto& actor = c[static_cast<int>(charup)];
+  return (actor.condition[COND_CONFUSED] == 0) &&
+      (actor.condition[COND_SILENCED] == 0) &&
+      (actor.condition[COND_HELPLESS] == 0) &&
+      (actor.condition[COND_STUPID] == 0) &&
+      (actor.condition[COND_ANIMATED] == 0) &&
+      (actor.spellpoints > 0) && (actor.stamina > 0) &&
+      (actor.beenattacked == 0) &&
+      (actor.spellsofar < actor.maxspellsattacks);
+}
+
 } // namespace
 
 GameSnapshot LegacyGameSnapshotSource::capture() const {
@@ -157,6 +175,7 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
     combat.active = true;
     combat.bandage_available = canundo != 0;
     combat.undo_available = canundo != 0;
+    combat.cast_spell_available = active_party_actor_can_cast(party_count);
     combat.round = static_cast<int16_t>(combatround);
     if (!monsterturn && (charup >= 0) && (charup < party_count)) {
       combat.acting_combatant = static_cast<CombatantId>(charup);

@@ -29,6 +29,7 @@ constexpr uint32_t kAutoCombatantMessage = 0x00000061U;
 constexpr uint32_t kShowCombatRangeMessage = 0x00000F72U;
 constexpr uint32_t kBandageCombatantMessage = 0x00000B62U;
 constexpr uint32_t kUndoCombatantMessage = 0x00002075U;
+constexpr uint32_t kOpenCombatSpellbookMessage = 0x00000173U;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -501,6 +502,44 @@ LegacyActionHandlers make_handlers(
       if (!undo_combatant_sink(action.combatant, *message, context)) {
         return DispatchResult::failed(
             "Legacy event queue rejected semantic undo-combatant action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
+  if (combat_action_sinks.open_combat_spellbook.has_value()) {
+    handlers.open_combat_spellbook = [
+        context_provider,
+        open_combat_spellbook_sink =
+            std::move(*combat_action_sinks.open_combat_spellbook)](
+            const OpenCombatSpellbookAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!open_combat_spellbook_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy open-combat-spellbook sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic combat "
+            "spellcasting");
+      }
+      const auto message = legacy_key_message_for_open_combat_spellbook(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Combat spellcasting is not supported for this combatant in the "
+            "current legacy context");
+      }
+      if (!open_combat_spellbook_sink(
+              action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic open-combat-spellbook "
+            "action");
       }
       return DispatchResult::handled();
     };
@@ -1000,6 +1039,16 @@ std::optional<uint32_t> legacy_key_message_for_undo_combatant(
     return std::nullopt;
   }
   return kUndoCombatantMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_open_combat_spellbook(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kOpenCombatSpellbookMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

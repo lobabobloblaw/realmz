@@ -117,6 +117,7 @@ enum class ActionIntent {
   show_combat_range,
   bandage_combatant,
   undo_combatant,
+  open_combat_spellbook,
   cancel,
   encounter_choice,
 };

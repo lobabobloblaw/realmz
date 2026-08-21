@@ -94,6 +94,9 @@ private:
     handlers.undo_combatant = [](const UndoCombatantAction&) {
       return DispatchResult::handled();
     };
+    handlers.open_combat_spellbook = [](const OpenCombatSpellbookAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1102,11 +1105,45 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = UndoCombatantAction{2},
   };
+  const ShellControlPlacement special_more{
+      .region = ShellRegionId{1118},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {448.0, 10.0, 44.0, 44.0},
+      .label = "MORE",
+      .accessibility_label = "Open special combat actions",
+      .focus_identifier = "focus.action.combat.special",
+      .tab_order = 1118,
+      .enabled = true,
+      .payload = SetCombatActionPageAction{CombatActionPage::special},
+  };
+  const ShellControlPlacement special_back{
+      .region = ShellRegionId{1118},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {500.0, 10.0, 44.0, 44.0},
+      .label = "BACK",
+      .accessibility_label = "Return to utility combat actions",
+      .focus_identifier = "focus.action.combat.special",
+      .tab_order = 1118,
+      .enabled = true,
+      .payload = SetCombatActionPageAction{CombatActionPage::utility},
+  };
+  const ShellControlPlacement cast{
+      .region = ShellRegionId{1119},
+      .kind = ShellControlKind::open_combat_spellbook,
+      .bounds = {20.0, 72.0, 160.0, 48.0},
+      .label = "CAST",
+      .accessibility_label = "Open combat spell chooser",
+      .focus_identifier = "focus.action.combat.spellbook.open",
+      .tab_order = 1119,
+      .enabled = true,
+      .payload = OpenCombatSpellbookAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
   const std::vector utility{
-      utility_back, auto_combatant, combat_range, bandage, undo};
+      utility_back, auto_combatant, combat_range, bandage, undo, special_more};
+  const std::vector special{special_back, cast};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1361,10 +1398,11 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       CombatActionPage::secondary, utility_page));
   CHECK(bridge.actions().size() == 4U);
   CHECK(harness.recompose(
-      {undo, bandage, combat_range, auto_combatant, utility_back}));
+      {special_more, undo, bandage, combat_range, auto_combatant,
+          utility_back}));
   CHECK(!harness.keyboard().focused_identifier());
 
-  // Utility traversal is BACK, AUTO, RANGE, BANDAGE, UNDO regardless of
+  // Utility traversal is BACK, AUTO, RANGE, BANDAGE, UNDO, MORE regardless of
   // insertion order.
   for (const auto& expected : utility) {
     CHECK(harness.handle(
@@ -1718,6 +1756,88 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!undo_route_release.shell.invoked_control);
   CHECK(!undo_route_release.dispatch);
   CHECK(bridge.actions().size() == 8U);
+
+  // Utility MORE advances exactly one page; the special BACK returns exactly
+  // one page. Both are presentation-local.
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(special_more.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto open_special = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(open_special.shell.consumed);
+  CHECK(open_special.shell.invoked_control.has_value());
+  CHECK(!open_special.dispatch);
+  CHECK(std::get<SetCombatActionPageAction>(
+      open_special.shell.invoked_control->payload).page ==
+      CombatActionPage::special);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::utility, CombatActionPage::special));
+  CHECK(bridge.actions().size() == 8U);
+
+  CHECK(harness.recompose({cast, special_back}));
+  for (const auto& expected : special) {
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() ==
+        expected.focus_identifier);
+    release_tab(harness);
+  }
+  CHECK(harness.focus(special_back.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto close_special = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(close_special.shell.consumed);
+  CHECK(close_special.shell.invoked_control.has_value());
+  CHECK(!close_special.dispatch);
+  CHECK(std::get<SetCombatActionPageAction>(
+      close_special.shell.invoked_control->payload).page ==
+      CombatActionPage::utility);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::special, CombatActionPage::utility));
+
+  // CAST dispatches once with the stable actor-only payload; Classic owns the
+  // spell chooser, targeting, spell mutations, and turn effects.
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(cast.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto cast_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(cast_release.shell.consumed);
+  CHECK(cast_release.shell.invoked_control.has_value());
+  CHECK(cast_release.shell.invoked_control->kind ==
+      ShellControlKind::open_combat_spellbook);
+  CHECK(cast_release.dispatch.has_value());
+  CHECK(cast_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 9U);
+  CHECK(std::get<OpenCombatSpellbookAction>(
+      bridge.actions()[8].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 9U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.keyboard().focused_identifier() == cast.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[1].payload = OpenCombatSpellbookAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_cast_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_cast_release.shell.consumed);
+  CHECK(!stale_cast_release.shell.invoked_control);
+  CHECK(!stale_cast_release.dispatch);
+  CHECK(bridge.actions().size() == 9U);
 }
 
 using DescriptorMutation =

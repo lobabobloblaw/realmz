@@ -177,6 +177,7 @@ void test_combat_actions_track_the_active_party_combatant() {
       .active = true,
       .bandage_available = true,
       .undo_available = true,
+      .cast_spell_available = true,
       .round = 4,
       .acting_combatant = 1,
       .combatants = {
@@ -307,6 +308,17 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(undo.tab_order == bandage.tab_order + 1);
   CHECK(undo.focus_identifier != bandage.focus_identifier);
   CHECK(undo.availability_reason->label == "Game rules apply");
+  const auto& combat_spellbook =
+      action_with(model, ActionIntent::open_combat_spellbook);
+  CHECK(combat_spellbook.can_invoke());
+  CHECK(combat_spellbook.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(combat_spellbook.command == "action.combat.spellbook.open");
+  CHECK(combat_spellbook.label == "Cast spell");
+  CHECK(combat_spellbook.combatant == guard.combatant);
+  CHECK(combat_spellbook.tab_order == undo.tab_order + 1);
+  CHECK(combat_spellbook.focus_identifier != undo.focus_identifier);
+  CHECK(combat_spellbook.availability_reason->label == "Game rules apply");
   CHECK(model.combat_action_page == CombatActionPage::primary);
 
   const auto secondary_page_model = build_presentation_shell_model(
@@ -325,6 +337,14 @@ void test_combat_actions_track_the_active_party_combatant() {
       });
   CHECK(utility_page_model.combat_action_page ==
       CombatActionPage::utility);
+  const auto special_page_model = build_presentation_shell_model(
+      snapshot,
+      {},
+      ShellViewPreferences{
+          .combat_action_page = CombatActionPage::special,
+      });
+  CHECK(special_page_model.combat_action_page ==
+      CombatActionPage::special);
 
   snapshot.combat->bandage_available = false;
   model = build_presentation_shell_model(snapshot);
@@ -347,6 +367,18 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(unavailable_undo.availability_reason->label ==
       "Undo is unavailable now");
   snapshot.combat->undo_available = true;
+
+  snapshot.combat->cast_spell_available = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& unavailable_combat_spellbook =
+      action_with(model, ActionIntent::open_combat_spellbook);
+  CHECK(!unavailable_combat_spellbook.can_invoke());
+  CHECK(unavailable_combat_spellbook.availability ==
+      ActionAvailability::unavailable);
+  CHECK(unavailable_combat_spellbook.combatant == 1);
+  CHECK(unavailable_combat_spellbook.availability_reason->label ==
+      "Spell casting is unavailable now");
+  snapshot.combat->cast_spell_available = true;
 
   snapshot.party.members[0].movement =
       snapshot.party.members[0].movement_maximum;
@@ -394,6 +426,11 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::undo_combatant);
   CHECK(undo_before_movement.can_invoke());
   CHECK(undo_before_movement.combatant == available_delay.combatant);
+  const auto& combat_spellbook_before_movement =
+      action_with(model, ActionIntent::open_combat_spellbook);
+  CHECK(combat_spellbook_before_movement.can_invoke());
+  CHECK(combat_spellbook_before_movement.combatant ==
+      available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
   model = build_presentation_shell_model(snapshot);
@@ -441,6 +478,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::undo_combatant);
   CHECK(unmatched_undo.can_invoke());
   CHECK(unmatched_undo.combatant == unmatched_delay.combatant);
+  const auto& unmatched_combat_spellbook =
+      action_with(model, ActionIntent::open_combat_spellbook);
+  CHECK(unmatched_combat_spellbook.can_invoke());
+  CHECK(unmatched_combat_spellbook.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   auto no_selection = snapshot;
@@ -474,6 +515,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(no_selection_model, ActionIntent::undo_combatant);
   CHECK(undo_without_selection.can_invoke());
   CHECK(undo_without_selection.combatant == 1);
+  const auto& combat_spellbook_without_selection =
+      action_with(no_selection_model, ActionIntent::open_combat_spellbook);
+  CHECK(combat_spellbook_without_selection.can_invoke());
+  CHECK(combat_spellbook_without_selection.combatant == 1);
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
@@ -490,6 +535,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::show_combat_range,
              ActionIntent::bandage_combatant,
              ActionIntent::undo_combatant,
+             ActionIntent::open_combat_spellbook,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());
@@ -531,6 +577,14 @@ void test_combat_actions_track_the_active_party_combatant() {
           .combat_action_page = CombatActionPage::utility,
       });
   CHECK(noncombat_page.combat_action_page == CombatActionPage::primary);
+  const auto noncombat_special_page = build_presentation_shell_model(
+      snapshot,
+      {},
+      ShellViewPreferences{
+          .combat_action_page = CombatActionPage::special,
+      });
+  CHECK(noncombat_special_page.combat_action_page ==
+      CombatActionPage::primary);
 }
 
 void test_events_drawers_motion_and_log_limit() {

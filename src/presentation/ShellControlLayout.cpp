@@ -30,6 +30,8 @@ constexpr uint32_t kAutoCombatantRegion = 1114U;
 constexpr uint32_t kShowCombatRangeRegion = 1115U;
 constexpr uint32_t kBandageCombatantRegion = 1116U;
 constexpr uint32_t kUndoCombatantRegion = 1117U;
+constexpr uint32_t kCombatSpecialPageRegion = 1118U;
+constexpr uint32_t kOpenCombatSpellbookRegion = 1119U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -94,8 +96,10 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.combat_action_page == CombatActionPage::secondary;
   const bool utility_combat_page =
       request.combat_action_page == CombatActionPage::utility;
+  const bool special_combat_page =
+      request.combat_action_page == CombatActionPage::special;
   if (!primary_combat_page && !secondary_combat_page &&
-      !utility_combat_page) {
+      !utility_combat_page && !special_combat_page) {
     return {};
   }
   const auto valid_combatant = [](CombatantId combatant) {
@@ -129,6 +133,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.bandage_combatant);
   const bool valid_undo_combatant = request.undo_combatant &&
       valid_combatant(*request.undo_combatant);
+  const bool valid_open_combat_spellbook = request.open_combat_spellbook &&
+      valid_combatant(*request.open_combat_spellbook);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -142,6 +148,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.show_combat_range_combatant,
       request.bandage_combatant,
       request.undo_combatant,
+      request.open_combat_spellbook,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -175,22 +182,33 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.show_combat_range_combatant ? 1U : 0U) +
       (request.bandage_combatant ? 1U : 0U) +
       (request.undo_combatant ? 1U : 0U);
+  const size_t special_combat_control_count =
+      request.open_combat_spellbook ? 1U : 0U;
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
-                               : utility_combat_control_count);
+          : (utility_combat_page ? utility_combat_control_count
+                                 : special_combat_control_count));
   const bool has_valid_secondary_action = valid_switch_weapon ||
       valid_center_previous || valid_center_next || valid_combat_items;
   const bool has_valid_utility_action =
       valid_auto_combatant || valid_show_combat_range ||
       valid_bandage_combatant || valid_undo_combatant;
+  const bool has_valid_special_action = valid_open_combat_spellbook;
   const size_t combat_page_control_count = primary_combat_page
-      ? ((has_valid_secondary_action || has_valid_utility_action) ? 1U : 0U)
+      ? ((has_valid_secondary_action || has_valid_utility_action ||
+              has_valid_special_action)
+                ? 1U
+                : 0U)
       : (secondary_combat_page
-              ? 1U + (has_valid_utility_action ? 1U : 0U)
-              : (has_valid_utility_action ? 1U : 0U));
+              ? 1U + ((has_valid_utility_action || has_valid_special_action)
+                            ? 1U
+                            : 0U)
+              : (utility_combat_page
+                        ? 1U + (has_valid_special_action ? 1U : 0U)
+                        : (has_valid_special_action ? 1U : 0U)));
   const size_t required_combat_page_control_capacity =
-      has_valid_utility_action
+      (has_valid_utility_action || has_valid_special_action)
       ? std::max<size_t>(2U, combat_page_control_count)
       : combat_page_control_count;
   const bool has_combatant_request = std::ranges::any_of(
@@ -201,11 +219,16 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       !invalid_combatant && !mismatched_combatants &&
       (primary_combat_page
               ? ((primary_combat_control_count > 0U) ||
-                    has_valid_secondary_action || has_valid_utility_action)
+                    has_valid_secondary_action || has_valid_utility_action ||
+                    has_valid_special_action)
               : (secondary_combat_page
                       ? ((secondary_combat_control_count > 0U) ||
-                            has_valid_utility_action)
-                      : has_valid_utility_action));
+                            has_valid_utility_action ||
+                            has_valid_special_action)
+                      : (utility_combat_page
+                                ? (has_valid_utility_action ||
+                                      has_valid_special_action)
+                                : has_valid_special_action)));
   const bool has_combat_request = has_combatant_request ||
       request.guard_available || request.finish_available ||
       request.delay_available || request.center_active_available ||
@@ -217,7 +240,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.show_combat_range_available || request.bandage_combatant ||
       request.bandage_combatant_available || request.undo_combatant ||
       request.undo_combatant_available || secondary_combat_page ||
-      utility_combat_page;
+      request.open_combat_spellbook ||
+      request.open_combat_spellbook_available || utility_combat_page ||
+      special_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
       (combat_controls &&
@@ -240,7 +265,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.auto_combatant_available && !valid_auto_combatant) ||
       (request.show_combat_range_available && !valid_show_combat_range) ||
       (request.bandage_combatant_available && !valid_bandage_combatant) ||
-      (request.undo_combatant_available && !valid_undo_combatant)) {
+      (request.undo_combatant_available && !valid_undo_combatant) ||
+      (request.open_combat_spellbook_available &&
+          !valid_open_combat_spellbook)) {
     return {};
   }
 
@@ -398,6 +425,34 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
     return true;
   };
 
+  if (special_combat_page) {
+    if (!append_page_control(
+            CombatActionPage::utility,
+            kCombatSpecialPageRegion,
+            "BACK",
+            "Return to utility combat actions",
+            "focus.action.combat.special",
+            1118,
+            0U)) {
+      return {};
+    }
+    if (request.open_combat_spellbook) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kOpenCombatSpellbookRegion},
+          .kind = ShellControlKind::open_combat_spellbook,
+          .bounds = {x, y, button_width, button_height},
+          .label = "CAST",
+          .accessibility_label = "Open combat spell chooser",
+          .focus_identifier = "focus.action.combat.spellbook.open",
+          .tab_order = 1119,
+          .enabled = request.open_combat_spellbook_available,
+          .payload = OpenCombatSpellbookAction{
+              *request.open_combat_spellbook},
+      });
+    }
+    return result;
+  }
+
   if (utility_combat_page) {
     if (!append_page_control(
             CombatActionPage::secondary,
@@ -464,6 +519,17 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .enabled = request.undo_combatant_available,
           .payload = UndoCombatantAction{*request.undo_combatant},
       });
+    }
+    if (has_valid_special_action &&
+        !append_page_control(
+            CombatActionPage::special,
+            kCombatSpecialPageRegion,
+            "MORE",
+            "Open special combat actions",
+            "focus.action.combat.special",
+            1118,
+            1U)) {
+      return {};
     }
     return result;
   }
@@ -539,7 +605,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .payload = *request.combat_items,
       });
     }
-    if (has_valid_utility_action &&
+    if ((has_valid_utility_action || has_valid_special_action) &&
         !append_page_control(
             CombatActionPage::utility,
             kCombatUtilityPageRegion,
@@ -609,7 +675,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             *request.center_active_combatant},
     });
   }
-  if ((has_valid_secondary_action || has_valid_utility_action) &&
+  if ((has_valid_secondary_action || has_valid_utility_action ||
+          has_valid_special_action) &&
       !append_page_control(
           CombatActionPage::secondary,
           kCombatActionPageRegion,

@@ -35,9 +35,11 @@ Previous/Next, Auto, Range, Bandage, and Undo controls each carry the stable
 active-party combatant ID in typed
 `GuardCombatantAction`, `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
-`CycleCombatFocusAction`, `AutoCombatantAction`, and
+`CycleCombatFocusAction`, `AutoCombatantAction`,
 `ShowCombatRangeAction`, `BandageCombatantAction`, and `UndoCombatantAction`
-commands. The combat Items
+commands. The neighboring combat Cast control carries that same stable actor in
+a distinct `OpenCombatSpellbookAction`; it does not reuse the exploration
+`OpenSpellbookAction` or choose a spell or target. The combat Items
 control carries both that acting ID and the stable selected party-member ID in
 an `OpenCombatItemsAction`. Their combat-only guarded routes late-validate the
 fresh acting combatant and fail closed before returning the exact preserved
@@ -54,7 +56,9 @@ returns the exact Classic `r` message `0x00000F72`, and Bandage—available only
 while Classic's current-turn bandage gate remains open—returns the exact
 Classic `b` message `0x00000B62`. Undo is independently late-gated by the same
 fresh Classic `canundo` state and returns the exact Classic `u` message
-`0x00002075`.
+`0x00002075`. Combat Cast revalidates a read-only projection of Classic's
+current `cancast` prerequisites and returns the exact Classic `s` message
+`0x00000173`.
 The weapon action does not encode a desired set, and focus
 cycling does not encode a destination. The preserved Classic handlers
 remain authoritative for the Guard, Finish, and Delay combat-state mutations
@@ -67,10 +71,13 @@ effect. Classic owns Range's overlay drawing, event flush, raw mouse/key
 dismissal wait, recentering, and redraw path after the key handoff. Classic also
 owns Bandage's raw party-member picker, abort behavior, bleeding mutation,
 portrait refresh, and turn advance. Classic also owns Undo's further condition
-checks and every position, field, queue, redraw, and turn-state mutation. These
-bounded routes are not a camera, range-overlay, bandage-target, undo mutation,
-combat, modal, automation, RNG, turn, or save replay; other combat commands
-remain inside the interactive Classic frame.
+checks and every position, field, queue, redraw, and turn-state mutation.
+Classic owns Combat Cast's authoritative `cancast` check, spell and power
+chooser, targeting loops, spell-point charges and refunds, RNG, resolution,
+redraws, movement/attack costs, and turn handling. These bounded routes are not
+a camera, range-overlay, bandage-target, spell-selection, targeting, undo
+mutation, combat, modal, automation, RNG, turn, or save replay; other combat
+commands remain inside the interactive Classic frame.
 The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a

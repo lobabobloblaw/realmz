@@ -1,3 +1,4 @@
+#include <array>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
@@ -33,6 +34,7 @@ Boolean inbooty = 0;
 Boolean inshop = 0;
 Boolean intemple = 0;
 Boolean indung = 0;
+Boolean spellcasting = 0;
 struct character c[6] = {};
 struct monster monster[100] = {};
 char pos[6][2] = {};
@@ -72,6 +74,7 @@ void reset_legacy_state() {
   encountflag = 0;
   viewtype = 1;
   initems = inswap = inbooty = inshop = intemple = indung = 0;
+  spellcasting = 0;
   std::memset(c, 0, sizeof(c));
   std::memset(monster, 0, sizeof(monster));
   std::memset(pos, 0, sizeof(pos));
@@ -173,6 +176,7 @@ void test_combat_capture() {
   canundo = 1;
   combatround = 5;
   charup = 0;
+  c[0].maxspellsattacks = 2;
   monsterup = 1;
   pos[0][0] = 2;
   pos[0][1] = 3;
@@ -198,6 +202,7 @@ void test_combat_capture() {
   CHECK(snapshot.combat->round == 5);
   CHECK(snapshot.combat->bandage_available);
   CHECK(snapshot.combat->undo_available);
+  CHECK(snapshot.combat->cast_spell_available);
   CHECK(snapshot.combat->acting_combatant == 0);
   CHECK(snapshot.combat->combatants.size() == 4);
   CHECK(snapshot.combat->combatants[0].active);
@@ -211,9 +216,60 @@ void test_combat_capture() {
   snapshot = source.capture();
   CHECK(!snapshot.combat->bandage_available);
   CHECK(!snapshot.combat->undo_available);
+  CHECK(snapshot.combat->cast_spell_available);
+
+  spellcasting = 1;
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
+  spellcasting = 0;
+
+  constexpr std::array disabling_conditions{
+      COND_CONFUSED,
+      COND_SILENCED,
+      COND_HELPLESS,
+      COND_STUPID,
+      COND_ANIMATED,
+  };
+  for (const auto condition : disabling_conditions) {
+    c[0].condition[condition] = 1;
+    snapshot = source.capture();
+    CHECK(!snapshot.combat->cast_spell_available);
+    c[0].condition[condition] = 0;
+  }
+
+  c[0].spellpoints = 0;
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
+  c[0].spellpoints = 9;
+
+  c[0].stamina = 0;
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
+  c[0].stamina = 18;
+
+  c[0].beenattacked = 1;
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
+  c[0].beenattacked = 0;
+
+  c[0].spellsofar = c[0].maxspellsattacks;
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
+  c[0].spellsofar = c[0].maxspellsattacks - 1;
+  snapshot = source.capture();
+  CHECK(snapshot.combat->cast_spell_available);
+
+  charup = -1;
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
+  charup = static_cast<char>(charnum + 1);
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
+  charup = 0;
 
   monsterturn = 1;
   snapshot = source.capture();
+  CHECK(!snapshot.combat->cast_spell_available);
   CHECK(snapshot.combat->acting_combatant == 11);
   CHECK(!snapshot.combat->combatants[0].active);
   CHECK(snapshot.combat->combatants[3].active);

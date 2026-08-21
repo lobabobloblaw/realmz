@@ -54,6 +54,7 @@ Boolean inbooty = 0;
 Boolean inshop = 0;
 Boolean intemple = 0;
 Boolean indung = 0;
+Boolean spellcasting = 0;
 struct character c[6] = {};
 struct monster monster[100] = {};
 char pos[6][2] = {};
@@ -94,7 +95,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 12> combat_cases() {
+std::array<CombatCase, 13> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -172,6 +173,12 @@ std::array<CombatCase, 12> combat_cases() {
           .consume = RealmzConsumeSemanticUndoCombatantEvent,
           .classic_message = 0x00002075U,
       },
+      CombatCase{
+          .tag = semantic_open_combat_spellbook_tag(
+              1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticOpenCombatSpellbookEvent,
+          .classic_message = 0x00000173U,
+      },
   };
 }
 
@@ -205,6 +212,7 @@ void reset_legacy_globals() {
   inshop = 0;
   intemple = 0;
   indung = 0;
+  spellcasting = 0;
   std::memset(c, 0, sizeof(c));
   std::memset(monster, 0, sizeof(monster));
   std::memset(pos, 0, sizeof(pos));
@@ -228,6 +236,8 @@ void seed_active_party_combatant() {
   c[1].inbattle = 1;
   c[1].movement = 9;
   c[1].movementmax = 9;
+  c[1].spellpoints = 8;
+  c[1].maxspellsattacks = 2;
 }
 
 void complete_combat_scope() {
@@ -305,6 +315,25 @@ void test_undo_without_classic_canundo_is_rejected() {
   CHECK(output == kUnchangedMessage);
 }
 
+void test_unavailable_combat_spellbook_is_rejected_once() {
+  seed_active_party_combatant();
+  const uint32_t tag = semantic_open_combat_spellbook_tag(
+      1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(tag == 0x53430301U);
+  complete_combat_scope();
+
+  spellcasting = 1;
+  uint32_t output = kUnchangedMessage;
+  CHECK(RealmzConsumeSemanticOpenCombatSpellbookEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+
+  spellcasting = 0;
+  CHECK(RealmzConsumeSemanticOpenCombatSpellbookEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+}
+
 void test_stale_acting_combatant_is_rejected() {
   for (const auto& action : combat_cases()) {
     seed_active_party_combatant();
@@ -353,6 +382,7 @@ int main() {
     test_moved_combatant_delay_is_rejected();
     test_bandage_without_classic_canundo_is_rejected();
     test_undo_without_classic_canundo_is_rejected();
+    test_unavailable_combat_spellbook_is_rejected_once();
     test_stale_acting_combatant_is_rejected();
     test_non_gameplay_front_window_is_rejected();
     test_stale_selected_member_is_rejected();
