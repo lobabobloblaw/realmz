@@ -446,13 +446,16 @@ automatic recursive cleanup. Review `path_authoritative` and the parent
 namespace before deliberately removing either candidate.
 
 This completes the comparison harness. Its integration tests use a synthetic
-child and remain harness evidence rather than a live verdict. One externally
-reviewed private Tutorial outdoor profile has also completed the real gate; its
-narrowly scoped result and identities are recorded in the
-[digest-only receipt](../../docs/CONTENT_PROVENANCE.md#private-outdoor-replay-receipt-2026-08-21).
-The repository still contains no private fixture or raw envelope, and
-first-person dungeon equivalence remains pending. The v1 profile also compares
-RNG draw counts, not a separate trace of every drawn value.
+child and remain harness evidence rather than a live verdict. Two externally
+reviewed private Tutorial profiles have completed the real gate; their narrowly
+scoped results and identities are recorded in separate
+[outdoor](../../docs/CONTENT_PROVENANCE.md#private-outdoor-replay-receipt-2026-08-21)
+and [first-person dungeon](../../docs/CONTENT_PROVENANCE.md#private-first-person-dungeon-replay-receipt-2026-08-21)
+digest-only receipts. Together they cover all 12 native-v1 movement command
+names, but each verdict remains bound to its own exact fixture and executable.
+The repository still contains no private fixture or raw envelope. The v1
+profile also compares RNG draw counts, not a separate trace of every drawn
+value.
 
 The dependency-free native checks are included in the core test runner:
 
@@ -486,16 +489,16 @@ runner result and owns the only evaluated verdict.
 
 ## Live replay roadmap
 
-The outdoor portion of the movement milestone has a completed, archived local
-envelope and the digest-only receipt linked above. The remaining work is to:
+The outdoor and first-person dungeon portions of the native-v1 movement
+milestone now have separate completed local envelopes and the digest-only
+receipts linked above. The remaining roadmap work is to:
 
-1. review and pin a separate private first-person dungeon fixture and movement
-   profile;
-2. run that exact profile through the real equivalence gate, archive its local
-   envelope, and append a separately scoped digest-only receipt; and
-3. expand the native replay action vocabulary and repeat with broader Tutorial
-   and City profiles before treating replay equivalence as a release-wide
-   claim.
+1. expand the native replay action vocabulary beyond movement;
+2. repeat the gate with separately reviewed broader Tutorial and City profiles,
+   including any combat-specific fixture and modal coverage those actions need;
+   and
+3. run the intended release-candidate executable before treating replay
+   equivalence as a current-build or release-wide claim.
 
 Each real-fixture invocation, rather than the synthetic gate tests, is the
 required gate for its exact profile's real-engine and save-equivalence evidence.

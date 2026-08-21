@@ -27,11 +27,14 @@ request pins both the reviewed manifest bytes and fixture tree, and
 or launching children. A configured build separately exercises all 12 native
 movement commands through both linked production routes.
 No private Tutorial fixture is selected in the repository, so no current CI
-result establishes real-engine equivalence. A separately reviewed private
-outdoor profile has completed the real gate; its narrowly scoped, non-content
-identities and result are recorded in the
-[digest-only receipt](CONTENT_PROVENANCE.md#private-outdoor-replay-receipt-2026-08-21).
-First-person dungeon coverage, broader action profiles, and City coverage
+result establishes real-engine equivalence. Separately reviewed private outdoor
+and first-person dungeon profiles have completed the real gate; their narrowly
+scoped, non-content identities and results are recorded in the
+[outdoor receipt](CONTENT_PROVENANCE.md#private-outdoor-replay-receipt-2026-08-21)
+and [dungeon receipt](CONTENT_PROVENANCE.md#private-first-person-dungeon-replay-receipt-2026-08-21).
+Together they exercise all 12 native-v1 movement command names, but they bind
+different exact fixtures and executables and are not a combined CI,
+current-HEAD, or release-wide verdict. Broader action profiles and City coverage
 remain separate acceptance work. Follow
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md) for each private
 gate and archive its canonical envelope outside the repository.

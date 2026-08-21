@@ -432,6 +432,46 @@ This is outdoor-only evidence for those exact identities. It establishes no
 first-person dungeon, combat, City, release-wide, or current-HEAD equivalence,
 and it does not make the private source fixture redistributable.
 
+#### Private first-person dungeon replay receipt (2026-08-21)
+
+A separate private, nonredistributable Tutorial fixture completed the reviewed
+eight-action first-person dungeon profile through the real Classic and semantic
+child routes. The canonical envelope and all fixture-bearing artifacts remain
+in private storage. This receipt contains only non-content identities and
+results:
+
+- comparison contract: `realmz.semantic-replay.exact.v1`;
+- result: `equivalent`, exit status `0`, empty stderr, and no mismatched fields;
+- build source: commit
+  `d41821abf75a68812a7351698cbd585ce129cd15`, engine identity
+  `Realmz-8.1.0-native-replay-v1`, executable SHA-256
+  `61d40d9fae0911d4a2ae8ff5717b4e675dc3520347ca8fd8db6a961a90e61ed1`;
+- fixture manifest SHA-256
+  `86bf0b12de0e263f5c4c1c2e544b050313d21269cc77c1777ca50cc92ed4744c`
+  and fixture-tree SHA-256
+  `2bf79f662d61b3b50c9e59f8d534b7b9fa9148cf76abae254e51dbc40a31f15b`;
+- eight-action dungeon profile SHA-256
+  `c669ce9bbae72ca7988098e8f9e32938ca245b7cb1f804010a28c5f2b05e0635`,
+  input/output slots `A`/`B`, RNG seed `0123456789abcdef`, RNG stream
+  `fedcba9876543210`, and settlement barrier
+  `next_semantic_gameplay_poll`;
+- Classic/semantic settled-action counts `8`/`8` and RNG-draw counts `9`/`9`;
+- matching state SHA-256
+  `a9e2d0791b74c8e395f1ffe4bb8dc644404edfb0966dec68dd40540e9e9efe80`
+  and output save-tree SHA-256
+  `de94712f897c4d36a67384bf179f56c5d0c0c790a7601e1c8bc9d2c2c5dbc876`;
+- request SHA-256
+  `c3fba37178dce49784116bbd242fb50ef7104b06f425841dbcebf2165b4ec18d`
+  and independently recorded raw-envelope SHA-256
+  `89a1e435d9951b4ff4a1cb0e752868ac21d497d425bac70a9eb2147e96814d33`.
+
+This is first-person dungeon movement evidence for those exact identities. It
+establishes no outdoor, combat, City, release-wide, or current-HEAD equivalence,
+and it does not make the private source fixture redistributable. Together, the
+outdoor and dungeon receipts exercise all 12 native-v1 movement command names,
+but they remain two separately scoped verdicts over different exact fixtures
+and executables rather than one combined release claim.
+
 The complete private review and archival checklist is
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md).
 
