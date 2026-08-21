@@ -12,6 +12,10 @@ short RealmzReplayLegacyChoiceForSlot(char slot);
  * reading or writing its lastgame, descriptions, or preference state. */
 short RealmzReplayLoadSlot(char slot);
 
+/* Enters normal gameplay after an explicit replay load, applying the same
+ * menu, font, and darkness setup as the interactive load path. */
+void RealmzReplayEnterLoadedGame(void);
+
 /* Saves to one explicit protocol slot with the legacy save prelude and writer,
  * but without fileprep's chooser or its preference state. A return value of
  * one only means that the legacy body reached its end; callers must still

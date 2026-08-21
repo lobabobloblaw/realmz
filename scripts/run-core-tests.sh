@@ -213,9 +213,29 @@ run_cpp_test ReplayActionDecoderTest \
   src/tests/ReplayActionDecoderTest.cpp \
   src/replay/ReplayActionDecoder.cpp
 
+run_cpp_test ReplayDriverTest \
+  src/tests/ReplayDriverTest.cpp \
+  src/replay/ReplayDriver.cpp \
+  src/replay/ReplayStateOracle.cpp \
+  src/replay/Sha256.cpp
+
+run_cpp_test ReplayResultWriterTest \
+  src/tests/ReplayResultWriterTest.cpp \
+  src/replay/ReplayResultWriter.cpp \
+  src/replay/ReplayChildConfig.cpp \
+  src/replay/Sha256.cpp
+
+run_cpp_test ReplayStateOracleTest \
+  src/tests/ReplayStateOracleTest.cpp \
+  src/replay/ReplayStateOracle.cpp \
+  src/replay/Sha256.cpp
+
 run_cpp_test ReplaySlotSelectionTest \
   src/tests/ReplaySlotSelectionTest.cpp \
   src/replay/ReplaySlotSelection.cpp
+
+run_cpp_test ReplayLoadedGameEntryContractTest \
+  src/tests/ReplayLoadedGameEntryContractTest.cpp
 
 run_cpp_test Sha256Test \
   src/tests/Sha256Test.cpp \

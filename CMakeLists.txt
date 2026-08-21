@@ -112,9 +112,12 @@ add_library(realmz_replay_core STATIC
     src/replay/DeterministicReplayRng.cpp
     src/replay/ReplayActionDecoder.cpp
     src/replay/ReplayChildConfig.cpp
+    src/replay/ReplayDriver.cpp
     src/replay/ReplayOutputOracle.cpp
+    src/replay/ReplayResultWriter.cpp
     src/replay/ReplayRuntime.cpp
     src/replay/ReplaySlotSelection.cpp
+    src/replay/ReplayStateOracle.cpp
     src/replay/Sha256.cpp
 )
 target_include_directories(realmz_replay_core PUBLIC src)
@@ -347,12 +350,35 @@ if(REALMZ_BUILD_CORE_TESTS)
     realmz_configure_core_target(ReplayActionDecoderTest)
     add_test(NAME ReplayActionDecoderTest COMMAND ReplayActionDecoderTest)
 
+    add_executable(ReplayDriverTest src/tests/ReplayDriverTest.cpp)
+    target_link_libraries(ReplayDriverTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayDriverTest)
+    add_test(NAME ReplayDriverTest COMMAND ReplayDriverTest)
+
+    add_executable(ReplayResultWriterTest
+        src/tests/ReplayResultWriterTest.cpp)
+    target_link_libraries(ReplayResultWriterTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayResultWriterTest)
+    add_test(NAME ReplayResultWriterTest COMMAND ReplayResultWriterTest)
+
+    add_executable(ReplayStateOracleTest
+        src/tests/ReplayStateOracleTest.cpp)
+    target_link_libraries(ReplayStateOracleTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayStateOracleTest)
+    add_test(NAME ReplayStateOracleTest COMMAND ReplayStateOracleTest)
+
     add_executable(ReplaySlotSelectionTest
         src/tests/ReplaySlotSelectionTest.cpp)
     target_link_libraries(ReplaySlotSelectionTest PRIVATE realmz_replay_core)
     realmz_configure_core_target(ReplaySlotSelectionTest)
     add_test(NAME ReplaySlotSelectionTest
         COMMAND ReplaySlotSelectionTest ${CMAKE_SOURCE_DIR})
+
+    add_executable(ReplayLoadedGameEntryContractTest
+        src/tests/ReplayLoadedGameEntryContractTest.cpp)
+    realmz_configure_core_target(ReplayLoadedGameEntryContractTest)
+    add_test(NAME ReplayLoadedGameEntryContractTest
+        COMMAND ReplayLoadedGameEntryContractTest ${CMAKE_SOURCE_DIR})
 
     add_executable(Sha256Test src/tests/Sha256Test.cpp)
     target_link_libraries(Sha256Test PRIVATE realmz_replay_core)

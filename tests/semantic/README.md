@@ -347,6 +347,15 @@ path. The output oracle checks the exact file set and `Data I1` size, rejects
 links and detectable replacement or mutation, and produces a domain-separated
 tree digest.
 
+The next connection layer is also defined and tested independently of live
+engine globals. A movement-only poll controller records an initial checkpoint,
+delivers at most one action, and settles it at the following gameplay poll. A
+canonical state oracle encodes every declared field in fixed-width big-endian
+form and hashes the initial-plus-post-action trace with explicit checkpoint
+indexes. The normal post-load menu/font/darkness setup has a replay entry point,
+and the strict v1 result writer uses exclusive publication and mode `0600` on
+POSIX. None of these components is invoked by the child yet.
+
 These pieces are foundations, not a completed replay. The child does not yet
 call the explicit loader or saver, deliver decoded actions through either
 engine route, capture settled state, invoke the output oracle, or emit a result.
@@ -386,12 +395,11 @@ The remaining milestone work is to:
    copies. This is byte-identity and isolation plumbing only.
 2. Connect the native child controller to the explicit input-slot loader and
    continue the loaded game into its first semantic gameplay poll.
-3. Drive one process through Classic movement inputs and the other through the
-   semantic bridge using the same normalized action sequence, settling each
-   action at the following gameplay poll.
-4. Define the canonical live-state oracle, capture a checkpoint after every
-   settled action, and write the strict child result only after the run is
-   complete.
+3. Connect the tested poll controller to Classic movement injection and the
+   semantic bridge, then capture live legacy globals into the canonical state
+   value at each requested checkpoint.
+4. Finalize the state trace and publish the tested strict child result only
+   after every requested action is settled.
 5. Connect the explicit output-slot saver, verify each fresh save through the
    native output oracle, and compare the two processes' state traces and save
    digests.

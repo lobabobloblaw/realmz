@@ -1,4 +1,5 @@
 #include "realmzbuild.h"
+#include "replay/ReplaySlotSelection.h"
 #include "variables.h"
 
 /*************************************************************
@@ -96,6 +97,34 @@ short DoQuitRealmz(void) {
 
   DoFreeBeforeQuit();
   return (1);
+}
+
+static void prepare_loaded_game(void) {
+  EnableItem(gScenario, 0);
+  EnableItem(gParty, 0);
+  EnableItem(gParty, 1);
+  EnableItem(gParty, 2);
+  EnableItem(gParty, 3);
+  EnableItem(gParty, 7);
+  DisableItem(gParty, 5);
+  EnableItem(gGame, 3);
+  DisableItem(gGame, 1);
+  EnableItem(gBeast, 0);
+  EnableItem(gFile, 3);
+  EnableItem(gFile, 4);
+  EnableItem(gFile, 2);
+  DisableItem(gFile, 1);
+  TextFont(defaultfont);
+  DrawMenuBar();
+  if (partycondition[PARTY_COND_TORCH_LIT])
+    loaddark((partycondition[PARTY_COND_TORCH_LIT] / 30) + 1);
+  else
+    loaddark(0);
+}
+
+void RealmzReplayEnterLoadedGame(void) {
+  prepare_loaded_game();
+  mainscreeninit(0, 0);
 }
 
 /***************************** HandleMenuChoice ********************************/
@@ -495,26 +524,7 @@ short HandleMenuChoice(void) {
             return (0);
           }
         playsaved:
-          EnableItem(gScenario, 0);
-          EnableItem(gParty, 0);
-          EnableItem(gParty, 1);
-          EnableItem(gParty, 2);
-          EnableItem(gParty, 3);
-          EnableItem(gParty, 7);
-          DisableItem(gParty, 5);
-          EnableItem(gGame, 3);
-          DisableItem(gGame, 1);
-          EnableItem(gBeast, 0);
-          EnableItem(gFile, 3);
-          EnableItem(gFile, 4);
-          EnableItem(gFile, 2);
-          DisableItem(gFile, 1);
-          TextFont(defaultfont);
-          DrawMenuBar();
-          if (partycondition[PARTY_COND_TORCH_LIT])
-            loaddark((partycondition[PARTY_COND_TORCH_LIT] / 30) + 1);
-          else
-            loaddark(0);
+          prepare_loaded_game();
 
           if (!revertgame)
             mainscreeninit(0, 0);
