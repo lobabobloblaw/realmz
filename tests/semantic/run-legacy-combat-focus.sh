@@ -29,9 +29,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 include_flags=(
+  -Itests/semantic/stubs
   -Isrc
   -Isrc/realmz_orig
-  -Ivendored/SDL/include
 )
 c_flags=(
   -std=c99
@@ -39,7 +39,6 @@ c_flags=(
   -Wextra
   -Wpedantic
   -Werror
-  -Wno-zero-length-array
   -Wno-strict-prototypes
   -Wno-char-subscripts
   "${include_flags[@]}"

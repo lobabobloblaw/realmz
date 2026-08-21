@@ -255,7 +255,6 @@ if(REALMZ_BUILD_CORE_TESTS)
         # Keep strict warnings on the unchanged Classic helper while allowing
         # its compatibility headers and signed-char queue index.
         target_compile_options(LegacyCombatFocusTest PRIVATE
-            $<$<COMPILE_LANGUAGE:C>:-Wno-zero-length-array>
             $<$<COMPILE_LANGUAGE:C>:-Wno-strict-prototypes>
             $<$<COMPILE_LANGUAGE:C>:-Wno-char-subscripts>)
     endif()

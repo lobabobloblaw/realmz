@@ -86,7 +86,9 @@ the one-shot absolute cell; it does not reproduce `centerfield` or camera state.
 
 This characterization fixture compiles and executes the unchanged
 `src/realmz_orig/centerstage.c` helper with test-owned Classic globals and
-presentation stubs. It covers Previous, Next, and current-focus queue
+presentation stubs. Narrow test-only SDL declaration headers keep the standalone
+check independent of an initialized SDL submodule; no SDL implementation is
+linked or exercised. It covers Previous, Next, and current-focus queue
 navigation; queue wrapping and empty-slot skipping; live party-member and
 monster centering; Classic spell-coordinate offsets, sound, body refresh, and
 combat-info bracketing; dead-target behavior; bounded empty-queue termination;

@@ -107,7 +107,11 @@ typedef CTabPtr* CTabHandle;
 typedef struct {
   uint16_t picSize;
   Rect picFrame;
+#if defined(__cplusplus)
   uint8_t command_data[0];
+#else
+  uint8_t command_data[];
+#endif
 } Picture;
 typedef Picture *PicPtr, **PicHandle;
 
