@@ -145,6 +145,27 @@ void verify_header(const fs::path& root) {
       "the replay header must retain C linkage for C++ callers");
 }
 
+void verify_dungeon_time_scale(const fs::path& root) {
+  const std::string source =
+      read_file(root / "src/realmz_orig/textbox-time.c");
+  const std::string_view body =
+      function_body(source, "short timeclick(unsigned char number");
+  const std::size_t default_scale = body.find("short scale = 5;");
+  const std::string_view safe_guard =
+      "if (indung || ((lastpix >= 0) && (lastpix < 20) && "
+      "basescale[lastpix]))";
+  const std::size_t guard = body.find(safe_guard);
+  const std::size_t first_lookup = body.find("basescale[lastpix]");
+  require(default_scale != std::string_view::npos &&
+          guard != std::string_view::npos && default_scale < guard,
+      "timeclick must default to outdoor time and short-circuit dungeon "
+      "loads before checking a bounded lastpix index");
+  require(first_lookup != std::string_view::npos &&
+          body.find("basescale[lastpix]", first_lookup + 1) ==
+              std::string_view::npos,
+      "timeclick must not retain an unguarded basescale lookup");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -161,6 +182,7 @@ int main(int argc, char** argv) {
         source, "static void prepare_loaded_game(void)"));
     verify_callers(source);
     verify_header(root);
+    verify_dungeon_time_scale(root);
     std::cout << "ReplayLoadedGameEntryContractTest passed ("
               << checks_run << " checks)\n";
     return 0;

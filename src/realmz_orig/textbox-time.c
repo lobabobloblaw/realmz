@@ -142,7 +142,9 @@ short timeclick(unsigned char number, short checkforrandom) {
   char s[20];
 
   Boolean tag = FALSE;
-  if (basescale[lastpix])
+  /* Dungeon maps do not load an outdoor pixmap, so a cold saved-game load
+   * can leave lastpix at its -1 sentinel. Dungeons still use indoor time. */
+  if (indung || ((lastpix >= 0) && (lastpix < 20) && basescale[lastpix]))
     scale = 1; /********* if indoor area, scale = 1 else = 5 ****/
 
   GetPort(&oldport);
