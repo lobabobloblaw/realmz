@@ -80,6 +80,10 @@ constexpr uint32_t kSemanticOpenCombatTargetingSignature = 0x52540000U;
 constexpr uint32_t kSemanticOpenCombatTargetingMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenCombatTargetingSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenCombatTargetingIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticEscapeCombatSignature = 0x52450000U;
+constexpr uint32_t kSemanticEscapeCombatMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticEscapeCombatSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticEscapeCombatIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -184,6 +188,11 @@ struct DecodedOpenCombatSpellbook {
 };
 
 struct DecodedOpenCombatTargeting {
+  realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedEscapeCombat {
   realmz::presentation::CombatantId combatant;
   RealmzSemanticInputSurface surface;
 };
@@ -549,6 +558,24 @@ std::optional<DecodedOpenCombatTargeting> decode_open_combat_targeting(
   return DecodedOpenCombatTargeting{
       .combatant = static_cast<realmz::presentation::CombatantId>(
           tagged_message & kSemanticOpenCombatTargetingIdMask),
+      .surface = surface_value,
+  };
+}
+
+std::optional<DecodedEscapeCombat> decode_escape_combat(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticEscapeCombatMask) !=
+      kSemanticEscapeCombatSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticEscapeCombatSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedEscapeCombat{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticEscapeCombatIdMask),
       .surface = surface_value,
   };
 }
@@ -934,6 +961,18 @@ uint32_t semantic_open_combat_targeting_tag(
       static_cast<uint32_t>(combatant);
 }
 
+uint32_t semantic_escape_combat_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticEscapeCombatSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -1197,6 +1236,17 @@ RealmzSemanticOpenCombatTargetingTagSurface(uint32_t tagged_message) {
   return targeting ? targeting->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticEscapeCombatTag(
+    uint32_t tagged_message) {
+  return decode_escape_combat(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticEscapeCombatTagSurface(uint32_t tagged_message) {
+  const auto escape = decode_escape_combat(tagged_message);
+  return escape ? escape->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -1217,7 +1267,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_bandage_combatant(tagged_message) ||
           decode_undo_combatant(tagged_message) ||
           decode_open_combat_spellbook(tagged_message) ||
-          decode_open_combat_targeting(tagged_message))
+          decode_open_combat_targeting(tagged_message) ||
+          decode_escape_combat(tagged_message))
       ? 1
       : 0;
 }
@@ -1280,6 +1331,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto targeting = decode_open_combat_targeting(tagged_message)) {
     return targeting->surface;
+  }
+  if (const auto escape = decode_escape_combat(tagged_message)) {
+    return escape->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1708,4 +1762,15 @@ extern "C" uint8_t RealmzConsumeSemanticOpenCombatTargetingEvent(
       classic_key_message,
       realmz::presentation::legacy_key_message_for_open_combat_targeting,
       is_combat_targeting_available);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticEscapeCombatEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  return consume_semantic_combatant_event(
+      expected_surface,
+      decode_escape_combat(tagged_message),
+      classic_key_message,
+      realmz::presentation::legacy_key_message_for_escape_combat);
 }

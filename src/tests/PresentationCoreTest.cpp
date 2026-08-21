@@ -285,8 +285,16 @@ void test_actions_and_events() {
   CHECK(std::get<OpenCombatTargetingAction>(
             open_combat_targeting.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction escape_combat{
       .sequence = 26,
+      .payload = EscapeCombatAction{2},
+  };
+  CHECK(action_name(escape_combat.payload) == "escape_combat");
+  CHECK(std::get<EscapeCombatAction>(
+            escape_combat.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 27,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -380,6 +388,7 @@ void test_command_bridge() {
   CombatantId undo_combatant = -1;
   CombatantId open_combat_spellbook = -1;
   CombatantId open_combat_targeting = -1;
+  CombatantId escape_combat = -1;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -437,6 +446,11 @@ void test_command_bridge() {
   handlers.open_combat_targeting =
       [&open_combat_targeting](const OpenCombatTargetingAction& action) {
         open_combat_targeting = action.combatant;
+        return DispatchResult::handled();
+      };
+  handlers.escape_combat =
+      [&escape_combat](const EscapeCombatAction& action) {
+        escape_combat = action.combatant;
         return DispatchResult::handled();
       };
 
@@ -618,6 +632,13 @@ void test_command_bridge() {
   });
   CHECK(open_combat_targeting_handled.was_handled());
   CHECK(open_combat_targeting == 14);
+
+  const auto escape_combat_handled = bridge.dispatch(UIAction{
+      .sequence = 23,
+      .payload = EscapeCombatAction{15},
+  });
+  CHECK(escape_combat_handled.was_handled());
+  CHECK(escape_combat == 15);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

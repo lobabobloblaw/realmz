@@ -31,8 +31,8 @@ the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
-Previous/Next, Auto, Range, Bandage, Undo, Cast, and Target controls carry the
-stable active-party combatant ID in typed
+Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, and Escape controls
+carry the stable active-party combatant ID in typed
 `GuardCombatantAction`, `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`,
@@ -40,10 +40,11 @@ stable active-party combatant ID in typed
 commands. Combat Cast and Target carry that actor in distinct
 `OpenCombatSpellbookAction` and `OpenCombatTargetingAction` commands. Cast does
 not reuse the exploration `OpenSpellbookAction` or choose a spell or target;
-Target identifies no recipient or cell. The combat Items
-control carries both that acting ID and the stable selected party-member ID in
-an `OpenCombatItemsAction`. Their combat-only guarded routes late-validate the
-fresh acting combatant and fail closed before returning the exact preserved
+Target identifies no recipient or cell. An actor-only `EscapeCombatAction`
+requests Classic's existing escape attempt without predicting its result. The
+combat Items control carries both that acting ID and the stable selected
+party-member ID in an `OpenCombatItemsAction`. Their combat-only guarded routes
+late-validate the fresh acting combatant and fail closed before returning the exact preserved
 Classic key record; Items also revalidates that the same member still exists
 and remains selected. Delay is
 available only before movement and revalidates that
@@ -60,7 +61,8 @@ fresh Classic `canundo` state and returns the exact Classic `u` message
 `0x00002075`. Combat Cast revalidates a read-only projection of Classic's
 current `cancast` prerequisites and returns the exact Classic `s` message
 `0x00000173`. Combat Target mirrors Classic's visible Target-button gate and
-returns the exact Classic `t` message `0x00001174`.
+returns the exact Classic `t` message `0x00001174`. Combat Escape uses only the
+fresh live-actor gate and returns the exact Classic `e` message `0x00000E65`.
 The weapon action does not encode a desired set, and focus
 cycling does not encode a destination. The preserved Classic handlers
 remain authoritative for the Guard, Finish, and Delay combat-state mutations
@@ -79,10 +81,13 @@ chooser, targeting loops, spell-point charges and refunds, RNG, resolution,
 redraws, movement/attack costs, and turn handling. Classic also owns Target's
 live equipment and quiver resolution, target-mode selection, charge consumption
 and item drops, RNG, raw target loops, abort/launch costs, spell resolution,
-redraws, and turn handling. These bounded routes are not a camera,
+redraws, and turn handling. Classic owns Escape's range calculation, warning
+precedence, raw confirmation dialog, confirmed field/queue/position and
+prestige mutations, last-loyal-member handling, and subsequent turn flow.
+These bounded routes are not a camera,
 range-overlay, bandage-target, spell-selection, target-selection, undo mutation,
-combat, modal, automation, RNG, turn, or save replay; other combat commands
-remain inside the interactive Classic frame.
+escape confirmation, combat, modal, automation, RNG, turn, or save replay;
+other combat commands remain inside the interactive Classic frame.
 The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a

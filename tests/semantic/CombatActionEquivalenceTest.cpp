@@ -55,6 +55,7 @@ enum class CombatCommand {
   undo_combatant,
   open_combat_spellbook,
   open_combat_targeting,
+  escape_combat,
   items,
 };
 
@@ -147,6 +148,12 @@ constexpr std::array kCombatCases{
         .label = "Combat Target",
         .expected_classic_message = 0x00001174U,
         .expected_semantic_tag = 0x52540302U,
+    },
+    CombatCase{
+        .command = CombatCommand::escape_combat,
+        .label = "Escape Combat",
+        .expected_classic_message = 0x00000E65U,
+        .expected_semantic_tag = 0x52450302U,
     },
     CombatCase{
         .command = CombatCommand::items,
@@ -373,6 +380,9 @@ void reset_fixture_state() {
     case CombatCommand::open_combat_targeting:
       return legacy_key_message_for_open_combat_targeting(
           kActingCombatant, kRuntimeContext);
+    case CombatCommand::escape_combat:
+      return legacy_key_message_for_escape_combat(
+          kActingCombatant, kRuntimeContext);
     case CombatCommand::items:
       if (!action_case.selected_member) {
         return std::nullopt;
@@ -435,6 +445,8 @@ void reset_fixture_state() {
       return OpenCombatSpellbookAction{kActingCombatant};
     case CombatCommand::open_combat_targeting:
       return OpenCombatTargetingAction{kActingCombatant};
+    case CombatCommand::escape_combat:
+      return EscapeCombatAction{kActingCombatant};
     case CombatCommand::items:
       if (!action_case.selected_member) {
         throw std::logic_error("Combat Items case has no selected member");
@@ -699,6 +711,23 @@ void append_trace(
             tag);
         return tag != 0;
       },
+      .escape_combat = [&traces](
+          CombatantId actor,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& context) {
+        const uint32_t tag = semantic_escape_combat_tag(
+            actor, REALMZ_SEMANTIC_INPUT_COMBAT);
+        append_trace(
+            traces,
+            CombatCommand::escape_combat,
+            actor,
+            std::nullopt,
+            std::nullopt,
+            message,
+            context,
+            tag);
+        return tag != 0;
+      },
   };
 
   return RuntimeLegacyCommandBridge(
@@ -791,6 +820,11 @@ void append_trace(
                  &classic_message) != 0;
     case CombatCommand::open_combat_targeting:
       return RealmzConsumeSemanticOpenCombatTargetingEvent(
+                 REALMZ_SEMANTIC_INPUT_COMBAT,
+                 tag,
+                 &classic_message) != 0;
+    case CombatCommand::escape_combat:
+      return RealmzConsumeSemanticEscapeCombatEvent(
                  REALMZ_SEMANTIC_INPUT_COMBAT,
                  tag,
                  &classic_message) != 0;
@@ -969,7 +1003,7 @@ void test_combat_items_stops_at_modal_request_handoff() {
 
 void test_combat_range_stops_at_classic_modal_handoff() {
   const CombatCase& show_range =
-      kCombatCases[kCombatCases.size() - 6];
+      kCombatCases[kCombatCases.size() - 7];
   CHECK(show_range.command == CombatCommand::show_combat_range);
 
   reset_fixture_state();
@@ -989,7 +1023,7 @@ void test_combat_range_stops_at_classic_modal_handoff() {
 }
 
 void test_bandage_stops_at_classic_target_picker_handoff() {
-  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 5];
+  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 6];
   CHECK(bandage.command == CombatCommand::bandage_combatant);
 
   reset_fixture_state();
@@ -1009,7 +1043,7 @@ void test_bandage_stops_at_classic_target_picker_handoff() {
 }
 
 void test_bandage_unavailable_rejection_is_single_use() {
-  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 5];
+  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 6];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(bandage, 600);
 
@@ -1028,7 +1062,7 @@ void test_bandage_unavailable_rejection_is_single_use() {
 }
 
 void test_undo_stops_at_classic_rollback_handoff() {
-  const CombatCase& undo = kCombatCases[kCombatCases.size() - 4];
+  const CombatCase& undo = kCombatCases[kCombatCases.size() - 5];
   CHECK(undo.command == CombatCommand::undo_combatant);
 
   reset_fixture_state();
@@ -1048,7 +1082,7 @@ void test_undo_stops_at_classic_rollback_handoff() {
 }
 
 void test_undo_unavailable_rejection_is_single_use() {
-  const CombatCase& undo = kCombatCases[kCombatCases.size() - 4];
+  const CombatCase& undo = kCombatCases[kCombatCases.size() - 5];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(undo, 800);
 
@@ -1067,7 +1101,7 @@ void test_undo_unavailable_rejection_is_single_use() {
 }
 
 void test_combat_spellbook_stops_at_classic_cast_handoff() {
-  const CombatCase& cast = kCombatCases[kCombatCases.size() - 3];
+  const CombatCase& cast = kCombatCases[kCombatCases.size() - 4];
   CHECK(cast.command == CombatCommand::open_combat_spellbook);
 
   reset_fixture_state();
@@ -1086,7 +1120,7 @@ void test_combat_spellbook_stops_at_classic_cast_handoff() {
 }
 
 void test_combat_spellbook_unavailable_rejection_is_single_use() {
-  const CombatCase& cast = kCombatCases[kCombatCases.size() - 3];
+  const CombatCase& cast = kCombatCases[kCombatCases.size() - 4];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(cast, 1000);
 
@@ -1105,7 +1139,7 @@ void test_combat_spellbook_unavailable_rejection_is_single_use() {
 }
 
 void test_combat_targeting_stops_at_classic_target_handoff() {
-  const CombatCase& target = kCombatCases[kCombatCases.size() - 2];
+  const CombatCase& target = kCombatCases[kCombatCases.size() - 3];
   CHECK(target.command == CombatCommand::open_combat_targeting);
 
   reset_fixture_state();
@@ -1124,7 +1158,7 @@ void test_combat_targeting_stops_at_classic_target_handoff() {
 }
 
 void test_combat_targeting_unavailable_rejection_is_single_use() {
-  const CombatCase& target = kCombatCases[kCombatCases.size() - 2];
+  const CombatCase& target = kCombatCases[kCombatCases.size() - 3];
   reset_fixture_state();
   const QueuedSemanticTrace queued = dispatch_semantic_action(target, 1200);
 
@@ -1140,6 +1174,27 @@ void test_combat_targeting_unavailable_rejection_is_single_use() {
   set_state(StateByte::target_available, 1);
   check_second_consume_is_unauthorized(
       target, queued.semantic_tag, pre_classic_state, 1, 1);
+}
+
+void test_escape_combat_stops_at_classic_key_handoff() {
+  const CombatCase& escape = kCombatCases[kCombatCases.size() - 2];
+  CHECK(escape.command == CombatCommand::escape_combat);
+  CHECK(escape.expected_semantic_tag == 0x52450302U);
+
+  reset_fixture_state();
+  const PreClassicStateBytes initial_state = pre_classic_state;
+  const QueuedSemanticTrace queued = dispatch_semantic_action(escape, 1300);
+
+  complete_combat_input_scope();
+  uint32_t output = kUnchangedClassicMessage;
+  CHECK(consume_semantic_request(
+      CombatCommand::escape_combat, queued.semantic_tag, output));
+  CHECK(output == 0x00000E65U);
+  CHECK(pre_classic_state == initial_state);
+
+  // The equivalence boundary ends at lowercase "e". Classic still owns the
+  // range/condition checks, warning precedence, confirmation, retreat-state
+  // mutations, reputation/loyalty/cowardice effects, killmon, and getup.
 }
 
 } // namespace
@@ -1174,6 +1229,7 @@ int main() {
     test_combat_spellbook_unavailable_rejection_is_single_use();
     test_combat_targeting_stops_at_classic_target_handoff();
     test_combat_targeting_unavailable_rejection_is_single_use();
+    test_escape_combat_stops_at_classic_key_handoff();
     RealmzInvalidateSemanticInputBoundary();
     std::cout << "CombatActionEquivalenceTest passed ("
               << checks_run << " checks)\n";

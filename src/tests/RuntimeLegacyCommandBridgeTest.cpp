@@ -117,6 +117,15 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::open_combat_targeting),
     std::optional<RuntimeLegacyOpenCombatTargetingSink>>);
+static_assert(std::is_same_v<
+    RuntimeLegacyEscapeCombatSink,
+    std::function<bool(
+        CombatantId,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::escape_combat),
+    std::optional<RuntimeLegacyEscapeCombatSink>>);
 static_assert(std::numeric_limits<PartyMemberId>::min() == 0);
 static_assert(std::numeric_limits<PartyMemberId>::max() == 0xFF);
 
@@ -4173,6 +4182,209 @@ void test_open_combat_targeting_mapping_and_dispatch() {
       std::string::npos);
 }
 
+void test_escape_combat_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int calls = 0;
+  bool accept = true;
+  CombatantId received_combatant = -1;
+  uint32_t received_message = 0;
+  const RuntimeLegacyEscapeCombatSink sink =
+      [&calls, &accept, &received_combatant, &received_message, &context](
+          CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++calls;
+        received_combatant = combatant;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const auto make_bridge = [&](RuntimeLegacyContextProvider provider,
+                               RuntimeLegacyEscapeCombatSink value) {
+    return RuntimeLegacyCommandBridge(
+        std::move(provider), movement_sink, party_selection_sink,
+        inventory_sink, spellbook_sink, save_sink, load_sink,
+        RuntimeLegacyCombatActionSinks{
+            .escape_combat = std::move(value),
+        });
+  };
+  auto bridge = make_bridge([&context] { return context; }, sink);
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    CHECK(legacy_key_message_for_escape_combat(0, context) ==
+        0x00000E65U);
+    CHECK(legacy_key_message_for_escape_combat(255, context) ==
+        0x00000E65U);
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 475,
+      .payload = EscapeCombatAction{9},
+  }).status == DispatchStatus::handled);
+  CHECK(calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_message == 0x00000E65U);
+
+  for (const CombatantId boundary : {0, 255}) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 476,
+        .payload = EscapeCombatAction{boundary},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(calls == 3);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title, ScreenContext::party_selection,
+      ScreenContext::party_creation, ScreenContext::exploration,
+      ScreenContext::dungeon, ScreenContext::inventory, ScreenContext::shop,
+      ScreenContext::encounter, ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_escape_combat(9, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 477,
+        .payload = EscapeCombatAction{9},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 3);
+
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_escape_combat(9, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 478,
+      .payload = EscapeCombatAction{9},
+  }).status == DispatchStatus::rejected);
+  context.adaptive_eligible = true;
+
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(), CombatantId{-1},
+           CombatantId{256}, std::numeric_limits<CombatantId>::max(),
+       }) {
+    CHECK(!legacy_key_message_for_escape_combat(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 479,
+        .payload = EscapeCombatAction{invalid},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 3);
+
+  // Escape and Target intentionally share a sink signature, so registration
+  // must remain field-specific in both directions.
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 480,
+      .payload = OpenCombatTargetingAction{9},
+  }).status == DispatchStatus::unsupported);
+  CHECK(calls == 3);
+  RuntimeLegacyCommandBridge targeting_only(
+      [&context] { return context; }, movement_sink, party_selection_sink,
+      inventory_sink, spellbook_sink, save_sink, load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .open_combat_targeting =
+              [](CombatantId, uint32_t,
+                  const RuntimeLegacyCommandContext&) { return true; },
+      });
+  CHECK(targeting_only.dispatch(UIAction{
+      .sequence = 481,
+      .payload = EscapeCombatAction{9},
+  }).status == DispatchStatus::unsupported);
+
+  accept = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 482,
+      .payload = EscapeCombatAction{9},
+  }).status == DispatchStatus::failed);
+  CHECK(calls == 4);
+  accept = true;
+
+  auto missing_provider = make_bridge(RuntimeLegacyContextProvider{}, sink);
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 483,
+      .payload = EscapeCombatAction{9},
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+
+  auto empty_sink = make_bridge(
+      [&context] { return context; }, RuntimeLegacyEscapeCombatSink{});
+  const auto no_sink = empty_sink.dispatch(UIAction{
+      .sequence = 484,
+      .payload = EscapeCombatAction{9},
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("escape-combat sink") != std::string::npos);
+
+  RuntimeLegacyCommandBridge absent_sink(
+      [&context] { return context; }, movement_sink, party_selection_sink,
+      inventory_sink, spellbook_sink, save_sink, load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(absent_sink.dispatch(UIAction{
+      .sequence = 485,
+      .payload = EscapeCombatAction{9},
+  }).status == DispatchStatus::unsupported);
+
+  auto provider_throws = make_bridge(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("escape combat provider failure");
+      },
+      sink);
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 486,
+      .payload = EscapeCombatAction{9},
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("escape combat provider failure") !=
+      std::string::npos);
+
+  const RuntimeLegacyEscapeCombatSink throwing_sink =
+      [](CombatantId, uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("escape combat sink failure");
+      };
+  auto sink_throws = make_bridge([&context] { return context; }, throwing_sink);
+  const auto sink_thrown = sink_throws.dispatch(UIAction{
+      .sequence = 487,
+      .payload = EscapeCombatAction{9},
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("escape combat sink failure") !=
+      std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -4260,6 +4472,10 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 392,
           .payload = OpenCombatTargetingAction{13},
       },
+      UIAction{
+          .sequence = 393,
+          .payload = EscapeCombatAction{14},
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -4299,6 +4515,7 @@ void test_named_combat_sink_registration_semantics() {
           .undo_combatant = RuntimeLegacyUndoCombatantSink{},
           .open_combat_spellbook = RuntimeLegacyOpenCombatSpellbookSink{},
           .open_combat_targeting = RuntimeLegacyOpenCombatTargetingSink{},
+          .escape_combat = RuntimeLegacyEscapeCombatSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -4385,6 +4602,18 @@ void test_named_combat_sink_registration_semantics() {
   CHECK(sparse_combat_sinks.dispatch(UIAction{
       .sequence = 394,
       .payload = UndoCombatantAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 395,
+      .payload = OpenCombatSpellbookAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 396,
+      .payload = OpenCombatTargetingAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 397,
+      .payload = EscapeCombatAction{6},
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(center_calls == 1);
@@ -4750,6 +4979,7 @@ int main() {
     test_undo_combatant_mapping_and_dispatch();
     test_open_combat_spellbook_mapping_and_dispatch();
     test_open_combat_targeting_mapping_and_dispatch();
+    test_escape_combat_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

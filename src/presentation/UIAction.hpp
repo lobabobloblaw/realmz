@@ -200,6 +200,16 @@ struct OpenCombatTargetingAction {
   bool operator==(const OpenCombatTargetingAction&) const = default;
 };
 
+// Attempts to escape through the preserved Classic combat flow for the
+// explicitly identified acting party combatant. Classic remains authoritative
+// for range and condition checks, warning/confirmation modals, RNG, queue and
+// field mutation, prestige/light/coward state, and subsequent turn handling.
+struct EscapeCombatAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const EscapeCombatAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -369,6 +379,7 @@ using UIActionPayload = std::variant<
     UndoCombatantAction,
     OpenCombatSpellbookAction,
     OpenCombatTargetingAction,
+    EscapeCombatAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -429,6 +440,8 @@ struct UIAction {
       return "open_combat_spellbook";
     } else if constexpr (std::is_same_v<Action, OpenCombatTargetingAction>) {
       return "open_combat_targeting";
+    } else if constexpr (std::is_same_v<Action, EscapeCombatAction>) {
+      return "escape_combat";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

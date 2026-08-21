@@ -80,6 +80,9 @@ static_assert(std::is_same_v<
     decltype(OpenCombatTargetingAction::combatant),
     CombatantId>);
 static_assert(std::is_same_v<
+    decltype(EscapeCombatAction::combatant),
+    CombatantId>);
+static_assert(std::is_same_v<
     decltype(AutoCombatantAction::combatant),
     CombatantId>);
 
@@ -299,6 +302,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.undo_combatant = mutateEngine;
   handlers.open_combat_spellbook = mutateEngine;
   handlers.open_combat_targeting = mutateEngine;
+  handlers.escape_combat = mutateEngine;
   handlers.inventory = mutateEngine;
   handlers.cast_spell = mutateEngine;
   handlers.trade = mutateEngine;
@@ -568,6 +572,19 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
       DispatchStatus::unsupported);
   CHECK(openCombatTargetingUnsupported.detail ==
       "No legacy handler registered for open_combat_targeting");
+  CHECK(engine.capture() == baselineSnapshot);
+  CHECK(engine.saveFacingBytes() == baselineSaveBytes);
+
+  const UIAction escapeCombatAction{
+      .sequence = sequence++,
+      .payload = EscapeCombatAction{1},
+  };
+  CHECK(action_name(escapeCombatAction.payload) == "escape_combat");
+  const auto escapeCombatUnsupported =
+      unsupportedBridge.dispatch(escapeCombatAction);
+  CHECK(escapeCombatUnsupported.status == DispatchStatus::unsupported);
+  CHECK(escapeCombatUnsupported.detail ==
+      "No legacy handler registered for escape_combat");
   CHECK(engine.capture() == baselineSnapshot);
   CHECK(engine.saveFacingBytes() == baselineSaveBytes);
 

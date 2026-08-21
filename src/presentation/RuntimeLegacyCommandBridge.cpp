@@ -31,6 +31,7 @@ constexpr uint32_t kBandageCombatantMessage = 0x00000B62U;
 constexpr uint32_t kUndoCombatantMessage = 0x00002075U;
 constexpr uint32_t kOpenCombatSpellbookMessage = 0x00000173U;
 constexpr uint32_t kOpenCombatTargetingMessage = 0x00001174U;
+constexpr uint32_t kEscapeCombatMessage = 0x00000E65U;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -584,6 +585,40 @@ LegacyActionHandlers make_handlers(
     };
   }
 
+  if (combat_action_sinks.escape_combat.has_value()) {
+    handlers.escape_combat = [
+        context_provider,
+        escape_combat_sink = std::move(*combat_action_sinks.escape_combat)](
+            const EscapeCombatAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!escape_combat_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy escape-combat sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic escape");
+      }
+      const auto message = legacy_key_message_for_escape_combat(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Escape is not supported for this combatant in the current "
+            "legacy context");
+      }
+      if (!escape_combat_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic escape-combat action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
   return handlers;
 }
 
@@ -1098,6 +1133,16 @@ std::optional<uint32_t> legacy_key_message_for_open_combat_targeting(
     return std::nullopt;
   }
   return kOpenCombatTargetingMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_escape_combat(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kEscapeCombatMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

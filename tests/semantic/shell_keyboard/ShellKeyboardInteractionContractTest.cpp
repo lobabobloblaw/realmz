@@ -100,6 +100,9 @@ private:
     handlers.open_combat_targeting = [](const OpenCombatTargetingAction&) {
       return DispatchResult::handled();
     };
+    handlers.escape_combat = [](const EscapeCombatAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1152,12 +1155,23 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = OpenCombatTargetingAction{2},
   };
+  const ShellControlPlacement escape{
+      .region = ShellRegionId{1121},
+      .kind = ShellControlKind::escape_combat,
+      .bounds = {356.0, 72.0, 160.0, 48.0},
+      .label = "ESCAPE",
+      .accessibility_label = "Attempt to escape combat",
+      .focus_identifier = "focus.action.combat.escape",
+      .tab_order = 1121,
+      .enabled = true,
+      .payload = EscapeCombatAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
   const std::vector utility{
       utility_back, auto_combatant, combat_range, bandage, undo, special_more};
-  const std::vector special{special_back, cast, target};
+  const std::vector special{special_back, cast, target, escape};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1789,7 +1803,7 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       CombatActionPage::utility, CombatActionPage::special));
   CHECK(bridge.actions().size() == 8U);
 
-  CHECK(harness.recompose({target, cast, special_back}));
+  CHECK(harness.recompose({escape, target, cast, special_back}));
   for (const auto& expected : special) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -1933,6 +1947,88 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!target_route_release.shell.invoked_control);
   CHECK(!target_route_release.dispatch);
   CHECK(bridge.actions().size() == 10U);
+
+  // ESCAPE is another actor-only command. The semantic route ends at the
+  // preserved lowercase-e handoff; Classic owns all escape eligibility,
+  // confirmation, feedback, mutation, and turn handling.
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(escape.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto escape_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(escape_release.shell.consumed);
+  CHECK(escape_release.shell.invoked_control.has_value());
+  CHECK(escape_release.shell.invoked_control->kind ==
+      ShellControlKind::escape_combat);
+  CHECK(escape_release.dispatch.has_value());
+  CHECK(escape_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 11U);
+  CHECK(std::get<EscapeCombatAction>(
+      bridge.actions()[10].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 11U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.keyboard().focused_identifier() == escape.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[3].payload = EscapeCombatAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_escape_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_escape_release.shell.consumed);
+  CHECK(!stale_escape_release.shell.invoked_control);
+  CHECK(!stale_escape_release.dispatch);
+  CHECK(bridge.actions().size() == 11U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(escape.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = special;
+  changed[3].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_escape_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_escape_release.shell.consumed);
+  CHECK(!disabled_escape_release.shell.invoked_control);
+  CHECK(!disabled_escape_release.dispatch);
+  CHECK(bridge.actions().size() == 11U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(escape.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(utility));
+  const auto escape_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(escape_page_release.shell.consumed);
+  CHECK(!escape_page_release.shell.invoked_control);
+  CHECK(!escape_page_release.dispatch);
+  CHECK(bridge.actions().size() == 11U);
+
+  CHECK(!harness.recompose(special));
+  CHECK(harness.focus(escape.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto escape_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(escape_route_release.shell.consumed);
+  CHECK(!escape_route_release.shell.invoked_control);
+  CHECK(!escape_route_release.dispatch);
+  CHECK(bridge.actions().size() == 11U);
 }
 
 using DescriptorMutation =

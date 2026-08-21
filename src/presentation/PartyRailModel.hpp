@@ -119,6 +119,7 @@ enum class ActionIntent {
   undo_combatant,
   open_combat_spellbook,
   open_combat_targeting,
+  escape_combat,
   cancel,
   encounter_choice,
 };

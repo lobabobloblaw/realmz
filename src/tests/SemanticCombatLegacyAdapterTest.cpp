@@ -105,7 +105,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 14> combat_cases() {
+std::array<CombatCase, 15> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -194,6 +194,12 @@ std::array<CombatCase, 14> combat_cases() {
               1, REALMZ_SEMANTIC_INPUT_COMBAT),
           .consume = RealmzConsumeSemanticOpenCombatTargetingEvent,
           .classic_message = 0x00001174U,
+      },
+      CombatCase{
+          .tag = semantic_escape_combat_tag(
+              1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticEscapeCombatEvent,
+          .classic_message = 0x00000E65U,
       },
   };
 }

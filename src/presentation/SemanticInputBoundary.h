@@ -146,6 +146,13 @@ uint8_t RealmzIsSemanticOpenCombatTargetingTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenCombatTargetingTagSurface(
     uint32_t tagged_message);
 
+// Escape tags carry only the acting combatant. Classic remains authoritative
+// for range and condition checks, warning/confirmation modals, mutation, RNG,
+// and every subsequent turn or combat-exit effect.
+uint8_t RealmzIsSemanticEscapeCombatTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticEscapeCombatTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -301,6 +308,14 @@ uint8_t RealmzConsumeSemanticOpenCombatTargetingEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates only the live acting party combatant, then returns the preserved
+// lowercase "e" key record. Classic owns all Escape-specific eligibility,
+// feedback, confirmation, mutation, and subsequent turn handling.
+uint8_t RealmzConsumeSemanticEscapeCombatEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -384,6 +399,10 @@ enum class CombatFocusDirection;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_open_combat_targeting_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_escape_combat_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 

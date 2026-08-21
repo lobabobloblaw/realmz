@@ -332,6 +332,18 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(combat_targeting.focus_identifier !=
       combat_spellbook.focus_identifier);
   CHECK(combat_targeting.availability_reason->label == "Game rules apply");
+  const auto& escape_combat =
+      action_with(model, ActionIntent::escape_combat);
+  CHECK(escape_combat.can_invoke());
+  CHECK(escape_combat.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(escape_combat.command == "action.combat.escape");
+  CHECK(escape_combat.label == "Escape");
+  CHECK(escape_combat.combatant == guard.combatant);
+  CHECK(escape_combat.tab_order == combat_targeting.tab_order + 1);
+  CHECK(escape_combat.focus_identifier !=
+      combat_targeting.focus_identifier);
+  CHECK(escape_combat.availability_reason->label == "Game rules apply");
   CHECK(model.combat_action_page == CombatActionPage::primary);
 
   const auto secondary_page_model = build_presentation_shell_model(
@@ -461,6 +473,10 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(combat_targeting_before_movement.can_invoke());
   CHECK(combat_targeting_before_movement.combatant ==
       available_delay.combatant);
+  const auto& escape_before_movement =
+      action_with(model, ActionIntent::escape_combat);
+  CHECK(escape_before_movement.can_invoke());
+  CHECK(escape_before_movement.combatant == available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
   model = build_presentation_shell_model(snapshot);
@@ -516,6 +532,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::open_combat_targeting);
   CHECK(unmatched_combat_targeting.can_invoke());
   CHECK(unmatched_combat_targeting.combatant == unmatched_delay.combatant);
+  const auto& unmatched_escape =
+      action_with(model, ActionIntent::escape_combat);
+  CHECK(unmatched_escape.can_invoke());
+  CHECK(unmatched_escape.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   auto no_selection = snapshot;
@@ -557,6 +577,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(no_selection_model, ActionIntent::open_combat_targeting);
   CHECK(combat_targeting_without_selection.can_invoke());
   CHECK(combat_targeting_without_selection.combatant == 1);
+  const auto& escape_without_selection =
+      action_with(no_selection_model, ActionIntent::escape_combat);
+  CHECK(escape_without_selection.can_invoke());
+  CHECK(escape_without_selection.combatant == 1);
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
@@ -575,6 +599,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::undo_combatant,
              ActionIntent::open_combat_spellbook,
              ActionIntent::open_combat_targeting,
+             ActionIntent::escape_combat,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());

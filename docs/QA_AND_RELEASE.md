@@ -86,7 +86,7 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes fourteen bounded semantic controls: typed `GuardCombatantAction`,
+Combat exposes fifteen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`,
@@ -97,6 +97,8 @@ combat-only tagged events. A distinct actor-only
 reusing the exploration `OpenSpellbookAction` or selecting a spell or target.
 A separate actor-only `OpenCombatTargetingAction` identifies no target or cell;
 Classic resolves the equipped source and target mode after handoff.
+An actor-only `EscapeCombatAction` requests the preserved escape attempt without
+encoding a range result, warning, confirmation choice, or flee outcome.
 The focus-cycle command also carries Previous or Next.
 `OpenCombatItemsAction` independently carries the
 acting combatant and selected party member so neither identity can silently
@@ -127,6 +129,10 @@ Combat Target is late-gated by a read-only mirror of Classic's visible Target
 control: the active queued actor must still be displayed, no spell flow may be
 open, and the toggled base item must still encode a charged targeting spell.
 It becomes the exact Classic `t` message `0x00001174`.
+Combat Escape is exposed through the same fresh active-party-actor gate and
+becomes the exact Classic `e` message `0x00000E65`. Presentation deliberately
+does not call or mirror Classic's mutating `getrange` helper or its condition
+and warning rules.
 Validation fails closed, so stale or newly ineligible actions become inert.
 The original Classic guard/finish/delay mutations and turn
 advance remain authoritative, as do Center's existing non-turn-ending camera
@@ -153,6 +159,12 @@ target type, charge consumption and item drops, RNG, raw target loops,
 abort/launch costs, spell effects, redraws, and turn handling. A charge or RNG
 decision may occur before a manual target is chosen, and an aborted target flow
 does not imply a semantic refund.
+Classic remains authoritative for Escape's range calculation, warning 81 versus
+83 precedence, raw `question3` confirmation, confirmed body/field/queue and
+position removal, `inbattle` and prestige mutation, light update,
+last-loyal-member coward/kill handling, and `getup` turn or post-combat flow.
+The semantic route chooses no confirmation response and claims no flee or turn
+equivalence.
 All other combat commands remain in the interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
@@ -256,8 +268,8 @@ Automated checks do not replace these release decisions:
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
-  Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, and
-  Combat Target
+  Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat
+  Target, and Combat Escape
   controls at compact and wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
@@ -287,6 +299,11 @@ Automated checks do not replace these release decisions:
   flow, toggled source, encoded spell, or source charge changes and otherwise
   reaches Classic's equipment/quiver resolution, target modes, raw target loop,
   charge/drop and RNG paths, abort/launch costs, resolution, and turn handling;
+  verify Combat Escape is inert after the acting combatant or combat surface
+  changes and otherwise reaches Classic's distance and condition warnings;
+  verify range 9 versus 10, no enemies, warning precedence, cancel/Stay versus
+  Embrace, individual versus last-loyal escape, a fresh confirmation input,
+  and Classic-owned field/queue/position/prestige/coward/turn effects;
   verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;
