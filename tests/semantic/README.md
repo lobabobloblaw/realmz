@@ -445,11 +445,14 @@ and reported, including on post-creation failure, and neither tool performs
 automatic recursive cleanup. Review `path_authoritative` and the parent
 namespace before deliberately removing either candidate.
 
-This completes the comparison harness, but it is not yet evidence that the
-real engine routes are equivalent. The integration tests use a synthetic child,
-and the repository has no selected provenance-reviewed Tutorial fixture with
-which to execute the real binary. The v1 profile also compares RNG draw counts,
-not a separate trace of every drawn value.
+This completes the comparison harness. Its integration tests use a synthetic
+child and remain harness evidence rather than a live verdict. One externally
+reviewed private Tutorial outdoor profile has also completed the real gate; its
+narrowly scoped result and identities are recorded in the
+[digest-only receipt](../../docs/CONTENT_PROVENANCE.md#private-outdoor-replay-receipt-2026-08-21).
+The repository still contains no private fixture or raw envelope, and
+first-person dungeon equivalence remains pending. The v1 profile also compares
+RNG draw counts, not a separate trace of every drawn value.
 
 The dependency-free native checks are included in the core test runner:
 
@@ -483,20 +486,19 @@ runner result and owns the only evaluated verdict.
 
 ## Live replay roadmap
 
-The remaining milestone work is to:
+The outdoor portion of the movement milestone has a completed, archived local
+envelope and the digest-only receipt linked above. The remaining work is to:
 
-1. Select and review a private Tutorial fixture manifest, then pin its
-   exact manifest SHA-256 and `tree_sha256` in an explicit equivalence request.
-2. Review and pin the movement-only Tutorial action profile that exercises the
-   intended exploration and dungeon coverage.
-3. Run the real built Realmz executable through the equivalence gate and archive
-   the completed local envelope. `equivalent` is meaningful only for that exact
-   fixture and replay-profile digest.
-4. Expand the native action vocabulary and repeat with broader Tutorial and
-   City profiles before treating replay equivalence as a release-wide claim.
+1. review and pin a separate private first-person dungeon fixture and movement
+   profile;
+2. run that exact profile through the real equivalence gate, archive its local
+   envelope, and append a separately scoped digest-only receipt; and
+3. expand the native replay action vocabulary and repeat with broader Tutorial
+   and City profiles before treating replay equivalence as a release-wide
+   claim.
 
-That real-fixture invocation, rather than the synthetic gate tests, is a
-required gate for the exact profile's real-engine and save-equivalence
-evidence. Broader Tutorial and City profiles remain separate release work.
+Each real-fixture invocation, rather than the synthetic gate tests, is the
+required gate for its exact profile's real-engine and save-equivalence evidence.
+Broader Tutorial and City profiles remain separate release work.
 The private operational checklist is in
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](../../docs/SEMANTIC_REPLAY_RUNBOOK.md).

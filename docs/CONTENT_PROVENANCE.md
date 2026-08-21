@@ -328,12 +328,13 @@ and RNG measurements before exiting successfully.
 Synthetic tests pin the parent protocol, and linked native tests exercise both
 delivery routes against controlled engine globals for all eight outdoor and
 four first-person dungeon movement commands. Those linked tests establish
-delivery mapping and next-poll settlement, not Tutorial traversal. The runner deliberately
-does not compare child-reported state and save hashes. The repository also has
-no selected provenance-reviewed live Tutorial fixture. Even a successful
-runner invocation therefore emits `"runner_scope":"process_isolation_only"`
-and `"semantic_equivalence":"not_evaluated"`; it is not evidence of engine or
-save equivalence.
+delivery mapping and next-poll settlement, not Tutorial traversal. The runner
+deliberately does not compare child-reported state and save hashes. The
+repository deliberately contains no selected live Tutorial fixture. A
+standalone runner invocation therefore emits
+`"runner_scope":"process_isolation_only"` and
+`"semantic_equivalence":"not_evaluated"`; only the separate comparison gate
+can establish engine and save equivalence for an externally reviewed fixture.
 
 `scripts/semantic_replay_equivalence.py` is the separate opt-in comparison
 layer. Its closed v1 request explicitly pins the exact reviewed manifest and
@@ -387,12 +388,49 @@ reported namespace and `path_authoritative` value first. These envelopes are
 local audit artifacts and can contain absolute candidate paths even though they
 contain no fixture payloads.
 
-The harness is implemented and synthetically tested, but the repository still
-has no selected provenance-reviewed Tutorial fixture and therefore carries no
-real-engine equivalence result. A verdict is scoped to its exact fixture-tree
-and action-plan digests; a zero-action or narrow movement profile must not be
+The harness is implemented and synthetically tested. The repository still
+contains no private fixture, request, raw envelope, or absolute private path,
+but it can carry a digest-only receipt for an externally reviewed run. Every
+verdict remains scoped to its exact fixture tree, action plan, executable, and
+deterministic inputs; a zero-action or narrow movement profile must not be
 presented as broader release coverage. V1 also compares RNG draw counts rather
 than a separate trace of every value drawn.
+
+#### Private outdoor replay receipt (2026-08-21)
+
+A private, nonredistributable Tutorial fixture completed the reviewed
+eight-command outdoor profile through the real Classic and semantic child
+routes. The canonical envelope and all fixture-bearing artifacts remain in
+private storage. This receipt contains only non-content identities and results:
+
+- comparison contract: `realmz.semantic-replay.exact.v1`;
+- result: `equivalent`, exit status `0`, empty stderr, and no mismatched fields;
+- build source: commit
+  `da7e076fb37aeb67259fa14b8f1caa231d3bcd15`, engine identity
+  `Realmz-8.1.0-native-replay-v1`, executable SHA-256
+  `b72d1b6c68655de3382fbe40b76a414e157c679fb77b50e8084c6ed2dd44d0c8`;
+- fixture manifest SHA-256
+  `bb8a43f89d85efb650ca101f9ea4281176a39314c33e98537c6adf8f3502a4fd`
+  and fixture-tree SHA-256
+  `e3366c4c022ddd1b9bc6002b0d94c597a54cb77e272b42b20c9be6ff7ba3b50e`;
+- eight-action outdoor profile SHA-256
+  `a796f53599aeb166191ac14583d7180dc69c8d34ecd66131b677602fbd672207`,
+  input/output slots `A`/`B`, RNG seed `0123456789abcdef`, RNG stream
+  `fedcba9876543210`, and settlement barrier
+  `next_semantic_gameplay_poll`;
+- Classic/semantic settled-action counts `8`/`8` and RNG-draw counts `24`/`24`;
+- matching state SHA-256
+  `401447ac9f948341e335bbdf0bd0c56fa67722217885d29f59c73a3c8481448c`
+  and output save-tree SHA-256
+  `9558d0fa241a8abbd1dad4470ed292c8bc5b6088c8041d259404915ab45336ff`;
+- request SHA-256
+  `911284a637bebe9da6df9dbde4bb5f91cecaec7207533854d8a23cc6ff737840`
+  and independently recorded raw-envelope SHA-256
+  `3e3cac012d2dd1930d4ad0cf1dbf3bc3128e3045db2daebacd6b7122c5f0d589`.
+
+This is outdoor-only evidence for those exact identities. It establishes no
+first-person dungeon, combat, City, release-wide, or current-HEAD equivalence,
+and it does not make the private source fixture redistributable.
 
 The complete private review and archival checklist is
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md).

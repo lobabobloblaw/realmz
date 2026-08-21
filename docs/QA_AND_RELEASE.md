@@ -26,13 +26,15 @@ request pins both the reviewed manifest bytes and fixture tree, and
 `--inspect-profile` validates the exact native-v1 action digest without staging
 or launching children. A configured build separately exercises all 12 native
 movement commands through both linked production routes.
-This is harness coverage only: no provenance-reviewed Tutorial fixture is
-selected in the repository, so no current CI result establishes real-engine
-equivalence. Before release, run the built application through that gate with a
-reviewed private Tutorial request and archive the envelope bound to its exact
-manifest, fixture-tree, and action-plan digests. Follow
-[`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md); broader action
-profiles and City coverage remain separate acceptance work.
+No private Tutorial fixture is selected in the repository, so no current CI
+result establishes real-engine equivalence. A separately reviewed private
+outdoor profile has completed the real gate; its narrowly scoped, non-content
+identities and result are recorded in the
+[digest-only receipt](CONTENT_PROVENANCE.md#private-outdoor-replay-receipt-2026-08-21).
+First-person dungeon coverage, broader action profiles, and City coverage
+remain separate acceptance work. Follow
+[`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md) for each private
+gate and archive its canonical envelope outside the repository.
 
 A configured full build also registers `ResourceForkSelectionIntegrationTest`.
 That test parses the five real phase-one resource forks and proves that all
