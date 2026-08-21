@@ -3,7 +3,7 @@
 #include "variables.h"
 
 static void save_prelude(void);
-static short save_selected(short, short);
+static short save_selected(short);
 
 /************************ save game *********************/
 void save(short mode) {
@@ -15,7 +15,7 @@ void save(short mode) {
   if (!choice)
     return;
 
-  (void)save_selected(choice, FALSE);
+  (void)save_selected(choice);
 }
 
 /*********************** RealmzReplaySaveSlot *********************/
@@ -31,7 +31,7 @@ short RealmzReplaySaveSlot(char slot) {
   needdungeonupdate = TRUE;
   save_prelude();
   centerpict();
-  return save_selected(choice, TRUE);
+  return save_selected(choice);
 }
 
 /************************ save_prelude *********************/
@@ -69,7 +69,7 @@ static void save_prelude(void) {
 }
 
 /************************ save_selected *********************/
-static short save_selected(short choice, short preserve_land_sites) {
+static short save_selected(short choice) {
   FILE* op = NULL;
   FILE* fp = NULL;
   short count, t = 0;
@@ -550,17 +550,16 @@ pushon:
     scratch(150);
   if ((op = MyrFopen(filename, "w+b")) == NULL)
     scratch(151);
+  /* CL records always include their site grid, even when the current party is
+   * in a dungeon. Omitting it desynchronizes every following land record. */
   while (fread(&door, sizeof door, 1, fp) == 1) {
     fread(&field, sizeof field, 1, fp);
     fread(&randlevel, sizeof randlevel, 1, fp);
-    if ((!indung) || preserve_land_sites)
-      fread(&site, sizeof site, 1, fp);
+    fread(&site, sizeof site, 1, fp);
     fwrite(&door, sizeof door, 1, op);
     fwrite(&field, sizeof field, 1, op);
     fwrite(&randlevel, sizeof randlevel, 1, op);
-    if ((!indung) || preserve_land_sites) {
-      fwrite(&site, sizeof site, 1, op);
-    }
+    fwrite(&site, sizeof site, 1, op);
   }
   fclose(fp);
   fclose(op);

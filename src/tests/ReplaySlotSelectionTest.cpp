@@ -137,14 +137,14 @@ void test_save_source_contract(const fs::path& root) {
       function_body(source, "static void save_prelude(void) {");
   const std::string_view selected = function_body(
       source,
-      "static short save_selected(short choice, short preserve_land_sites)");
+      "static short save_selected(short choice)");
 
   const std::size_t ordinary_prelude = ordinary.find("save_prelude()");
   const std::size_t chooser = ordinary.find("fileprep(mode)");
   const std::size_t center = ordinary.find("centerpict()");
   const std::size_t cancel = ordinary.find("if (!choice)");
   const std::size_t ordinary_dispatch =
-      ordinary.find("save_selected(choice, FALSE)");
+      ordinary.find("save_selected(choice)");
   require(ordinary_prelude != std::string_view::npos &&
           chooser != std::string_view::npos &&
           center != std::string_view::npos &&
@@ -163,7 +163,7 @@ void test_save_source_contract(const fs::path& root) {
   const std::size_t replay_prelude = replay.find("save_prelude()");
   const std::size_t replay_center = replay.find("centerpict()");
   const std::size_t replay_dispatch =
-      replay.find("save_selected(choice, TRUE)");
+      replay.find("save_selected(choice)");
   require(mapping != std::string_view::npos &&
           invalid != std::string_view::npos &&
           invalid_return != std::string_view::npos &&
@@ -204,19 +204,30 @@ void test_save_source_contract(const fs::path& root) {
   require(land_data != std::string_view::npos,
       "selected save body must retain Data A1 output");
   const std::string_view land_copy = selected.substr(land_data);
-  const std::string_view site_guard =
-      "if ((!indung) || preserve_land_sites)";
-  const std::size_t site_read_guard = land_copy.find(site_guard);
-  const std::size_t site_write_guard = land_copy.find(
-      site_guard, site_read_guard == std::string_view::npos
-          ? 0
-          : site_read_guard + site_guard.size());
-  require(site_read_guard != std::string_view::npos &&
-          site_write_guard != std::string_view::npos,
-      "replay Data A1 must retain both site reads and site writes");
-  require(land_copy.find(site_guard, site_write_guard + site_guard.size()) ==
-              std::string_view::npos,
-      "Data A1 must have exactly two replay site-preservation guards");
+  const std::size_t read_door = land_copy.find("fread(&door");
+  const std::size_t read_field = land_copy.find("fread(&field");
+  const std::size_t read_random = land_copy.find("fread(&randlevel");
+  const std::size_t read_site = land_copy.find("fread(&site");
+  const std::size_t write_door = land_copy.find("fwrite(&door");
+  const std::size_t write_field = land_copy.find("fwrite(&field");
+  const std::size_t write_random = land_copy.find("fwrite(&randlevel");
+  const std::size_t write_site = land_copy.find("fwrite(&site");
+  require(read_door != std::string_view::npos &&
+          read_field != std::string_view::npos &&
+          read_random != std::string_view::npos &&
+          read_site != std::string_view::npos &&
+          write_door != std::string_view::npos &&
+          write_field != std::string_view::npos &&
+          write_random != std::string_view::npos &&
+          write_site != std::string_view::npos &&
+          read_door < read_field && read_field < read_random &&
+          read_random < read_site && read_site < write_door &&
+          write_door < write_field && write_field < write_random &&
+          write_random < write_site,
+      "Data A1 must copy every complete outdoor record, including its site "
+      "grid, in on-disk order");
+  require(selected.find("preserve_land_sites") == std::string_view::npos,
+      "Data A1 site preservation must not depend on current dungeon state");
   require(selected.find("fileprep") == std::string_view::npos,
       "selected save body must remain chooser-independent");
   require(selected.find("return (1)") != std::string_view::npos,
