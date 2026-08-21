@@ -10,6 +10,7 @@
             "oneOf": [
               {
                 "maxLength": 1024,
+                "pattern": "^[ -~]*(?![\\s\\S])",
                 "type": "string"
               },
               {
@@ -25,13 +26,13 @@
           "maxProperties": 32,
           "propertyNames": {
             "maxLength": 64,
-            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*$"
+            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])"
           },
           "type": "object"
         },
         "kind": {
           "maxLength": 64,
-          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*$",
+          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])",
           "type": "string"
         },
         "ordinal": {
@@ -48,6 +49,34 @@
       "type": "object"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "replay_route": {
+            "const": "classic"
+          }
+        },
+        "required": [
+          "replay_route"
+        ]
+      },
+      "then": {
+        "properties": {
+          "presentation_mode": {
+            "const": "classic"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "presentation_mode": {
+            "const": "remastered"
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": false,
   "description": "Private config passed to one external --semantic-replay-child process.",
   "properties": {
@@ -59,18 +88,18 @@
       "type": "array"
     },
     "child_nonce": {
-      "pattern": "^[0-9a-f]{32}$",
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])",
       "type": "string"
     },
     "input_slot": {
-      "pattern": "^[A-J]$",
+      "pattern": "^[A-J](?![\\s\\S])",
       "type": "string"
     },
     "input_slot_policy": {
       "const": "user_data_root_only_no_bundled_fallback"
     },
     "output_slot": {
-      "pattern": "^[A-J]$",
+      "pattern": "^[A-J](?![\\s\\S])",
       "type": "string"
     },
     "output_slot_policy": {
@@ -97,15 +126,15 @@
       "type": "string"
     },
     "run_id": {
-      "pattern": "^[0-9a-f]{32}$",
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])",
       "type": "string"
     },
     "rng_seed": {
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "rng_stream": {
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "schema_version": {

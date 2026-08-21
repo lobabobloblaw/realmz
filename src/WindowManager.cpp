@@ -49,6 +49,7 @@
 #include "presentation/PartyRailLayout.hpp"
 #include "presentation/PartyRailModel.hpp"
 #include "presentation/SemanticInputBoundary.h"
+#include "replay/ReplayRuntime.hpp"
 
 using ResourceDASM::ResourceFile;
 
@@ -193,6 +194,21 @@ static void draw_dbox_frame(CCGrafPort& port, const Rect& content_rect) {
 // SDL and rendering helpers
 
 static phosg::PrefixedLogger wm_log("[WindowManager] ", DEFAULT_LOG_LEVEL);
+
+static std::optional<realmz::presentation::PresentationMode>
+forced_replay_presentation_mode() noexcept {
+  const auto* runtime = realmz::replay::installed_replay_runtime();
+  if (!runtime) {
+    return std::nullopt;
+  }
+  switch (runtime->presentation_mode()) {
+    case realmz::replay::ReplayPresentationMode::classic:
+      return realmz::presentation::PresentationMode::classic;
+    case realmz::replay::ReplayPresentationMode::remastered:
+      return realmz::presentation::PresentationMode::remastered;
+  }
+  return realmz::presentation::PresentationMode::classic;
+}
 
 static size_t generate_opaque_handle() {
   static size_t next_handle = 1;
@@ -1315,6 +1331,9 @@ void WindowManager::create_sdl_window() {
   wm_log.debug_f("WindowManager::create_sdl_window()");
 
   PortPrefs prefs = load_port_prefs();
+  if (const auto replay_mode = forced_replay_presentation_mode()) {
+    prefs.presentation_mode = *replay_mode;
+  }
   this->scale_mode = prefs.scale_mode;
   this->aspect_locked = prefs.aspect_locked;
   this->gamma_idx = prefs.gamma_idx;
@@ -6286,6 +6305,12 @@ void WindowManager::set_gamma_idx(int idx) {
 
 void WindowManager::set_presentation_mode(
     realmz::presentation::PresentationMode mode) {
+  if (const auto replay_mode = forced_replay_presentation_mode();
+      replay_mode && mode != *replay_mode) {
+    wm_log.warning_f(
+        "Ignoring presentation-mode change during semantic replay");
+    return;
+  }
   if (mode == this->presentation_host.mode()) {
     return;
   }

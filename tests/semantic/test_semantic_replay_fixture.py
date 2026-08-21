@@ -149,7 +149,10 @@ class ManifestValidationTests(ReplayFixtureTestCase):
         file_schema = schema["properties"]["files"]["items"]
         self.assertIs(file_schema["additionalProperties"], False)
         self.assertEqual(set(file_schema["required"]), fixture_tool.FILE_FIELDS)
-        self.assertEqual(schema["properties"]["slot"]["pattern"], "^[A-J]$")
+        self.assertEqual(
+            schema["properties"]["slot"]["pattern"],
+            r"^[A-J](?![\s\S])",
+        )
 
     def test_unknown_and_missing_fields_are_rejected_at_every_level(self) -> None:
         top_unknown = copy.deepcopy(self.manifest_value)

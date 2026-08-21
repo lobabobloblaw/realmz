@@ -18,18 +18,18 @@
       "type": "string"
     },
     "run_id": {
-      "pattern": "^[0-9a-f]{32}$",
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])",
       "type": "string"
     },
     "runner_scope": {
       "const": "process_isolation_only"
     },
     "rng_seed": {
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "rng_stream": {
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "schema_version": {

@@ -10,6 +10,7 @@
 
 #include "PortMenu.hpp"
 #include "UserDataPaths.hpp"
+#include "replay/ReplayRuntime.hpp"
 
 #include <phosg/Filesystem.hh>
 #include <phosg/JSON.hh>
@@ -75,8 +76,28 @@ static const char* name_for_presentation_mode(
   return realmz::presentation::to_string(mode).data();
 }
 
+static realmz::presentation::PresentationMode replay_presentation_mode(
+    realmz::replay::ReplayPresentationMode mode) {
+  switch (mode) {
+    case realmz::replay::ReplayPresentationMode::classic:
+      return realmz::presentation::PresentationMode::classic;
+    case realmz::replay::ReplayPresentationMode::remastered:
+      return realmz::presentation::PresentationMode::remastered;
+  }
+  return realmz::presentation::PresentationMode::classic;
+}
+
 PortPrefs load_port_prefs() {
   PortPrefs prefs;
+
+  if (const auto* runtime =
+          realmz::replay::installed_replay_runtime()) {
+    // Replay startup is independent of ambient machine preferences. Keep all
+    // deterministic defaults and apply only the route's configured mode.
+    prefs.presentation_mode =
+        replay_presentation_mode(runtime->presentation_mode());
+    return prefs;
+  }
 
   std::string path = prefs_path();
   if (path.empty()) {
@@ -117,6 +138,12 @@ PortPrefs load_port_prefs() {
 }
 
 void save_port_prefs(const PortPrefs& prefs) {
+  if (const auto* runtime =
+          realmz::replay::installed_replay_runtime();
+      runtime && !runtime->preferences_writes_enabled()) {
+    return;
+  }
+
   std::string path = prefs_path();
   if (path.empty()) {
     prefs_log.warning_f("Could not get pref path: {}; not saving prefs", SDL_GetError());

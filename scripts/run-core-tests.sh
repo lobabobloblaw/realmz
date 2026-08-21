@@ -195,6 +195,23 @@ run_cpp_test UserDataPathPolicyTest \
   src/tests/UserDataPathPolicyTest.cpp \
   src/userdata/UserDataPathPolicy.cpp
 
+run_cpp_test ReplayChildConfigTest \
+  src/tests/ReplayChildConfigTest.cpp \
+  src/replay/ReplayChildConfig.cpp
+
+run_cpp_test DeterministicReplayRngTest \
+  src/tests/DeterministicReplayRngTest.cpp \
+  src/replay/DeterministicReplayRng.cpp
+
+run_cpp_test ReplayRuntimeTest \
+  src/tests/ReplayRuntimeTest.cpp \
+  src/replay/ReplayRuntime.cpp \
+  src/replay/ReplayChildConfig.cpp \
+  src/replay/DeterministicReplayRng.cpp
+
+run_cpp_test SemanticReplayStartupContractTest \
+  src/tests/SemanticReplayStartupContractTest.cpp
+
 if [[ "${REALMZ_SKIP_PYTHON_TESTS:-0}" != "1" ]] &&
     find "$repo/tests/release" -maxdepth 1 -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
   echo "Running release verifier tests"

@@ -3,6 +3,8 @@
 #include <phosg/Random.hh>
 #include <phosg/Strings.hh>
 
+#include "replay/ReplayRuntime.hpp"
+
 using namespace std;
 
 constexpr int16_t memFullErr = -108;
@@ -284,6 +286,10 @@ Boolean BitTst(const void* bytePtr, int32_t bitNum) {
 }
 
 int16_t Random(void) {
+  if (auto* runtime = realmz::replay::installed_replay_runtime()) {
+    return runtime->next_classic_random();
+  }
+
   // According to Inside Macintosh I-194, this function returns any value for
   // an int16_t except -0x8000
   int16_t ret;

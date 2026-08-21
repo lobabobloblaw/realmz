@@ -10,6 +10,7 @@
             "oneOf": [
               {
                 "maxLength": 1024,
+                "pattern": "^[ -~]*(?![\\s\\S])",
                 "type": "string"
               },
               {
@@ -25,13 +26,13 @@
           "maxProperties": 32,
           "propertyNames": {
             "maxLength": 64,
-            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*$"
+            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])"
           },
           "type": "object"
         },
         "kind": {
           "maxLength": 64,
-          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*$",
+          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])",
           "type": "string"
         },
         "ordinal": {
@@ -71,21 +72,21 @@
       "type": "string"
     },
     "input_slot": {
-      "pattern": "^[A-J]$",
+      "pattern": "^[A-J](?![\\s\\S])",
       "type": "string"
     },
     "output_slot": {
-      "pattern": "^[A-J]$",
+      "pattern": "^[A-J](?![\\s\\S])",
       "type": "string"
     },
     "rng_seed": {
       "description": "Deterministic 64-bit RNG seed shared by both children.",
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "rng_stream": {
       "description": "Deterministic 64-bit RNG stream selector shared by both children.",
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "schema_version": {

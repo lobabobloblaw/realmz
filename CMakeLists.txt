@@ -108,6 +108,14 @@ add_library(realmz_userdata_core STATIC
 target_include_directories(realmz_userdata_core PUBLIC src)
 realmz_configure_core_target(realmz_userdata_core)
 
+add_library(realmz_replay_core STATIC
+    src/replay/DeterministicReplayRng.cpp
+    src/replay/ReplayChildConfig.cpp
+    src/replay/ReplayRuntime.cpp
+)
+target_include_directories(realmz_replay_core PUBLIC src)
+realmz_configure_core_target(realmz_replay_core)
+
 if(REALMZ_BUILD_CORE_TESTS)
     enable_testing()
     add_executable(PresentationCoreTest src/tests/PresentationCoreTest.cpp)
@@ -311,6 +319,29 @@ if(REALMZ_BUILD_CORE_TESTS)
     target_link_libraries(UserDataPathPolicyTest PRIVATE realmz_userdata_core)
     realmz_configure_core_target(UserDataPathPolicyTest)
     add_test(NAME UserDataPathPolicyTest COMMAND UserDataPathPolicyTest)
+
+    add_executable(ReplayChildConfigTest
+        src/tests/ReplayChildConfigTest.cpp)
+    target_link_libraries(ReplayChildConfigTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayChildConfigTest)
+    add_test(NAME ReplayChildConfigTest COMMAND ReplayChildConfigTest)
+
+    add_executable(DeterministicReplayRngTest
+        src/tests/DeterministicReplayRngTest.cpp)
+    target_link_libraries(DeterministicReplayRngTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(DeterministicReplayRngTest)
+    add_test(NAME DeterministicReplayRngTest COMMAND DeterministicReplayRngTest)
+
+    add_executable(ReplayRuntimeTest src/tests/ReplayRuntimeTest.cpp)
+    target_link_libraries(ReplayRuntimeTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayRuntimeTest)
+    add_test(NAME ReplayRuntimeTest COMMAND ReplayRuntimeTest)
+
+    add_executable(SemanticReplayStartupContractTest
+        src/tests/SemanticReplayStartupContractTest.cpp)
+    realmz_configure_core_target(SemanticReplayStartupContractTest)
+    add_test(NAME SemanticReplayStartupContractTest
+        COMMAND SemanticReplayStartupContractTest ${CMAKE_SOURCE_DIR})
 endif()
 
 if(REALMZ_CORE_ONLY)
@@ -533,6 +564,7 @@ set(SOURCES
     src/realmz_orig/warn.c
     src/realmz_orig/wear.c
     src/RealmzCocoa.c
+    src/SemanticReplayChild.cpp
     src/EventManager.cpp
     src/FileManager.cpp
     src/Font.cpp
@@ -650,8 +682,18 @@ target_link_libraries(realmz_lib
     realmz_presentation_core
     realmz_asset_core
     realmz_userdata_core
+    realmz_replay_core
     ${realmz_lib_LINK_LIBRARIES}
 )
+
+if(REALMZ_BUILD_CORE_TESTS)
+    add_executable(SemanticReplayChildBootstrapTest
+        src/tests/SemanticReplayChildBootstrapTest.cpp)
+    target_link_libraries(SemanticReplayChildBootstrapTest PRIVATE realmz_lib)
+    realmz_configure_core_target(SemanticReplayChildBootstrapTest)
+    add_test(NAME SemanticReplayChildBootstrapTest
+        COMMAND SemanticReplayChildBootstrapTest)
+endif()
 
 add_executable(Realmz
     ${REALMZ_EXECUTABLE_SRC}
@@ -675,6 +717,12 @@ if(NOT WIN32 AND REALMZ_ENABLE_APP_SANITIZERS AND
     target_compile_options(Realmz PRIVATE
         -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(Realmz PRIVATE -fsanitize=address,undefined)
+    if(TARGET SemanticReplayChildBootstrapTest)
+        target_compile_options(SemanticReplayChildBootstrapTest PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(SemanticReplayChildBootstrapTest PRIVATE
+            -fsanitize=address,undefined)
+    endif()
 endif()
 
 # A packaged app receives the same phase-one files through install() below.

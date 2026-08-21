@@ -21,7 +21,7 @@
             "type": "string"
           },
           "sha256": {
-            "pattern": "^[0-9a-f]{64}$",
+            "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
             "type": "string"
           },
           "size": {
@@ -48,16 +48,16 @@
       "type": "boolean"
     },
     "slot": {
-      "pattern": "^[A-J]$",
+      "pattern": "^[A-J](?![\\s\\S])",
       "type": "string"
     },
     "source_class": {
       "maxLength": 64,
-      "pattern": "^[a-z][a-z0-9-]*$",
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
       "type": "string"
     },
     "tree_sha256": {
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
       "type": "string"
     }
   },

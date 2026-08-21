@@ -1,5 +1,6 @@
 #include "prototypes.h"
 #include "realmzbuild.h"
+#include "SemanticReplayChild.h"
 #include "variables.h"
 
 #ifdef PC
@@ -18,6 +19,11 @@ FILE* OpenFilePref(char* nom, char* attr);
 
 short openpref(short mode) {
   Str255 pref_file_name;
+
+  if (RealmzSemanticReplayChildIsActive()) {
+    fPref = NULL;
+    return (0);
+  }
 
   GetIndString(pref_file_name, STR_LIST_ID, PREF_STR_INDEX + divine);
   // Pre file name
@@ -48,6 +54,9 @@ static void closepref(void) {
 void savepref(void) {
   Handle new_data_handle;
   int32_t magic;
+
+  if (RealmzSemanticReplayChildIsActive())
+    return;
 
   openpref(1);
   if (fPref) {
@@ -196,7 +205,8 @@ void getpref(void) {
   blank10 = (**(PrefHandle)data_handle).blank10;
 
 #if !divine
-  if ((!serial) || (!MyrBitTstLong(&serial, 8))) {
+  if (!RealmzSemanticReplayChildIsActive() &&
+      ((!serial) || (!MyrBitTstLong(&serial, 8)))) {
     serial = Rand(21987); /***** generate new serial number ***/
     serial *= Rand(666);
     serial += Rand(32000);
@@ -237,6 +247,9 @@ void savepref(void) {
   StringPtr source_str;
   Size byte_count;
   short oldresfile;
+
+  if (RealmzSemanticReplayChildIsActive())
+    return;
 
   oldresfile = CurResFile();
 
@@ -332,14 +345,25 @@ void getpref(void) {
   StringPtr source_str;
   Size byte_count;
   short oldresfile;
+  Boolean replay_defaults;
+  Handle bundled_defaults;
 
   oldresfile = CurResFile();
+  replay_defaults = RealmzSemanticReplayChildIsActive();
 
-  pref_ref_num = openpref(0);
-
-  UseResFile(pref_ref_num);
-
-  data_handle = Get1Resource('PRFN', PREF_RES_ID);
+  if (replay_defaults) {
+    // Replay startup must not observe or auto-create ambient preferences.
+    // Copy the deterministic defaults directly out of the application fork.
+    UseResFile(Appl_Rsrc_Fork_Ref_Num);
+    bundled_defaults = Get1Resource('PRFN', PREF_RES_ID);
+    data_handle = NewHandleWithData(
+        *bundled_defaults, GetHandleSize(bundled_defaults));
+    UseResFile(oldresfile);
+  } else {
+    pref_ref_num = openpref(0);
+    UseResFile(pref_ref_num);
+    data_handle = Get1Resource('PRFN', PREF_RES_ID);
+  }
   prefs = *(PrefHandle)data_handle;
 
   CvtPrefsToPc(prefs);
@@ -398,7 +422,8 @@ void getpref(void) {
   blank10 = prefs->blank10;
 
 #if !divine
-  if ((!serial) || (!MyrBitTstLong(&serial, 8))) {
+  if (!RealmzSemanticReplayChildIsActive() &&
+      ((!serial) || (!MyrBitTstLong(&serial, 8)))) {
     serial = Rand(21987); /***** generate new serial number ***/
     serial *= Rand(666);
     serial += Rand(32000);
@@ -434,8 +459,12 @@ void getpref(void) {
   Name_String[0] = 3;
   /* *** END CHANGES *** */
 
-  CloseResFile(pref_ref_num);
-  UseResFile(oldresfile);
+  if (replay_defaults)
+    DisposeHandle(data_handle);
+  else {
+    CloseResFile(pref_ref_num);
+    UseResFile(oldresfile);
+  }
 }
 
 /*************************** createpref ********************/
@@ -447,6 +476,9 @@ short createpref(FSSpec pref_FSSpec, short mode) {
   Str255 res_name;
   short res_attributes;
   short oldresfile;
+
+  if (RealmzSemanticReplayChildIsActive())
+    return (-1);
 
   oldresfile = CurResFile();
   UseResFile(Appl_Rsrc_Fork_Ref_Num);
@@ -482,6 +514,9 @@ short openpref(short mode) {
   FSSpec pref_FSSpec;
   short file_ref_num;
   short dummyrefnum = 0;
+
+  if (RealmzSemanticReplayChildIsActive())
+    return (-1);
 
   GetIndString(pref_file_name, STR_LIST_ID, PREF_STR_INDEX + divine);
 

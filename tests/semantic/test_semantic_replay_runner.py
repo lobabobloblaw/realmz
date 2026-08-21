@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -75,6 +76,11 @@ if behavior == "alias_semantic_root":
     target = Path(os.environ["REALMZ_REPLAY_FAKE_ALIAS_TARGET"])
     target.rename(target.with_name(target.name + "-moved"))
     target.symlink_to(Path(config["user_data_root"]), target_is_directory=True)
+if behavior == "create_root_working_directory":
+    (Path(config["user_data_root"]) / "Data Files").mkdir()
+if behavior == "mutate_shared_ancestor":
+    shared_sibling = Path(os.environ["REALMZ_REPLAY_FAKE_SHARED_SIBLING"])
+    (shared_sibling / config["replay_route"]).mkdir(parents=True)
 
 input_path = Path(config["user_data_root"]) / "Save" / f"Game {config['input_slot']}"
 output_path = Path(config["user_data_root"]) / "Save" / f"Game {config['output_slot']}"
@@ -320,6 +326,35 @@ class ProcessIsolationTests(ReplayRunnerTestCase):
         self.assertIs(retention["cleanup_attempted"], False)
         self.assertIs(retention["path_authoritative"], True)
         self.assertTrue(Path(retention["candidate_path"]).is_dir())
+
+    def test_children_may_create_root_level_working_directories(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {"REALMZ_REPLAY_FAKE_BEHAVIOR": "create_root_working_directory"},
+            clear=False,
+        ):
+            envelope = self.run_parent()
+
+        self.assertEqual(len(envelope["child_results"]), 2)
+        self.assertTrue((self.classic_root / "Data Files").is_dir())
+        self.assertTrue((self.semantic_root / "Data Files").is_dir())
+
+    def test_unrelated_shared_ancestor_activity_does_not_fail_replay(self) -> None:
+        shared_sibling = self.root.parent / f"{self.root.name}-unrelated"
+        self.addCleanup(shutil.rmtree, shared_sibling, True)
+        with mock.patch.dict(
+            os.environ,
+            {
+                "REALMZ_REPLAY_FAKE_BEHAVIOR": "mutate_shared_ancestor",
+                "REALMZ_REPLAY_FAKE_SHARED_SIBLING": str(shared_sibling),
+            },
+            clear=False,
+        ):
+            envelope = self.run_parent()
+
+        self.assertEqual(len(envelope["child_results"]), 2)
+        self.assertTrue((shared_sibling / "classic").is_dir())
+        self.assertTrue((shared_sibling / "semantic").is_dir())
 
     def test_child_configs_are_private_distinct_and_route_scoped(self) -> None:
         self.run_parent()
@@ -976,6 +1011,8 @@ else:
             ([{"ordinal": 0, "kind": "probe", "arguments": {}, "extra": 1}], "unknown field"),
             ([{"ordinal": 0, "kind": "probe", "arguments": {"value": 1.5}}], "string, integer, or boolean"),
             ([{"ordinal": 0, "kind": "probe", "arguments": {"bad__name": 1}}], "normalized"),
+            ([{"ordinal": 0, "kind": "probe", "arguments": {"value": "café"}}], "printable ASCII"),
+            ([{"ordinal": 0, "kind": "probe", "arguments": {"value": "line\nbreak"}}], "printable ASCII"),
         )
         for actions, expected in invalid_actions:
             with self.subTest(actions=actions):
@@ -1007,6 +1044,46 @@ else:
 
 
 class SchemaContractTests(ReplayRunnerTestCase):
+    def test_schema_patterns_require_the_absolute_end_of_the_string(self) -> None:
+        valid_samples = {
+            r"^[ -~]*(?![\s\S])": "printable ASCII",
+            r"^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\s\S])": "probe_value",
+            r"^[a-z][a-z0-9-]*(?![\s\S])": "fixture-id",
+            r"^[A-J](?![\s\S])": "A",
+            r"^[0-9a-f]{16}(?![\s\S])": "0" * 16,
+            r"^[0-9a-f]{32}(?![\s\S])": "0" * 32,
+            r"^[0-9a-f]{64}(?![\s\S])": "0" * 64,
+        }
+
+        def collect_patterns(value: object) -> list[str]:
+            if isinstance(value, dict):
+                found = []
+                if isinstance(value.get("pattern"), str):
+                    found.append(value["pattern"])
+                for child in value.values():
+                    found.extend(collect_patterns(child))
+                return found
+            if isinstance(value, list):
+                found = []
+                for child in value:
+                    found.extend(collect_patterns(child))
+                return found
+            return []
+
+        for name in (*SCHEMA_NAMES, "replay-fixture-manifest.schema.json"):
+            schema = json.loads(
+                (Path(__file__).with_name(name)).read_text(encoding="utf-8")
+            )
+            patterns = collect_patterns(schema)
+            self.assertTrue(patterns)
+            for pattern in patterns:
+                with self.subTest(name=name, pattern=pattern):
+                    self.assertIn(pattern, valid_samples)
+                    sample = valid_samples[pattern]
+                    self.assertIsNotNone(re.search(pattern, sample))
+                    self.assertIsNone(re.search(pattern, sample + "\n"))
+                    self.assertIsNone(re.search(pattern, sample + "\r"))
+
     def test_all_protocol_schemas_are_v1_and_closed(self) -> None:
         schemas = {
             name: json.loads((Path(__file__).with_name(name)).read_text(encoding="utf-8"))
@@ -1039,6 +1116,15 @@ class SchemaContractTests(ReplayRunnerTestCase):
         self.assertEqual(
             envelope_schema["properties"]["child_results"]["items"]["$ref"],
             result_schema["$id"],
+        )
+        route_pair = config_schema["allOf"][0]
+        self.assertEqual(
+            route_pair["then"]["properties"]["presentation_mode"]["const"],
+            "classic",
+        )
+        self.assertEqual(
+            route_pair["else"]["properties"]["presentation_mode"]["const"],
+            "remastered",
         )
 
     def test_action_schemas_match_the_runtime_action_fields(self) -> None:

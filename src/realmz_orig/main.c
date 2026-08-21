@@ -17,6 +17,7 @@
 
 #include "realmzbuild.h"
 #include "stdio.h"
+#include "SemanticReplayChild.h"
 // #include "RDriver.h"
 // #include "MAD.h"
 #include "prototypes.h"
@@ -721,6 +722,8 @@ void ToolBoxInit(void) {
 
   // Start by assuming we're doing both.
   nofade = nologo = FALSE;
+  if (RealmzSemanticReplayChildIsActive())
+    nofade = nologo = TRUE;
 
 #ifndef PC
   if (!IsColorGammaAvailable()) {
@@ -763,22 +766,24 @@ void ToolBoxInit(void) {
 
   numchannel = -1;
 
-  for (t = 0; t < 4; t++) /*************** setup sound channels **********/
-  {
-    if (!SndNewChannel(&cool[t], sampledSynth, initMono + initNoDrop, NIL)) {
-      numchannel++;
-      cool[t]->qLength = 128;
+  if (!RealmzSemanticReplayChildIsActive()) {
+    for (t = 0; t < 4; t++) /************* setup sound channels **********/
+    {
+      if (!SndNewChannel(&cool[t], sampledSynth, initMono + initNoDrop, NIL)) {
+        numchannel++;
+        cool[t]->qLength = 128;
+      }
     }
-  }
 
-  if (numchannel < 3) {
-    MyrParamText((Ptr) "Could not allocate all the requested sound channels.  Sounds may backlog or play out of sequence.  This is not fatal however.", (Ptr) "", (Ptr) "", (Ptr) "");
-    background = GetNewDialog(151, NIL, (WindowPtr)-1L);
-    SetPortDialogPort(background);
-    ForeColor(yellowColor);
-    SysBeep(20);
-    FlushEvents(everyEvent, 0);
-    ModalDialog(0L, &itemHit);
+    if (numchannel < 3) {
+      MyrParamText((Ptr) "Could not allocate all the requested sound channels.  Sounds may backlog or play out of sequence.  This is not fatal however.", (Ptr) "", (Ptr) "", (Ptr) "");
+      background = GetNewDialog(151, NIL, (WindowPtr)-1L);
+      SetPortDialogPort(background);
+      ForeColor(yellowColor);
+      SysBeep(20);
+      FlushEvents(everyEvent, 0);
+      ModalDialog(0L, &itemHit);
+    }
   }
 
   monsterset = 1;
@@ -786,20 +791,31 @@ void ToolBoxInit(void) {
 
   getpref();
 
-  FlushEvents(everyEvent, 0);
-  SystemTask();
-  t = GetNextEvent(everyEvent, &gTheEvent);
+  if (RealmzSemanticReplayChildIsActive()) {
+    numchannel = -1;
+    volume = musicvolume = 0;
+    reducesound = nomusic = TRUE;
+    nofade = nologo = TRUE;
+  } else {
+    FlushEvents(everyEvent, 0);
+    SystemTask();
+    t = GetNextEvent(everyEvent, &gTheEvent);
 #ifdef PC // Myriad
-  DoCorrectBugMADRepeat();
+    DoCorrectBugMADRepeat();
 #endif
+  }
   MyrCheckMemory(2);
-  SystemTask(); //*** Have to do this twice before it reads the modifier keys?  Why?  Got me, just leave it.
-  t = GetNextEvent(everyEvent, &gTheEvent);
+  if (!RealmzSemanticReplayChildIsActive()) {
+    SystemTask(); //*** Have to do this twice before it reads the modifier keys?  Why?  Got me, just leave it.
+    t = GetNextEvent(everyEvent, &gTheEvent);
 #ifdef PC // Myriad
-  DoCorrectBugMADRepeat();
+    DoCorrectBugMADRepeat();
 #endif
+  }
 
-  if ((((**(**testdevice).gdPMap)).pixelSize < 8) && (!BitAnd(gTheEvent.modifiers, shiftKey))) {
+  if (!RealmzSemanticReplayChildIsActive() &&
+      (((**(**testdevice).gdPMap)).pixelSize < 8) &&
+      (!BitAnd(gTheEvent.modifiers, shiftKey))) {
     if (!auto256) {
       background = GetNewDialog(165, NIL, (WindowPtr)-1L);
       SysBeep(20);
@@ -825,7 +841,11 @@ void ToolBoxInit(void) {
 
 keepmoving:
 
-  if ((((**(**testdevice).gdPMap)).bounds.bottom - ((**(**testdevice).gdPMap)).bounds.top < 580) && (!BitAnd(gTheEvent.modifiers, shiftKey))) {
+  if (!RealmzSemanticReplayChildIsActive() &&
+      (((**(**testdevice).gdPMap)).bounds.bottom -
+              ((**(**testdevice).gdPMap)).bounds.top <
+          580) &&
+      (!BitAnd(gTheEvent.modifiers, shiftKey))) {
     MyrParamText((Ptr) "Sorry, this monitor is not displaying 800 X 600 pixels or greater.  This will not do.", (Ptr) "", (Ptr) "", (Ptr) "");
     background = GetNewDialog(151, NIL, (WindowPtr)-1L);
     SetPortDialogPort(background);
@@ -865,37 +885,41 @@ keepmoving:
 
   GWorldInit(); /**** init offscreen buffers ***/
 
-  GetSoundVol(&resetvolume);
-  SetSoundVol(volume);
+  if (!RealmzSemanticReplayChildIsActive()) {
+    GetSoundVol(&resetvolume);
+    SetSoundVol(volume);
+  }
 
   /******** check to see if the logo or fading should be done ************/
   /*************************************************************************/
 
-  t = GetNextEvent(everyEvent, &gTheEvent);
+  if (!RealmzSemanticReplayChildIsActive()) {
+    t = GetNextEvent(everyEvent, &gTheEvent);
 #ifdef PC // Myriad
-  DoCorrectBugMADRepeat();
+    DoCorrectBugMADRepeat();
 #endif
 
-  SystemTask(); //*** Have to do this twice before it reads the modifier keys?  Why?  Got me, just leave it.
-  t = GetNextEvent(everyEvent, &gTheEvent);
+    SystemTask(); //*** Have to do this twice before it reads the modifier keys?  Why?  Got me, just leave it.
+    t = GetNextEvent(everyEvent, &gTheEvent);
 #ifdef PC // Myriad
-  DoCorrectBugMADRepeat();
+    DoCorrectBugMADRepeat();
 #endif
 
-  if (gTheEvent.modifiers & optionKey)
-    nofade = TRUE; /** option disables all fading routines **/
+    if (gTheEvent.modifiers & optionKey)
+      nofade = TRUE; /** option disables all fading routines **/
 
-  if (BitAnd(gTheEvent.modifiers, shiftKey))
-    tagger = TRUE; /** shift enambles code tracking **/
+    if (BitAnd(gTheEvent.modifiers, shiftKey))
+      tagger = TRUE; /** shift enambles code tracking **/
 
-  if ((development) || (divine)) /*** development and Divine Right do not show Fantasoft logo ***/
-  {
-    nologo = nofade = TRUE;
-  } else
-    nologo = FALSE;
+    if ((development) || (divine)) /** development and Divine Right skip logo **/
+    {
+      nologo = nofade = TRUE;
+    } else
+      nologo = FALSE;
 
-  if (!nologo)
-    showlogo(130);
+    if (!nologo)
+      showlogo(130);
+  }
 
   /*************************************************************************/
   /*************************************************************************/
@@ -966,47 +990,50 @@ keepmoving:
 
 noreg:
 
+  if (!RealmzSemanticReplayChildIsActive()) {
 #if divine
-  getdivineuser();
-  if (!doreg())
-    regdiv();
-  showreg = TRUE;
-  PtoCstr(Name_String);
-  strcpy(myString, (StringPtr) "This copy is registered to                 ");
-  strcat(myString, Name_String);
-  CtoPstr((Ptr)Name_String);
-  flashmessage(myString, 330, 200, -1, 0);
-#else
-  if (doreg()) {
+    getdivineuser();
+    if (!doreg())
+      regdiv();
     showreg = TRUE;
     PtoCstr(Name_String);
-    if (strlen(Name_String) < 3) {
-      serial = Rand(21987); /***** generate new serial number as it looks like a mistake ***/
-      serial *= Rand(666);
-      serial += Rand(32000);
-      MyrBitSetLong(&serial, 8);
-      MyrBitSetLong(&serial, 6 + divine);
-      appnum = serial;
+    strcpy(myString, (StringPtr) "This copy is registered to                 ");
+    strcat(myString, Name_String);
+    CtoPstr((Ptr)Name_String);
+    flashmessage(myString, 330, 200, -1, 0);
+#else
+    if (doreg()) {
+      showreg = TRUE;
+      PtoCstr(Name_String);
+      if (strlen(Name_String) < 3) {
+        serial = Rand(21987); /**** generate serial if it looks mistaken ****/
+        serial *= Rand(666);
+        serial += Rand(32000);
+        MyrBitSetLong(&serial, 8);
+        MyrBitSetLong(&serial, 6 + divine);
+        appnum = serial;
 
-      PtoCstr(myString);
+        PtoCstr(myString);
 
-      if ((fp = MyrFopen((Ptr)myString, "r+b")) != NIL) {
-        CvtLongToPc(&appnum);
-        fwrite(&appnum, sizeof appnum, 1, fp);
-        CvtLongToPc(&appnum);
-        fclose(fp);
+        if ((fp = MyrFopen((Ptr)myString, "r+b")) != NIL) {
+          CvtLongToPc(&appnum);
+          fwrite(&appnum, sizeof appnum, 1, fp);
+          CvtLongToPc(&appnum);
+          fclose(fp);
+        }
+        savepref();
+      } else {
+        strcpy(myString, (StringPtr) "This copy is registered to                 ");
+        strcat(myString, Name_String);
+        CtoPstr((Ptr)Name_String);
+        flashmessage(myString, 15, 60, -1, 0);
       }
-      savepref();
-    } else {
-      strcpy(myString, (StringPtr) "This copy is registered to                 ");
-      strcat(myString, Name_String);
-      CtoPstr((Ptr)Name_String);
-      flashmessage(myString, 15, 60, -1, 0);
     }
-  }
 #endif
+  }
 
-  sound(20);
+  if (!RealmzSemanticReplayChildIsActive())
+    sound(20);
   SetCCursor(sword);
 
   if ((!nofade) && (!nologo))
@@ -1014,14 +1041,16 @@ noreg:
 
   /******************** make sure caps lock is OFF ************************/
   /************************************************************************/
-  FlushEvents(everyEvent, 0);
-  SystemTask();
-  t = GetNextEvent(everyEvent, &gTheEvent);
+  if (!RealmzSemanticReplayChildIsActive()) {
+    FlushEvents(everyEvent, 0);
+    SystemTask();
+    t = GetNextEvent(everyEvent, &gTheEvent);
 #ifdef PC // Myriad
-  DoCorrectBugMADRepeat();
+    DoCorrectBugMADRepeat();
 #endif
-  if (gTheEvent.modifiers & alphaLock)
-    warn(21);
+    if (gTheEvent.modifiers & alphaLock)
+      warn(21);
+  }
   /************************************************************************/
   /************************************************************************/
 
@@ -1248,6 +1277,23 @@ void MainLoop(void) {
 
 /******************************** main  ************************/
 int main(int argc, char* argvp[]) {
+  int argument_index;
+  int semantic_replay_child = FALSE;
+
+  for (argument_index = 1; argument_index < argc; argument_index++) {
+    if (strcmp(argvp[argument_index], "--semantic-replay-child") == 0) {
+      if ((argument_index != 1) || (argc != 3)) {
+        fprintf(stderr,
+            "usage: Realmz --semantic-replay-child CONFIG\n");
+        return REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT;
+      }
+      if (RealmzConfigureSemanticReplayChild(argvp[2]) != 0)
+        return REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT;
+      semantic_replay_child = TRUE;
+      break;
+    }
+  }
+
 #if defined(REALMZ_COCOA)
   if ((argc > 1) && (strcmp(argvp[1], "--import-classic-data") == 0)) {
     if (argc != 3) {
@@ -1261,6 +1307,9 @@ int main(int argc, char* argvp[]) {
 #endif
 
   ToolBoxInit();
+
+  if (semantic_replay_child)
+    return RealmzRunSemanticReplayChild();
 
   SetPortDialogPort(background);
   SetSoundVol(volume);

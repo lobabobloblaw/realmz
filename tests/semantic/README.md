@@ -296,22 +296,29 @@ The four `semantic-replay-*.schema.json` files close its version-1 request,
 child-config, child-result, and run-envelope contracts. A request explicitly
 names one physical executable, the two distinct user-data roots, existing input
 and fresh output slots, normalized actions, a timeout, and fixed 64-bit RNG seed
-and stream values. Run it with:
+and stream values. Action identifiers and keys use normalized lowercase ASCII;
+string argument values use printable ASCII so both protocol implementations
+apply the same dependency-free validation. Run it with:
 
 ```sh
 python3 scripts/semantic_replay_runner.py \
   --request /path/to/semantic-replay-request.json
 ```
 
-The parent launches the exact executable twice, without a shell, in separate
-Classic-then-semantic process groups. It pins independent user-data roots,
-Classic and Remastered presentation, disabled preference writes, no bundled
-save fallback, fresh output slots, identical actions and RNG inputs, and a
-settlement barrier at the next semantic gameplay poll. Private configs and
-strict child results are bounded and identity-checked. The named executable is
-trusted code; separate process sessions isolate global engine state and support
-same-session process termination, but do not sandbox a child that deliberately
-daemonizes.
+The parent launches the requested absolute executable path twice, without a
+shell, in separate Classic-then-semantic process groups. It pins independent
+user-data roots, Classic and Remastered presentation, disabled preference
+writes, no bundled save fallback, fresh output slots, identical actions and RNG
+inputs, and a settlement barrier at the next semantic gameplay poll. Private
+configs and strict child results are bounded and identity-checked. Root-level
+engine working files may change without invalidating the user-root identity,
+while its direct parent namespace and staged input slot remain mutation-pinned.
+Higher shared ancestors remain identity-pinned, so unrelated sibling activity
+does not invalidate a run. The named executable and higher same-user filesystem
+namespace are trusted: a same-user actor can transiently redirect a higher
+ancestor between identity checkpoints. Separate process sessions isolate global
+engine state and support same-session process termination, but do not sandbox a
+child that deliberately daemonizes.
 
 Every mode-`0700` protocol workspace is retained and reported under
 `workspace_retention`; automatic recursive cleanup is forbidden because a
@@ -321,9 +328,14 @@ non-authoritative candidate may be a replacement while the original workspace
 remains under an unknown renamed path. Protocol workspaces contain configs and
 results, not staged fixture bytes.
 
-The Realmz binary does not yet implement `--semantic-replay-child`; the current
-tests use a synthetic child and do not compare its reported state or save
-hashes.
+The Realmz binary now recognizes `--semantic-replay-child CONFIG`. Its bounded
+native bootstrap validates and installs the v1 policy before `ToolBoxInit`,
+selects the isolated root and presentation, disables preference persistence and
+bundled fallback for the staged input subtree, and supplies deterministic RNG
+draws. It then exits with the explicit driver-unavailable status and writes no
+result: save loading, action driving, settled snapshots, and save emission are
+still pending. The parent tests therefore continue to use a synthetic child and
+do not compare its reported state or save hashes.
 
 The synthetic replay foundation suites run directly and through the project
 quality gates on both Linux and macOS:
@@ -347,8 +359,9 @@ The remaining milestone work is to:
 1. Select a provenance-reviewed Tutorial fixture manifest and use the
    foundation to verify the source and create isolated Classic and semantic
    copies. This is byte-identity and isolation plumbing only.
-2. Implement the native `--semantic-replay-child` entry point on the now-pinned
-   separate-process protocol.
+2. Extend the native `--semantic-replay-child` bootstrap to load the configured
+   input slot and emit a result only after all actions and the fresh output save
+   complete.
 3. Drive one process through Classic scan-code/portrait inputs and the other
    through the semantic bridge using the same normalized action sequence.
 4. Capture a snapshot after every settled action and compare world position,

@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """Run two process-isolated semantic replay children under a strict v1 protocol.
 
-This is parent-orchestration infrastructure only.  The Realmz executable does
-not yet implement ``--semantic-replay-child``.  Tests use a synthetic child to
-pin process isolation and protocol behavior; their output is never evidence of
-engine or save equivalence.
+This is parent-orchestration infrastructure only.  Realmz recognizes
+``--semantic-replay-child`` and installs its bounded startup policies, but the
+native action driver and result writer do not exist yet.  Tests use a synthetic
+child to pin process isolation and protocol behavior; their output is never
+evidence of engine or save equivalence.
 
-The supplied executable is trusted code.  New process sessions separate
-legacy globals and let the parent stop same-session descendants, but this is
-not a sandbox: a hostile child can deliberately daemonize outside its session.
+The supplied executable and its higher same-user filesystem namespace are
+trusted.  New process sessions separate legacy globals and let the parent stop
+same-session descendants, but this is not a sandbox: a hostile child can
+deliberately daemonize outside its session or transiently redirect a trusted
+ancestor between identity checkpoints.
 
-The parent invokes the exact executable named by the request twice, without a
-shell, in deterministic Classic-then-semantic order.  Each child receives a
-private config path through::
+The parent invokes the requested absolute executable path twice, without a
+shell, in deterministic Classic-then-semantic order.  Direct namespace
+mutation guards and repeated identity checks protect the scoped launch paths.
+Each child receives a private config path through::
 
     EXECUTABLE --semantic-replay-child CONFIG.json
 
@@ -393,10 +397,8 @@ def _validate_argument_value(value: object, context: str, error: Any) -> str | i
     if isinstance(value, str):
         if len(value) > MAX_ARGUMENT_STRING_LENGTH:
             error(f"{context} string exceeds {MAX_ARGUMENT_STRING_LENGTH} characters")
-        if _contains_control(value):
-            error(f"{context} string contains a control character")
-        if unicodedata.normalize("NFC", value) != value:
-            error(f"{context} string must use NFC Unicode normalization")
+        if any(not (" " <= character <= "~") for character in value):
+            error(f"{context} string must contain printable ASCII only")
         return value
     error(f"{context} must be a string, integer, or boolean")
 
@@ -586,7 +588,9 @@ def _capture_namespace_pins(request: RunRequest) -> _NamespacePins:
         _launch_error(f"cannot pin replay namespace: {error}")
 
 
-def _verify_directory_pin(pin: _DirectoryPin, phase: str) -> None:
+def _verify_directory_pin(
+    pin: _DirectoryPin, phase: str, *, verify_ctime: bool = True
+) -> None:
     try:
         status = pin.path.stat(follow_symlinks=False)
     except OSError as error:
@@ -594,19 +598,30 @@ def _verify_directory_pin(pin: _DirectoryPin, phase: str) -> None:
     if (
         not stat.S_ISDIR(status.st_mode)
         or (status.st_dev, status.st_ino) != (pin.device, pin.inode)
-        or status.st_ctime_ns != pin.ctime_ns
+        or (verify_ctime and status.st_ctime_ns != pin.ctime_ns)
     ):
         _launch_error(f"namespace ancestor changed before/during {phase}: {pin.path}")
 
 
 def _verify_namespace_pins(pins: _NamespacePins, phase: str) -> None:
-    for chain in (
-        pins.executable_ancestors,
-        pins.classic_root_ancestors,
-        pins.semantic_root_ancestors,
-    ):
-        for pin in chain:
-            _verify_directory_pin(pin, phase)
+    for index, pin in enumerate(pins.executable_ancestors):
+        # The executable directory catches transient executable replacement;
+        # its direct parent catches a rename/replace/restore of that directory.
+        # Higher shared ancestors are identity-pinned without ctime checks so
+        # unrelated activity elsewhere under /tmp, a home directory, or a
+        # volume does not make a replay fail nondeterministically. Transient
+        # mutation there is part of the documented same-user trust boundary.
+        _verify_directory_pin(pin, phase, verify_ctime=index <= 1)
+    for chain in (pins.classic_root_ancestors, pins.semantic_root_ancestors):
+        for index, pin in enumerate(chain):
+            # A live load creates and updates root-level working directories.
+            # Preserve the root's identity while allowing that legitimate
+            # self-ctime churn. Its direct parent remains ctime-pinned, which
+            # catches a root rename/replace/restore. Higher shared ancestors
+            # remain identity-pinned without treating unrelated sibling
+            # creation as a replay mutation; transient mutation there is part
+            # of the documented same-user trust boundary.
+            _verify_directory_pin(pin, phase, verify_ctime=index == 1)
     _verify_directory_pin(pins.classic_input, phase)
     _verify_directory_pin(pins.semantic_input, phase)
 
@@ -1449,8 +1464,8 @@ def _argument_parser() -> argparse.ArgumentParser:
         description=(
             "Launch one explicit executable as isolated Classic and semantic replay "
             "children. The executable is trusted code, not sandboxed; private protocol "
-            "workspaces are retained and reported. Native Realmz child mode is not "
-            "implemented yet."
+            "workspaces are retained and reported. Native Realmz startup policy exists, "
+            "but action driving and result emission are not implemented yet."
         )
     )
     parser.add_argument(

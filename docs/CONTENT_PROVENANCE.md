@@ -265,16 +265,25 @@ python3 scripts/semantic_replay_runner.py \
 The request names one absolute physical executable, two distinct and
 non-nested user-data roots, an existing input slot, a fresh output slot, a
 normalized action sequence, a timeout, and explicit 64-bit RNG seed and stream
-values. The runner starts the exact executable in separate Classic-then-
-semantic process groups without a shell. Both children receive the same action
-and RNG inputs, write-disabled preferences, user-root-only input lookup, a
-fresh output-slot policy, and the `next_semantic_gameplay_poll` settlement
-barrier; presentation is Classic for the first run and Remastered for the
-second. Configs and results live in private protocol directories, and identity,
-size, route, process, nonce, and output-slot checks fail closed. The explicitly
-named executable is trusted code: process sessions isolate legacy globals and
-support same-session process termination, but they are not a sandbox and cannot
-contain a child that deliberately daemonizes into another session.
+values. Action identifiers are normalized lowercase ASCII, and string argument
+values are printable ASCII so the Python and dependency-free native validators
+enforce the same byte-for-byte contract. The runner starts the requested
+absolute executable path in separate Classic-then-semantic process groups
+without a shell. Both children receive the same action and RNG inputs,
+write-disabled preferences,
+user-root-only input lookup, a fresh output-slot policy, and the
+`next_semantic_gameplay_poll` settlement barrier; presentation is Classic for
+the first run and Remastered for the second. Configs and results live in private
+protocol directories, and identity, size, route, process, nonce, and output-slot
+checks fail closed. User-root identity and its direct parent namespace remain
+mutation-pinned while root-level working-file creation is allowed; higher shared
+ancestors remain identity-pinned so unrelated filesystem activity does not
+invalidate a run. The staged input slot remains fully pinned. The explicitly
+named executable and higher same-user filesystem namespace are trusted. A
+same-user actor can transiently redirect a higher ancestor between identity
+checkpoints. Process sessions isolate legacy globals and support same-session
+process termination, but they are not a sandbox and cannot contain a child that
+deliberately daemonizes into another session.
 
 Protocol workspaces are mode `0700`, retained, and reported under
 `workspace_retention` on both success and post-creation failure. The runner
@@ -286,10 +295,15 @@ location; inspect the parent namespace deliberately rather than deleting the
 candidate automatically. These workspaces contain protocol configs and results,
 not staged fixture bytes.
 
-The Realmz executable does not yet implement `--semantic-replay-child`.
-Synthetic tests pin the parent protocol, but their child-reported state and
-save hashes are deliberately not compared. Even a successful runner invocation
-therefore emits `"runner_scope":"process_isolation_only"` and
+Realmz now recognizes `--semantic-replay-child CONFIG`, strictly validates the
+bounded v1 config before SDL startup, fixes the isolated user root, suppresses
+ambient preference reads and all preference writes, selects and locks the
+configured presentation, and installs the deterministic replay RNG. The
+bootstrap deliberately exits nonzero without writing a result because native
+save loading, action driving, settled snapshots, and save emission are not yet
+implemented. Synthetic tests pin the parent protocol, but their child-reported
+state and save hashes are deliberately not compared. Even a successful runner
+invocation therefore emits `"runner_scope":"process_isolation_only"` and
 `"semantic_equivalence":"not_evaluated"`; it is not evidence of engine or save
 equivalence. The synthetic-only replay foundation suite is:
 

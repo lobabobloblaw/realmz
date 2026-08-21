@@ -2,11 +2,23 @@
 
 #include <SDL3/SDL_storage.h>
 #include <algorithm>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
+#include <iterator>
 #include <phosg/Strings.hh>
+
+#if !defined(_WIN32)
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "StringConvert.hpp"
 #include "UserDataPaths.hpp"
+#include "replay/ReplayRuntime.hpp"
 #include "userdata/UserDataPathPolicy.hpp"
 
 static phosg::PrefixedLogger fm_log("[FileManager] ");
@@ -31,6 +43,150 @@ std::string normalize_mac_path(const std::string& mac_path, bool implicitly_loca
 std::string userdata_filename_for_mac_filename(const std::string& mac_path, bool implicitly_local = false) {
   return realmz::userdata::confined_path_below_root(
       user_basepath(), normalize_mac_path(mac_path, implicitly_local)).string();
+}
+
+static bool replay_requires_user_only_read(
+    const std::filesystem::path& relative_path) {
+  const auto* runtime = realmz::replay::installed_replay_runtime();
+  return runtime &&
+      (runtime->read_policy_for_user_relative_path(relative_path) ==
+          realmz::replay::ReplayReadPolicy::user_data_only);
+}
+
+#if defined(_WIN32)
+static bool replay_path_components_are_physical(
+    const std::filesystem::path& relative_path,
+    bool final_is_directory) {
+  std::filesystem::path candidate(user_basepath());
+  for (auto component = relative_path.begin();
+       component != relative_path.end(); ++component) {
+    candidate /= *component;
+    std::error_code status_error;
+    const auto status =
+        std::filesystem::symlink_status(candidate, status_error);
+    if (status_error || std::filesystem::is_symlink(status)) {
+      return false;
+    }
+    const bool final = std::next(component) == relative_path.end();
+    if ((!final || final_is_directory) &&
+        !std::filesystem::is_directory(status)) {
+      return false;
+    }
+    if (final && !final_is_directory &&
+        !std::filesystem::is_regular_file(status)) {
+      return false;
+    }
+  }
+  return true;
+}
+#endif
+
+#if !defined(_WIN32)
+static int open_replay_path_no_follow(
+    const std::filesystem::path& relative_path,
+    bool final_is_directory) {
+  int descriptor = open(user_basepath().c_str(),
+      O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+  if (descriptor < 0) {
+    return -1;
+  }
+
+  for (auto component = relative_path.begin();
+       component != relative_path.end(); ++component) {
+    const bool final = std::next(component) == relative_path.end();
+    int flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK;
+    if (!final || final_is_directory) {
+      flags |= O_DIRECTORY;
+    }
+    const std::string name = component->string();
+    const int next_descriptor = openat(descriptor, name.c_str(), flags);
+    close(descriptor);
+    descriptor = next_descriptor;
+    if (descriptor < 0) {
+      return -1;
+    }
+  }
+
+  struct stat status;
+  if ((fstat(descriptor, &status) != 0) ||
+      (final_is_directory ? !S_ISDIR(status.st_mode)
+                          : !S_ISREG(status.st_mode))) {
+    close(descriptor);
+    return -1;
+  }
+  return descriptor;
+}
+#endif
+
+static FILE* open_replay_input_file_no_follow(
+    const std::filesystem::path& relative_path,
+    const char* mode) {
+#if !defined(_WIN32)
+  const int descriptor = open_replay_path_no_follow(relative_path, false);
+  if (descriptor < 0) {
+    fm_log.error_f(
+        "Could not securely open replay input {}: {}",
+        relative_path.string(), std::strerror(errno));
+    return nullptr;
+  }
+  FILE* file = fdopen(descriptor, mode);
+  if (!file) {
+    close(descriptor);
+  }
+  return file;
+#else
+  // The compatibility fallback still rejects every static reparse/symlink
+  // component. POSIX builds additionally use descriptor-relative O_NOFOLLOW
+  // traversal above to close path-swap races.
+  if (!replay_path_components_are_physical(relative_path, false)) {
+    return nullptr;
+  }
+  const std::string host_path = realmz::userdata::confined_path_below_root(
+      user_basepath(), relative_path).string();
+  return fopen(host_path.c_str(), mode);
+#endif
+}
+
+static bool list_replay_input_directory_no_follow(
+    const std::filesystem::path& relative_path,
+    std::vector<std::string>& names) {
+#if !defined(_WIN32)
+  const int descriptor = open_replay_path_no_follow(relative_path, true);
+  if (descriptor < 0) {
+    fm_log.error_f(
+        "Could not securely open replay input directory {}: {}",
+        relative_path.string(), std::strerror(errno));
+    return false;
+  }
+  DIR* directory = fdopendir(descriptor);
+  if (!directory) {
+    close(descriptor);
+    return false;
+  }
+  errno = 0;
+  while (const dirent* entry = readdir(directory)) {
+    const std::string name(entry->d_name);
+    if (name != "." && name != "..") {
+      names.emplace_back(name);
+    }
+  }
+  const bool success = errno == 0;
+  closedir(directory);
+  if (!success) {
+    names.clear();
+  }
+  return success;
+#else
+  if (!replay_path_components_are_physical(relative_path, true)) {
+    return false;
+  }
+  const auto host_path = realmz::userdata::confined_path_below_root(
+      user_basepath(), relative_path);
+  for (const auto& item : std::filesystem::directory_iterator{host_path}) {
+    names.emplace_back(item.path().filename().string());
+  }
+  return true;
+#endif
 }
 
 std::string
@@ -144,7 +300,24 @@ FILE* mac_fopen(const char* filename, const char* mode) {
     return nullptr;
   }
 
-  std::string user_filename = userdata_filename_for_mac_filename(filename);
+  const std::filesystem::path relative_path =
+      normalize_mac_path(filename, false);
+  const bool write_capable = realmz::userdata::fopen_mode_can_write(mode);
+  const bool user_only_read =
+      replay_requires_user_only_read(relative_path);
+  if (user_only_read) {
+    if (write_capable) {
+      fm_log.error_f(
+          "Refusing write-capable open of replay input path {}", filename);
+      return nullptr;
+    }
+    fm_log.info_f(
+        "Securely opening replay input {} with mode {}", filename, mode);
+    return open_replay_input_file_no_follow(relative_path, mode);
+  }
+
+  std::string user_filename = realmz::userdata::confined_path_below_root(
+      user_basepath(), relative_path).string();
   std::string host_filename{};
 
   std::error_code status_error;
@@ -163,17 +336,18 @@ FILE* mac_fopen(const char* filename, const char* mode) {
     return nullptr;
   }
 
-  const bool write_capable = realmz::userdata::fopen_mode_can_write(mode);
-
   // Every write-capable mode is confined to user storage. Read-only opens use
-  // a user override when present and otherwise fall back to bundled data.
+  // a user override when present and otherwise fall back to bundled data. The
+  // replay input subtree returned through the no-follow path above instead.
   if (realmz::userdata::should_open_from_user_storage(
           mode, user_file_exists)) {
     host_filename = user_filename;
 
-    // Ensure all parent directories exist
+    // Reads must not mutate the staged input tree. Write-capable opens retain
+    // the ordinary behavior of creating their confined parent directories.
     std::filesystem::path host_path{host_filename};
-    if (!SDL_CreateDirectory(host_path.parent_path().string().c_str())) {
+    if (write_capable &&
+        !SDL_CreateDirectory(host_path.parent_path().string().c_str())) {
       fm_log.error_f("Could not create user-data directory {}: {}",
           host_path.parent_path().string(), SDL_GetError());
       return nullptr;
@@ -182,7 +356,8 @@ FILE* mac_fopen(const char* filename, const char* mode) {
     // Modes that preserve existing content need a private copy when the file
     // currently exists only in the read-only application resources. A mode
     // beginning with 'w' truncates or creates instead and must not be seeded.
-    if (write_capable && !user_file_exists && (mode[0] != 'w')) {
+    if (write_capable && !user_file_exists &&
+        (mode[0] != 'w')) {
       const std::string bundled_filename =
           host_filename_for_mac_filename(filename, false);
       std::error_code bundled_error;
@@ -222,16 +397,30 @@ FILE* mac_fopen(const char* filename, const char* mode) {
 }
 
 std::vector<std::string> mac_list_directory(const std::string& mac_path) {
-  std::string user_filename = userdata_filename_for_mac_filename(mac_path);
+  const std::filesystem::path relative_path =
+      normalize_mac_path(mac_path, false);
+  std::string user_filename = realmz::userdata::confined_path_below_root(
+      user_basepath(), relative_path).string();
+  const bool user_only_read =
+      replay_requires_user_only_read(relative_path);
+  std::vector<std::string> ret;
+  if (user_only_read) {
+    static_cast<void>(
+        list_replay_input_directory_no_follow(relative_path, ret));
+    std::sort(ret.begin(), ret.end());
+    fm_log.info_f(
+        "Listing replay input directory {} yielded {} items",
+        mac_path, ret.size());
+    return ret;
+  }
   SDL_CreateDirectory(user_filename.c_str());
 
-  std::vector<std::string> ret;
   // Read the userdata directory first, so user files override bundled ones of
   // the same name (mirrors mac_fopen's read fallback semantics).
-  for (const auto& base : {user_filename, host_filename_for_mac_filename(mac_path, false)}) {
+  const auto append_directory = [&ret](const std::string& base) {
     if (!std::filesystem::is_directory(base)) {
       fm_log.info_f("Skipping {} because it is not a directory", base);
-      continue;
+      return;
     }
     for (const auto& item : std::filesystem::directory_iterator{base}) {
       auto name = item.path().filename().string();
@@ -239,7 +428,9 @@ std::vector<std::string> mac_list_directory(const std::string& mac_path) {
         ret.emplace_back(std::move(name));
       }
     }
-  }
+  };
+  append_directory(user_filename);
+  append_directory(host_filename_for_mac_filename(mac_path, false));
   fm_log.info_f("Listing directory {} yielded {} items", mac_path, ret.size());
   return ret;
 }

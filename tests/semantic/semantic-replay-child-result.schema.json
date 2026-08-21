@@ -5,7 +5,7 @@
   "description": "Result emitted by one external semantic replay child; it is not an equivalence verdict.",
   "properties": {
     "child_nonce": {
-      "pattern": "^[0-9a-f]{32}$",
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])",
       "type": "string"
     },
     "engine_identity": {
@@ -35,19 +35,19 @@
       "type": "integer"
     },
     "rng_seed": {
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "rng_stream": {
-      "pattern": "^[0-9a-f]{16}$",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
       "type": "string"
     },
     "run_id": {
-      "pattern": "^[0-9a-f]{32}$",
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])",
       "type": "string"
     },
     "save_tree_sha256": {
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
       "type": "string"
     },
     "schema_version": {
@@ -59,7 +59,7 @@
       "type": "integer"
     },
     "state_sha256": {
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
       "type": "string"
     },
     "status": {
