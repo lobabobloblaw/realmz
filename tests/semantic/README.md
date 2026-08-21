@@ -332,10 +332,11 @@ The Realmz binary now recognizes `--semantic-replay-child CONFIG`. Its bounded
 native bootstrap validates and installs the v1 policy before `ToolBoxInit`,
 selects the isolated root and presentation, disables preference persistence and
 bundled fallback for the staged input subtree, and supplies deterministic RNG
-draws. Before any future save load or mutation, its child entry point also
-validates the complete action plan against the deliberately movement-only v1
-engine vocabulary. Unsupported kinds, malformed arguments, invalid movement
-commands, and noncontiguous ordinals fail closed during this preflight.
+draws. Before the explicit input-slot load or any resulting mutation, its child
+entry point also validates the complete action plan against the deliberately
+movement-only v1 engine vocabulary. Unsupported kinds, malformed arguments,
+invalid movement commands, and noncontiguous ordinals fail closed during this
+preflight.
 
 The native foundations now also include deterministic replay event isolation,
 explicit replay-only `A`-through-`J` load and save entry points that bypass the
@@ -347,28 +348,40 @@ path. The output oracle checks the exact file set and `Data I1` size, rejects
 links and detectable replacement or mutation, and produces a domain-separated
 tree digest.
 
-The next connection layer is also defined and tested independently of live
-engine globals. A movement-only poll controller records an initial checkpoint,
-delivers at most one action, and settles it at the following gameplay poll. A
-canonical state oracle encodes every declared field in fixed-width big-endian
-form and hashes the initial-plus-post-action trace with explicit checkpoint
-indexes. The normal post-load menu/font/darkness setup has a replay entry point,
-and the strict v1 result writer uses exclusive publication and mode `0600` on
-POSIX. None of these components is invoked by the child yet.
+The native connection layer now joins those foundations. After preflight, the
+child starts the movement-only poll controller, explicitly loads the configured
+input slot, and enters the normal post-load gameplay path. Each top-level
+gameplay poll captures the requested legacy-global snapshot, delivers at most
+one action through either direct Classic injection or the guarded production
+semantic bridge, and settles that action at the following poll. The canonical
+state oracle encodes every declared field in fixed-width big-endian form and
+hashes the initial-plus-post-action trace with explicit checkpoint indexes.
 
-These pieces are foundations, not a completed replay. The child does not yet
-call the explicit loader or saver, deliver decoded actions through either
-engine route, capture settled state, invoke the output oracle, or emit a result.
-After a valid preflight it therefore still exits with the explicit
-driver-unavailable status and writes no result. The parent tests continue to
-use a synthetic child and do not compare live reported state or save hashes.
+After the final checkpoint, the child synchronously finalizes the state trace,
+rechecks that the output slot is still fresh, invokes the explicit legacy save,
+verifies the ten-file output tree, and exclusively publishes the strict v1
+result before terminating. Linked sanitizer tests exercise both native action
+routes against controlled engine globals; dependency-free tests cover live
+state capture, controller ordering, completion ordering, and result contents.
 
-The dependency-free native checks are included in the core test runner; the
-linked CMake test additionally exercises the event-isolation behavior against
-the engine:
+This is a connected native replay path, but it is not yet a live equivalence
+claim. The parent integration tests still use a synthetic child, and the
+repository has no selected provenance-reviewed Tutorial fixture with which to
+run both real processes and compare their reported state and save hashes.
+
+The dependency-free native checks are included in the core test runner:
 
 ```sh
 scripts/run-core-tests.sh
+```
+
+A full CMake build additionally links the child bootstrap, event isolation,
+and both Classic and semantic route integrations against the engine:
+
+```sh
+cmake -S . -B build -DDISABLE_FAT_BINARY=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
 The synthetic replay foundation suites run directly and through the project
@@ -393,18 +406,10 @@ The remaining milestone work is to:
 1. Select a provenance-reviewed Tutorial fixture manifest and use the
    foundation to verify the source and create isolated Classic and semantic
    copies. This is byte-identity and isolation plumbing only.
-2. Connect the native child controller to the explicit input-slot loader and
-   continue the loaded game into its first semantic gameplay poll.
-3. Connect the tested poll controller to Classic movement injection and the
-   semantic bridge, then capture live legacy globals into the canonical state
-   value at each requested checkpoint.
-4. Finalize the state trace and publish the tested strict child result only
-   after every requested action is settled.
-5. Connect the explicit output-slot saver, verify each fresh save through the
-   native output oracle, and compare the two processes' state traces and save
-   digests.
-6. Verify the source and both staged fixture trees remain bound to their
-   declared hashes.
+2. Run the real Classic and semantic child processes over that fixture and
+   compare their state-trace, save-tree, action-count, and RNG-count results.
+3. Verify the source and both staged fixture trees remain bound to their
+   declared hashes before accepting the comparison as the release gate.
 
 That future live test, rather than the current contract fixtures or staging
 foundation, is the release gate for actual engine and save compatibility.

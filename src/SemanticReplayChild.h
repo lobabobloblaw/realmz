@@ -14,15 +14,22 @@ int RealmzConfigureSemanticReplayChild(const char* config_path);
 // have been installed successfully.
 int RealmzSemanticReplayChildIsActive(void);
 
-// Runs the currently available native child preflight. The complete action
-// plan is validated against the movement-only v1 engine vocabulary before any
-// save can be loaded or mutated. The live action driver and result writer are
-// not connected yet, so a valid plan exits with the explicit unavailable
-// status without loading, saving, or writing a result file.
+// Validates and starts the movement-only plan before explicitly loading the
+// configured input slot, then enters normal gameplay. Successful replay
+// completion terminates from the guarded gameplay poll after synchronously
+// saving, verifying, and publishing the result, so this function normally does
+// not return after entry.
 int RealmzRunSemanticReplayChild(void);
 
+// Replay cannot interact with legacy warning/error modals: raw host input is
+// intentionally isolated. Preserved C failure paths call this after checking
+// RealmzSemanticReplayChildIsActive so they terminate nonzero instead of
+// hanging or reporting a false-success exit.
+void RealmzFailSemanticReplayChild(const char* detail);
+
 #define REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT 2
-#define REALMZ_SEMANTIC_REPLAY_DRIVER_UNAVAILABLE_EXIT 3
+#define REALMZ_SEMANTIC_REPLAY_ACTION_ERROR_EXIT 3
+#define REALMZ_SEMANTIC_REPLAY_EXECUTION_ERROR_EXIT 4
 
 #ifdef __cplusplus
 } // extern "C"

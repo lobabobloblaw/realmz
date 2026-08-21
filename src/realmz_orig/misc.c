@@ -1,6 +1,7 @@
 #include "prototypes.h"
 #include "realmzbuild.h"
 #include "variables.h"
+#include "SemanticReplayChild.h"
 #include "presentation/SemanticInputBoundary.h"
 
 /****************************** doreg5 **********************************/
@@ -581,6 +582,9 @@ void scratch(short location) {
   char loc[255];
   Str255 hold;
 
+  if (RealmzSemanticReplayChildIsActive())
+    RealmzFailSemanticReplayChild("legacy scratch failure");
+
   if ((!nofade) && (!nologo))
     fadeinout(25, fadein); /******** fade to black ******/
 
@@ -664,6 +668,9 @@ void scratch2(short location) {
   DialogRef scratch;
   char loc[255];
   Str255 hold;
+
+  if (RealmzSemanticReplayChildIsActive())
+    RealmzFailSemanticReplayChild("legacy scratch2 failure");
 
   if ((!nofade) && (!nologo))
     fadeinout(25, fadein); /******** fade to black ******/

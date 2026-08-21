@@ -195,7 +195,7 @@ void test_configured_bootstrap_policies() {
   CHECK(runtime->rng_draw_count() == 1);
 
   CHECK(RealmzRunSemanticReplayChild() ==
-      REALMZ_SEMANTIC_REPLAY_DRIVER_UNAVAILABLE_EXIT);
+      REALMZ_SEMANTIC_REPLAY_ACTION_ERROR_EXIT);
   CHECK(!fs::exists(result_path));
   CHECK(!fs::exists(output_root));
 }

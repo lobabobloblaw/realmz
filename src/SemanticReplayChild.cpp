@@ -1,6 +1,7 @@
 #include "SemanticReplayChild.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -11,11 +12,28 @@
 #include "UserDataPaths.hpp"
 #include "replay/ReplayActionDecoder.hpp"
 #include "replay/ReplayChildConfig.hpp"
+#include "replay/ReplayCompletion.hpp"
+#include "replay/ReplayOutputOracle.hpp"
+#include "replay/ReplayResultWriter.hpp"
 #include "replay/ReplayRuntime.hpp"
+#include "replay/ReplaySlotSelection.h"
+#include "replay/SemanticReplayChildSession.hpp"
+#include "replay/LegacyReplayStateSource.hpp"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace {
 
 constexpr std::size_t kMaximumDiagnosticBytes = 512;
+constexpr std::string_view kReplayEngineIdentity =
+    "Realmz-8.1.0-native-replay-v1";
 
 void write_bounded_diagnostic(
     std::string_view prefix, std::string_view detail) noexcept {
@@ -63,6 +81,62 @@ void require_fresh_output_slot(
 
 } // namespace
 
+namespace realmz::replay {
+
+void record_live_replay_checkpoint(
+    ReplayRuntime& runtime,
+    const ReplayCheckpoint& checkpoint) {
+  runtime.record_checkpoint(
+      checkpoint, LegacyReplayStateSource().capture());
+}
+
+[[noreturn]] void fail_semantic_replay_child(
+    std::string_view detail) noexcept {
+  write_bounded_diagnostic(
+      "semantic replay child execution failed: ", detail);
+  std::fflush(stderr);
+  std::_Exit(REALMZ_SEMANTIC_REPLAY_EXECUTION_ERROR_EXIT);
+}
+
+[[nodiscard]] static std::uint64_t replay_process_id() noexcept {
+#ifdef _WIN32
+  return static_cast<std::uint64_t>(::GetCurrentProcessId());
+#else
+  return static_cast<std::uint64_t>(::getpid());
+#endif
+}
+
+[[noreturn]] void complete_semantic_replay_child(
+    ReplayRuntime& runtime) noexcept {
+  try {
+    static_cast<void>(complete_replay(runtime, {
+        .engine_identity = std::string(kReplayEngineIdentity),
+        .process_id = replay_process_id(),
+        .save_slot = [&runtime](char slot) {
+          // The runner creates a private workspace, but the output pathname
+          // still remains ambient mutable state. Recheck it at the last
+          // possible boundary before the legacy writer creates anything.
+          require_fresh_output_slot(runtime.config());
+          return RealmzReplaySaveSlot(slot) == 1;
+        },
+        .verify_output_slot = [](const std::filesystem::path& root, char slot) {
+          return verify_replay_output_slot(root, slot);
+        },
+        .publish_result = [](const ReplayChildConfig& config,
+                                 const ReplayCompletedResult& result) {
+          write_replay_child_result_v1(config, result);
+        },
+    }));
+    std::_Exit(0);
+  } catch (const std::exception& error) {
+    fail_semantic_replay_child(error.what());
+  } catch (...) {
+    fail_semantic_replay_child("unknown completion failure");
+  }
+}
+
+} // namespace realmz::replay
+
 extern "C" int RealmzConfigureSemanticReplayChild(
     const char* config_path) {
   if (!config_path || !config_path[0]) {
@@ -102,6 +176,13 @@ extern "C" int RealmzSemanticReplayChildIsActive(void) {
   return realmz::replay::installed_replay_runtime() != nullptr;
 }
 
+extern "C" void RealmzFailSemanticReplayChild(const char* detail) {
+  realmz::replay::fail_semantic_replay_child(
+      (detail && detail[0])
+          ? std::string_view(detail)
+          : std::string_view("unspecified legacy failure"));
+}
+
 extern "C" int RealmzRunSemanticReplayChild(void) {
   auto* runtime = realmz::replay::installed_replay_runtime();
   if (!runtime) {
@@ -111,18 +192,30 @@ extern "C" int RealmzRunSemanticReplayChild(void) {
     return REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT;
   }
   try {
-    // Close the engine-specific action vocabulary before a future driver is
-    // allowed to load or mutate the configured input save.
-    static_cast<void>(realmz::replay::decode_replay_actions_v1(
-        runtime->config().actions()));
+    // Close and start the engine-specific action vocabulary before any save
+    // can be loaded or mutated.
+    auto actions = realmz::replay::decode_replay_actions_v1(
+        runtime->config().actions());
+    runtime->start_action_plan(std::move(actions));
   } catch (const realmz::replay::ReplayActionDecodeError& error) {
     write_bounded_diagnostic(
         "semantic replay child action plan rejected: ", error.what());
-    return REALMZ_SEMANTIC_REPLAY_DRIVER_UNAVAILABLE_EXIT;
+    return REALMZ_SEMANTIC_REPLAY_ACTION_ERROR_EXIT;
+  } catch (const std::exception& error) {
+    write_bounded_diagnostic(
+        "semantic replay child action plan failed: ", error.what());
+    return REALMZ_SEMANTIC_REPLAY_ACTION_ERROR_EXIT;
   }
+
+  if (RealmzReplayLoadSlot(runtime->input_slot()) != 1) {
+    write_bounded_diagnostic(
+        "semantic replay child execution failed: ",
+        "configured input slot could not be loaded");
+    return REALMZ_SEMANTIC_REPLAY_EXECUTION_ERROR_EXIT;
+  }
+  RealmzReplayEnterLoadedGame();
   write_bounded_diagnostic(
-      "semantic replay child unavailable: ",
-      "native save loading, action driving, and result emission are not "
-      "implemented");
-  return REALMZ_SEMANTIC_REPLAY_DRIVER_UNAVAILABLE_EXIT;
+      "semantic replay child execution failed: ",
+      "loaded gameplay returned before replay completion");
+  return REALMZ_SEMANTIC_REPLAY_EXECUTION_ERROR_EXIT;
 }

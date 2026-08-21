@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <array>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -41,6 +42,26 @@ void check_logic_error(Function&& function) {
     return;
   }
   throw std::runtime_error("expected std::logic_error");
+}
+
+template <typename Function>
+void check_runtime_error(Function&& function) {
+  ++checks_run;
+  try {
+    function();
+  } catch (const ReplayRuntimeError&) {
+    return;
+  }
+  throw std::runtime_error("expected ReplayRuntimeError");
+}
+
+[[nodiscard]] realmz::presentation::UIAction movement(
+    realmz::presentation::ActionSequence sequence,
+    realmz::presentation::MovementCommand command) {
+  return {
+      .sequence = sequence,
+      .payload = realmz::presentation::MovePartyAction{command},
+  };
 }
 
 [[nodiscard]] std::string json_string(std::string_view value) {
@@ -166,6 +187,71 @@ void test_runtime_rng_delegation() {
   CHECK(runtime.rng_draw_count() == 2);
 }
 
+void test_action_plan_and_state_trace_lifecycle() {
+  ReplayRuntime runtime(make_config());
+  CHECK(!runtime.action_plan_started());
+  CHECK(runtime.settled_action_count() == 0U);
+  check_runtime_error([&] {
+    static_cast<void>(runtime.next_gameplay_poll());
+  });
+
+  runtime.start_action_plan({
+      movement(1, realmz::presentation::MovementCommand::north),
+      movement(2, realmz::presentation::MovementCommand::east),
+  });
+  CHECK(runtime.action_plan_started());
+  check_logic_error([&] { runtime.start_action_plan({}); });
+
+  ReplayStateSnapshot initial;
+  initial.world.party_y = 10;
+  ReplayStateSnapshot after_first = initial;
+  after_first.world.party_y = 9;
+  ReplayStateSnapshot after_second = after_first;
+  after_second.world.party_x = 1;
+  const std::array expected_post_actions{after_first, after_second};
+
+  auto directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint.has_value());
+  CHECK(directive.checkpoint->kind == ReplayCheckpointKind::initial);
+  runtime.record_checkpoint(*directive.checkpoint, initial);
+  CHECK(directive.action != nullptr);
+  runtime.acknowledge_action_delivery(
+      directive.action->sequence,
+      0x00007E1EU,
+      {.kind = ReplayObservedEventKind::key_down, .message = 0x00007E1EU});
+  CHECK(runtime.settled_action_count() == 0U);
+
+  directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->action_index == 0U);
+  runtime.record_checkpoint(*directive.checkpoint, after_first);
+  CHECK(runtime.settled_action_count() == 1U);
+  CHECK(directive.action != nullptr);
+  runtime.acknowledge_action_delivery(
+      directive.action->sequence,
+      0x00007C1DU,
+      {.kind = ReplayObservedEventKind::key_down, .message = 0x00007C1DU});
+  CHECK(runtime.settled_action_count() == 1U);
+
+  directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->action_index == 1U);
+  runtime.record_checkpoint(*directive.checkpoint, after_second);
+  CHECK(directive.finalize);
+  CHECK(runtime.settled_action_count() == 2U);
+  CHECK(runtime.finalize_state_trace() ==
+      replay_state_trace_sha256_v1(initial, expected_post_actions));
+}
+
+void test_action_plan_rejection_is_atomic() {
+  ReplayRuntime runtime(make_config());
+  check_runtime_error([&] {
+    runtime.start_action_plan({
+        movement(2, realmz::presentation::MovementCommand::north),
+    });
+  });
+  CHECK(!runtime.action_plan_started());
+  CHECK(runtime.settled_action_count() == 0U);
+}
+
 void test_one_shot_process_installation() {
   CHECK(installed_replay_runtime() == nullptr);
   ReplayRuntime& installed = install_replay_runtime(make_config());
@@ -188,6 +274,8 @@ int main() {
     test_immutable_policy_access();
     test_narrow_user_only_input_read_policy();
     test_runtime_rng_delegation();
+    test_action_plan_and_state_trace_lifecycle();
+    test_action_plan_rejection_is_atomic();
     test_one_shot_process_installation();
     std::cout << "ReplayRuntimeTest passed (" << checks_run << " checks)\n";
     return 0;

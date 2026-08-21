@@ -203,6 +203,76 @@ void verify_ambient_api_isolation(const std::string& event_source) {
       "semantic replay polling must use configured presentation and zero modifiers");
 }
 
+void verify_replay_gameplay_controller(
+    const std::string& event_source,
+    const std::string& window_source) {
+  const std::string_view semantic = function_body(
+      event_source, "Boolean GetNextSemanticGameplayEvent(");
+  require(ordered(
+              semantic, "active_replay_runtime()",
+              "ReplayExceptionBoundary replay_exception_boundary"),
+      "active replay must install a terminal exception boundary before polling");
+  require(semantic.find(
+              "if (replay && replay->action_plan_started())") !=
+          std::string_view::npos,
+      "startup isolation must not drive an action plan before preflight");
+  require(ordered(
+              semantic, "next_gameplay_poll()",
+              "record_live_replay_checkpoint") &&
+          ordered(
+              semantic, "record_live_replay_checkpoint",
+              "complete_semantic_replay_child"),
+      "each gameplay poll must capture its checkpoint before action or completion");
+
+  const std::size_t classic = semantic.find("ReplayRoute::classic");
+  const std::size_t classic_ack =
+      semantic.find("acknowledge_action_delivery", classic);
+  const std::size_t classic_return = semantic.find("return true", classic_ack);
+  require(classic != std::string_view::npos &&
+          classic_ack != std::string_view::npos &&
+          classic_return != std::string_view::npos &&
+          classic < classic_ack && classic_ack < classic_return,
+      "Classic replay must acknowledge the exact injected key event before return");
+
+  require(ordered(
+              semantic, "SemanticInputScope semantic_scope(surface)",
+              "dispatch_replay_semantic_action") &&
+          ordered(
+              semantic, "dispatch_replay_semantic_action",
+              "get_next_semantic_event(0)"),
+      "semantic replay dispatch must occur inside the guarded gameplay scope");
+  const std::size_t movement_consume =
+      semantic.find("RealmzConsumeSemanticMovementEvent");
+  const std::size_t semantic_ack =
+      semantic.rfind("acknowledge_action_delivery");
+  require(movement_consume != std::string_view::npos &&
+          semantic_ack != std::string_view::npos &&
+          movement_consume < semantic_ack,
+      "semantic replay acknowledgement must observe late-translated output");
+
+  const std::string_view mapper = function_body(
+      window_source, "WindowManager::replay_movement_key_message(");
+  require(mapper.find("capture_runtime_legacy_command_context") !=
+              std::string_view::npos &&
+          mapper.find("legacy_key_message_for_movement") !=
+              std::string_view::npos &&
+          mapper.find("context.adaptive_eligible") !=
+              std::string_view::npos,
+      "both replay routes must use the production live-context movement mapper");
+
+  const std::string_view dispatch = function_body(
+      window_source, "WindowManager::dispatch_replay_semantic_action(");
+  require(dispatch.find("action_plan_started") != std::string_view::npos &&
+          dispatch.find("ReplayRoute::semantic") != std::string_view::npos &&
+          dispatch.find("ReplayPresentationMode::remastered") !=
+              std::string_view::npos &&
+          dispatch.find("RealmzCurrentSemanticInputSurface") !=
+              std::string_view::npos &&
+          dispatch.find("runtime_legacy_command_bridge->dispatch(action)") !=
+              std::string_view::npos,
+      "replay semantic dispatch must retain runtime, route, mode, scope, and bridge guards");
+}
+
 void verify_non_replay_paths_remain(const std::string& event_source) {
   const std::string_view raw =
       function_body(event_source, "EventRecord get_next_event(");
@@ -254,8 +324,11 @@ int main(int argc, char** argv) {
         code_only(read_file(root / "src/EventManager.cpp"));
     const std::string runtime_source =
         code_only(read_file(root / "src/replay/ReplayRuntime.cpp"));
+    const std::string window_source =
+        code_only(read_file(root / "src/WindowManager.cpp"));
     verify_poll_isolation(event_source);
     verify_ambient_api_isolation(event_source);
+    verify_replay_gameplay_controller(event_source, window_source);
     verify_non_replay_paths_remain(event_source);
     verify_logical_clock(runtime_source);
     std::cout << "SemanticReplayEventIsolationContractTest passed ("

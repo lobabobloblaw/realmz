@@ -187,6 +187,10 @@ run_cpp_test LegacyGameSnapshotSourceTest \
   src/tests/LegacyGameSnapshotSourceTest.cpp \
   src/presentation/LegacyGameSnapshotSource.cpp
 
+run_cpp_test LegacyReplayStateSourceTest \
+  src/tests/LegacyReplayStateSourceTest.cpp \
+  src/replay/LegacyReplayStateSource.cpp
+
 run_cpp_test UserDataMigrationTest \
   src/tests/UserDataMigrationTest.cpp \
   src/userdata/UserDataMigration.cpp
@@ -207,7 +211,10 @@ run_cpp_test ReplayRuntimeTest \
   src/tests/ReplayRuntimeTest.cpp \
   src/replay/ReplayRuntime.cpp \
   src/replay/ReplayChildConfig.cpp \
-  src/replay/DeterministicReplayRng.cpp
+  src/replay/DeterministicReplayRng.cpp \
+  src/replay/ReplayDriver.cpp \
+  src/replay/ReplayStateOracle.cpp \
+  src/replay/Sha256.cpp
 
 run_cpp_test ReplayActionDecoderTest \
   src/tests/ReplayActionDecoderTest.cpp \
@@ -215,6 +222,16 @@ run_cpp_test ReplayActionDecoderTest \
 
 run_cpp_test ReplayDriverTest \
   src/tests/ReplayDriverTest.cpp \
+  src/replay/ReplayDriver.cpp \
+  src/replay/ReplayStateOracle.cpp \
+  src/replay/Sha256.cpp
+
+run_cpp_test ReplayCompletionTest \
+  src/tests/ReplayCompletionTest.cpp \
+  src/replay/ReplayCompletion.cpp \
+  src/replay/ReplayRuntime.cpp \
+  src/replay/ReplayChildConfig.cpp \
+  src/replay/DeterministicReplayRng.cpp \
   src/replay/ReplayDriver.cpp \
   src/replay/ReplayStateOracle.cpp \
   src/replay/Sha256.cpp

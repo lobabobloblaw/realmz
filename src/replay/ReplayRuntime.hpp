@@ -2,16 +2,26 @@
 
 #include "replay/DeterministicReplayRng.hpp"
 #include "replay/ReplayChildConfig.hpp"
+#include "replay/ReplayDriver.hpp"
+#include "replay/ReplayStateOracle.hpp"
 
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <stdexcept>
+#include <vector>
 
 namespace realmz::replay {
 
 enum class ReplayReadPolicy {
   normal_bundled_fallback,
   user_data_only,
+};
+
+class ReplayRuntimeError : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
 };
 
 // Holds the immutable child policy, deterministic replay RNG, and logical
@@ -53,10 +63,40 @@ public:
   // host scheduler.
   [[nodiscard]] std::uint32_t next_event_tick() noexcept;
 
+  // Installs the already-decoded, movement-only action plan exactly once.
+  // Construction validates the plan again before either the driver or its
+  // state trace becomes observable. A configured runtime without a started
+  // plan retains the existing input-isolation behavior used during startup.
+  void start_action_plan(std::vector<presentation::UIAction> actions);
+  [[nodiscard]] bool action_plan_started() const noexcept;
+
+  // These methods form the only mutable gameplay protocol surface. Invalid
+  // ordering or delivery enters the driver's sticky failure state and throws,
+  // so the native child can terminate without silently skipping an action.
+  [[nodiscard]] ReplayPollDirective next_gameplay_poll();
+  void record_checkpoint(
+      const ReplayCheckpoint& checkpoint,
+      const ReplayStateSnapshot& snapshot);
+  void acknowledge_action_delivery(
+      presentation::ActionSequence action_sequence,
+      std::uint32_t expected_key_down_message,
+      ReplayObservedEvent observed);
+  [[nodiscard]] Sha256Digest finalize_state_trace() const;
+  [[nodiscard]] std::size_t planned_action_count() const noexcept;
+  // Counts post-action checkpoints, not merely delivered/acknowledged events.
+  [[nodiscard]] std::size_t settled_action_count() const noexcept;
+
 private:
+  [[nodiscard]] ReplayDriver& require_driver();
+  [[nodiscard]] const ReplayDriver& require_driver() const;
+  [[nodiscard]] ReplayStateTraceHasher& require_state_trace();
+  [[nodiscard]] const ReplayStateTraceHasher& require_state_trace() const;
+
   ReplayChildConfig config_;
   DeterministicReplayRng rng_;
   std::atomic<std::uint32_t> event_tick_{0};
+  std::unique_ptr<ReplayDriver> driver_;
+  std::unique_ptr<ReplayStateTraceHasher> state_trace_;
 };
 
 // Thread-safe, process-lifetime, one-shot publication. A second installation

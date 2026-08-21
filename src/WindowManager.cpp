@@ -5782,6 +5782,51 @@ void WindowManager::cancel_remastered_keyboard_route() {
   this->remastered_shell_keyboard.cancel_route();
 }
 
+std::optional<std::uint32_t> WindowManager::replay_movement_key_message(
+    const realmz::presentation::UIAction& action,
+    std::uint32_t semantic_surface) const noexcept {
+  const auto* movement =
+      std::get_if<realmz::presentation::MovePartyAction>(&action.payload);
+  if (!movement) {
+    return std::nullopt;
+  }
+  const auto context = capture_runtime_legacy_command_context();
+  const bool matching_surface =
+      ((semantic_surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+          (context.screen ==
+              realmz::presentation::ScreenContext::exploration)) ||
+      ((semantic_surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+          (context.screen == realmz::presentation::ScreenContext::dungeon));
+  if (!matching_surface || !context.adaptive_eligible) {
+    return std::nullopt;
+  }
+  return realmz::presentation::legacy_key_message_for_movement(
+      movement->command, context);
+}
+
+realmz::presentation::DispatchResult
+WindowManager::dispatch_replay_semantic_action(
+    const realmz::presentation::UIAction& action) {
+  auto* runtime = realmz::replay::installed_replay_runtime();
+  if (!runtime || !runtime->action_plan_started() ||
+      runtime->replay_route() != realmz::replay::ReplayRoute::semantic ||
+      runtime->presentation_mode() !=
+          realmz::replay::ReplayPresentationMode::remastered) {
+    return realmz::presentation::DispatchResult::rejected(
+        "Semantic replay dispatch is not active");
+  }
+  if (RealmzCurrentSemanticInputSurface() ==
+      REALMZ_SEMANTIC_INPUT_NONE) {
+    return realmz::presentation::DispatchResult::rejected(
+        "Semantic replay dispatch requires an active gameplay scope");
+  }
+  if (!this->runtime_legacy_command_bridge) {
+    return realmz::presentation::DispatchResult::failed(
+        "Runtime legacy command bridge is not available");
+  }
+  return this->runtime_legacy_command_bridge->dispatch(action);
+}
+
 void WindowManager::dispatch_remastered_shell_control(
     const realmz::presentation::ShellControlPlacement& control) {
   if (!control.enabled ||

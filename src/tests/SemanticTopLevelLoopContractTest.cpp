@@ -143,6 +143,21 @@ void require(bool condition, std::string_view detail) {
   }
 }
 
+[[nodiscard]] std::size_t count_text(
+    std::string_view source,
+    std::string_view needle) noexcept {
+  if (needle.empty()) {
+    return 0;
+  }
+  std::size_t count = 0;
+  for (std::size_t position = source.find(needle);
+       position != std::string_view::npos;
+       position = source.find(needle, position + needle.size())) {
+    ++count;
+  }
+  return count;
+}
+
 [[nodiscard]] std::size_t skip_whitespace(
     std::string_view source,
     std::size_t position) noexcept {
@@ -1067,11 +1082,15 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must separate its Classic and scoped polls");
   require(count_identifier(semantic_wrapper, "app1Evt") == 22,
       "semantic gameplay wrapper must recognize all twenty-two tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 19,
-      "only late movement, inventory, spellbook, guard, finish, delay, center, "
-      "switch-weapon, cycle-focus, combat-items, Auto, Range, Bandage, Undo, "
-      "combat-spellbook, combat-targeting, Escape, scroll-case, or "
-      "center-cursor validation may produce keyDown");
+  require(count_identifier(semantic_wrapper, "keyDown") == 21 &&
+          count_text(compact_semantic, "ret->what=keyDown;") == 20 &&
+          compact_semantic.contains(
+              ".kind=(ret->what==keyDown)"),
+      "only guarded Classic replay injection or late movement, inventory, "
+      "spellbook, guard, finish, delay, center, switch-weapon, cycle-focus, "
+      "combat-items, Auto, Range, Bandage, Undo, combat-spellbook, "
+      "combat-targeting, Escape, scroll-case, or center-cursor validation may "
+      "produce keyDown, followed by one replay delivery observation");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&

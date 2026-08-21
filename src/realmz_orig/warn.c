@@ -1,4 +1,5 @@
 #include "variables.h"
+#include "SemanticReplayChild.h"
 
 /************ warn ***********************/
 void warn(short string) {
@@ -10,6 +11,9 @@ void warn(short string) {
 
   BitMap* src;
   BitMap* dst = GetPortBitMapForCopyBits(gbuff2);
+
+  if (RealmzSemanticReplayChildIsActive())
+    RealmzFailSemanticReplayChild("legacy warning dialog requested");
 
   GetPort(&oldport);
   if (oldport) // Myriad, current port must be null

@@ -2,10 +2,11 @@
 """Run two process-isolated semantic replay children under a strict v1 protocol.
 
 This is parent-orchestration infrastructure only.  Realmz recognizes
-``--semantic-replay-child`` and installs its bounded startup policies, but the
-native action driver and result writer do not exist yet.  Tests use a synthetic
-child to pin process isolation and protocol behavior; their output is never
-evidence of engine or save equivalence.
+``--semantic-replay-child``, installs its bounded startup policies, drives the
+native action plan, and publishes per-child state and save measurements.  The
+runner deliberately does not turn those measurements into an equivalence
+verdict.  Its tests use a synthetic child to pin process isolation and protocol
+behavior; their output is never evidence of engine or save equivalence.
 
 The supplied executable and its higher same-user filesystem namespace are
 trusted.  New process sessions separate legacy globals and let the parent stop
@@ -1464,8 +1465,8 @@ def _argument_parser() -> argparse.ArgumentParser:
         description=(
             "Launch one explicit executable as isolated Classic and semantic replay "
             "children. The executable is trusted code, not sandboxed; private protocol "
-            "workspaces are retained and reported. Native Realmz startup policy exists, "
-            "but action driving and result emission are not implemented yet."
+            "workspaces are retained and reported. Native Realmz children load explicit "
+            "slots, drive guarded gameplay polls, and publish verified results."
         )
     )
     parser.add_argument(

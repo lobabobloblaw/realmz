@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace realmz::replay {
@@ -142,6 +143,118 @@ std::uint64_t ReplayRuntime::rng_draw_count() const noexcept {
 
 std::uint32_t ReplayRuntime::next_event_tick() noexcept {
   return event_tick_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void ReplayRuntime::start_action_plan(
+    std::vector<presentation::UIAction> actions) {
+  if (driver_ || state_trace_) {
+    throw std::logic_error("replay action plan is already started");
+  }
+
+  auto driver = std::make_unique<ReplayDriver>(std::move(actions));
+  if (driver->phase() == ReplayDriverPhase::failed) {
+    throw ReplayRuntimeError(
+        "replay action plan rejected by driver: " +
+        std::string(replay_driver_failure_name(driver->failure())));
+  }
+  auto state_trace = std::make_unique<ReplayStateTraceHasher>(
+      static_cast<std::uint32_t>(driver->action_count()));
+  driver_ = std::move(driver);
+  state_trace_ = std::move(state_trace);
+}
+
+bool ReplayRuntime::action_plan_started() const noexcept {
+  return driver_ != nullptr && state_trace_ != nullptr;
+}
+
+ReplayPollDirective ReplayRuntime::next_gameplay_poll() {
+  ReplayDriver& driver = require_driver();
+  ReplayPollDirective directive = driver.on_gameplay_poll();
+  if (driver.phase() == ReplayDriverPhase::failed) {
+    throw ReplayRuntimeError(
+        "replay gameplay poll failed: " +
+        std::string(replay_driver_failure_name(driver.failure())));
+  }
+  return directive;
+}
+
+void ReplayRuntime::record_checkpoint(
+    const ReplayCheckpoint& checkpoint,
+    const ReplayStateSnapshot& snapshot) {
+  ReplayStateTraceHasher& state_trace = require_state_trace();
+  if (checkpoint.kind == ReplayCheckpointKind::initial) {
+    if (checkpoint.action_index) {
+      throw ReplayRuntimeError(
+          "initial replay checkpoint unexpectedly has an action index");
+    }
+    state_trace.append_initial(snapshot);
+    return;
+  }
+  if (!checkpoint.action_index) {
+    throw ReplayRuntimeError(
+        "settled replay checkpoint is missing its action index");
+  }
+  state_trace.append_post_action(*checkpoint.action_index, snapshot);
+}
+
+void ReplayRuntime::acknowledge_action_delivery(
+    presentation::ActionSequence action_sequence,
+    std::uint32_t expected_key_down_message,
+    ReplayObservedEvent observed) {
+  ReplayDriver& driver = require_driver();
+  if (!driver.acknowledge_delivery(
+          action_sequence, expected_key_down_message, observed)) {
+    throw ReplayRuntimeError(
+        "replay action delivery failed: " +
+        std::string(replay_driver_failure_name(driver.failure())));
+  }
+}
+
+Sha256Digest ReplayRuntime::finalize_state_trace() const {
+  const ReplayDriver& driver = require_driver();
+  if (driver.phase() != ReplayDriverPhase::finalizing) {
+    throw ReplayRuntimeError(
+        "replay state trace cannot finalize before the action driver");
+  }
+  return require_state_trace().finalize();
+}
+
+std::size_t ReplayRuntime::planned_action_count() const noexcept {
+  return driver_ ? driver_->action_count() : 0U;
+}
+
+std::size_t ReplayRuntime::settled_action_count() const noexcept {
+  return state_trace_
+      ? static_cast<std::size_t>(state_trace_->appended_action_count())
+      : 0U;
+}
+
+ReplayDriver& ReplayRuntime::require_driver() {
+  if (!driver_) {
+    throw ReplayRuntimeError("replay action plan is not started");
+  }
+  return *driver_;
+}
+
+const ReplayDriver& ReplayRuntime::require_driver() const {
+  if (!driver_) {
+    throw ReplayRuntimeError("replay action plan is not started");
+  }
+  return *driver_;
+}
+
+ReplayStateTraceHasher& ReplayRuntime::require_state_trace() {
+  if (!state_trace_) {
+    throw ReplayRuntimeError("replay state trace is not started");
+  }
+  return *state_trace_;
+}
+
+const ReplayStateTraceHasher& ReplayRuntime::require_state_trace() const {
+  if (!state_trace_) {
+    throw ReplayRuntimeError("replay state trace is not started");
+  }
+  return *state_trace_;
 }
 
 ReplayRuntime& install_replay_runtime(ReplayChildConfig config) {

@@ -90,12 +90,40 @@ void verify_early_child_dispatch(const fs::path& root) {
 
   const std::string_view run_body =
       function_body(child_source, "RealmzRunSemanticReplayChild(void)");
-  require(run_body.find(
-              "REALMZ_SEMANTIC_REPLAY_DRIVER_UNAVAILABLE_EXIT") !=
-          std::string_view::npos,
-      "bootstrap must fail explicitly until the native driver exists");
-  require(run_body.find("result_path") == std::string_view::npos,
-      "placeholder bootstrap must not emit a replay result");
+  const std::size_t decode =
+      run_body.find("decode_replay_actions_v1");
+  const std::size_t start = run_body.find("start_action_plan");
+  const std::size_t load = run_body.find("RealmzReplayLoadSlot");
+  const std::size_t enter = run_body.find("RealmzReplayEnterLoadedGame");
+  require(decode != std::string_view::npos &&
+          start != std::string_view::npos &&
+          load != std::string_view::npos &&
+          enter != std::string_view::npos &&
+          decode < start && start < load && load < enter,
+      "action preflight must precede explicit load and loaded-game entry");
+  require(run_body.find("REALMZ_SEMANTIC_REPLAY_ACTION_ERROR_EXIT") !=
+              std::string_view::npos &&
+          run_body.find("REALMZ_SEMANTIC_REPLAY_EXECUTION_ERROR_EXIT") !=
+              std::string_view::npos,
+      "native child startup must retain distinct action and execution failures");
+
+  const std::string_view completion_body = function_body(
+      child_source, "void complete_semantic_replay_child(");
+  const std::size_t recheck =
+      completion_body.find("require_fresh_output_slot(runtime.config())");
+  const std::size_t save =
+      completion_body.find("RealmzReplaySaveSlot(slot)");
+  const std::size_t verify =
+      completion_body.find("verify_replay_output_slot(root, slot)");
+  const std::size_t publish =
+      completion_body.find("write_replay_child_result_v1(config, result)");
+  require(completion_body.find("complete_replay") != std::string_view::npos &&
+          recheck != std::string_view::npos &&
+          save != std::string_view::npos &&
+          verify != std::string_view::npos &&
+          publish != std::string_view::npos &&
+          recheck < save && save < verify && verify < publish,
+      "completion must recheck freshness, save, verify, and publish in order");
 }
 
 void verify_isolated_file_policy(const fs::path& root) {
@@ -204,6 +232,49 @@ void verify_deterministic_runtime_hooks(const fs::path& root) {
       "configured replay presentation mode must be locked");
 }
 
+void verify_legacy_failure_boundaries(const fs::path& root) {
+  const std::string header =
+      read_file(root / "src/SemanticReplayChild.h");
+  require(header.find(
+              "void RealmzFailSemanticReplayChild(const char* detail);") !=
+          std::string::npos,
+      "preserved C failure paths require a replay terminal ABI");
+
+  const std::string warning_source =
+      read_file(root / "src/realmz_orig/warn.c");
+  const std::string_view warning =
+      function_body(warning_source, "void warn(short string)");
+  const std::size_t warning_active =
+      warning.find("RealmzSemanticReplayChildIsActive");
+  const std::size_t warning_fail =
+      warning.find("RealmzFailSemanticReplayChild");
+  const std::size_t warning_dialog = warning.find("GetNewDialog");
+  require(warning_active != std::string_view::npos &&
+          warning_fail != std::string_view::npos &&
+          warning_dialog != std::string_view::npos &&
+          warning_active < warning_fail && warning_fail < warning_dialog,
+      "replay warnings must terminate before entering an input modal");
+
+  const std::string misc_source =
+      read_file(root / "src/realmz_orig/misc.c");
+  for (const std::string_view signature : {
+           "void scratch(short location)",
+           "void scratch2(short location)",
+       }) {
+    const std::string_view scratch = function_body(misc_source, signature);
+    const std::size_t active =
+        scratch.find("RealmzSemanticReplayChildIsActive");
+    const std::size_t fail =
+        scratch.find("RealmzFailSemanticReplayChild");
+    const std::size_t success_exit = scratch.find("exit(0)");
+    require(active != std::string_view::npos &&
+            fail != std::string_view::npos &&
+            success_exit != std::string_view::npos &&
+            active < fail && fail < success_exit,
+        "replay scratch failures must terminate nonzero before legacy exit(0)");
+  }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -216,6 +287,7 @@ int main(int argc, char** argv) {
     verify_early_child_dispatch(root);
     verify_isolated_file_policy(root);
     verify_deterministic_runtime_hooks(root);
+    verify_legacy_failure_boundaries(root);
     std::cout << "SemanticReplayStartupContractTest passed ("
               << checks_run << " checks)\n";
     return 0;

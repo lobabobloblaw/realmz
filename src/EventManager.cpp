@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstring>
 #include <deque>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <phosg/Strings.hh>
@@ -14,6 +15,7 @@
 #include "presentation/LegacyPartySelection.h"
 #include "presentation/SemanticInputBoundary.h"
 #include "replay/ReplayRuntime.hpp"
+#include "replay/SemanticReplayChildSession.hpp"
 
 static phosg::PrefixedLogger em_log("[EventManager] ", DEFAULT_LOG_LEVEL);
 
@@ -21,6 +23,32 @@ static phosg::PrefixedLogger em_log("[EventManager] ", DEFAULT_LOG_LEVEL);
 active_replay_runtime() noexcept {
   return realmz::replay::installed_replay_runtime();
 }
+
+// Prevent any C++ exception raised by replay-only dispatch, queueing, late
+// translation, or logging from unwinding through the preserved C gameplay
+// frames. Ordinary interactive execution retains its existing exception
+// behavior.
+class ReplayExceptionBoundary final {
+public:
+  explicit ReplayExceptionBoundary(bool active) noexcept
+      : active_(active),
+        uncaught_on_entry_(std::uncaught_exceptions()) {}
+
+  ~ReplayExceptionBoundary() noexcept {
+    if (active_ &&
+        std::uncaught_exceptions() > uncaught_on_entry_) {
+      realmz::replay::fail_semantic_replay_child(
+          "unhandled exception escaped the gameplay poll");
+    }
+  }
+
+  ReplayExceptionBoundary(const ReplayExceptionBoundary&) = delete;
+  ReplayExceptionBoundary& operator=(const ReplayExceptionBoundary&) = delete;
+
+private:
+  bool active_;
+  int uncaught_on_entry_;
+};
 
 struct PendingSemanticCenterCombatCursorCell {
   uint8_t x;
@@ -1029,7 +1057,9 @@ protected:
 
       EventRecord ev = *candidate;
       this->event_queue.erase(candidate);
+      ev.where = {};
       ev.modifiers = 0;
+      ev.window_port = nullptr;
       em_log.debug_f(
           "Dequeued replay semantic event (what={}, message=0x{:08X}, "
           "when=0x{:08X}, where=(h={}, v={}))",
@@ -1305,6 +1335,8 @@ Boolean GetNextSemanticGameplayEvent(
     int16_t which_mask,
     EventRecord* ret,
     RealmzSemanticInputSurface surface) {
+  auto* replay = active_replay_runtime();
+  const ReplayExceptionBoundary replay_exception_boundary(replay != nullptr);
   if (which_mask != everyEvent) {
     throw std::logic_error(std::format(
         "which_mask ({:04X}) masks out some events in "
@@ -1320,17 +1352,72 @@ Boolean GetNextSemanticGameplayEvent(
 
   clear_pending_semantic_center_combat_cursor_cell();
 
-  auto* replay = active_replay_runtime();
+  const realmz::presentation::UIAction* replay_semantic_action = nullptr;
+  std::uint32_t replay_expected_key_message = 0;
+  if (replay && replay->action_plan_started()) {
+    try {
+      const auto directive = replay->next_gameplay_poll();
+      if (directive.checkpoint) {
+        realmz::replay::record_live_replay_checkpoint(
+            *replay, *directive.checkpoint);
+      }
+      if (directive.finalize) {
+        realmz::replay::complete_semantic_replay_child(*replay);
+      }
+      if (!directive.action) {
+        throw realmz::replay::ReplayRuntimeError(
+            "replay poll produced neither an action nor finalization");
+      }
+      const auto expected =
+          WindowManager::instance().replay_movement_key_message(
+              *directive.action, surface);
+      if (!expected) {
+        throw realmz::replay::ReplayRuntimeError(
+            "replay movement is invalid for the current gameplay surface");
+      }
+      replay_expected_key_message = *expected;
+
+      if (replay->replay_route() == realmz::replay::ReplayRoute::classic) {
+        *ret = {};
+        ret->what = keyDown;
+        ret->message = replay_expected_key_message;
+        ret->when = TickCount();
+        replay->acknowledge_action_delivery(
+            directive.action->sequence,
+            replay_expected_key_message,
+            {
+                .kind = realmz::replay::ReplayObservedEventKind::key_down,
+                .message = ret->message,
+            });
+        return true;
+      }
+      if (replay->replay_route() !=
+          realmz::replay::ReplayRoute::semantic) {
+        throw realmz::replay::ReplayRuntimeError(
+            "replay route is not supported by the gameplay poll");
+      }
+      replay_semantic_action = directive.action;
+    } catch (const std::exception& error) {
+      realmz::replay::fail_semantic_replay_child(error.what());
+    } catch (...) {
+      realmz::replay::fail_semantic_replay_child(
+          "unknown gameplay-poll failure");
+    }
+  }
   const bool remastered = replay
       ? replay->presentation_mode() ==
           realmz::replay::ReplayPresentationMode::remastered
       : WindowManager::instance().get_presentation_mode() ==
           realmz::presentation::PresentationMode::remastered;
+  if (replay_semantic_action && !remastered) {
+    realmz::replay::fail_semantic_replay_child(
+        "semantic replay route requires remastered presentation");
+  }
   if (!remastered) {
     // With no active semantic scope, ordinary EventManager behavior drops any
-    // stale tagged command before returning the next Classic event. A future
-    // replay controller must inject Classic-route actions before reaching
-    // this presentation branch; replay raw-event isolation returns null here.
+    // stale tagged command before returning the next Classic event. The replay
+    // controller injects Classic-route actions before reaching this branch;
+    // replay raw-event isolation otherwise returns null here.
     *ret = em.get_next_event(0);
     return (ret->what != nullEvent);
   }
@@ -1346,6 +1433,17 @@ Boolean GetNextSemanticGameplayEvent(
 
   {
     const SemanticInputScope semantic_scope(surface);
+    if (replay_semantic_action) {
+      const auto dispatch =
+          WindowManager::instance().dispatch_replay_semantic_action(
+              *replay_semantic_action);
+      if (!dispatch.was_handled()) {
+        realmz::replay::fail_semantic_replay_child(
+            dispatch.detail.empty()
+                ? "semantic replay action dispatch failed"
+                : dispatch.detail);
+      }
+    }
     *ret = em.get_next_semantic_event(0);
   }
   const bool still_remastered = replay
@@ -1660,6 +1758,24 @@ Boolean GetNextSemanticGameplayEvent(
   }
   if (replay) {
     ret->modifiers = 0;
+  }
+  if (replay_semantic_action) {
+    try {
+      replay->acknowledge_action_delivery(
+          replay_semantic_action->sequence,
+          replay_expected_key_message,
+          {
+              .kind = (ret->what == keyDown)
+                  ? realmz::replay::ReplayObservedEventKind::key_down
+                  : realmz::replay::ReplayObservedEventKind::other,
+              .message = ret->message,
+          });
+    } catch (const std::exception& error) {
+      realmz::replay::fail_semantic_replay_child(error.what());
+    } catch (...) {
+      realmz::replay::fail_semantic_replay_child(
+          "unknown semantic action acknowledgement failure");
+    }
   }
   return (ret->what != nullEvent);
 }

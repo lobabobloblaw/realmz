@@ -298,14 +298,21 @@ not staged fixture bytes.
 Realmz now recognizes `--semantic-replay-child CONFIG`, strictly validates the
 bounded v1 config before SDL startup, fixes the isolated user root, suppresses
 ambient preference reads and all preference writes, selects and locks the
-configured presentation, and installs the deterministic replay RNG. The
-bootstrap deliberately exits nonzero without writing a result because native
-save loading, action driving, settled snapshots, and save emission are not yet
-implemented. Synthetic tests pin the parent protocol, but their child-reported
-state and save hashes are deliberately not compared. Even a successful runner
-invocation therefore emits `"runner_scope":"process_isolation_only"` and
-`"semantic_equivalence":"not_evaluated"`; it is not evidence of engine or save
-equivalence. The synthetic-only replay foundation suite is:
+configured presentation, and installs the deterministic replay RNG. After
+action preflight, the child explicitly loads the isolated input slot, enters
+normal loaded gameplay, captures canonical initial and post-action snapshots,
+and delivers movement through the selected Classic or guarded semantic route.
+After every action settles, it explicitly saves to a rechecked fresh slot,
+verifies the output tree, and exclusively publishes its state, save, action,
+and RNG measurements before exiting successfully.
+
+Synthetic tests pin the parent protocol, and linked native tests exercise both
+delivery routes against controlled engine globals, but the runner deliberately
+does not compare child-reported state and save hashes. The repository also has
+no selected provenance-reviewed live Tutorial fixture. Even a successful
+runner invocation therefore emits `"runner_scope":"process_isolation_only"`
+and `"semantic_equivalence":"not_evaluated"`; it is not evidence of engine or
+save equivalence. The synthetic replay foundation suite is:
 
 ```sh
 python3 -m unittest discover \

@@ -112,6 +112,7 @@ add_library(realmz_replay_core STATIC
     src/replay/DeterministicReplayRng.cpp
     src/replay/ReplayActionDecoder.cpp
     src/replay/ReplayChildConfig.cpp
+    src/replay/ReplayCompletion.cpp
     src/replay/ReplayDriver.cpp
     src/replay/ReplayOutputOracle.cpp
     src/replay/ReplayResultWriter.cpp
@@ -317,6 +318,14 @@ if(REALMZ_BUILD_CORE_TESTS)
     add_test(NAME LegacyGameSnapshotSourceTest
         COMMAND LegacyGameSnapshotSourceTest)
 
+    add_executable(LegacyReplayStateSourceTest
+        src/tests/LegacyReplayStateSourceTest.cpp
+        src/replay/LegacyReplayStateSource.cpp)
+    target_include_directories(LegacyReplayStateSourceTest PRIVATE src)
+    realmz_configure_core_target(LegacyReplayStateSourceTest)
+    add_test(NAME LegacyReplayStateSourceTest
+        COMMAND LegacyReplayStateSourceTest)
+
     add_executable(UserDataMigrationTest src/tests/UserDataMigrationTest.cpp)
     target_link_libraries(UserDataMigrationTest PRIVATE realmz_userdata_core)
     realmz_configure_core_target(UserDataMigrationTest)
@@ -354,6 +363,12 @@ if(REALMZ_BUILD_CORE_TESTS)
     target_link_libraries(ReplayDriverTest PRIVATE realmz_replay_core)
     realmz_configure_core_target(ReplayDriverTest)
     add_test(NAME ReplayDriverTest COMMAND ReplayDriverTest)
+
+    add_executable(ReplayCompletionTest
+        src/tests/ReplayCompletionTest.cpp)
+    target_link_libraries(ReplayCompletionTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayCompletionTest)
+    add_test(NAME ReplayCompletionTest COMMAND ReplayCompletionTest)
 
     add_executable(ReplayResultWriterTest
         src/tests/ReplayResultWriterTest.cpp)
@@ -625,6 +640,7 @@ set(SOURCES
     src/realmz_orig/wear.c
     src/RealmzCocoa.c
     src/SemanticReplayChild.cpp
+    src/replay/LegacyReplayStateSource.cpp
     src/EventManager.cpp
     src/FileManager.cpp
     src/Font.cpp
@@ -749,7 +765,6 @@ target_link_libraries(realmz_lib
 if(REALMZ_BUILD_CORE_TESTS)
     add_executable(SemanticReplayChildBootstrapTest
         src/tests/SemanticReplayChildBootstrapTest.cpp)
-    target_link_libraries(SemanticReplayChildBootstrapTest PRIVATE realmz_lib)
     realmz_configure_core_target(SemanticReplayChildBootstrapTest)
     add_test(NAME SemanticReplayChildBootstrapTest
         COMMAND SemanticReplayChildBootstrapTest)
@@ -763,16 +778,27 @@ if(REALMZ_BUILD_CORE_TESTS)
         C_STANDARD 90)
     target_compile_definitions(realmz_event_test_legacy_globals PRIVATE
         main=RealmzAppMainForEventIsolationTest)
-    target_link_libraries(realmz_event_test_legacy_globals PRIVATE realmz_lib)
+    target_link_libraries(realmz_event_test_legacy_globals PUBLIC realmz_lib)
+    target_link_libraries(SemanticReplayChildBootstrapTest PRIVATE
+        realmz_event_test_legacy_globals)
 
     add_executable(SemanticReplayEventIsolationTest
         src/tests/SemanticReplayEventIsolationTest.cpp)
     target_link_libraries(SemanticReplayEventIsolationTest PRIVATE
-        realmz_lib
         realmz_event_test_legacy_globals)
     realmz_configure_core_target(SemanticReplayEventIsolationTest)
     add_test(NAME SemanticReplayEventIsolationTest
         COMMAND SemanticReplayEventIsolationTest)
+
+    add_executable(SemanticReplayRouteIntegrationTest
+        src/tests/SemanticReplayRouteIntegrationTest.cpp)
+    target_link_libraries(SemanticReplayRouteIntegrationTest PRIVATE
+        realmz_event_test_legacy_globals)
+    realmz_configure_core_target(SemanticReplayRouteIntegrationTest)
+    add_test(NAME SemanticReplayClassicRouteIntegrationTest
+        COMMAND SemanticReplayRouteIntegrationTest classic)
+    add_test(NAME SemanticReplaySemanticRouteIntegrationTest
+        COMMAND SemanticReplayRouteIntegrationTest semantic)
 endif()
 
 add_executable(Realmz
@@ -809,6 +835,12 @@ if(NOT WIN32 AND REALMZ_ENABLE_APP_SANITIZERS AND
         target_compile_options(SemanticReplayEventIsolationTest
             PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(SemanticReplayEventIsolationTest PRIVATE
+            -fsanitize=address,undefined)
+    endif()
+    if(TARGET SemanticReplayRouteIntegrationTest)
+        target_compile_options(SemanticReplayRouteIntegrationTest
+            PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(SemanticReplayRouteIntegrationTest PRIVATE
             -fsanitize=address,undefined)
     endif()
 endif()

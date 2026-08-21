@@ -2,6 +2,7 @@
 
 #include "WindowManager.h"
 
+#include <cstdint>
 #include <list>
 #include <memory>
 #include <optional>
@@ -220,6 +221,16 @@ public:
     return this->presentation_host.mode();
   }
   void set_presentation_mode(realmz::presentation::PresentationMode mode);
+
+  // Replay bypasses physical shell hit-testing but retains the production
+  // context mapper and semantic bridge. These methods are callable only from
+  // the guarded gameplay-poll coordinator; ordinary UI dispatch is unchanged.
+  [[nodiscard]] std::optional<std::uint32_t> replay_movement_key_message(
+      const realmz::presentation::UIAction& action,
+      std::uint32_t semantic_surface) const noexcept;
+  [[nodiscard]] realmz::presentation::DispatchResult
+  dispatch_replay_semantic_action(
+      const realmz::presentation::UIAction& action);
 
   // Pointer input arrives in the renderer's current logical coordinates. In
   // Remastered mode these helpers route only the embedded Classic region into
