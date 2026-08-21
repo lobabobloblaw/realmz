@@ -1,3 +1,6 @@
+#include "realmz_orig/time-scale.h"
+
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -146,24 +149,41 @@ void verify_header(const fs::path& root) {
 }
 
 void verify_dungeon_time_scale(const fs::path& root) {
+  std::array<short, 20> base_scale{};
+  require(RealmzTimeScaleForLocation(1, -1, nullptr, 0) == 1,
+      "a cold dungeon load must select indoor time without tile metadata");
+  require(RealmzTimeScaleForLocation(1, 255, nullptr, 0) == 1,
+      "dungeon time must not depend on the signedness of lastpix");
+  require(RealmzTimeScaleForLocation(
+              0, -1, base_scale.data(), base_scale.size()) == 5 &&
+          RealmzTimeScaleForLocation(
+              0, 20, base_scale.data(), base_scale.size()) == 5 &&
+          RealmzTimeScaleForLocation(
+              0, 255, base_scale.data(), base_scale.size()) == 5,
+      "invalid outdoor tile indices must retain the default time scale");
+  require(RealmzTimeScaleForLocation(0, 0, nullptr, 20) == 5,
+      "missing outdoor tile metadata must retain the default time scale");
+  base_scale[0] = 1;
+  base_scale[19] = 2;
+  require(RealmzTimeScaleForLocation(
+              0, 0, base_scale.data(), base_scale.size()) == 1 &&
+          RealmzTimeScaleForLocation(
+              0, 19, base_scale.data(), base_scale.size()) == 1,
+      "valid nonzero tile metadata must select indoor time");
+  base_scale[0] = 0;
+  require(RealmzTimeScaleForLocation(
+              0, 0, base_scale.data(), base_scale.size()) == 5,
+      "valid zero tile metadata must retain outdoor time");
+
   const std::string source =
       read_file(root / "src/realmz_orig/textbox-time.c");
   const std::string_view body =
       function_body(source, "short timeclick(unsigned char number");
-  const std::size_t default_scale = body.find("short scale = 5;");
-  const std::string_view safe_guard =
-      "if (indung || ((lastpix >= 0) && (lastpix < 20) && "
-      "basescale[lastpix]))";
-  const std::size_t guard = body.find(safe_guard);
-  const std::size_t first_lookup = body.find("basescale[lastpix]");
-  require(default_scale != std::string_view::npos &&
-          guard != std::string_view::npos && default_scale < guard,
-      "timeclick must default to outdoor time and short-circuit dungeon "
-      "loads before checking a bounded lastpix index");
-  require(first_lookup != std::string_view::npos &&
-          body.find("basescale[lastpix]", first_lookup + 1) ==
+  require(body.find("short scale = RealmzTimeScaleForLocation(") !=
               std::string_view::npos,
-      "timeclick must not retain an unguarded basescale lookup");
+      "timeclick must use the tested location time-scale policy");
+  require(body.find("basescale[lastpix]") == std::string_view::npos,
+      "timeclick must not retain a direct basescale lookup");
 }
 
 } // namespace

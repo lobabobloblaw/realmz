@@ -391,6 +391,7 @@ if(REALMZ_BUILD_CORE_TESTS)
 
     add_executable(ReplayLoadedGameEntryContractTest
         src/tests/ReplayLoadedGameEntryContractTest.cpp)
+    target_include_directories(ReplayLoadedGameEntryContractTest PRIVATE src)
     realmz_configure_core_target(ReplayLoadedGameEntryContractTest)
     add_test(NAME ReplayLoadedGameEntryContractTest
         COMMAND ReplayLoadedGameEntryContractTest ${CMAKE_SOURCE_DIR})

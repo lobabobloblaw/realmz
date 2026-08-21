@@ -1,5 +1,6 @@
 #include "prototypes.h"
 #include "realmzbuild.h"
+#include "time-scale.h"
 #include "variables.h"
 
 /**************** textbox ************************/
@@ -137,16 +138,12 @@ short timeclick(unsigned char number, short checkforrandom) {
   GrafPtr oldport;
   short t, timeloop, timeindex;
   short chunk, suprise;
-  short scale = 5;
+  short scale = RealmzTimeScaleForLocation(
+      indung, lastpix, basescale, sizeof basescale / sizeof basescale[0]);
   Point test;
   char s[20];
 
   Boolean tag = FALSE;
-  /* Dungeon maps do not load an outdoor pixmap, so a cold saved-game load
-   * can leave lastpix at its -1 sentinel. Dungeons still use indoor time. */
-  if (indung || ((lastpix >= 0) && (lastpix < 20) && basescale[lastpix]))
-    scale = 1; /********* if indoor area, scale = 1 else = 5 ****/
-
   GetPort(&oldport);
 
   if (!number) {
