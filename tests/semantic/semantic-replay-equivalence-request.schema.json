@@ -1,0 +1,124 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/semantic-replay-equivalence-request-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "action": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "maxLength": 1024,
+                "pattern": "^[ -~]*(?![\\s\\S])",
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "maxProperties": 32,
+          "propertyNames": {
+            "maxLength": 64,
+            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "kind": {
+          "maxLength": 64,
+          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])",
+          "type": "string"
+        },
+        "ordinal": {
+          "maximum": 4095,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ordinal",
+        "kind",
+        "arguments"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A provenance-pinned request to stage one fixture twice, run both replay routes in isolated processes, post-attest the fixture trees, and evaluate exact semantic equivalence.",
+  "properties": {
+    "actions": {
+      "description": "Ordered replay actions. The gate enforces zero-based contiguous ordinals and hashes the canonical array into the completed replay profile.",
+      "items": {
+        "$ref": "#/$defs/action"
+      },
+      "maxItems": 4096,
+      "type": "array"
+    },
+    "executable": {
+      "description": "Absolute, physical, normalized executable path used for both children.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "fixture_tree_sha256": {
+      "description": "Caller-pinned canonical fixture-tree digest. The gate must match it against the continuously pinned manifest and source before staging.",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    },
+    "manifest": {
+      "description": "Absolute, physical, normalized path to an existing regular replay-fixture manifest v1 file.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "output_slot": {
+      "description": "Destination save slot. The gate enforces that it differs from the manifest's input slot.",
+      "pattern": "^[A-J](?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_seed": {
+      "description": "Deterministic 64-bit RNG seed shared by both children.",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_stream": {
+      "description": "Deterministic 64-bit RNG stream selector shared by both children.",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "source_root": {
+      "description": "Absolute, physical, normalized existing source tree governed by the manifest.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "timeout_seconds": {
+      "maximum": 300,
+      "minimum": 0.05,
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema_version",
+    "manifest",
+    "source_root",
+    "fixture_tree_sha256",
+    "executable",
+    "output_slot",
+    "actions",
+    "timeout_seconds",
+    "rng_seed",
+    "rng_stream"
+  ],
+  "title": "Realmz semantic replay equivalence request v1",
+  "type": "object"
+}

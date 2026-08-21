@@ -116,6 +116,26 @@ class VerifiedFixture:
     source_root: Path
 
 
+@dataclass(frozen=True)
+class FixtureSetEvidence:
+    """Non-content evidence for one continuously pinned fixture set."""
+
+    manifest_sha256: str
+    tree_sha256: str
+    slot: str
+    file_count: int
+    total_file_bytes: int
+
+    def as_json(self) -> dict[str, object]:
+        return {
+            "manifest_sha256": self.manifest_sha256,
+            "tree_sha256": self.tree_sha256,
+            "slot": self.slot,
+            "file_count": self.file_count,
+            "total_file_bytes": self.total_file_bytes,
+        }
+
+
 def _manifest_error(message: str) -> NoReturn:
     raise FixtureError("manifest.invalid", message, EXIT_MANIFEST)
 
@@ -385,82 +405,11 @@ def _manifest_display_path(path: Path | str) -> Path:
 def load_manifest(path: Path | str) -> FixtureManifest:
     """Open once, read through the pinned descriptor, and validate manifest v1."""
 
-    _require_descriptor_support(_manifest_error)
-    spec = _path_spec(path, "manifest", _manifest_error)
-    parent_chain = _open_directory_chain(spec.parent_path, "manifest", _manifest_error)
+    pinned = _open_pinned_manifest(path)
     try:
-        descriptor = os.open(
-            spec.name,
-            _read_flags(),
-            dir_fd=parent_chain.descriptor,
-        )
-    except OSError as error:
-        parent_chain.close()
-        _manifest_error(
-            f"cannot open manifest {spec.display_path}: {error.strerror or error}"
-        )
-
-    try:
-        _assert_path_chain_stable(parent_chain, "manifest", _manifest_error)
-        before = os.fstat(descriptor)
-        link_before = os.stat(
-            spec.name,
-            dir_fd=parent_chain.descriptor,
-            follow_symlinks=False,
-        )
-        if not stat.S_ISREG(before.st_mode):
-            _manifest_error(f"manifest must be a regular file: {spec.display_path}")
-        if _stat_identity(before) != _stat_identity(link_before):
-            _manifest_error(f"manifest link changed while opening: {spec.display_path}")
-        if before.st_size > MAX_MANIFEST_BYTES:
-            _manifest_error(
-                f"manifest exceeds {MAX_MANIFEST_BYTES} bytes: {spec.display_path}"
-            )
-
-        chunks: list[bytes] = []
-        total = 0
-        while True:
-            block = os.read(descriptor, min(COPY_BLOCK_SIZE, MAX_MANIFEST_BYTES + 1 - total))
-            if not block:
-                break
-            chunks.append(block)
-            total += len(block)
-            if total > MAX_MANIFEST_BYTES:
-                _manifest_error(
-                    f"manifest exceeds {MAX_MANIFEST_BYTES} bytes: {spec.display_path}"
-                )
-        after = os.fstat(descriptor)
-        link_after = os.stat(
-            spec.name,
-            dir_fd=parent_chain.descriptor,
-            follow_symlinks=False,
-        )
-        if (
-            _stat_stability(before) != _stat_stability(after)
-            or _stat_identity(after) != _stat_identity(link_after)
-            or total != after.st_size
-        ):
-            _manifest_error(f"manifest changed while it was being read: {spec.display_path}")
-        _assert_path_chain_stable(parent_chain, "manifest", _manifest_error)
-        raw = b"".join(chunks)
-    except FixtureError:
-        raise
-    except OSError as error:
-        _manifest_error(
-            f"cannot read manifest {spec.display_path}: {error.strerror or error}"
-        )
+        return pinned.manifest
     finally:
-        _close_descriptor(descriptor)
-        parent_chain.close()
-
-    try:
-        text = raw.decode("utf-8")
-        value = json.loads(text, object_pairs_hook=_json_object)
-    except UnicodeDecodeError:
-        _manifest_error(f"manifest is not valid UTF-8: {spec.display_path}")
-    except (ValueError, RecursionError) as error:
-        _manifest_error(f"manifest is not valid JSON: {error}")
-    return _parse_manifest(value)
+        pinned.close()
 
 
 @dataclass
@@ -484,6 +433,23 @@ class _PathChain:
         for node in reversed(self.nodes):
             _close_descriptor(node.descriptor)
             node.descriptor = -1
+
+
+@dataclass
+class _PinnedManifest:
+    manifest: FixtureManifest
+    path: Path
+    descriptor: int
+    parent_chain: _PathChain
+    name: str
+    stability: StatStability
+    byte_size: int
+    sha256: str
+
+    def close(self) -> None:
+        _close_descriptor(self.descriptor)
+        self.descriptor = -1
+        self.parent_chain.close()
 
 
 @dataclass(frozen=True)
@@ -676,6 +642,154 @@ def _assert_path_chain_stable(chain: _PathChain, label: str, fail: Failure) -> N
             raise
         except OSError as error:
             fail(f"cannot recheck descriptor path for {label}: {error.strerror or error}")
+
+
+def _read_manifest_bytes(
+    descriptor: int,
+    display_path: Path,
+    fail: Failure,
+) -> bytes:
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            block = os.read(
+                descriptor,
+                min(COPY_BLOCK_SIZE, MAX_MANIFEST_BYTES + 1 - total),
+            )
+            if not block:
+                break
+            chunks.append(block)
+            total += len(block)
+            if total > MAX_MANIFEST_BYTES:
+                fail(f"manifest exceeds {MAX_MANIFEST_BYTES} bytes: {display_path}")
+    except FixtureError:
+        raise
+    except OSError as error:
+        fail(f"cannot read manifest {display_path}: {error.strerror or error}")
+    return b"".join(chunks)
+
+
+def _open_pinned_manifest(path: Path | str) -> _PinnedManifest:
+    _require_descriptor_support(_manifest_error)
+    spec = _path_spec(path, "manifest", _manifest_error)
+    parent_chain = _open_directory_chain(spec.parent_path, "manifest", _manifest_error)
+    try:
+        descriptor = os.open(
+            spec.name,
+            _read_flags(),
+            dir_fd=parent_chain.descriptor,
+        )
+    except OSError as error:
+        parent_chain.close()
+        _manifest_error(
+            f"cannot open manifest {spec.display_path}: {error.strerror or error}"
+        )
+
+    try:
+        _assert_path_chain_stable(parent_chain, "manifest", _manifest_error)
+        before = os.fstat(descriptor)
+        link_before = os.stat(
+            spec.name,
+            dir_fd=parent_chain.descriptor,
+            follow_symlinks=False,
+        )
+        if not stat.S_ISREG(before.st_mode):
+            _manifest_error(f"manifest must be a regular file: {spec.display_path}")
+        if _stat_identity(before) != _stat_identity(link_before):
+            _manifest_error(f"manifest link changed while opening: {spec.display_path}")
+        if before.st_size > MAX_MANIFEST_BYTES:
+            _manifest_error(
+                f"manifest exceeds {MAX_MANIFEST_BYTES} bytes: {spec.display_path}"
+            )
+
+        raw = _read_manifest_bytes(descriptor, spec.display_path, _manifest_error)
+        after = os.fstat(descriptor)
+        link_after = os.stat(
+            spec.name,
+            dir_fd=parent_chain.descriptor,
+            follow_symlinks=False,
+        )
+        if (
+            _stat_stability(before) != _stat_stability(after)
+            or _stat_identity(after) != _stat_identity(link_after)
+            or len(raw) != after.st_size
+        ):
+            _manifest_error(f"manifest changed while it was being read: {spec.display_path}")
+        _assert_path_chain_stable(parent_chain, "manifest", _manifest_error)
+
+        try:
+            text = raw.decode("utf-8")
+            value = json.loads(text, object_pairs_hook=_json_object)
+        except UnicodeDecodeError:
+            _manifest_error(f"manifest is not valid UTF-8: {spec.display_path}")
+        except (ValueError, RecursionError) as error:
+            _manifest_error(f"manifest is not valid JSON: {error}")
+
+        return _PinnedManifest(
+            manifest=_parse_manifest(value),
+            path=spec.display_path,
+            descriptor=descriptor,
+            parent_chain=parent_chain,
+            name=spec.name,
+            stability=_stat_stability(after),
+            byte_size=len(raw),
+            sha256=hashlib.sha256(raw).hexdigest(),
+        )
+    except FixtureError:
+        _close_descriptor(descriptor)
+        parent_chain.close()
+        raise
+    except OSError as error:
+        _close_descriptor(descriptor)
+        parent_chain.close()
+        _manifest_error(
+            f"cannot read manifest {spec.display_path}: {error.strerror or error}"
+        )
+    except BaseException:
+        _close_descriptor(descriptor)
+        parent_chain.close()
+        raise
+
+
+def _verify_pinned_manifest(
+    pinned: _PinnedManifest,
+    fail: Failure,
+) -> None:
+    try:
+        _assert_path_chain_stable(pinned.parent_chain, "manifest", fail)
+        before = os.fstat(pinned.descriptor)
+        linked = os.stat(
+            pinned.name,
+            dir_fd=pinned.parent_chain.descriptor,
+            follow_symlinks=False,
+        )
+        if (
+            _stat_stability(before) != pinned.stability
+            or _stat_identity(before) != _stat_identity(linked)
+            or before.st_size != pinned.byte_size
+        ):
+            fail(f"manifest changed while fixture trees were leased: {pinned.path}")
+        raw = _read_manifest_bytes(pinned.descriptor, pinned.path, fail)
+        after = os.fstat(pinned.descriptor)
+        linked_after = os.stat(
+            pinned.name,
+            dir_fd=pinned.parent_chain.descriptor,
+            follow_symlinks=False,
+        )
+        if (
+            _stat_stability(after) != pinned.stability
+            or _stat_identity(after) != _stat_identity(linked_after)
+            or len(raw) != pinned.byte_size
+            or hashlib.sha256(raw).hexdigest() != pinned.sha256
+        ):
+            fail(f"manifest changed while fixture trees were leased: {pinned.path}")
+        _assert_path_chain_stable(pinned.parent_chain, "manifest", fail)
+    except FixtureError:
+        raise
+    except OSError as error:
+        fail(f"cannot recheck leased manifest {pinned.path}: {error.strerror or error}")
 
 
 def _open_existing_tree(path: Path | str, label: str, fail: Failure) -> _PinnedTree:
@@ -1065,32 +1179,56 @@ def _verify_hashes(
     return identities
 
 
-def _verify_source_initial(tree: _PinnedTree, manifest: FixtureManifest) -> None:
-    actual_files, actual_directories = _discover_tree(tree, _verification_error)
+def _verify_tree_initial(
+    tree: _PinnedTree,
+    manifest: FixtureManifest,
+    fail: Failure,
+) -> dict[str, tuple[int, int, int]]:
+    actual_files, actual_directories = _discover_tree(tree, fail)
     _compare_census(
         actual_files,
         actual_directories,
         manifest,
         tree.label,
-        _verification_error,
+        fail,
     )
-    captured_files, captured_directories = _capture_tree(tree, _verification_error)
+    captured_files, captured_directories = _capture_tree(tree, fail)
     _compare_census(
         captured_files,
         captured_directories,
         manifest,
         tree.label,
-        _verification_error,
+        fail,
     )
-    _assert_tree_stable(tree, _verification_error)
-    _verify_hashes(tree, manifest, tree.label, _verification_error)
-    _assert_tree_stable(tree, _verification_error)
+    _assert_tree_stable(tree, fail)
+    identities = _verify_hashes(tree, manifest, tree.label, fail)
+    _assert_tree_stable(tree, fail)
+    return identities
+
+
+def _verify_tree_again(
+    tree: _PinnedTree,
+    manifest: FixtureManifest,
+    label: str,
+    fail: Failure,
+) -> dict[str, tuple[int, int, int]]:
+    _assert_tree_stable(tree, fail)
+    identities = _verify_hashes(tree, manifest, label, fail)
+    _assert_tree_stable(tree, fail)
+    return identities
+
+
+def _verify_source_initial(tree: _PinnedTree, manifest: FixtureManifest) -> None:
+    _verify_tree_initial(tree, manifest, _verification_error)
 
 
 def _verify_source_again(tree: _PinnedTree, manifest: FixtureManifest) -> None:
-    _assert_tree_stable(tree, _verification_error)
-    _verify_hashes(tree, manifest, "source root after staging", _verification_error)
-    _assert_tree_stable(tree, _verification_error)
+    _verify_tree_again(
+        tree,
+        manifest,
+        "source root after staging",
+        _verification_error,
+    )
 
 
 def verify_fixture(
@@ -1116,14 +1254,19 @@ def _is_nested(first: Path, second: Path) -> bool:
     return first == second or first in second.parents or second in first.parents
 
 
-def _check_distinct_roots(source: Path, classic: Path, semantic: Path) -> None:
+def _check_distinct_roots(
+    source: Path,
+    classic: Path,
+    semantic: Path,
+    fail: Failure = _staging_error,
+) -> None:
     for left_label, left, right_label, right in (
         ("source root", source, "Classic root", classic),
         ("source root", source, "semantic root", semantic),
         ("Classic root", classic, "semantic root", semantic),
     ):
         if _is_nested(left, right):
-            _staging_error(
+            fail(
                 f"{left_label} and {right_label} must be distinct, non-nested roots: "
                 f"{left} ; {right}"
             )
@@ -1543,6 +1686,7 @@ def _prove_independent_files(
     source: dict[str, tuple[int, int, int]],
     classic: dict[str, tuple[int, int, int]],
     semantic: dict[str, tuple[int, int, int]],
+    fail: Failure = _staging_error,
 ) -> None:
     seen_destinations: set[tuple[int, int]] = set()
     for relative in sorted(source, key=_canonical_path_key):
@@ -1552,15 +1696,15 @@ def _prove_independent_files(
             semantic[relative][:2],
         )
         if len(set(identities)) != 3:
-            _staging_error(f"staged files must not be hard links: {relative}")
+            fail(f"staged files must not be hard links: {relative}")
         for identity, link_count in (
             (classic[relative][:2], classic[relative][2]),
             (semantic[relative][:2], semantic[relative][2]),
         ):
             if link_count != 1:
-                _staging_error(f"staged file has an unexpected hard link: {relative}")
+                fail(f"staged file has an unexpected hard link: {relative}")
             if identity in seen_destinations:
-                _staging_error(f"staged files alias one another: {relative}")
+                fail(f"staged files alias one another: {relative}")
             seen_destinations.add(identity)
 
 
@@ -1568,6 +1712,7 @@ def _prove_independent_roots(
     source: _PinnedTree,
     classic: _PinnedTree,
     semantic: _PinnedTree,
+    fail: Failure = _staging_error,
 ) -> None:
     identities = {
         source.root.identity,
@@ -1575,7 +1720,229 @@ def _prove_independent_roots(
         semantic.root.identity,
     }
     if len(identities) != 3:
-        _staging_error("source, Classic, and semantic roots must not alias")
+        fail("source, Classic, and semantic roots must not alias")
+
+
+class FixtureSetLease:
+    """Hold one verified source and two independent staged inputs stable."""
+
+    def __init__(
+        self,
+        manifest: _PinnedManifest,
+        source: _PinnedTree,
+        classic: _PinnedTree,
+        semantic: _PinnedTree,
+        evidence: FixtureSetEvidence,
+    ) -> None:
+        self._manifest = manifest
+        self._source = source
+        self._classic = classic
+        self._semantic = semantic
+        self._evidence = evidence
+        self._closed = False
+        self._finalization_error: BaseException | None = None
+
+    @property
+    def evidence(self) -> FixtureSetEvidence:
+        return self._evidence
+
+    def verify_runner_input_identities(
+        self,
+        classic_identity: tuple[int, int],
+        semantic_identity: tuple[int, int],
+    ) -> None:
+        """Bind runner input-directory pins to the continuously held trees."""
+
+        if self._closed:
+            _verification_error("fixture set lease is already closed")
+        _assert_tree_links_stable(self._classic, _verification_error)
+        _assert_tree_links_stable(self._semantic, _verification_error)
+        expected_classic = self._classic.root.identity[:2]
+        expected_semantic = self._semantic.root.identity[:2]
+        if classic_identity != expected_classic:
+            _verification_error(
+                "runner Classic input identity does not match the leased fixture"
+            )
+        if semantic_identity != expected_semantic:
+            _verification_error(
+                "runner semantic input identity does not match the leased fixture"
+            )
+
+    def _close_descriptors(self) -> None:
+        for tree in (self._semantic, self._classic, self._source):
+            tree.close()
+        self._manifest.close()
+
+    def finalize(self) -> FixtureSetEvidence:
+        """Reverify every pinned object, then close descriptors without deletion."""
+
+        if self._finalization_error is not None:
+            raise self._finalization_error
+        if self._closed:
+            return self._evidence
+
+        failures: list[str] = []
+        identities: dict[str, dict[str, tuple[int, int, int]]] = {}
+
+        def record_failure(label: str, operation: Callable[[], object]) -> None:
+            try:
+                value = operation()
+                if isinstance(value, dict):
+                    identities[label] = value
+            except FixtureError as error:
+                failures.append(f"{label}: {error.message}")
+
+        try:
+            record_failure(
+                "manifest",
+                lambda: _verify_pinned_manifest(
+                    self._manifest,
+                    _verification_error,
+                ),
+            )
+            for label, tree in (
+                ("source", self._source),
+                ("classic_input", self._classic),
+                ("semantic_input", self._semantic),
+            ):
+                record_failure(
+                    label,
+                    lambda tree=tree: _verify_tree_again(
+                        tree,
+                        self._manifest.manifest,
+                        f"{tree.label} at fixture lease finalization",
+                        _verification_error,
+                    ),
+                )
+
+            record_failure(
+                "root_independence",
+                lambda: _prove_independent_roots(
+                    self._source,
+                    self._classic,
+                    self._semantic,
+                    _verification_error,
+                ),
+            )
+            if all(
+                label in identities
+                for label in ("source", "classic_input", "semantic_input")
+            ):
+                record_failure(
+                    "file_independence",
+                    lambda: _prove_independent_files(
+                        identities["source"],
+                        identities["classic_input"],
+                        identities["semantic_input"],
+                        _verification_error,
+                    ),
+                )
+
+            if failures:
+                _verification_error(
+                    "fixture set changed while leased: " + "; ".join(failures)
+                )
+            return self._evidence
+        except BaseException as error:
+            self._finalization_error = error
+            raise
+        finally:
+            self._closed = True
+            self._close_descriptors()
+
+    def close(self) -> FixtureSetEvidence:
+        return self.finalize()
+
+    def __enter__(self) -> FixtureSetLease:
+        if self._closed:
+            raise RuntimeError("fixture set lease is already closed")
+        return self
+
+    def __exit__(
+        self,
+        exception_type: object,
+        exception: object,
+        traceback: object,
+    ) -> bool:
+        del exception_type, exception, traceback
+        self.finalize()
+        return False
+
+
+def acquire_fixture_set_lease(
+    manifest_path: Path | str,
+    source_root: Path | str,
+    classic_root: Path | str,
+    semantic_root: Path | str,
+) -> FixtureSetLease:
+    """Verify and continuously pin one source plus two staged input copies."""
+
+    pinned_manifest = _open_pinned_manifest(manifest_path)
+    trees: list[_PinnedTree] = []
+    try:
+        for path, label in (
+            (source_root, "source root"),
+            (classic_root, "Classic staged input root"),
+            (semantic_root, "semantic staged input root"),
+        ):
+            trees.append(_open_existing_tree(path, label, _verification_error))
+        source, classic, semantic = trees
+        _check_distinct_roots(
+            source.path,
+            classic.path,
+            semantic.path,
+            _verification_error,
+        )
+        _prove_independent_roots(
+            source,
+            classic,
+            semantic,
+            _verification_error,
+        )
+        _verify_pinned_manifest(pinned_manifest, _verification_error)
+        source_identities = _verify_tree_initial(
+            source,
+            pinned_manifest.manifest,
+            _verification_error,
+        )
+        classic_identities = _verify_tree_initial(
+            classic,
+            pinned_manifest.manifest,
+            _verification_error,
+        )
+        semantic_identities = _verify_tree_initial(
+            semantic,
+            pinned_manifest.manifest,
+            _verification_error,
+        )
+        _prove_independent_files(
+            source_identities,
+            classic_identities,
+            semantic_identities,
+            _verification_error,
+        )
+        _verify_pinned_manifest(pinned_manifest, _verification_error)
+
+        manifest = pinned_manifest.manifest
+        evidence = FixtureSetEvidence(
+            manifest_sha256=pinned_manifest.sha256,
+            tree_sha256=manifest.tree_sha256,
+            slot=manifest.slot,
+            file_count=len(manifest.files),
+            total_file_bytes=sum(record.size for record in manifest.files),
+        )
+        return FixtureSetLease(
+            pinned_manifest,
+            source,
+            classic,
+            semantic,
+            evidence,
+        )
+    except BaseException:
+        for tree in reversed(trees):
+            tree.close()
+        pinned_manifest.close()
+        raise
 
 
 def _path_chain_is_stable_nonthrowing(chain: _PathChain) -> bool:

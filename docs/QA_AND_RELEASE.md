@@ -16,6 +16,17 @@ The source verifier is read-only. Development mode reports local changes but doe
 
 `run-core-tests.sh` compiles dependency-free tests directly with `${CXX:-c++}` in C++23 mode and warning-as-error flags. Temporary executables are created under `mktemp` and removed on exit. It covers presentation routing, adaptive-shell geometry, input transforms and pointer capture, legacy screen-context classification, party/action accessibility models, 128 state-invariant mode switches, deterministic resource failures, live legacy-snapshot copying, asset validation, and user-data safety. It deliberately does not configure the full SDL application.
 
+The same command exercises the synthetic semantic-replay fixture, process, and
+equivalence protocols. `scripts/semantic_replay_equivalence.py` now composes a
+provenance-pinned fixture, two real child routes, continuous input attestation,
+and exact state/save/action/RNG comparison into a fail-closed local verdict.
+This is harness coverage only: no provenance-reviewed Tutorial fixture is
+selected in the repository, so no current CI result establishes real-engine
+equivalence. Before release, run the built application through that gate with a
+reviewed private Tutorial request and archive the envelope bound to its exact
+fixture-tree and action-plan digests. Broader action profiles and City coverage
+remain separate acceptance work.
+
 A configured full build also registers `ResourceForkSelectionIntegrationTest`.
 That test parses the five real phase-one resource forks and proves that all
 1,520 immutable selected payloads resolve through the live pack-aware hook as

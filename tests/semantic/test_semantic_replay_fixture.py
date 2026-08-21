@@ -750,6 +750,230 @@ class StagingTests(ReplayFixtureTestCase):
         self.assertFalse(semantic.exists())
 
 
+class FixtureSetLeaseTests(ReplayFixtureTestCase):
+    def stage_inputs(self, suffix: str = "") -> tuple[Path, Path]:
+        classic = self.root / f"classic{suffix}"
+        semantic = self.root / f"semantic{suffix}"
+        fixture_tool.stage_fixture(
+            self.manifest,
+            self.source,
+            classic,
+            semantic,
+        )
+        return classic, semantic
+
+    def test_lease_exposes_only_bounded_non_content_evidence(self) -> None:
+        classic, semantic = self.stage_inputs()
+        manifest_bytes = self.manifest.read_bytes()
+        lease = fixture_tool.acquire_fixture_set_lease(
+            self.manifest,
+            self.source,
+            classic,
+            semantic,
+        )
+
+        expected = {
+            "manifest_sha256": digest_bytes(manifest_bytes),
+            "tree_sha256": self.manifest_value["tree_sha256"],
+            "slot": "A",
+            "file_count": len(self.files),
+            "total_file_bytes": sum(len(value) for value in self.files.values()),
+        }
+        self.assertEqual(lease.evidence.as_json(), expected)
+        encoded = json.dumps(lease.evidence.as_json(), sort_keys=True)
+        self.assertNotIn(str(self.source), encoded)
+        self.assertNotIn(str(classic), encoded)
+        self.assertNotIn(str(semantic), encoded)
+        self.assertNotIn(
+            str(self.manifest_value["authorization_basis"]),
+            encoded,
+        )
+
+        with mock.patch.object(
+            fixture_tool.os,
+            "unlink",
+            side_effect=AssertionError("lease close must not unlink"),
+        ), mock.patch.object(
+            fixture_tool.os,
+            "rmdir",
+            side_effect=AssertionError("lease close must not remove directories"),
+        ):
+            self.assertEqual(lease.close(), lease.evidence)
+        self.assertEqual(lease._manifest.descriptor, -1)
+        self.assertEqual(lease._source.root.descriptor, -1)
+        self.assertEqual(lease._classic.root.descriptor, -1)
+        self.assertEqual(lease._semantic.root.descriptor, -1)
+        self.assertEqual(lease.finalize(), lease.evidence)
+        self.assertTrue(self.source.is_dir())
+        self.assertTrue(classic.is_dir())
+        self.assertTrue(semantic.is_dir())
+
+    def test_context_manager_holds_descriptors_and_finalizes_on_exit(self) -> None:
+        classic, semantic = self.stage_inputs()
+        lease = fixture_tool.acquire_fixture_set_lease(
+            self.manifest,
+            self.source,
+            classic,
+            semantic,
+        )
+        with lease as entered:
+            self.assertIs(entered, lease)
+            for descriptor in (
+                lease._manifest.descriptor,
+                lease._source.root.descriptor,
+                lease._classic.root.descriptor,
+                lease._semantic.root.descriptor,
+            ):
+                self.assertGreaterEqual(descriptor, 0)
+                os.fstat(descriptor)
+        self.assertEqual(lease._manifest.descriptor, -1)
+        self.assertEqual(lease._source.root.descriptor, -1)
+        self.assertEqual(lease._classic.root.descriptor, -1)
+        self.assertEqual(lease._semantic.root.descriptor, -1)
+
+    def test_runner_input_identity_binding_matches_the_held_staged_roots(self) -> None:
+        classic, semantic = self.stage_inputs()
+        lease = fixture_tool.acquire_fixture_set_lease(
+            self.manifest,
+            self.source,
+            classic,
+            semantic,
+        )
+        classic_status = classic.stat(follow_symlinks=False)
+        semantic_status = semantic.stat(follow_symlinks=False)
+        classic_identity = (classic_status.st_dev, classic_status.st_ino)
+        semantic_identity = (semantic_status.st_dev, semantic_status.st_ino)
+
+        lease.verify_runner_input_identities(classic_identity, semantic_identity)
+        with self.assertRaises(fixture_tool.FixtureError) as raised:
+            lease.verify_runner_input_identities(
+                (classic_identity[0], classic_identity[1] + 1),
+                semantic_identity,
+            )
+        self.assertIn("Classic input identity", raised.exception.message)
+        self.assertEqual(lease.finalize(), lease.evidence)
+
+    def test_transient_in_place_mutation_of_each_tree_fails_finalization(self) -> None:
+        for index, role in enumerate(("source", "classic_input", "semantic_input")):
+            with self.subTest(role=role):
+                classic, semantic = self.stage_inputs(f"-{index}")
+                lease = fixture_tool.acquire_fixture_set_lease(
+                    self.manifest,
+                    self.source,
+                    classic,
+                    semantic,
+                )
+                roots = {
+                    "source": self.source,
+                    "classic_input": classic,
+                    "semantic_input": semantic,
+                }
+                target = roots[role] / "Data I1"
+                original = target.read_bytes()
+                target.write_bytes(b"x" * len(original))
+                target.write_bytes(original)
+
+                with self.assertRaises(fixture_tool.FixtureError) as raised:
+                    lease.finalize()
+                self.assertEqual(
+                    raised.exception.exit_code,
+                    fixture_tool.EXIT_VERIFICATION,
+                )
+                self.assertIn(role, raised.exception.message)
+                self.assertEqual(target.read_bytes(), original)
+                self.assertTrue(classic.is_dir())
+                self.assertTrue(semantic.is_dir())
+
+    def test_finalization_checks_all_three_trees_after_one_failure(self) -> None:
+        classic, semantic = self.stage_inputs()
+        lease = fixture_tool.acquire_fixture_set_lease(
+            self.manifest,
+            self.source,
+            classic,
+            semantic,
+        )
+        original = (self.source / "Data I1").read_bytes()
+        (self.source / "Data I1").write_bytes(b"x" * len(original))
+        (self.source / "Data I1").write_bytes(original)
+        verify_again = fixture_tool._verify_tree_again
+        checked: list[str] = []
+
+        def observe(
+            tree: fixture_tool._PinnedTree,
+            manifest: fixture_tool.FixtureManifest,
+            label: str,
+            fail: fixture_tool.Failure,
+        ) -> dict[str, tuple[int, int, int]]:
+            checked.append(tree.label)
+            return verify_again(tree, manifest, label, fail)
+
+        with mock.patch.object(
+            fixture_tool,
+            "_verify_tree_again",
+            side_effect=observe,
+        ):
+            with self.assertRaises(fixture_tool.FixtureError):
+                lease.finalize()
+        self.assertEqual(
+            checked,
+            [
+                "source root",
+                "Classic staged input root",
+                "semantic staged input root",
+            ],
+        )
+
+    def test_manifest_identity_is_pinned_without_exposing_its_text(self) -> None:
+        classic, semantic = self.stage_inputs()
+        lease = fixture_tool.acquire_fixture_set_lease(
+            self.manifest,
+            self.source,
+            classic,
+            semantic,
+        )
+        replacement = self.root / "replacement-manifest.json"
+        replacement.write_bytes(self.manifest.read_bytes())
+        os.replace(replacement, self.manifest)
+
+        with self.assertRaises(fixture_tool.FixtureError) as raised:
+            lease.finalize()
+        self.assertIn("manifest", raised.exception.message)
+        self.assertIn("changed while fixture trees were leased", raised.exception.message)
+        self.assertNotIn(
+            str(self.manifest_value["authorization_basis"]),
+            raised.exception.message,
+        )
+
+    @unittest.skipUnless(hasattr(os, "link"), "hard links are unavailable")
+    def test_acquisition_rejects_non_independent_files_without_cleanup(self) -> None:
+        classic, semantic = self.stage_inputs()
+        classic_file = classic / "Data I1"
+        classic_file.unlink()
+        os.link(self.source / "Data I1", classic_file)
+
+        with mock.patch.object(
+            fixture_tool.os,
+            "unlink",
+            side_effect=AssertionError("failed lease acquisition must not unlink"),
+        ), mock.patch.object(
+            fixture_tool.os,
+            "rmdir",
+            side_effect=AssertionError("failed lease acquisition must not remove roots"),
+        ):
+            with self.assertRaises(fixture_tool.FixtureError) as raised:
+                fixture_tool.acquire_fixture_set_lease(
+                    self.manifest,
+                    self.source,
+                    classic,
+                    semantic,
+                )
+        self.assertEqual(raised.exception.exit_code, fixture_tool.EXIT_VERIFICATION)
+        self.assertIn("must not be hard links", raised.exception.message)
+        self.assertTrue(self.source.is_dir())
+        self.assertTrue(classic.is_dir())
+        self.assertTrue(semantic.is_dir())
+
+
 class DescriptorRaceTests(ReplayFixtureTestCase):
     def test_supplied_path_with_traversal_is_rejected_before_opening(self) -> None:
         traversing = self.root / "unused" / ".." / self.manifest.name

@@ -278,8 +278,10 @@ protocol directories, and identity, size, route, process, nonce, and output-slot
 checks fail closed. User-root identity and its direct parent namespace remain
 mutation-pinned while root-level working-file creation is allowed; higher shared
 ancestors remain identity-pinned so unrelated filesystem activity does not
-invalidate a run. The staged input slot remains fully pinned. The explicitly
-named executable and higher same-user filesystem namespace are trusted. A
+invalidate a run. The runner pins each staged input directory's identity; the
+live equivalence gate described below adds continuous file-level byte and
+metadata attestation. The explicitly named executable and higher same-user
+filesystem namespace are trusted. A
 same-user actor can transiently redirect a higher ancestor between identity
 checkpoints. Process sessions isolate legacy globals and support same-session
 process termination, but they are not a sandbox and cannot contain a child that
@@ -312,7 +314,54 @@ does not compare child-reported state and save hashes. The repository also has
 no selected provenance-reviewed live Tutorial fixture. Even a successful
 runner invocation therefore emits `"runner_scope":"process_isolation_only"`
 and `"semantic_equivalence":"not_evaluated"`; it is not evidence of engine or
-save equivalence. The synthetic replay foundation suite is:
+save equivalence.
+
+`scripts/semantic_replay_equivalence.py` is the separate opt-in comparison
+layer. Its closed v1 request explicitly pins the expected fixture-tree digest,
+manifest and source, physical executable, output slot, action plan, timeout,
+and RNG seed and stream. The gate creates its own private Classic and semantic
+user roots, stages the fixture twice, and holds one descriptor-backed lease over
+the exact manifest, source tree, and both staged inputs throughout the two
+process runs. It finalizes that lease on runner success, failure, or
+interruption. Finalization rehashes all three trees, rechecks their captured
+metadata and namespaces, and reproves root and file independence before any
+behavioral verdict is possible.
+
+Invoke the gate only with a reviewed local request:
+
+```sh
+python3 scripts/semantic_replay_equivalence.py \
+  --request /path/to/semantic-replay-equivalence-request.json
+```
+
+Two valid child results are compared exactly on state-trace digest, save-tree
+digest, settled action count, and RNG draw count. Equal values produce
+`"semantic_equivalence":"equivalent"` and exit zero. Valid unequal values
+produce the completed verdict `"not_equivalent"` and exit one. Fixture drift,
+launch or child failure, engine-identity disagreement, malformed evidence, or
+post-run attestation failure produces `"not_evaluated"`. The result records a
+canonical action-plan digest and bounded non-content fixture evidence. Completed
+evidence never emits the manifest's authorization text, file records, or
+fixture bytes.
+The runner first requires each settled count to equal the request; a bad or
+divergent count is consequently a protocol failure, not a completed mismatch.
+
+Gate-owned fixture workspaces are mode `0700`, contain private staged inputs and
+save outputs, and are always retained. Their records explicitly say
+`contains_fixture_bytes:true`. The nested runner protocol workspace is retained
+separately. Automatic recursive cleanup is forbidden for both; inspect the
+reported namespace and `path_authoritative` value first. These envelopes are
+local audit artifacts and can contain absolute candidate paths even though they
+contain no fixture payloads.
+
+The harness is implemented and synthetically tested, but the repository still
+has no selected provenance-reviewed Tutorial fixture and therefore carries no
+real-engine equivalence result. A verdict is scoped to its exact fixture-tree
+and action-plan digests; a zero-action or narrow movement profile must not be
+presented as broader release coverage. V1 also compares RNG draw counts rather
+than a separate trace of every value drawn.
+
+The synthetic replay foundation suite is:
 
 ```sh
 python3 -m unittest discover \

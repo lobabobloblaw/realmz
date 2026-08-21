@@ -364,10 +364,57 @@ result before terminating. Linked sanitizer tests exercise both native action
 routes against controlled engine globals; dependency-free tests cover live
 state capture, controller ordering, completion ordering, and result contents.
 
-This is a connected native replay path, but it is not yet a live equivalence
-claim. The parent integration tests still use a synthetic child, and the
-repository has no selected provenance-reviewed Tutorial fixture with which to
-run both real processes and compare their reported state and save hashes.
+The opt-in live comparison layer is
+`scripts/semantic_replay_equivalence.py`. Its separate v1 request and envelope
+schemas are `semantic-replay-equivalence-request.schema.json` and
+`semantic-replay-equivalence-envelope.schema.json`. A request names the
+physical executable, manifest and source paths, the expected fixture-tree
+digest, a fresh output slot, normalized actions, timeout, and deterministic RNG
+seed and stream. The manifest supplies the input slot. Invoke it with:
+
+```sh
+python3 scripts/semantic_replay_equivalence.py \
+  --request /path/to/semantic-replay-equivalence-request.json
+```
+
+The gate validates every independent execution field and verifies the expected
+fixture digest before it creates private copies. It allocates a mode-`0700`
+workspace, stages independent Classic and semantic inputs, then acquires one
+descriptor-held lease over the exact manifest, source, and both input trees.
+That lease remains open across both child processes. Finalization rechecks the
+manifest bytes, every file and directory snapshot, every content digest, and
+root/file independence even when the runner fails. A detectable transient
+write-and-restore therefore invalidates the run rather than becoming an
+equivalence mismatch.
+
+Only two valid, fully attested child results are compared. The closed comparison
+record contains the Classic and semantic values for `state_sha256`,
+`save_tree_sha256`, `settled_action_count`, and `rng_draw_count`, plus a
+canonical mismatch list. Matching values produce `equivalent` and exit zero;
+valid unequal values produce the completed verdict `not_equivalent` and exit
+one. Any fixture, launch, child, identity, protocol, or attestation failure is
+`not_evaluated`. The replay profile binds the result to a canonical action-plan
+digest, action count, slots, settlement barrier, and RNG inputs. The fixture
+evidence binds it to the exact manifest and tree digests without exposing file
+records, authorization text, or fixture bytes.
+
+Each child count must already equal the requested action count under the runner
+protocol. A bad or divergent `settled_action_count` is therefore
+`not_evaluated`, while the completed comparison record retains the equal pair
+as positive settlement evidence. Only state, save, or RNG-count differences can
+populate a completed mismatch list.
+
+The fixture workspace contains private source copies and save outputs; the
+nested runner workspace contains configs and child results. Both are retained
+and reported, including on post-creation failure, and neither tool performs
+automatic recursive cleanup. Review `path_authoritative` and the parent
+namespace before deliberately removing either candidate.
+
+This completes the comparison harness, but it is not yet evidence that the
+real engine routes are equivalent. The integration tests use a synthetic child,
+and the repository has no selected provenance-reviewed Tutorial fixture with
+which to execute the real binary. The v1 profile also compares RNG draw counts,
+not a separate trace of every drawn value.
 
 The dependency-free native checks are included in the core test runner:
 
@@ -394,22 +441,24 @@ python3 -m unittest discover \
   -v
 ```
 
-Successful fixture and runner results intentionally report
+Successful standalone fixture and runner results intentionally report
 `"semantic_equivalence":"not_evaluated"`; runner results additionally report
-`"runner_scope":"process_isolation_only"`. The foundation therefore makes no
-live engine or save-equivalence claim.
+`"runner_scope":"process_isolation_only"`. A gate envelope nests that unchanged
+runner result and owns the only evaluated verdict.
 
 ## Live replay roadmap
 
 The remaining milestone work is to:
 
-1. Select a provenance-reviewed Tutorial fixture manifest and use the
-   foundation to verify the source and create isolated Classic and semantic
-   copies. This is byte-identity and isolation plumbing only.
-2. Run the real Classic and semantic child processes over that fixture and
-   compare their state-trace, save-tree, action-count, and RNG-count results.
-3. Verify the source and both staged fixture trees remain bound to their
-   declared hashes before accepting the comparison as the release gate.
+1. Select and review a private Tutorial fixture manifest, then pin its
+   `tree_sha256` in an explicit equivalence request.
+2. Review and pin the movement-only Tutorial action profile that exercises the
+   intended exploration and dungeon coverage.
+3. Run the real built Realmz executable through the equivalence gate and archive
+   the completed local envelope. `equivalent` is meaningful only for that exact
+   fixture and replay-profile digest.
+4. Expand the native action vocabulary and repeat with broader Tutorial and
+   City profiles before treating replay equivalence as a release-wide claim.
 
-That future live test, rather than the current contract fixtures or staging
-foundation, is the release gate for actual engine and save compatibility.
+That real-fixture invocation, rather than the synthetic gate tests, is the
+release gate for actual engine and save compatibility.

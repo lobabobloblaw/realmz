@@ -290,7 +290,7 @@ fi
 if [[ "${REALMZ_SKIP_PYTHON_TESTS:-0}" != "1" ]] &&
     find "$repo/tests/semantic" -maxdepth 1 \
       -name 'test_semantic_replay_*.py' -print -quit 2>/dev/null | grep -q .; then
-  echo "Running semantic replay foundation tests"
+  echo "Running semantic replay protocol and equivalence tests"
   (
     cd "$repo"
     python3 -m unittest discover \
