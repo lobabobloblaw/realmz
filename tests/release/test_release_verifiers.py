@@ -394,6 +394,15 @@ class SourceBaselineVerifierTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("intentional/uncommitted", result.stderr)
 
+    def test_empty_gitlink_directories_are_uninitialized_submodules(self) -> None:
+        for path in ("vendored/SDL", "vendored/SDL_image", "vendored/SDL_ttf"):
+            (self.repo / path).mkdir(parents=True)
+
+        result = self.run_verifier()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("checkout is", result.stderr)
+
     def test_missing_dependency_declaration_fails(self) -> None:
         (self.repo / "README.md").write_text(
             f"resource_dasm {self.RESOURCE}\n", encoding="utf-8"

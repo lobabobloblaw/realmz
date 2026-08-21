@@ -194,7 +194,11 @@ else
       # An uninitialized submodule is acceptable for dependency-free QA. When
       # initialized, its checkout must match the recorded pin and be clean in
       # release mode.
-      if git -C "$repo/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      # A checkout with `submodules: false` can leave an empty directory at a
+      # gitlink. Running `git -C` there walks up to the superproject and would
+      # mistake the superproject HEAD for the submodule checkout. An initialized
+      # submodule always has its own .git file (or legacy .git directory).
+      if [[ -e "$repo/$path/.git" ]]; then
         checkout="$(git -C "$repo/$path" rev-parse HEAD 2>/dev/null || true)"
         if [[ "$checkout" == "$expected" ]]; then
           ok "$path checkout matches its gitlink"
