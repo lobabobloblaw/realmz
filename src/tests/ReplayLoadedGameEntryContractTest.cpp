@@ -186,6 +186,23 @@ void verify_dungeon_time_scale(const fs::path& root) {
       "timeclick must not retain a direct basescale lookup");
 }
 
+void verify_optional_dialog_ports(const fs::path& root) {
+  const std::string source =
+      read_file(root / "src/realmz_orig/ploticon.c");
+  const std::string_view body =
+      function_body(source, "void plotportrait(short tempid");
+  require(body.find(
+              "(party != NIL) && (thePort == GetDialogPort(party))") !=
+              std::string_view::npos,
+      "loaded-game portrait drawing must guard the optional party dialog");
+  require(body.find(
+              "(gGeneration != NIL) &&\n"
+              "               (thePort == GetDialogPort(gGeneration))") !=
+              std::string_view::npos,
+      "loaded-game portrait drawing must guard the optional generation "
+      "dialog");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -203,6 +220,7 @@ int main(int argc, char** argv) {
     verify_callers(source);
     verify_header(root);
     verify_dungeon_time_scale(root);
+    verify_optional_dialog_ports(root);
     std::cout << "ReplayLoadedGameEntryContractTest passed ("
               << checks_run << " checks)\n";
     return 0;

@@ -172,13 +172,14 @@ void plotportrait(short tempid, Rect where, short class, short who) {
     if (thePort == GetWindowPort(itemswindow)) {
       where.left = 629 + leftshift;
       where.top += 47;
-    } else if (thePort == GetDialogPort(party)) {
+    } else if ((party != NIL) && (thePort == GetDialogPort(party))) {
       where.left = 575 + leftshift;
       where.top += 1;
     } else if (thePort == GetWindowPort(gshop)) {
       where.left = hold.left + 245;
       where.top += 39;
-    } else if (thePort == GetDialogPort(gGeneration)) {
+    } else if ((gGeneration != NIL) &&
+               (thePort == GetDialogPort(gGeneration))) {
       where.left = 631;
       where.top += 20;
     } else if (thePort != GetWindowPort(screen))
