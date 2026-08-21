@@ -230,18 +230,87 @@ gameplay tags. This is source-contract evidence, not executable range-overlay,
 Bandage, Undo, Combat Cast, Combat Target, Combat Escape, Use Scroll, or modal
 replay.
 
-The full live equivalence test should land with authorized save fixtures and
-the remaining production handlers. It should:
+## Replay-fixture foundation
 
-1. Copy an authorized Tutorial save fixture into two isolated temporary user
-   roots and verify the source fixture hash before each replay.
+Center Cursor is the terminal bounded production handler in the current
+ordered semantic-control slice. Live engine equivalence is a separate, larger
+milestone; it is no longer waiting on another handler in that slice.
+
+Step 1 plumbing for that milestone is available in
+`scripts/semantic_replay_fixture.py`, with its versioned contract in
+`replay-fixture-manifest.schema.json`. A caller provides a manifest and source
+root explicitly; there is no default save location. The manifest records a
+source class, authorization basis, redistribution decision, and Classic slot;
+its domain-separated tree digest binds the canonical path/size/SHA-256 census,
+whose aggregate declared size is capped at 1 GiB. Private or user-owned
+fixture bytes remain outside the repository.
+
+Verify a declared fixture without modifying it:
+
+```sh
+python3 scripts/semantic_replay_fixture.py verify \
+  --manifest /path/to/fixture-manifest.json \
+  --source-root /path/to/authorized-fixture
+```
+
+Or stage it into two new, independent roots for later Classic and semantic
+runs:
+
+```sh
+python3 scripts/semantic_replay_fixture.py stage \
+  --manifest /path/to/fixture-manifest.json \
+  --source-root /path/to/authorized-fixture \
+  --classic-root /new/temporary/classic-root \
+  --semantic-root /new/temporary/semantic-root
+```
+
+The verifier and stager are descriptor-anchored and fail closed on symlinks,
+special files, mutations, or untrusted ancestor replacement races. The stager
+refuses existing, aliased, or nested roots, verifies independent byte-exact
+copies, and rechecks the source after staging. Destination parents are an
+explicit trust boundary: they must be owned by the current user and must not
+be group- or world-writable; a same-user process able to mutate one is outside
+the threat model. Copies are assembled under random mode-0700 sibling names
+and published with the platform's native atomic no-replace rename; platforms
+lacking the required filesystem operations are rejected.
+
+Publishing both final roots cannot be one atomic operation. On any failure,
+the stager retains its private staging roots and any first root already
+published and reports their last known names; it performs no rollback
+deletion. A namespace-tainted name may be missing or may refer to a
+replacement because no race-free path recovery exists after another process
+renames an open directory. Retained roots may contain private fixture bytes
+and require deliberate caller cleanup after the parent namespace and reported
+names have been reviewed. The synthetic regression suite runs directly and
+through the project quality gates on both Linux and macOS:
+
+```sh
+python3 -m unittest discover \
+  -s tests/semantic \
+  -p 'test_semantic_replay_fixture.py' \
+  -v
+```
+
+Successful `verify` and `stage` results intentionally report
+`"semantic_equivalence":"not_evaluated"`. This foundation performs no engine
+launch, action playback, snapshot comparison, or save comparison and therefore
+makes no live replay claim.
+
+## Live replay roadmap
+
+The remaining milestone work is to:
+
+1. Select a provenance-reviewed Tutorial fixture manifest and use the
+   foundation to verify the source and create isolated Classic and semantic
+   copies. This is byte-identity and isolation plumbing only.
 2. Start each copy in a separate process because the legacy engine is global.
 3. Drive one process through Classic scan-code/portrait inputs and the other
    through the semantic bridge using the same normalized action sequence.
 4. Capture a snapshot after every settled action and compare world position,
    facing, selection, fatigue, inventory, encounter, and timing state.
 5. Save both runs into new temporary slots and require byte-for-byte equality.
-6. Verify both original fixture copies and their hashes are unchanged.
+6. Verify the source and both staged fixture trees remain bound to their
+   declared hashes.
 
-That follow-on test, rather than this model, is the release gate for actual
-engine and save compatibility.
+That future live test, rather than the current contract fixtures or staging
+foundation, is the release gate for actual engine and save compatibility.

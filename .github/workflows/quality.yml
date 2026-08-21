@@ -66,6 +66,9 @@ jobs:
       - name: Exercise shell verifiers with synthetic artifacts
         run: python3 -m unittest discover -s tests/release -p 'test_*.py' -v
 
+      - name: Exercise replay-fixture verifier and stager with synthetic inputs
+        run: python3 -m unittest discover -s tests/semantic -p 'test_semantic_replay_fixture.py' -v
+
   dependency-free-cpp:
     name: Dependency-free C++ (${{ matrix.os }})
     strategy:
@@ -91,6 +94,10 @@ jobs:
           CXX: ${{ matrix.compiler }}
           REALMZ_SKIP_PYTHON_TESTS: "1"
         run: scripts/run-core-tests.sh
+
+      - name: Exercise Darwin replay-fixture publication
+        if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s tests/semantic -p 'test_semantic_replay_fixture.py' -v
 
   full-application-build-bootstrap:
     name: Full application build bootstrap status

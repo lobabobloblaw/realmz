@@ -174,6 +174,84 @@ three omitted references are rebuilt from the authorized Mac 7.1.2 baseline.
 
 Committed fixtures must be synthetic or redistributable under the project license. Retail saves, user characters, and the authorized City baseline must not be committed merely for test convenience. Record the SHA-256, byte size, source class, license/authorization basis, and whether bytes may be redistributed. Tests that require private fixtures must accept an explicit local path and digest, skip with a clear reason when absent, and never rewrite the supplied source.
 
+### Private semantic replay fixtures
+
+`scripts/semantic_replay_fixture.py` is the first, byte-handling stage of the
+live semantic-replay milestone. It accepts no default save location: callers
+must explicitly supply both a version-1 manifest and the source root. The
+manifest records:
+
+- `source_class` and a human-readable `authorization_basis` establishing why
+  the bytes may be used locally;
+- `redistribution_allowed`, which must remain `false` for a private or
+  user-owned save unless a separate review establishes redistribution rights;
+- the expected Classic slot letter from `A` through `J`;
+- an exact, canonically ordered census of relative paths, byte sizes, and
+  lowercase SHA-256 digests, capped at 1 GiB of declared fixture bytes; and
+- a domain-separated `tree_sha256` over that census.
+
+The checked-in JSON Schema is
+`tests/semantic/replay-fixture-manifest.schema.json`. Schema conformance does
+not replace authorization review, and a manifest does not make its source
+bytes redistributable. Keep private fixture bytes outside Git and outside
+release artifacts.
+
+Verify an explicitly supplied source without copying it:
+
+```sh
+python3 scripts/semantic_replay_fixture.py verify \
+  --manifest /path/to/fixture-manifest.json \
+  --source-root /path/to/user-owned-fixture
+```
+
+Stage verified bytes into two new, independent roots:
+
+```sh
+python3 scripts/semantic_replay_fixture.py stage \
+  --manifest /path/to/fixture-manifest.json \
+  --source-root /path/to/user-owned-fixture \
+  --classic-root /new/temporary/classic-root \
+  --semantic-root /new/temporary/semantic-root
+```
+
+Staging refuses existing, aliased, or nested destinations. It creates two
+byte-exact copies with identities independent from the source and from one
+another, rehashes both copies, and verifies the source again before reporting
+success. Manifest reads, source traversal, destination creation, and copying
+are anchored to opened filesystem descriptors. Symlinks and special files are
+rejected; component, inode, link, and file-stability checks make untrusted
+ancestor replacement and mutation races fail closed. Each destination parent
+is an explicit trust boundary: it must be owned by the current user and must
+not be group- or world-writable, and another process able to mutate that
+parent as the same user is outside the verifier's threat model. The stager
+builds random mode-0700 sibling roots, then publishes each with the platform's
+native atomic no-replace rename. A platform without the required
+descriptor-relative, no-follow, and no-replace operations is rejected rather
+than silently using a pathname-only fallback.
+
+The two final names cannot be published as one atomic filesystem operation.
+If either publish or an earlier staging step fails, the tool retains private
+staging roots and any first root already published and reports their last
+known names. It does not attempt race-prone rollback deletion. A
+namespace-tainted report means the displayed name may be missing or may refer
+to a replacement; there is no race-free way to recover a path after another
+process renames the open directory. Retained roots may contain private fixture
+bytes and require deliberate cleanup by the caller after the parent namespace
+and reported names have been reviewed.
+
+Both successful commands emit machine-readable JSON containing
+`"semantic_equivalence":"not_evaluated"`. Verification and staging establish
+fixture identity and isolation only: they do not launch Realmz, drive Classic
+or semantic actions, compare snapshots, compare saves, or claim live replay
+equivalence. The synthetic-only regression suite is:
+
+```sh
+python3 -m unittest discover \
+  -s tests/semantic \
+  -p 'test_semantic_replay_fixture.py' \
+  -v
+```
+
 ## Automated check
 
-Run `scripts/verify-source-baseline.sh --mode development` during implementation. It verifies ancestry and pins without rejecting intentional working changes, validates a complete asset census when present, and validates any content approval records. `--mode release` additionally requires a clean checkout and both City and music approvals.
+Run `scripts/verify-source-baseline.sh --mode development` during implementation. It verifies ancestry and pins without rejecting intentional working changes, validates a complete asset census when present, and validates any content approval records. `scripts/run-core-tests.sh` also runs the synthetic replay-fixture suite by default; set `REALMZ_SKIP_PYTHON_TESTS=1` only when a caller deliberately runs the Python gates separately. `--mode release` additionally requires a clean checkout and both City and music approvals.

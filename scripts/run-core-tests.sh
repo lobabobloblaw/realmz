@@ -213,6 +213,18 @@ if [[ "${REALMZ_SKIP_PYTHON_TESTS:-0}" != "1" ]] &&
   )
 fi
 
+if [[ "${REALMZ_SKIP_PYTHON_TESTS:-0}" != "1" ]] &&
+    [[ -f "$repo/tests/semantic/test_semantic_replay_fixture.py" ]]; then
+  echo "Running semantic replay-fixture verifier tests"
+  (
+    cd "$repo"
+    python3 -m unittest discover \
+      -s tests/semantic \
+      -p 'test_semantic_replay_fixture.py' \
+      -v
+  )
+fi
+
 if [[ -x "$repo/tests/semantic/run-exploration-action-equivalence.sh" ]]; then
   echo "Running semantic action-equivalence checks"
   "$repo/tests/semantic/run-exploration-action-equivalence.sh"

@@ -1,0 +1,75 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/replay-fixture-manifest-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An exact, provenance-declared file census for a Realmz semantic replay fixture.",
+  "properties": {
+    "authorization_basis": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "files": {
+      "description": "The verifier also limits the aggregate declared size to 1073741824 bytes.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "NFC relative POSIX path; full rules are enforced by the verifier.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 100000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "manifest_version": {
+      "const": 1
+    },
+    "redistribution_allowed": {
+      "type": "boolean"
+    },
+    "slot": {
+      "pattern": "^[A-J]$",
+      "type": "string"
+    },
+    "source_class": {
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "type": "string"
+    },
+    "tree_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_version",
+    "source_class",
+    "authorization_basis",
+    "redistribution_allowed",
+    "slot",
+    "files",
+    "tree_sha256"
+  ],
+  "title": "Realmz semantic replay fixture manifest v1",
+  "type": "object"
+}
