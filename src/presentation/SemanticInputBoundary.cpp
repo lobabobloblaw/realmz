@@ -68,6 +68,10 @@ constexpr uint32_t kSemanticBandageCombatantSignature = 0x52480000U;
 constexpr uint32_t kSemanticBandageCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticBandageCombatantSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticBandageCombatantIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticUndoCombatantSignature = 0x52550000U;
+constexpr uint32_t kSemanticUndoCombatantMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticUndoCombatantSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticUndoCombatantIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -157,6 +161,11 @@ struct DecodedShowCombatRange {
 };
 
 struct DecodedBandageCombatant {
+  realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedUndoCombatant {
   realmz::presentation::CombatantId combatant;
   RealmzSemanticInputSurface surface;
 };
@@ -472,6 +481,24 @@ std::optional<DecodedBandageCombatant> decode_bandage_combatant(
   };
 }
 
+std::optional<DecodedUndoCombatant> decode_undo_combatant(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticUndoCombatantMask) !=
+      kSemanticUndoCombatantSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticUndoCombatantSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedUndoCombatant{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticUndoCombatantIdMask),
+      .surface = surface_value,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -519,6 +546,12 @@ bool is_bandage_available(
     const realmz::presentation::GameSnapshot& snapshot,
     realmz::presentation::CombatantId) noexcept {
   return snapshot.combat && snapshot.combat->bandage_available;
+}
+
+bool is_undo_available(
+    const realmz::presentation::GameSnapshot& snapshot,
+    realmz::presentation::CombatantId) noexcept {
+  return snapshot.combat && snapshot.combat->undo_available;
 }
 
 template <typename DecodedCombatant, typename MessageMapper>
@@ -799,6 +832,18 @@ uint32_t semantic_bandage_combatant_tag(
       static_cast<uint32_t>(combatant);
 }
 
+uint32_t semantic_undo_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticUndoCombatantSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -1029,6 +1074,17 @@ RealmzSemanticBandageCombatantTagSurface(uint32_t tagged_message) {
   return bandage ? bandage->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticUndoCombatantTag(
+    uint32_t tagged_message) {
+  return decode_undo_combatant(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticUndoCombatantTagSurface(uint32_t tagged_message) {
+  const auto undo = decode_undo_combatant(tagged_message);
+  return undo ? undo->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -1046,7 +1102,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_open_combat_items(tagged_message) ||
           decode_auto_combatant(tagged_message) ||
           decode_show_combat_range(tagged_message) ||
-          decode_bandage_combatant(tagged_message))
+          decode_bandage_combatant(tagged_message) ||
+          decode_undo_combatant(tagged_message))
       ? 1
       : 0;
 }
@@ -1100,6 +1157,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto bandage = decode_bandage_combatant(tagged_message)) {
     return bandage->surface;
+  }
+  if (const auto undo = decode_undo_combatant(tagged_message)) {
+    return undo->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1492,4 +1552,16 @@ extern "C" uint8_t RealmzConsumeSemanticBandageCombatantEvent(
       classic_key_message,
       realmz::presentation::legacy_key_message_for_bandage_combatant,
       is_bandage_available);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticUndoCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  return consume_semantic_combatant_event(
+      expected_surface,
+      decode_undo_combatant(tagged_message),
+      classic_key_message,
+      realmz::presentation::legacy_key_message_for_undo_combatant,
+      is_undo_available);
 }

@@ -28,6 +28,7 @@ constexpr uint32_t kOpenCombatItemsMessage = 0x00002269U;
 constexpr uint32_t kAutoCombatantMessage = 0x00000061U;
 constexpr uint32_t kShowCombatRangeMessage = 0x00000F72U;
 constexpr uint32_t kBandageCombatantMessage = 0x00000B62U;
+constexpr uint32_t kUndoCombatantMessage = 0x00002075U;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -465,6 +466,41 @@ LegacyActionHandlers make_handlers(
       if (!bandage_combatant_sink(action.combatant, *message, context)) {
         return DispatchResult::failed(
             "Legacy event queue rejected semantic bandage-combatant action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
+  if (combat_action_sinks.undo_combatant.has_value()) {
+    handlers.undo_combatant = [
+        context_provider,
+        undo_combatant_sink =
+            std::move(*combat_action_sinks.undo_combatant)](
+            const UndoCombatantAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!undo_combatant_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy undo-combatant sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic undo");
+      }
+      const auto message = legacy_key_message_for_undo_combatant(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Undo is not supported for this combatant in the current legacy "
+            "context");
+      }
+      if (!undo_combatant_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic undo-combatant action");
       }
       return DispatchResult::handled();
     };
@@ -954,6 +990,16 @@ std::optional<uint32_t> legacy_key_message_for_bandage_combatant(
     return std::nullopt;
   }
   return kBandageCombatantMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_undo_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kUndoCombatantMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

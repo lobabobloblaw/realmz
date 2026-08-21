@@ -156,6 +156,7 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
     CombatView combat;
     combat.active = true;
     combat.bandage_available = canundo != 0;
+    combat.undo_available = canundo != 0;
     combat.round = static_cast<int16_t>(combatround);
     if (!monsterturn && (charup >= 0) && (charup < party_count)) {
       combat.acting_combatant = static_cast<CombatantId>(charup);

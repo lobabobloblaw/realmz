@@ -29,6 +29,7 @@ constexpr uint32_t kCombatUtilityPageRegion = 1113U;
 constexpr uint32_t kAutoCombatantRegion = 1114U;
 constexpr uint32_t kShowCombatRangeRegion = 1115U;
 constexpr uint32_t kBandageCombatantRegion = 1116U;
+constexpr uint32_t kUndoCombatantRegion = 1117U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -126,6 +127,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.show_combat_range_combatant);
   const bool valid_bandage_combatant = request.bandage_combatant &&
       valid_combatant(*request.bandage_combatant);
+  const bool valid_undo_combatant = request.undo_combatant &&
+      valid_combatant(*request.undo_combatant);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -138,6 +141,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.auto_combatant,
       request.show_combat_range_combatant,
       request.bandage_combatant,
+      request.undo_combatant,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -169,7 +173,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const size_t utility_combat_control_count =
       (request.auto_combatant ? 1U : 0U) +
       (request.show_combat_range_combatant ? 1U : 0U) +
-      (request.bandage_combatant ? 1U : 0U);
+      (request.bandage_combatant ? 1U : 0U) +
+      (request.undo_combatant ? 1U : 0U);
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
@@ -178,7 +183,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_center_previous || valid_center_next || valid_combat_items;
   const bool has_valid_utility_action =
       valid_auto_combatant || valid_show_combat_range ||
-      valid_bandage_combatant;
+      valid_bandage_combatant || valid_undo_combatant;
   const size_t combat_page_control_count = primary_combat_page
       ? ((has_valid_secondary_action || has_valid_utility_action) ? 1U : 0U)
       : (secondary_combat_page
@@ -210,7 +215,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.auto_combatant_available ||
       request.show_combat_range_combatant ||
       request.show_combat_range_available || request.bandage_combatant ||
-      request.bandage_combatant_available || secondary_combat_page ||
+      request.bandage_combatant_available || request.undo_combatant ||
+      request.undo_combatant_available || secondary_combat_page ||
       utility_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
@@ -233,7 +239,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.combat_items_available && !valid_combat_items) ||
       (request.auto_combatant_available && !valid_auto_combatant) ||
       (request.show_combat_range_available && !valid_show_combat_range) ||
-      (request.bandage_combatant_available && !valid_bandage_combatant)) {
+      (request.bandage_combatant_available && !valid_bandage_combatant) ||
+      (request.undo_combatant_available && !valid_undo_combatant)) {
     return {};
   }
 
@@ -442,6 +449,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .tab_order = 1116,
           .enabled = request.bandage_combatant_available,
           .payload = BandageCombatantAction{*request.bandage_combatant},
+      });
+      x += button_width + gap;
+    }
+    if (request.undo_combatant) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kUndoCombatantRegion},
+          .kind = ShellControlKind::undo_combatant,
+          .bounds = {x, y, button_width, button_height},
+          .label = "UNDO",
+          .accessibility_label = "Undo active combatant's movement",
+          .focus_identifier = "focus.action.combat.undo",
+          .tab_order = 1117,
+          .enabled = request.undo_combatant_available,
+          .payload = UndoCombatantAction{*request.undo_combatant},
       });
     }
     return result;

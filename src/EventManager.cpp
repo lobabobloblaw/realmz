@@ -725,6 +725,29 @@ public:
     return true;
   }
 
+  bool push_semantic_undo_combatant_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticUndoCombatantTag(tagged_message)) {
+      return false;
+    }
+    // Preserve the actor until the guarded combat loop rechecks both turn
+    // ownership and the distinct Undo capability. The lowercase "u" handoff
+    // leaves condition checks and every mutation inside the Classic flow.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic undo combatant (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   void discard_semantic_gameplay_events() {
     std::erase_if(this->event_queue, [](const EventRecord& candidate) {
       return (candidate.what == app1Evt) &&
@@ -1303,6 +1326,19 @@ Boolean GetNextSemanticGameplayEvent(
       ret->what = nullEvent;
       ret->message = 0;
     }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticUndoCombatantTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticUndoCombatantEvent(
+            surface, ret->message, &classic_key_message)) {
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      // A queued Undo is inert after the actor, surface, or live capability
+      // changes. Classic condition checks run only after an accepted handoff.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
   } else {
     // Authorization belongs only to the event returned by this wrapper. Do
     // not leave a completed scope available after an ordinary Classic event.
@@ -1419,6 +1455,10 @@ Boolean PushSemanticShowCombatRangeEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticBandageCombatantEvent(uint32_t tagged_message) {
   return em.push_semantic_bandage_combatant_event(tagged_message);
+}
+
+Boolean PushSemanticUndoCombatantEvent(uint32_t tagged_message) {
+  return em.push_semantic_undo_combatant_event(tagged_message);
 }
 
 void CancelSemanticGameplayInput(void) {

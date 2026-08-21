@@ -197,6 +197,7 @@ void test_combat_capture() {
   CHECK(snapshot.combat.has_value());
   CHECK(snapshot.combat->round == 5);
   CHECK(snapshot.combat->bandage_available);
+  CHECK(snapshot.combat->undo_available);
   CHECK(snapshot.combat->acting_combatant == 0);
   CHECK(snapshot.combat->combatants.size() == 4);
   CHECK(snapshot.combat->combatants[0].active);
@@ -209,6 +210,7 @@ void test_combat_capture() {
   canundo = 0;
   snapshot = source.capture();
   CHECK(!snapshot.combat->bandage_available);
+  CHECK(!snapshot.combat->undo_available);
 
   monsterturn = 1;
   snapshot = source.capture();

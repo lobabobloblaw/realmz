@@ -86,12 +86,13 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
-Combat exposes eleven bounded semantic controls: typed `GuardCombatantAction`,
+Combat exposes twelve bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`, and
-`ShowCombatRangeAction` and `BandageCombatantAction` commands each carry the
-stable active-party combatant ID through distinct combat-only tagged events.
+`ShowCombatRangeAction`, `BandageCombatantAction`, and `UndoCombatantAction`
+commands each carry the stable active-party combatant ID through distinct
+combat-only tagged events.
 The focus-cycle command also carries Previous or Next.
 `OpenCombatItemsAction` independently carries the
 acting combatant and selected party member so neither identity can silently
@@ -112,7 +113,9 @@ inside Classic combat. Center Previous becomes the exact Classic `p` message
 Auto becomes the exact Classic `a` message `0x00000061`, Range becomes the
 exact Classic `r` message `0x00000F72`, and Bandage becomes the exact Classic
 `b` message `0x00000B62` only while the fresh combat snapshot reports that
-Classic's current-turn `canundo` gate remains open.
+Classic's current-turn `canundo` gate remains open. Undo has an independent
+presentation capability derived from that same fresh gate and becomes the exact
+Classic `u` message `0x00002075`.
 Validation fails closed, so stale or newly ineligible actions become inert.
 The original Classic guard/finish/delay mutations and turn
 advance remain authoritative, as do Center's existing non-turn-ending camera
@@ -127,8 +130,10 @@ event flush, raw mouse/key dismissal wait, recentering, and redraw path. The
 contract does not execute or replay that modal range flow. Classic likewise
 owns Bandage's raw `getchoice` picker, abort handling, selected-member bleeding
 mutation, redraws, and turn advance; the semantic route selects no target and
-claims no mutation or turn equivalence. All other combat commands remain in the
-interactive Classic frame.
+claims no mutation or turn equivalence. Classic owns Undo's further condition
+checks and every position, field, queue, redraw, and turn-state mutation; the
+semantic route claims no undo-mutation equivalence. All other combat commands
+remain in the interactive Classic frame.
 
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
@@ -231,8 +236,8 @@ Automated checks do not replace these release decisions:
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
-  Previous/Next, Combat Items, Auto, Range, and Bandage controls at compact and
-  wide layouts,
+  Previous/Next, Combat Items, Auto, Range, Bandage, and Undo controls at compact
+  and wide layouts,
   including an inert stale Spells action after selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
   leaving their gameplay surface; and inert stale Guard, Finish, Delay, and
@@ -250,7 +255,10 @@ Automated checks do not replace these release decisions:
   current-turn gate changes and otherwise reaches the preserved party-member
   picker, accepts a Classic-frame portrait or `a` abort, does not dispatch shell
   commands while the raw picker is active, and leaves targeting, mutation, and
-  turn advance entirely to Classic; verify
+  turn advance entirely to Classic; verify Undo is inert after the acting
+  combatant, combat eligibility, or Classic current-turn gate changes and
+  otherwise reaches the preserved Classic condition checks and mutation path;
+  verify
   Save and Load open the Classic chooser without selecting a slot, writing a
   save, or replacing live state;
 - clean install on macOS 13.3 and the current macOS release, plus upgrade/import from an existing Realmz installation;

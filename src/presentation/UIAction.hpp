@@ -171,6 +171,16 @@ struct BandageCombatantAction {
   bool operator==(const BandageCombatantAction&) const = default;
 };
 
+// Requests the preserved Classic Undo flow for the explicitly identified
+// acting party combatant. The stable actor prevents a queued request from
+// undoing movement for whichever combatant owns a later turn. Classic remains
+// authoritative for every condition check and combat-state mutation.
+struct UndoCombatantAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const UndoCombatantAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -333,6 +343,7 @@ using UIActionPayload = std::variant<
     AutoCombatantAction,
     ShowCombatRangeAction,
     BandageCombatantAction,
+    UndoCombatantAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -387,6 +398,8 @@ struct UIAction {
       return "show_combat_range";
     } else if constexpr (std::is_same_v<Action, BandageCombatantAction>) {
       return "bandage_combatant";
+    } else if constexpr (std::is_same_v<Action, UndoCombatantAction>) {
+      return "undo_combatant";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

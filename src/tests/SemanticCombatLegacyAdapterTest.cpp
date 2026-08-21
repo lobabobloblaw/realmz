@@ -94,7 +94,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 11> combat_cases() {
+std::array<CombatCase, 12> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -165,6 +165,12 @@ std::array<CombatCase, 11> combat_cases() {
               1, REALMZ_SEMANTIC_INPUT_COMBAT),
           .consume = RealmzConsumeSemanticBandageCombatantEvent,
           .classic_message = 0x00000B62U,
+      },
+      CombatCase{
+          .tag = semantic_undo_combatant_tag(
+              1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticUndoCombatantEvent,
+          .classic_message = 0x00002075U,
       },
   };
 }
@@ -280,6 +286,25 @@ void test_bandage_without_classic_canundo_is_rejected() {
   CHECK(output == kUnchangedMessage);
 }
 
+void test_undo_without_classic_canundo_is_rejected() {
+  seed_active_party_combatant();
+  const uint32_t tag = semantic_undo_combatant_tag(
+      1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(tag == 0x52550301U);
+  complete_combat_scope();
+
+  canundo = 0;
+  uint32_t output = kUnchangedMessage;
+  CHECK(RealmzConsumeSemanticUndoCombatantEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+
+  canundo = 1;
+  CHECK(RealmzConsumeSemanticUndoCombatantEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+}
+
 void test_stale_acting_combatant_is_rejected() {
   for (const auto& action : combat_cases()) {
     seed_active_party_combatant();
@@ -327,6 +352,7 @@ int main() {
     test_exact_combat_action_messages();
     test_moved_combatant_delay_is_rejected();
     test_bandage_without_classic_canundo_is_rejected();
+    test_undo_without_classic_canundo_is_rejected();
     test_stale_acting_combatant_is_rejected();
     test_non_gameplay_front_window_is_rejected();
     test_stale_selected_member_is_rejected();

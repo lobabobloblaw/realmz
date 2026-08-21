@@ -91,6 +91,9 @@ private:
     handlers.bandage_combatant = [](const BandageCombatantAction&) {
       return DispatchResult::handled();
     };
+    handlers.undo_combatant = [](const UndoCombatantAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1088,11 +1091,22 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = BandageCombatantAction{2},
   };
+  const ShellControlPlacement undo{
+      .region = ShellRegionId{1117},
+      .kind = ShellControlKind::undo_combatant,
+      .bounds = {524.0, 72.0, 160.0, 48.0},
+      .label = "UNDO",
+      .accessibility_label = "Undo active combatant's movement",
+      .focus_identifier = "focus.action.combat.undo",
+      .tab_order = 1117,
+      .enabled = true,
+      .payload = UndoCombatantAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
   const std::vector utility{
-      utility_back, auto_combatant, combat_range, bandage};
+      utility_back, auto_combatant, combat_range, bandage, undo};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1347,11 +1361,11 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       CombatActionPage::secondary, utility_page));
   CHECK(bridge.actions().size() == 4U);
   CHECK(harness.recompose(
-      {bandage, combat_range, auto_combatant, utility_back}));
+      {undo, bandage, combat_range, auto_combatant, utility_back}));
   CHECK(!harness.keyboard().focused_identifier());
 
-  // Utility traversal is BACK, AUTO, RANGE, BANDAGE regardless of insertion
-  // order.
+  // Utility traversal is BACK, AUTO, RANGE, BANDAGE, UNDO regardless of
+  // insertion order.
   for (const auto& expected : utility) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -1623,6 +1637,87 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!bandage_route_release.shell.invoked_control);
   CHECK(!bandage_route_release.dispatch);
   CHECK(bridge.actions().size() == 7U);
+
+  // Undo dispatches once with its stable actor. Classic retains all rollback
+  // and turn-state ownership after this semantic handoff.
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(undo.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto undo_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(undo_release.shell.consumed);
+  CHECK(undo_release.shell.invoked_control.has_value());
+  CHECK(undo_release.shell.invoked_control->kind ==
+      ShellControlKind::undo_combatant);
+  CHECK(undo_release.dispatch.has_value());
+  CHECK(undo_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 8U);
+  CHECK(std::get<UndoCombatantAction>(
+      bridge.actions()[7].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 8U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.keyboard().focused_identifier() == undo.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[4].payload = UndoCombatantAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_undo_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_undo_release.shell.consumed);
+  CHECK(!stale_undo_release.shell.invoked_control);
+  CHECK(!stale_undo_release.dispatch);
+  CHECK(bridge.actions().size() == 8U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(undo.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[4].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_undo_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_undo_release.shell.consumed);
+  CHECK(!disabled_undo_release.shell.invoked_control);
+  CHECK(!disabled_undo_release.dispatch);
+  CHECK(bridge.actions().size() == 8U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(undo.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(secondary));
+  const auto undo_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(undo_page_release.shell.consumed);
+  CHECK(!undo_page_release.shell.invoked_control);
+  CHECK(!undo_page_release.dispatch);
+  CHECK(bridge.actions().size() == 8U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(undo.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto undo_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(undo_route_release.shell.consumed);
+  CHECK(!undo_route_release.shell.invoked_control);
+  CHECK(!undo_route_release.dispatch);
+  CHECK(bridge.actions().size() == 8U);
 }
 
 using DescriptorMutation =

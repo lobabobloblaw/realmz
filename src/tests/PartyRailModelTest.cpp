@@ -176,6 +176,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   snapshot.combat = CombatView{
       .active = true,
       .bandage_available = true,
+      .undo_available = true,
       .round = 4,
       .acting_combatant = 1,
       .combatants = {
@@ -297,6 +298,15 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(bandage.tab_order == combat_range.tab_order + 1);
   CHECK(bandage.focus_identifier != combat_range.focus_identifier);
   CHECK(bandage.availability_reason->label == "Game rules apply");
+  const auto& undo = action_with(model, ActionIntent::undo_combatant);
+  CHECK(undo.can_invoke());
+  CHECK(undo.availability == ActionAvailability::deferred_to_engine);
+  CHECK(undo.command == "action.combat.undo");
+  CHECK(undo.label == "Undo");
+  CHECK(undo.combatant == guard.combatant);
+  CHECK(undo.tab_order == bandage.tab_order + 1);
+  CHECK(undo.focus_identifier != bandage.focus_identifier);
+  CHECK(undo.availability_reason->label == "Game rules apply");
   CHECK(model.combat_action_page == CombatActionPage::primary);
 
   const auto secondary_page_model = build_presentation_shell_model(
@@ -326,6 +336,17 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(unavailable_bandage.availability_reason->label ==
       "Bandage is unavailable now");
   snapshot.combat->bandage_available = true;
+
+  snapshot.combat->undo_available = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& unavailable_undo =
+      action_with(model, ActionIntent::undo_combatant);
+  CHECK(!unavailable_undo.can_invoke());
+  CHECK(unavailable_undo.availability == ActionAvailability::unavailable);
+  CHECK(unavailable_undo.combatant == 1);
+  CHECK(unavailable_undo.availability_reason->label ==
+      "Undo is unavailable now");
+  snapshot.combat->undo_available = true;
 
   snapshot.party.members[0].movement =
       snapshot.party.members[0].movement_maximum;
@@ -369,6 +390,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::bandage_combatant);
   CHECK(bandage_before_movement.can_invoke());
   CHECK(bandage_before_movement.combatant == available_delay.combatant);
+  const auto& undo_before_movement =
+      action_with(model, ActionIntent::undo_combatant);
+  CHECK(undo_before_movement.can_invoke());
+  CHECK(undo_before_movement.combatant == available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
   model = build_presentation_shell_model(snapshot);
@@ -412,6 +437,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::bandage_combatant);
   CHECK(unmatched_bandage.can_invoke());
   CHECK(unmatched_bandage.combatant == unmatched_delay.combatant);
+  const auto& unmatched_undo =
+      action_with(model, ActionIntent::undo_combatant);
+  CHECK(unmatched_undo.can_invoke());
+  CHECK(unmatched_undo.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   auto no_selection = snapshot;
@@ -441,6 +470,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(no_selection_model, ActionIntent::bandage_combatant);
   CHECK(bandage_without_selection.can_invoke());
   CHECK(bandage_without_selection.combatant == 1);
+  const auto& undo_without_selection =
+      action_with(no_selection_model, ActionIntent::undo_combatant);
+  CHECK(undo_without_selection.can_invoke());
+  CHECK(undo_without_selection.combatant == 1);
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
@@ -456,6 +489,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::auto_combatant,
              ActionIntent::show_combat_range,
              ActionIntent::bandage_combatant,
+             ActionIntent::undo_combatant,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());

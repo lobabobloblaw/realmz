@@ -259,8 +259,16 @@ void test_actions_and_events() {
   CHECK(std::get<BandageCombatantAction>(
             bandage_combatant.payload).combatant == 2);
 
-  UIAction casting{
+  UIAction undo_combatant{
       .sequence = 23,
+      .payload = UndoCombatantAction{2},
+  };
+  CHECK(action_name(undo_combatant.payload) == "undo_combatant");
+  CHECK(std::get<UndoCombatantAction>(
+            undo_combatant.payload).combatant == 2);
+
+  UIAction casting{
+      .sequence = 24,
       .payload = CastSpellAction{
           .caster = 1,
           .spell_id = 72,
@@ -343,6 +351,7 @@ void test_command_bridge() {
   CombatantId auto_combatant = -1;
   CombatantId range_combatant = -1;
   CombatantId bandage_combatant = -1;
+  CombatantId undo_combatant = -1;
   LegacyActionHandlers handlers;
   handlers.move_party = [&received](const MovePartyAction& action) {
     received = action.command;
@@ -385,6 +394,11 @@ void test_command_bridge() {
   handlers.bandage_combatant =
       [&bandage_combatant](const BandageCombatantAction& action) {
         bandage_combatant = action.combatant;
+        return DispatchResult::handled();
+      };
+  handlers.undo_combatant =
+      [&undo_combatant](const UndoCombatantAction& action) {
+        undo_combatant = action.combatant;
         return DispatchResult::handled();
       };
 
@@ -545,6 +559,13 @@ void test_command_bridge() {
   });
   CHECK(bandage_handled.was_handled());
   CHECK(bandage_combatant == 11);
+
+  const auto undo_handled = bridge.dispatch(UIAction{
+      .sequence = 20,
+      .payload = UndoCombatantAction{12},
+  });
+  CHECK(undo_handled.was_handled());
+  CHECK(undo_combatant == 12);
 
   const auto failed = bridge.dispatch(UIAction{
       .sequence = 3,

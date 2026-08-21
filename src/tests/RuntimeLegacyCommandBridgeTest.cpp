@@ -48,6 +48,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     RuntimeLegacyShowCombatRangeSink,
     RuntimeLegacyBandageCombatantSink>);
+static_assert(std::is_same_v<
+    RuntimeLegacyBandageCombatantSink,
+    RuntimeLegacyUndoCombatantSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -93,6 +96,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::bandage_combatant),
     std::optional<RuntimeLegacyBandageCombatantSink>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::undo_combatant),
+    std::optional<RuntimeLegacyUndoCombatantSink>>);
 static_assert(std::numeric_limits<PartyMemberId>::min() == 0);
 static_assert(std::numeric_limits<PartyMemberId>::max() == 0xFF);
 
@@ -3534,6 +3540,244 @@ void test_bandage_combatant_mapping_and_dispatch() {
   CHECK(sink_thrown.detail.find("bandage sink failure") != std::string::npos);
 }
 
+void test_undo_combatant_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int undo_calls = 0;
+  bool accept_undo = true;
+  CombatantId received_combatant = -1;
+  uint32_t received_message = 0;
+  const RuntimeLegacyUndoCombatantSink undo_sink =
+      [&undo_calls, &accept_undo, &received_combatant, &received_message,
+          &context](CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++undo_calls;
+        received_combatant = combatant;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept_undo;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .undo_combatant = undo_sink,
+      });
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    CHECK(legacy_key_message_for_undo_combatant(0, context) ==
+        0x00002075U);
+    CHECK(legacy_key_message_for_undo_combatant(255, context) ==
+        0x00002075U);
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 442,
+      .payload = UndoCombatantAction{9},
+  }).status == DispatchStatus::handled);
+  CHECK(undo_calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_message == 0x00002075U);
+
+  for (const CombatantId boundary : {0, 255}) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 443,
+        .payload = UndoCombatantAction{boundary},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(undo_calls == 3);
+  CHECK(received_combatant == 255);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_undo_combatant(9, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 444,
+        .payload = UndoCombatantAction{9},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(undo_calls == 3);
+
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_undo_combatant(9, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 445,
+      .payload = UndoCombatantAction{9},
+  }).status == DispatchStatus::rejected);
+  CHECK(undo_calls == 3);
+
+  context.adaptive_eligible = true;
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(),
+           CombatantId{-1},
+           CombatantId{256},
+           std::numeric_limits<CombatantId>::max(),
+       }) {
+    CHECK(!legacy_key_message_for_undo_combatant(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 446,
+        .payload = UndoCombatantAction{invalid},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(undo_calls == 3);
+
+  accept_undo = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 447,
+      .payload = UndoCombatantAction{9},
+  }).status == DispatchStatus::failed);
+  CHECK(undo_calls == 4);
+  accept_undo = true;
+
+  RuntimeLegacyCommandBridge missing_provider(
+      RuntimeLegacyContextProvider{},
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .undo_combatant = undo_sink,
+      });
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 448,
+      .payload = UndoCombatantAction{9},
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+  CHECK(undo_calls == 4);
+
+  RuntimeLegacyCommandBridge empty_undo_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .undo_combatant = RuntimeLegacyUndoCombatantSink{},
+      });
+  const auto no_sink = empty_undo_sink.dispatch(UIAction{
+      .sequence = 449,
+      .payload = UndoCombatantAction{9},
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("undo-combatant sink") != std::string::npos);
+  CHECK(undo_calls == 4);
+
+  RuntimeLegacyCommandBridge without_undo_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(without_undo_sink.dispatch(UIAction{
+      .sequence = 450,
+      .payload = UndoCombatantAction{9},
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge provider_throws(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("undo provider failure");
+      },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .undo_combatant = undo_sink,
+      });
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 451,
+      .payload = UndoCombatantAction{9},
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("undo provider failure") !=
+      std::string::npos);
+  CHECK(undo_calls == 4);
+
+  const RuntimeLegacyUndoCombatantSink throwing_undo_sink =
+      [](CombatantId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("undo sink failure");
+      };
+  RuntimeLegacyCommandBridge undo_sink_throws(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .undo_combatant = throwing_undo_sink,
+      });
+  const auto sink_thrown = undo_sink_throws.dispatch(UIAction{
+      .sequence = 452,
+      .payload = UndoCombatantAction{9},
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("undo sink failure") != std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -3609,6 +3853,10 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 389,
           .payload = BandageCombatantAction{10},
       },
+      UIAction{
+          .sequence = 390,
+          .payload = UndoCombatantAction{11},
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -3645,6 +3893,7 @@ void test_named_combat_sink_registration_semantics() {
           .auto_combatant = RuntimeLegacyAutoCombatantSink{},
           .show_combat_range = RuntimeLegacyShowCombatRangeSink{},
           .bandage_combatant = RuntimeLegacyBandageCombatantSink{},
+          .undo_combatant = RuntimeLegacyUndoCombatantSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -3727,6 +3976,10 @@ void test_named_combat_sink_registration_semantics() {
   CHECK(sparse_combat_sinks.dispatch(UIAction{
       .sequence = 393,
       .payload = BandageCombatantAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 394,
+      .payload = UndoCombatantAction{6},
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(center_calls == 1);
@@ -3890,6 +4143,10 @@ void test_positional_combat_constructor_compatibility() {
   CHECK(through_center.dispatch(UIAction{
       .sequence = 402,
       .payload = BandageCombatantAction{4},
+  }).status == DispatchStatus::unsupported);
+  CHECK(through_center.dispatch(UIAction{
+      .sequence = 403,
+      .payload = UndoCombatantAction{4},
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(finish_calls == 1);
@@ -4085,6 +4342,7 @@ int main() {
     test_auto_combatant_mapping_and_dispatch();
     test_show_combat_range_mapping_and_dispatch();
     test_bandage_combatant_mapping_and_dispatch();
+    test_undo_combatant_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();

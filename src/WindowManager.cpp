@@ -1689,6 +1689,27 @@ void WindowManager::create_sdl_window() {
                         semantic_bandage_combatant_tag(combatant, surface);
                     return tag && PushSemanticBandageCombatantEvent(tag);
                   },
+              .undo_combatant =
+                  [](realmz::presentation::CombatantId combatant,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        (surface == REALMZ_SEMANTIC_INPUT_COMBAT) &&
+                        (context.screen ==
+                            realmz::presentation::ScreenContext::combat);
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_undo_combatant(
+                            combatant, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_undo_combatant_tag(combatant, surface);
+                    return tag && PushSemanticUndoCombatantEvent(tag);
+                  },
           });
   this->configure_window_for_presentation_mode();
 
@@ -2384,6 +2405,12 @@ void draw_shell_panel_contents(
           return control.kind == realmz::presentation::
               ShellControlKind::bandage_combatant;
         });
+    const bool has_semantic_undo_combatant = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind == realmz::presentation::
+              ShellControlKind::undo_combatant;
+        });
     std::string action_summary =
         "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
     if (has_semantic_movement) {
@@ -2405,7 +2432,8 @@ void draw_shell_panel_contents(
         has_semantic_delay || has_semantic_center ||
         has_semantic_switch_weapon || has_semantic_combat_focus_cycle ||
         has_semantic_combat_items || has_semantic_auto_combatant ||
-        has_semantic_show_combat_range || has_semantic_bandage_combatant) {
+        has_semantic_show_combat_range || has_semantic_bandage_combatant ||
+        has_semantic_undo_combatant) {
       action_summary = "SEMANTIC COMBAT";
       if (has_semantic_guard) {
         action_summary += " + GUARD";
@@ -2437,6 +2465,9 @@ void draw_shell_panel_contents(
       if (has_semantic_bandage_combatant) {
         action_summary += " + BANDAGE";
       }
+      if (has_semantic_undo_combatant) {
+        action_summary += " + UNDO";
+      }
     }
     double action_summary_width = width;
     for (const auto& control : controls) {
@@ -2455,7 +2486,7 @@ void draw_shell_panel_contents(
         has_semantic_combat_page || has_semantic_switch_weapon ||
         has_semantic_combat_focus_cycle || has_semantic_combat_items ||
         has_semantic_auto_combatant || has_semantic_show_combat_range ||
-        has_semantic_bandage_combatant) {
+        has_semantic_bandage_combatant || has_semantic_undo_combatant) {
       for (const auto& control : controls) {
         if ((control.kind !=
                 realmz::presentation::ShellControlKind::movement) &&
@@ -2488,7 +2519,9 @@ void draw_shell_panel_contents(
             (control.kind != realmz::presentation::
                     ShellControlKind::show_combat_range) &&
             (control.kind != realmz::presentation::
-                    ShellControlKind::bandage_combatant)) {
+                    ShellControlKind::bandage_combatant) &&
+            (control.kind != realmz::presentation::
+                    ShellControlKind::undo_combatant)) {
           continue;
         }
         const bool pressed = pressed_control &&
@@ -3085,6 +3118,12 @@ void WindowManager::present_remastered_frame() {
             return action.intent ==
                 realmz::presentation::ActionIntent::bandage_combatant;
           });
+      const auto undo_combatant_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::undo_combatant;
+          });
       const auto modeled_switch_weapon_combatant =
           (switch_weapon_action != shell_model->actions.end())
           ? switch_weapon_action->combatant
@@ -3116,6 +3155,10 @@ void WindowManager::present_remastered_frame() {
       const auto modeled_bandage_combatant =
           (bandage_combatant_action != shell_model->actions.end())
           ? bandage_combatant_action->combatant
+          : std::nullopt;
+      const auto modeled_undo_combatant =
+          (undo_combatant_action != shell_model->actions.end())
+          ? undo_combatant_action->combatant
           : std::nullopt;
       const auto live_combat_party_actor =
           [&snapshot, snapshot_context_matches, legacy_context, screen](
@@ -3158,6 +3201,8 @@ void WindowManager::present_remastered_frame() {
           live_combat_party_actor(modeled_show_combat_range_combatant);
       const auto bandage_combatant =
           live_combat_party_actor(modeled_bandage_combatant);
+      const auto undo_combatant =
+          live_combat_party_actor(modeled_undo_combatant);
       const auto* combat_items_member =
           modeled_combat_items_member
           ? snapshot.party.member(*modeled_combat_items_member)
@@ -3186,6 +3231,7 @@ void WindowManager::present_remastered_frame() {
                auto_combatant,
                show_combat_range_combatant,
                bandage_combatant,
+               undo_combatant,
            }) {
         if (!combatant) {
           continue;
@@ -3202,7 +3248,7 @@ void WindowManager::present_remastered_frame() {
           this->remastered_combat_action_page ==
               realmz::presentation::CombatActionPage::utility &&
           !auto_combatant && !show_combat_range_combatant &&
-          !bandage_combatant;
+          !bandage_combatant && !undo_combatant;
       if ((invalid_paged_combat_actions &&
               this->remastered_combat_action_page !=
                   realmz::presentation::CombatActionPage::primary) ||
@@ -3288,6 +3334,17 @@ void WindowManager::present_remastered_frame() {
                   .adaptive_eligible =
                       legacy_context.adaptive_eligible != 0,
               }).has_value();
+      const bool undo_combatant_available = undo_combatant &&
+          snapshot.combat && snapshot.combat->undo_available &&
+          undo_combatant_action->can_invoke() && snapshot_context_matches &&
+          realmz::presentation::legacy_key_message_for_undo_combatant(
+              *undo_combatant,
+              {
+                  .screen = screen,
+                  .world_presentation = snapshot.world.presentation,
+                  .adaptive_eligible =
+                      legacy_context.adaptive_eligible != 0,
+              }).has_value();
       this->remastered_shell_controls =
           realmz::presentation::compute_shell_control_layout({
               .screen = screen,
@@ -3329,6 +3386,8 @@ void WindowManager::present_remastered_frame() {
               .bandage_combatant = bandage_combatant,
               .bandage_combatant_available =
                   bandage_combatant_available,
+              .undo_combatant = undo_combatant,
+              .undo_combatant_available = undo_combatant_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -3776,6 +3835,36 @@ void WindowManager::present_remastered_frame() {
                 const auto* member = snapshot.party.member(
                     static_cast<realmz::presentation::PartyMemberId>(
                         bandage_combatant->combatant));
+                return combatant != snapshot.combat->combatants.end() &&
+                    member &&
+                    combatant->kind ==
+                        realmz::presentation::CombatantKind::party_member &&
+                    combatant->active && combatant->targetable &&
+                    combatant->stamina.current > 0;
+              }
+              if (const auto* undo_combatant =
+                      std::get_if<realmz::presentation::
+                          UndoCombatantAction>(&control.payload)) {
+                if (control.kind != realmz::presentation::ShellControlKind::
+                        undo_combatant ||
+                    !snapshot.combat || !snapshot.combat->active ||
+                    !snapshot.combat->undo_available ||
+                    snapshot.combat->acting_combatant !=
+                        undo_combatant->combatant ||
+                    (undo_combatant->combatant < 0) ||
+                    (undo_combatant->combatant > 0xFF) ||
+                    !realmz::presentation::
+                        legacy_key_message_for_undo_combatant(
+                            undo_combatant->combatant, context)) {
+                  return false;
+                }
+                const auto combatant = std::ranges::find(
+                    snapshot.combat->combatants,
+                    undo_combatant->combatant,
+                    &realmz::presentation::CombatantView::id);
+                const auto* member = snapshot.party.member(
+                    static_cast<realmz::presentation::PartyMemberId>(
+                        undo_combatant->combatant));
                 return combatant != snapshot.combat->combatants.end() &&
                     member &&
                     combatant->kind ==
@@ -4658,6 +4747,47 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       }
       continue;
     }
+    if (const auto* undo_combatant =
+            std::get_if<realmz::presentation::UndoCombatantAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind != realmz::presentation::ShellControlKind::
+              undo_combatant ||
+          (undo_combatant->combatant < 0) ||
+          (undo_combatant->combatant > 0xFF) ||
+          !realmz::presentation::legacy_key_message_for_undo_combatant(
+              undo_combatant->combatant, context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) || !snapshot->combat ||
+          !snapshot->combat->active || !snapshot->combat->undo_available ||
+          snapshot->combat->acting_combatant != undo_combatant->combatant) {
+        return false;
+      }
+      const auto* member = snapshot->party.member(
+          static_cast<realmz::presentation::PartyMemberId>(
+              undo_combatant->combatant));
+      const auto combatant = std::ranges::find(
+          snapshot->combat->combatants,
+          undo_combatant->combatant,
+          &realmz::presentation::CombatantView::id);
+      if ((combatant == snapshot->combat->combatants.end()) || !member ||
+          (combatant->kind !=
+              realmz::presentation::CombatantKind::party_member) ||
+          !combatant->active || !combatant->targetable ||
+          (combatant->stamina.current <= 0)) {
+        return false;
+      }
+      continue;
+    }
     return false;
   }
   return found_enabled;
@@ -4749,6 +4879,9 @@ void WindowManager::dispatch_remastered_shell_control(
   const auto* bandage_combatant =
       std::get_if<realmz::presentation::BandageCombatantAction>(
           &control.payload);
+  const auto* undo_combatant =
+      std::get_if<realmz::presentation::UndoCombatantAction>(
+          &control.payload);
   if (drawer) {
     const bool valid_requested_panel = !drawer->panel ||
         *drawer->panel == realmz::presentation::DrawerPanel::details ||
@@ -4824,7 +4957,8 @@ void WindowManager::dispatch_remastered_shell_control(
                     realmz::presentation::ScreenContext::combat ||
                 !this->adaptive_shell_plan->adaptive_layout->action_bar
                      .contains(control.bounds))) ||
-        ((auto_combatant || show_combat_range || bandage_combatant) &&
+        ((auto_combatant || show_combat_range || bandage_combatant ||
+             undo_combatant) &&
             ((auto_combatant &&
                  control.kind != realmz::presentation::ShellControlKind::
                      auto_combatant) ||
@@ -4834,6 +4968,9 @@ void WindowManager::dispatch_remastered_shell_control(
                 (bandage_combatant &&
                     control.kind != realmz::presentation::ShellControlKind::
                         bandage_combatant) ||
+                (undo_combatant &&
+                    control.kind != realmz::presentation::ShellControlKind::
+                        undo_combatant) ||
                 this->remastered_combat_action_page !=
                     realmz::presentation::CombatActionPage::utility ||
                 !this->adaptive_shell_plan ||
