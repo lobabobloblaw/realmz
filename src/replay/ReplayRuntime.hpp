@@ -3,6 +3,7 @@
 #include "replay/DeterministicReplayRng.hpp"
 #include "replay/ReplayChildConfig.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 
@@ -13,10 +14,10 @@ enum class ReplayReadPolicy {
   user_data_only,
 };
 
-// Holds the immutable child policy and its deterministic replay RNG. Creating
-// ordinary instances is supported for isolated tests. Production startup can
-// publish exactly one instance with install_replay_runtime; there is no reset
-// or replacement API.
+// Holds the immutable child policy, deterministic replay RNG, and logical
+// event clock. Creating ordinary instances is supported for isolated tests.
+// Production startup can publish exactly one instance with
+// install_replay_runtime; there is no reset or replacement API.
 class ReplayRuntime final {
 public:
   explicit ReplayRuntime(ReplayChildConfig config);
@@ -46,14 +47,22 @@ public:
   [[nodiscard]] std::int16_t next_classic_random() noexcept;
   [[nodiscard]] std::uint64_t rng_draw_count() const noexcept;
 
+  // Event Manager uses this logical clock instead of wall time while replay
+  // is active. Advancing one Classic tick per observation keeps preserved
+  // delay loops finite while making their progress independent of SDL and the
+  // host scheduler.
+  [[nodiscard]] std::uint32_t next_event_tick() noexcept;
+
 private:
   ReplayChildConfig config_;
   DeterministicReplayRng rng_;
+  std::atomic<std::uint32_t> event_tick_{0};
 };
 
 // Thread-safe, process-lifetime, one-shot publication. A second installation
 // throws std::logic_error. The installed object is never mutable or reset as a
-// whole, though its replay RNG advances when next_classic_random is called.
+// whole, though its replay RNG and logical clock advance through their narrow
+// deterministic APIs.
 [[nodiscard]] ReplayRuntime& install_replay_runtime(ReplayChildConfig config);
 [[nodiscard]] ReplayRuntime* installed_replay_runtime() noexcept;
 

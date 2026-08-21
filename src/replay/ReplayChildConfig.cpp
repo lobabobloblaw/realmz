@@ -27,7 +27,6 @@ namespace realmz::replay {
 namespace {
 
 constexpr std::size_t kMaximumJsonDepth = 32;
-constexpr std::size_t kMaximumActions = 4096;
 constexpr std::size_t kMaximumArguments = 32;
 constexpr std::size_t kMaximumIdentifierLength = 64;
 constexpr std::size_t kMaximumArgumentStringLength = 1024;
@@ -618,7 +617,7 @@ void require_exact_fields(
 [[nodiscard]] std::vector<ReplayAction> parse_actions(
     const JsonValue& value) {
   const auto& array = as_array(value, "actions");
-  if (array.size() > kMaximumActions) {
+  if (array.size() > kMaximumReplayActions) {
     config_error("actions exceeds the 4096-action limit");
   }
   std::vector<ReplayAction> result;

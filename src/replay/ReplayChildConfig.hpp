@@ -14,6 +14,7 @@
 namespace realmz::replay {
 
 inline constexpr std::size_t kMaximumChildConfigBytes = 4U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumReplayActions = 4096U;
 
 enum class ReplayRoute {
   classic,

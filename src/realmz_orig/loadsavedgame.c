@@ -1,24 +1,13 @@
 #include "prototypes.h"
 #include "realmzbuild.h"
+#include "replay/ReplaySlotSelection.h"
 #include "variables.h"
+
+static short load_selected(short);
 
 /************************ load *********************/
 short load(void) {
-  FILE* op = NULL;
-  FILE* fp = NULL;
-  int32_t savedserial = 0;
-  int32_t testlocation, templong;
-  WindowPtr splash = NIL;
-  short t, choice, count;
-  short tempVolRef;
-  PicHandle picturehandle;
-  short n;
-  char bigbadbug; // Myriad
-
-  Boolean showing = FALSE;
-  char hold[256];
-
-  strcpy((StringPtr)hold, (StringPtr) ":Save:Game ");
+  short choice;
 
   choice = fileprep(1);
   if (background) {
@@ -28,6 +17,41 @@ short load(void) {
 
   if (!choice)
     return (0);
+
+  return load_selected(choice);
+}
+
+/*********************** RealmzReplayLoadSlot *********************/
+short RealmzReplayLoadSlot(char slot) {
+  short choice;
+
+  choice = RealmzReplayLegacyChoiceForSlot(slot);
+  if (!choice)
+    return (0);
+
+  /* The interactive path sets this before opening its chooser. Preserve that
+   * load-side effect without consulting or mutating chooser preference state. */
+  needdungeonupdate = TRUE;
+  return load_selected(choice);
+}
+
+/************************ load_selected *********************/
+static short load_selected(short choice) {
+  FILE* op = NULL;
+  FILE* fp = NULL;
+  int32_t savedserial = 0;
+  int32_t testlocation, templong;
+  WindowPtr splash = NIL;
+  short t, count;
+  short tempVolRef;
+  PicHandle picturehandle;
+  short n;
+  char bigbadbug; // Myriad
+
+  Boolean showing = FALSE;
+  char hold[256];
+
+  strcpy((StringPtr)hold, (StringPtr) ":Save:Game ");
 
   lowHD = FALSE;
 

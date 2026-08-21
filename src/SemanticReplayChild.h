@@ -14,9 +14,11 @@ int RealmzConfigureSemanticReplayChild(const char* config_path);
 // have been installed successfully.
 int RealmzSemanticReplayChildIsActive(void);
 
-// The native driver is deliberately not part of the bootstrap slice yet.
-// Until it exists, a configured child exits explicitly without writing a
-// result file or claiming completion.
+// Runs the currently available native child preflight. The complete action
+// plan is validated against the movement-only v1 engine vocabulary before any
+// save can be loaded or mutated. The live action driver and result writer are
+// not connected yet, so a valid plan exits with the explicit unavailable
+// status without loading, saving, or writing a result file.
 int RealmzRunSemanticReplayChild(void);
 
 #define REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT 2

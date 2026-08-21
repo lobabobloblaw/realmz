@@ -1,0 +1,269 @@
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+
+namespace fs = std::filesystem;
+
+namespace {
+
+std::size_t checks_run = 0;
+
+void require(bool condition, std::string_view detail) {
+  ++checks_run;
+  if (!condition) {
+    throw std::runtime_error(std::string(detail));
+  }
+}
+
+[[nodiscard]] std::string read_file(const fs::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    throw std::runtime_error("could not open source file: " + path.string());
+  }
+  return std::string(
+      std::istreambuf_iterator<char>(input),
+      std::istreambuf_iterator<char>());
+}
+
+// Remove literals and comments while preserving byte offsets. Contract checks
+// therefore cannot be satisfied by diagnostics or explanatory prose.
+[[nodiscard]] std::string code_only(std::string_view source) {
+  enum class State {
+    code,
+    line_comment,
+    block_comment,
+    string_literal,
+    character_literal,
+  };
+
+  std::string result(source);
+  State state = State::code;
+  bool escaped = false;
+  for (std::size_t index = 0; index < source.size(); ++index) {
+    const char current = source[index];
+    const char next =
+        (index + 1 < source.size()) ? source[index + 1] : '\0';
+    if (state == State::code) {
+      if (current == '/' && next == '/') {
+        result[index] = result[index + 1] = ' ';
+        ++index;
+        state = State::line_comment;
+      } else if (current == '/' && next == '*') {
+        result[index] = result[index + 1] = ' ';
+        ++index;
+        state = State::block_comment;
+      } else if (current == '"') {
+        result[index] = ' ';
+        state = State::string_literal;
+        escaped = false;
+      } else if (current == '\'') {
+        result[index] = ' ';
+        state = State::character_literal;
+        escaped = false;
+      }
+      continue;
+    }
+
+    if (current != '\n') {
+      result[index] = ' ';
+    }
+    if (state == State::line_comment) {
+      if (current == '\n') {
+        state = State::code;
+      }
+    } else if (state == State::block_comment) {
+      if (current == '*' && next == '/') {
+        result[index + 1] = ' ';
+        ++index;
+        state = State::code;
+      }
+    } else {
+      const char delimiter =
+          (state == State::string_literal) ? '"' : '\'';
+      if (!escaped && current == delimiter) {
+        state = State::code;
+      }
+      if (!escaped && current == '\\') {
+        escaped = true;
+      } else {
+        escaped = false;
+      }
+    }
+  }
+  return result;
+}
+
+[[nodiscard]] std::string_view function_body(
+    const std::string& source,
+    std::string_view signature) {
+  const std::size_t signature_position = source.find(signature);
+  if (signature_position == std::string::npos) {
+    throw std::runtime_error(
+        "missing function signature: " + std::string(signature));
+  }
+  const std::size_t opening = source.find('{', signature_position);
+  if (opening == std::string::npos) {
+    throw std::runtime_error(
+        "missing function body: " + std::string(signature));
+  }
+  std::size_t depth = 0;
+  for (std::size_t position = opening; position < source.size(); ++position) {
+    if (source[position] == '{') {
+      ++depth;
+    } else if (source[position] == '}' && --depth == 0) {
+      return std::string_view(source).substr(
+          opening, position - opening + 1);
+    }
+  }
+  throw std::runtime_error(
+      "unterminated function body: " + std::string(signature));
+}
+
+[[nodiscard]] bool ordered(
+    std::string_view body,
+    std::string_view earlier,
+    std::string_view later) {
+  const std::size_t first = body.find(earlier);
+  const std::size_t second = body.find(later);
+  return first != std::string_view::npos &&
+      second != std::string_view::npos && first < second;
+}
+
+void verify_poll_isolation(const std::string& event_source) {
+  const std::string_view raw =
+      function_body(event_source, "EventRecord get_next_event(");
+  require(ordered(raw, "active_replay_runtime()", "enqueue_pending_events"),
+      "replay raw polling must return before SDL ingestion");
+  require(raw.find("get_next_replay_event") == std::string_view::npos,
+      "raw replay polling must never enter semantic command selection");
+
+  const std::string_view semantic =
+      function_body(event_source, "EventRecord get_next_semantic_event(");
+  require(ordered(
+              semantic, "get_next_replay_event()", "get_next_event(wait_ms)"),
+      "only semantic polling may select replay commands");
+
+  const std::string_view replay =
+      function_body(event_source, "EventRecord get_next_replay_event()");
+  require(replay.find("SDL_") == std::string_view::npos,
+      "replay event selection must not call SDL");
+  require(replay.find("REALMZ_SEMANTIC_INPUT_NONE") !=
+          std::string_view::npos &&
+          replay.find("RealmzIsSemanticGameplayTag") !=
+          std::string_view::npos,
+      "only an active guarded semantic surface may consume replay commands");
+  require(ordered(replay, "++candidate", "event_queue.erase(candidate)"),
+      "replay semantic polling must skip ordinary queued events");
+  require(replay.find("ev.modifiers = 0") != std::string_view::npos,
+      "replay semantic events must clear ambient modifiers");
+
+  const std::string_view ingestion =
+      function_body(event_source, "void enqueue_pending_events(");
+  require(ordered(ingestion, "active_replay_runtime()", "SDL_WaitEventTimeout"),
+      "all replay event ingestion must stop before SDL wait/poll calls");
+
+  const std::string_view flush =
+      function_body(event_source, "void flush_events()");
+  require(ordered(flush, "active_replay_runtime()", "event_queue.clear()"),
+      "replay FlushEvents must preserve future semantic commands");
+}
+
+void verify_ambient_api_isolation(const std::string& event_source) {
+  const std::string_view tick =
+      function_body(event_source, "uint32_t TickCount(void)");
+  require(ordered(tick, "next_event_tick()", "SDL_GetTicks()"),
+      "replay TickCount must use the logical clock before wall time");
+
+  const std::string_view system_task =
+      function_body(event_source, "void SystemTask(void)");
+  require(ordered(system_task, "active_replay_runtime()", "SDL_Delay(10)"),
+      "replay SystemTask must return before host delay");
+
+  for (const std::string_view signature : {
+           "void GetMouse(Point* ret)",
+           "void GetMouseGlobal(Point* ret)",
+           "void SetMouseLocation(const Point* mouseLoc)",
+           "Boolean Button(void)",
+           "Boolean StillDown(void)",
+       }) {
+    const std::string_view body = function_body(event_source, signature);
+    require(body.find("active_replay_runtime()") != std::string_view::npos,
+        "mouse APIs must have an explicit replay isolation branch");
+  }
+
+  const std::string_view semantic = function_body(
+      event_source, "Boolean GetNextSemanticGameplayEvent(");
+  require(semantic.find("replay->presentation_mode()") !=
+          std::string_view::npos &&
+          semantic.find("ret->modifiers = 0") != std::string_view::npos,
+      "semantic replay polling must use configured presentation and zero modifiers");
+}
+
+void verify_non_replay_paths_remain(const std::string& event_source) {
+  const std::string_view raw =
+      function_body(event_source, "EventRecord get_next_event(");
+  require(raw.find("enqueue_pending_events(wait_ms)") !=
+          std::string_view::npos &&
+          raw.find("WindowManager::instance().front_window()") !=
+          std::string_view::npos &&
+          raw.find("event_queue.pop_front()") != std::string_view::npos,
+      "ordinary polling must retain SDL ingestion, caret idle, and FIFO dequeue");
+
+  const std::string_view flush =
+      function_body(event_source, "void flush_events()");
+  require(flush.find("enqueue_pending_events(0)") !=
+          std::string_view::npos &&
+          flush.find("event_queue.clear()") != std::string_view::npos,
+      "ordinary FlushEvents behavior must remain available");
+
+  const std::string_view mouse =
+      function_body(event_source, "void GetMouse(Point* ret)");
+  require(mouse.find("CCGrafPort::as_port(qd.thePort)") !=
+          std::string_view::npos &&
+          mouse.find("to_local_space") != std::string_view::npos,
+      "ordinary GetMouse must retain QuickDraw local-space conversion");
+
+  const std::string_view wait =
+      function_body(event_source, "Boolean WaitNextEvent(");
+  require(wait.find("em.get_next_event(sleep)") != std::string_view::npos,
+      "ordinary WaitNextEvent must retain its wait duration");
+}
+
+void verify_logical_clock(const std::string& runtime_source) {
+  const std::string_view tick = function_body(
+      runtime_source, "std::uint32_t ReplayRuntime::next_event_tick()");
+  require(tick.find("fetch_add(1, std::memory_order_relaxed)") !=
+          std::string_view::npos,
+      "logical replay time must advance exactly once per TickCount read");
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+  try {
+    if (argc != 2) {
+      throw std::runtime_error(
+          "usage: SemanticReplayEventIsolationContractTest <repository-root>");
+    }
+    const fs::path root = fs::weakly_canonical(argv[1]);
+    const std::string event_source =
+        code_only(read_file(root / "src/EventManager.cpp"));
+    const std::string runtime_source =
+        code_only(read_file(root / "src/replay/ReplayRuntime.cpp"));
+    verify_poll_isolation(event_source);
+    verify_ambient_api_isolation(event_source);
+    verify_non_replay_paths_remain(event_source);
+    verify_logical_clock(runtime_source);
+    std::cout << "SemanticReplayEventIsolationContractTest passed ("
+              << checks_run << " checks)\n";
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << "SemanticReplayEventIsolationContractTest failed after "
+              << checks_run << " checks: " << error.what() << '\n';
+    return 1;
+  }
+}

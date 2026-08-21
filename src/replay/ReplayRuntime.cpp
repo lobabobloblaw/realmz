@@ -140,6 +140,10 @@ std::uint64_t ReplayRuntime::rng_draw_count() const noexcept {
   return rng_.draw_count();
 }
 
+std::uint32_t ReplayRuntime::next_event_tick() noexcept {
+  return event_tick_.fetch_add(1, std::memory_order_relaxed);
+}
+
 ReplayRuntime& install_replay_runtime(ReplayChildConfig config) {
   auto candidate = std::make_unique<ReplayRuntime>(std::move(config));
   RuntimeRegistry& state = registry();

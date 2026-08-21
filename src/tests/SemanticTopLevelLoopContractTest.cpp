@@ -1062,8 +1062,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
-  require(count_identifier(semantic_wrapper, "get_next_event") == 2,
-      "semantic gameplay wrapper must have one Classic and one scoped poll");
+  require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
+          count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
+      "semantic gameplay wrapper must separate its Classic and scoped polls");
   require(count_identifier(semantic_wrapper, "app1Evt") == 22,
       "semantic gameplay wrapper must recognize all twenty-two tagged paths");
   require(count_identifier(semantic_wrapper, "keyDown") == 19,
@@ -1176,7 +1177,7 @@ void verify_event_manager(const fs::path& repository_root) {
   const std::size_t scope_instance = compact_semantic.find(
       "constSemanticInputScopesemantic_scope(surface)", end_scope);
   const std::size_t scoped_poll = compact_semantic.find(
-      "*ret=em.get_next_event(0)", scope_instance);
+      "*ret=em.get_next_semantic_event(0)", scope_instance);
   const std::size_t scope_block_close = compact_semantic.find(
       ";}constboolstill_remastered=", scoped_poll);
   const std::size_t tagged_branch = compact_semantic.find(

@@ -1,15 +1,43 @@
 #include "prototypes.h"
+#include "replay/ReplaySlotSelection.h"
 #include "variables.h"
+
+static void save_prelude(void);
+static short save_selected(short, short);
 
 /************************ save game *********************/
 void save(short mode) {
-  FILE* op = NULL;
-  FILE* fp = NULL;
-  short choice, count, t = 0;
+  short choice;
+
+  save_prelude();
+  choice = fileprep(mode);
+  centerpict();
+  if (!choice)
+    return;
+
+  (void)save_selected(choice, FALSE);
+}
+
+/*********************** RealmzReplaySaveSlot *********************/
+short RealmzReplaySaveSlot(char slot) {
+  short choice;
+
+  choice = RealmzReplayLegacyChoiceForSlot(slot);
+  if (!choice)
+    return (0);
+
+  /* The interactive path sets this before opening its chooser. The replay
+   * path skips that UI but retains the flag before dungeon centering. */
+  needdungeonupdate = TRUE;
+  save_prelude();
+  centerpict();
+  return save_selected(choice, TRUE);
+}
+
+/************************ save_prelude *********************/
+static void save_prelude(void) {
+  short t = 0;
   short temp;
-  char hold[80];
-  int32_t testlocation;
-  short n;
 
   t = CountResources('RLMZ') - 1;
 
@@ -38,10 +66,16 @@ void save(short mode) {
     saveshop(1, (Ptr) "");
 
   in();
-  choice = fileprep(mode);
-  centerpict();
-  if (!choice)
-    return;
+}
+
+/************************ save_selected *********************/
+static short save_selected(short choice, short preserve_land_sites) {
+  FILE* op = NULL;
+  FILE* fp = NULL;
+  short count, t = 0;
+  char hold[80];
+  int32_t testlocation;
+  short n;
 
   strcpy((StringPtr)hold, (StringPtr) ":Save:Game ");
 
@@ -519,12 +553,12 @@ pushon:
   while (fread(&door, sizeof door, 1, fp) == 1) {
     fread(&field, sizeof field, 1, fp);
     fread(&randlevel, sizeof randlevel, 1, fp);
-    if (!indung)
+    if ((!indung) || preserve_land_sites)
       fread(&site, sizeof site, 1, fp);
     fwrite(&door, sizeof door, 1, op);
     fwrite(&field, sizeof field, 1, op);
     fwrite(&randlevel, sizeof randlevel, 1, op);
-    if (!indung) {
+    if ((!indung) || preserve_land_sites) {
       fwrite(&site, sizeof site, 1, op);
     }
   }
@@ -544,6 +578,7 @@ pushon:
 
   flashmessage((StringPtr) "", 30, 100, -1, 0);
   lowHD = FALSE;
+  return (1);
 }
 
 /****************************** saveland ****************************/

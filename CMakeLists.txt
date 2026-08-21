@@ -110,8 +110,12 @@ realmz_configure_core_target(realmz_userdata_core)
 
 add_library(realmz_replay_core STATIC
     src/replay/DeterministicReplayRng.cpp
+    src/replay/ReplayActionDecoder.cpp
     src/replay/ReplayChildConfig.cpp
+    src/replay/ReplayOutputOracle.cpp
     src/replay/ReplayRuntime.cpp
+    src/replay/ReplaySlotSelection.cpp
+    src/replay/Sha256.cpp
 )
 target_include_directories(realmz_replay_core PUBLIC src)
 realmz_configure_core_target(realmz_replay_core)
@@ -336,6 +340,36 @@ if(REALMZ_BUILD_CORE_TESTS)
     target_link_libraries(ReplayRuntimeTest PRIVATE realmz_replay_core)
     realmz_configure_core_target(ReplayRuntimeTest)
     add_test(NAME ReplayRuntimeTest COMMAND ReplayRuntimeTest)
+
+    add_executable(ReplayActionDecoderTest
+        src/tests/ReplayActionDecoderTest.cpp)
+    target_link_libraries(ReplayActionDecoderTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayActionDecoderTest)
+    add_test(NAME ReplayActionDecoderTest COMMAND ReplayActionDecoderTest)
+
+    add_executable(ReplaySlotSelectionTest
+        src/tests/ReplaySlotSelectionTest.cpp)
+    target_link_libraries(ReplaySlotSelectionTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplaySlotSelectionTest)
+    add_test(NAME ReplaySlotSelectionTest
+        COMMAND ReplaySlotSelectionTest ${CMAKE_SOURCE_DIR})
+
+    add_executable(Sha256Test src/tests/Sha256Test.cpp)
+    target_link_libraries(Sha256Test PRIVATE realmz_replay_core)
+    realmz_configure_core_target(Sha256Test)
+    add_test(NAME Sha256Test COMMAND Sha256Test)
+
+    add_executable(ReplayOutputOracleTest
+        src/tests/ReplayOutputOracleTest.cpp)
+    target_link_libraries(ReplayOutputOracleTest PRIVATE realmz_replay_core)
+    realmz_configure_core_target(ReplayOutputOracleTest)
+    add_test(NAME ReplayOutputOracleTest COMMAND ReplayOutputOracleTest)
+
+    add_executable(SemanticReplayEventIsolationContractTest
+        src/tests/SemanticReplayEventIsolationContractTest.cpp)
+    realmz_configure_core_target(SemanticReplayEventIsolationContractTest)
+    add_test(NAME SemanticReplayEventIsolationContractTest
+        COMMAND SemanticReplayEventIsolationContractTest ${CMAKE_SOURCE_DIR})
 
     add_executable(SemanticReplayStartupContractTest
         src/tests/SemanticReplayStartupContractTest.cpp)
@@ -693,6 +727,26 @@ if(REALMZ_BUILD_CORE_TESTS)
     realmz_configure_core_target(SemanticReplayChildBootstrapTest)
     add_test(NAME SemanticReplayChildBootstrapTest
         COMMAND SemanticReplayChildBootstrapTest)
+
+    # EventManager reaches the Classic globals and helpers defined alongside
+    # the application entry point. Compile that translation unit with only its
+    # main symbol renamed so the behavior test can link its own main.
+    add_library(realmz_event_test_legacy_globals OBJECT
+        src/realmz_orig/main.c)
+    set_target_properties(realmz_event_test_legacy_globals PROPERTIES
+        C_STANDARD 90)
+    target_compile_definitions(realmz_event_test_legacy_globals PRIVATE
+        main=RealmzAppMainForEventIsolationTest)
+    target_link_libraries(realmz_event_test_legacy_globals PRIVATE realmz_lib)
+
+    add_executable(SemanticReplayEventIsolationTest
+        src/tests/SemanticReplayEventIsolationTest.cpp)
+    target_link_libraries(SemanticReplayEventIsolationTest PRIVATE
+        realmz_lib
+        realmz_event_test_legacy_globals)
+    realmz_configure_core_target(SemanticReplayEventIsolationTest)
+    add_test(NAME SemanticReplayEventIsolationTest
+        COMMAND SemanticReplayEventIsolationTest)
 endif()
 
 add_executable(Realmz
@@ -721,6 +775,14 @@ if(NOT WIN32 AND REALMZ_ENABLE_APP_SANITIZERS AND
         target_compile_options(SemanticReplayChildBootstrapTest PRIVATE
             -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(SemanticReplayChildBootstrapTest PRIVATE
+            -fsanitize=address,undefined)
+    endif()
+    if(TARGET SemanticReplayEventIsolationTest)
+        target_compile_options(realmz_event_test_legacy_globals PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_compile_options(SemanticReplayEventIsolationTest
+            PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(SemanticReplayEventIsolationTest PRIVATE
             -fsanitize=address,undefined)
     endif()
 endif()

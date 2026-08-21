@@ -81,9 +81,13 @@ uint32_t GetDblTime(void);
 void SystemTask(void);
 // GetCaretTime (IM1-260) not used by Realmz
 
+// While a replay runtime is installed, raw Classic polls return a deterministic
+// null record and never ingest SDL or consume queued semantic commands.
 Boolean GetNextEvent(int16_t mask, EventRecord* ev); // IM1-257
 // Top-level exploration/dungeon/combat receive boundary for Remastered semantic
-// input. In Classic mode this is exactly the ordinary GetNextEvent route.
+// input. In ordinary Classic mode this is exactly the GetNextEvent route. A
+// semantic replay remains able to consume controller-queued tagged commands
+// through this guarded boundary while all physical input stays isolated.
 Boolean GetNextSemanticGameplayEvent(
     int16_t mask,
     EventRecord* ev,

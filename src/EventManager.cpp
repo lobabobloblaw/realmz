@@ -13,8 +13,14 @@
 #include "WindowManager.hpp"
 #include "presentation/LegacyPartySelection.h"
 #include "presentation/SemanticInputBoundary.h"
+#include "replay/ReplayRuntime.hpp"
 
 static phosg::PrefixedLogger em_log("[EventManager] ", DEFAULT_LOG_LEVEL);
+
+[[nodiscard]] static realmz::replay::ReplayRuntime*
+active_replay_runtime() noexcept {
+  return realmz::replay::installed_replay_runtime();
+}
 
 struct PendingSemanticCenterCombatCursorCell {
   uint8_t x;
@@ -342,12 +348,22 @@ public:
   ~EventManager() = default;
 
   void flush_events() {
+    if (active_replay_runtime()) {
+      // FlushEvents is used pervasively by preserved modal code. During
+      // replay it must not consume commands that the replay controller has
+      // queued for a later guarded semantic poll.
+      em_log.debug_f("Replay event flush ignored");
+      return;
+    }
     this->enqueue_pending_events(0);
     this->event_queue.clear();
     em_log.debug_f("Event queue cleared");
   }
 
   EventRecord get_next_event(uint32_t wait_ms) {
+    if (active_replay_runtime()) {
+      return this->make_replay_null_event();
+    }
     this->enqueue_pending_events(wait_ms);
     const auto active_surface = RealmzCurrentSemanticInputSurface();
     const auto old_size = this->event_queue.size();
@@ -382,7 +398,17 @@ public:
     }
   }
 
+  EventRecord get_next_semantic_event(uint32_t wait_ms) {
+    if (active_replay_runtime()) {
+      return this->get_next_replay_event();
+    }
+    return this->get_next_event(wait_ms);
+  }
+
   void push_menu_event(int16_t menu_id, int16_t item_id) {
+    if (active_replay_runtime()) {
+      return;
+    }
     Point where = {static_cast<int16_t>(-menu_id), static_cast<int16_t>(-item_id)};
     const auto& ev = this->event_queue.emplace_back(EventRecord{mouseDown, 0, 0, where, 0});
     em_log.debug_f("Enqueued menu event (what={}, message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), modifiers=0x{:04X})", name_for_event_type(ev.what), ev.message, ev.when, ev.where.h, ev.where.v, ev.modifiers);
@@ -896,6 +922,9 @@ public:
 
   void reset_mouse_state() {
     this->modifier_flags |= EVMOD_MOUSE_BUTTON_UP;
+    if (active_replay_runtime()) {
+      return;
+    }
     WindowManager::instance().cancel_remastered_pointer_capture();
   }
 
@@ -903,6 +932,9 @@ public:
     return this->mouse_loc;
   }
   inline bool is_mouse_button_down() {
+    if (active_replay_runtime()) {
+      return false;
+    }
     // There is at least one place where Realmz busy-loops calling Button
     // (which returns true if the mouse button is down) but does not process
     // events between those calls. In our implementation, we must process
@@ -920,6 +952,9 @@ public:
   }
 
   void move_mouse_to(const Point& pt) {
+    if (active_replay_runtime()) {
+      return;
+    }
     auto sdl_window = WindowManager::instance().get_sdl_window();
     float window_x = pt.h;
     float window_y = pt.v;
@@ -956,6 +991,53 @@ protected:
         .where = this->mouse_loc,
         .modifiers = this->modifier_flags,
     };
+  }
+
+  EventRecord make_replay_null_event() const {
+    return {
+        .what = nullEvent,
+        .message = 0,
+        .when = TickCount(),
+        .where = {},
+        .modifiers = 0,
+        .window_port = nullptr,
+        .text = {},
+    };
+  }
+
+  EventRecord get_next_replay_event() {
+    const auto active_surface = RealmzCurrentSemanticInputSurface();
+    if (active_surface == REALMZ_SEMANTIC_INPUT_NONE) {
+      // Raw Classic and modal polls are intentionally blind to both physical
+      // input and queued replay commands. Only the guarded semantic wrapper
+      // below may consume a replay command.
+      return this->make_replay_null_event();
+    }
+
+    auto candidate = this->event_queue.begin();
+    while (candidate != this->event_queue.end()) {
+      if ((candidate->what != app1Evt) ||
+          !RealmzIsSemanticGameplayTag(candidate->message)) {
+        ++candidate;
+        continue;
+      }
+      if (RealmzSemanticGameplayTagSurface(candidate->message) !=
+          active_surface) {
+        candidate = this->event_queue.erase(candidate);
+        continue;
+      }
+
+      EventRecord ev = *candidate;
+      this->event_queue.erase(candidate);
+      ev.modifiers = 0;
+      em_log.debug_f(
+          "Dequeued replay semantic event (what={}, message=0x{:08X}, "
+          "when=0x{:08X}, where=(h={}, v={}))",
+          name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+          ev.where.v);
+      return ev;
+    }
+    return this->make_replay_null_event();
   }
 
   void enqueue_event(uint16_t what, uint32_t message, void* window_port, const char* text) {
@@ -1149,6 +1231,9 @@ protected:
   }
 
   void enqueue_pending_events(int32_t wait_ms) {
+    if (active_replay_runtime()) {
+      return;
+    }
     SDL_Event e;
 
     // If wait_ms > 0, wait for at least one event to be available before
@@ -1165,6 +1250,9 @@ protected:
 EventManager em;
 
 uint32_t TickCount(void) {
+  if (auto* replay = active_replay_runtime()) {
+    return replay->next_event_tick();
+  }
   return (SDL_GetTicks() * 60) / SDL_MS_PER_SECOND;
 }
 
@@ -1175,6 +1263,9 @@ uint32_t GetDblTime(void) {
 }
 
 void SystemTask(void) {
+  if (active_replay_runtime()) {
+    return;
+  }
   // Realmz uses GetNextEvent in hot loops in several places, but it also calls
   // SystemTask in those loops. There's nothing for SystemTask to do on modern
   // systems since we now have preemptive multitasking, but we can use this
@@ -1229,12 +1320,17 @@ Boolean GetNextSemanticGameplayEvent(
 
   clear_pending_semantic_center_combat_cursor_cell();
 
-  const bool remastered =
-      WindowManager::instance().get_presentation_mode() ==
-      realmz::presentation::PresentationMode::remastered;
+  auto* replay = active_replay_runtime();
+  const bool remastered = replay
+      ? replay->presentation_mode() ==
+          realmz::replay::ReplayPresentationMode::remastered
+      : WindowManager::instance().get_presentation_mode() ==
+          realmz::presentation::PresentationMode::remastered;
   if (!remastered) {
-    // With no active semantic scope, EventManager drops any stale tagged
-    // command before returning the next ordinary Classic event.
+    // With no active semantic scope, ordinary EventManager behavior drops any
+    // stale tagged command before returning the next Classic event. A future
+    // replay controller must inject Classic-route actions before reaching
+    // this presentation branch; replay raw-event isolation returns null here.
     *ret = em.get_next_event(0);
     return (ret->what != nullEvent);
   }
@@ -1250,11 +1346,13 @@ Boolean GetNextSemanticGameplayEvent(
 
   {
     const SemanticInputScope semantic_scope(surface);
-    *ret = em.get_next_event(0);
+    *ret = em.get_next_semantic_event(0);
   }
-  const bool still_remastered =
-      WindowManager::instance().get_presentation_mode() ==
-      realmz::presentation::PresentationMode::remastered;
+  const bool still_remastered = replay
+      ? replay->presentation_mode() ==
+          realmz::replay::ReplayPresentationMode::remastered
+      : WindowManager::instance().get_presentation_mode() ==
+          realmz::presentation::PresentationMode::remastered;
   if ((ret->what == app1Evt) &&
       RealmzIsSemanticMovementTag(ret->message)) {
     uint32_t classic_key_message = 0;
@@ -1560,6 +1658,9 @@ Boolean GetNextSemanticGameplayEvent(
     // not leave a completed scope available after an ordinary Classic event.
     RealmzInvalidateSemanticInputBoundary();
   }
+  if (replay) {
+    ret->modifiers = 0;
+  }
   return (ret->what != nullEvent);
 }
 
@@ -1579,6 +1680,10 @@ Boolean WaitNextEvent(int16_t which_mask, EventRecord* ret, uint32_t sleep, RgnH
 }
 
 void GetMouse(Point* ret) {
+  if (active_replay_runtime()) {
+    *ret = {};
+    return;
+  }
   *ret = em.get_mouse_loc();
 
   // GetMouse isn't actually an Event Manager function... it's a QuickDraw
@@ -1591,18 +1696,31 @@ void GetMouse(Point* ret) {
 }
 
 void GetMouseGlobal(Point* ret) {
+  if (active_replay_runtime()) {
+    *ret = {};
+    return;
+  }
   *ret = em.get_mouse_loc();
 }
 
 void SetMouseLocation(const Point* mouseLoc) {
+  if (active_replay_runtime()) {
+    return;
+  }
   em.move_mouse_to(*mouseLoc);
 }
 
 Boolean Button(void) {
+  if (active_replay_runtime()) {
+    return 0;
+  }
   return em.is_mouse_button_down();
 }
 
 Boolean StillDown(void) {
+  if (active_replay_runtime()) {
+    return 0;
+  }
   return em.is_mouse_button_down() && !em.any_mouse_events_pending();
 }
 

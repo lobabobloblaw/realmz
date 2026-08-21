@@ -332,10 +332,35 @@ The Realmz binary now recognizes `--semantic-replay-child CONFIG`. Its bounded
 native bootstrap validates and installs the v1 policy before `ToolBoxInit`,
 selects the isolated root and presentation, disables preference persistence and
 bundled fallback for the staged input subtree, and supplies deterministic RNG
-draws. It then exits with the explicit driver-unavailable status and writes no
-result: save loading, action driving, settled snapshots, and save emission are
-still pending. The parent tests therefore continue to use a synthetic child and
-do not compare its reported state or save hashes.
+draws. Before any future save load or mutation, its child entry point also
+validates the complete action plan against the deliberately movement-only v1
+engine vocabulary. Unsupported kinds, malformed arguments, invalid movement
+commands, and noncontiguous ordinals fail closed during this preflight.
+
+The native foundations now also include deterministic replay event isolation,
+explicit replay-only `A`-through-`J` load and save entry points that bypass the
+interactive chooser and preference state, a streaming SHA-256 implementation,
+and a strict output-slot oracle for the ten physical Classic save files. The
+event boundary prevents physical SDL input and ambient timing or pointer state
+from entering an active replay while retaining a guarded semantic-command
+path. The output oracle checks the exact file set and `Data I1` size, rejects
+links and detectable replacement or mutation, and produces a domain-separated
+tree digest.
+
+These pieces are foundations, not a completed replay. The child does not yet
+call the explicit loader or saver, deliver decoded actions through either
+engine route, capture settled state, invoke the output oracle, or emit a result.
+After a valid preflight it therefore still exits with the explicit
+driver-unavailable status and writes no result. The parent tests continue to
+use a synthetic child and do not compare live reported state or save hashes.
+
+The dependency-free native checks are included in the core test runner; the
+linked CMake test additionally exercises the event-isolation behavior against
+the engine:
+
+```sh
+scripts/run-core-tests.sh
+```
 
 The synthetic replay foundation suites run directly and through the project
 quality gates on both Linux and macOS:
@@ -359,14 +384,17 @@ The remaining milestone work is to:
 1. Select a provenance-reviewed Tutorial fixture manifest and use the
    foundation to verify the source and create isolated Classic and semantic
    copies. This is byte-identity and isolation plumbing only.
-2. Extend the native `--semantic-replay-child` bootstrap to load the configured
-   input slot and emit a result only after all actions and the fresh output save
+2. Connect the native child controller to the explicit input-slot loader and
+   continue the loaded game into its first semantic gameplay poll.
+3. Drive one process through Classic movement inputs and the other through the
+   semantic bridge using the same normalized action sequence, settling each
+   action at the following gameplay poll.
+4. Define the canonical live-state oracle, capture a checkpoint after every
+   settled action, and write the strict child result only after the run is
    complete.
-3. Drive one process through Classic scan-code/portrait inputs and the other
-   through the semantic bridge using the same normalized action sequence.
-4. Capture a snapshot after every settled action and compare world position,
-   facing, selection, fatigue, inventory, encounter, and timing state.
-5. Save both runs into new temporary slots and require byte-for-byte equality.
+5. Connect the explicit output-slot saver, verify each fresh save through the
+   native output oracle, and compare the two processes' state traces and save
+   digests.
 6. Verify the source and both staged fixture trees remain bound to their
    declared hashes.
 

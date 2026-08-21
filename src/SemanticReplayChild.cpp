@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "UserDataPaths.hpp"
+#include "replay/ReplayActionDecoder.hpp"
 #include "replay/ReplayChildConfig.hpp"
 #include "replay/ReplayRuntime.hpp"
 
@@ -102,14 +103,26 @@ extern "C" int RealmzSemanticReplayChildIsActive(void) {
 }
 
 extern "C" int RealmzRunSemanticReplayChild(void) {
-  if (!RealmzSemanticReplayChildIsActive()) {
+  auto* runtime = realmz::replay::installed_replay_runtime();
+  if (!runtime) {
     write_bounded_diagnostic(
         "semantic replay child startup failed: ",
         "no replay runtime is installed");
     return REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT;
   }
+  try {
+    // Close the engine-specific action vocabulary before a future driver is
+    // allowed to load or mutate the configured input save.
+    static_cast<void>(realmz::replay::decode_replay_actions_v1(
+        runtime->config().actions()));
+  } catch (const realmz::replay::ReplayActionDecodeError& error) {
+    write_bounded_diagnostic(
+        "semantic replay child action plan rejected: ", error.what());
+    return REALMZ_SEMANTIC_REPLAY_DRIVER_UNAVAILABLE_EXIT;
+  }
   write_bounded_diagnostic(
       "semantic replay child unavailable: ",
-      "native action driving and result emission are not implemented");
+      "native save loading, action driving, and result emission are not "
+      "implemented");
   return REALMZ_SEMANTIC_REPLAY_DRIVER_UNAVAILABLE_EXIT;
 }
