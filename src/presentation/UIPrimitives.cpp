@@ -73,7 +73,7 @@ std::vector<WidgetId> FocusNavigator::ordered_focusable_ids() const {
   for (size_t z = 0; z < this->entries_.size(); z++) {
     const auto& entry = this->entries_[z];
     if (entry.accepts_focus()) {
-      ordered.emplace_back(entry.id, entry.tab_order, z);
+      ordered.push_back(OrderedEntry{entry.id, entry.tab_order, z});
     }
   }
   std::sort(ordered.begin(), ordered.end(),
