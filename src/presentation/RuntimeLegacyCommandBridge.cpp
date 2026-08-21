@@ -27,6 +27,7 @@ constexpr uint32_t kCenterNextCombatantMessage = 0x00002D6EU;
 constexpr uint32_t kOpenCombatItemsMessage = 0x00002269U;
 constexpr uint32_t kAutoCombatantMessage = 0x00000061U;
 constexpr uint32_t kShowCombatRangeMessage = 0x00000F72U;
+constexpr uint32_t kBandageCombatantMessage = 0x00000B62U;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
@@ -429,6 +430,41 @@ LegacyActionHandlers make_handlers(
       if (!show_combat_range_sink(action.combatant, *message, context)) {
         return DispatchResult::failed(
             "Legacy event queue rejected semantic show-combat-range action");
+      }
+      return DispatchResult::handled();
+    };
+  }
+
+  if (combat_action_sinks.bandage_combatant.has_value()) {
+    handlers.bandage_combatant = [
+        context_provider,
+        bandage_combatant_sink =
+            std::move(*combat_action_sinks.bandage_combatant)](
+            const BandageCombatantAction& action) {
+      if (!context_provider) {
+        return DispatchResult::failed(
+            "Runtime legacy context provider is not available");
+      }
+      if (!bandage_combatant_sink) {
+        return DispatchResult::failed(
+            "Runtime legacy bandage-combatant sink is not available");
+      }
+
+      const auto context = context_provider();
+      if (!context.adaptive_eligible) {
+        return DispatchResult::rejected(
+            "Legacy combat surface is not eligible for semantic bandage");
+      }
+      const auto message = legacy_key_message_for_bandage_combatant(
+          action.combatant, context);
+      if (!message) {
+        return DispatchResult::rejected(
+            "Bandage is not supported for this combatant in the current "
+            "legacy context");
+      }
+      if (!bandage_combatant_sink(action.combatant, *message, context)) {
+        return DispatchResult::failed(
+            "Legacy event queue rejected semantic bandage-combatant action");
       }
       return DispatchResult::handled();
     };
@@ -908,6 +944,16 @@ std::optional<uint32_t> legacy_key_message_for_show_combat_range(
     return std::nullopt;
   }
   return kShowCombatRangeMessage;
+}
+
+std::optional<uint32_t> legacy_key_message_for_bandage_combatant(
+    CombatantId combatant,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (context.screen != ScreenContext::combat) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return std::nullopt;
+  }
+  return kBandageCombatantMessage;
 }
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(

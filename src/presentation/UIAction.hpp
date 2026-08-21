@@ -162,6 +162,15 @@ struct ShowCombatRangeAction {
   bool operator==(const ShowCombatRangeAction&) const = default;
 };
 
+// Requests the preserved Classic Bandage flow for the explicitly identified
+// acting party combatant. The stable actor prevents a queued request from
+// opening the target picker on whichever combatant owns a later turn.
+struct BandageCombatantAction {
+  CombatantId combatant = 0;
+
+  bool operator==(const BandageCombatantAction&) const = default;
+};
+
 enum class InventoryVerb {
   use,
   equip,
@@ -323,6 +332,7 @@ using UIActionPayload = std::variant<
     OpenCombatItemsAction,
     AutoCombatantAction,
     ShowCombatRangeAction,
+    BandageCombatantAction,
     InventoryAction,
     CastSpellAction,
     TradeAction,
@@ -375,6 +385,8 @@ struct UIAction {
       return "auto_combatant";
     } else if constexpr (std::is_same_v<Action, ShowCombatRangeAction>) {
       return "show_combat_range";
+    } else if constexpr (std::is_same_v<Action, BandageCombatantAction>) {
+      return "bandage_combatant";
     } else if constexpr (std::is_same_v<Action, InventoryAction>) {
       return "inventory";
     } else if constexpr (std::is_same_v<Action, CastSpellAction>) {

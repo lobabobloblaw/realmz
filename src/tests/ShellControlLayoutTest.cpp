@@ -481,6 +481,8 @@ void test_combat_primary_and_secondary_action_pages() {
         .auto_combatant_available = true,
         .show_combat_range_combatant = CombatantId{2},
         .show_combat_range_available = true,
+        .bandage_combatant = CombatantId{2},
+        .bandage_combatant_available = true,
     });
     CHECK(controls.size() == 5U);
     const auto& guard = controls[0];
@@ -585,6 +587,8 @@ void test_combat_primary_and_secondary_action_pages() {
         .auto_combatant_available = true,
         .show_combat_range_combatant = CombatantId{2},
         .show_combat_range_available = true,
+        .bandage_combatant = CombatantId{2},
+        .bandage_combatant_available = true,
     });
     CHECK(secondary.size() == 6U);
     const auto& back = secondary[0];
@@ -749,11 +753,14 @@ void test_combat_primary_and_secondary_action_pages() {
         .auto_combatant_available = true,
         .show_combat_range_combatant = CombatantId{2},
         .show_combat_range_available = true,
+        .bandage_combatant = CombatantId{2},
+        .bandage_combatant_available = true,
     });
-    CHECK(utility.size() == 3U);
+    CHECK(utility.size() == 4U);
     const auto& utility_back = utility[0];
     const auto& auto_control = utility[1];
     const auto& range_control = utility[2];
+    const auto& bandage_control = utility[3];
     CHECK(utility_back.region.value == 1108U);
     CHECK(utility_back.kind == ShellControlKind::combat_action_page);
     CHECK(utility_back.label == "BACK");
@@ -787,9 +794,21 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(range_control.enabled);
     CHECK(std::get<ShowCombatRangeAction>(range_control.payload).combatant ==
         2);
+    CHECK(bandage_control.region.value == 1116U);
+    CHECK(bandage_control.kind == ShellControlKind::bandage_combatant);
+    CHECK(bandage_control.label == "BANDAGE");
+    CHECK(bandage_control.accessibility_label ==
+        "Choose a party member to bandage");
+    CHECK(bandage_control.focus_identifier ==
+        "focus.action.combat.bandage");
+    CHECK(bandage_control.tab_order == 1116);
+    CHECK(bandage_control.enabled);
+    CHECK(std::get<BandageCombatantAction>(
+        bandage_control.payload).combatant == 2);
     CHECK(panel.contains(utility_back.bounds));
     CHECK(panel.contains(auto_control.bounds));
     CHECK(panel.contains(range_control.bounds));
+    CHECK(panel.contains(bandage_control.bounds));
     CHECK(utility_back.bounds.width == 44.0);
     CHECK(utility_back.bounds.height == 44.0);
     CHECK(auto_control.bounds.width >= 44.0);
@@ -798,10 +817,16 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(range_control.bounds.width >= 44.0);
     CHECK(range_control.bounds.width <= 160.0);
     CHECK(range_control.bounds.height >= 44.0);
+    CHECK(bandage_control.bounds.width >= 44.0);
+    CHECK(bandage_control.bounds.width <= 160.0);
+    CHECK(bandage_control.bounds.height >= 44.0);
     CHECK(!interiors_overlap(utility_back.bounds, auto_control.bounds));
     CHECK(!interiors_overlap(utility_back.bounds, range_control.bounds));
     CHECK(!interiors_overlap(auto_control.bounds, range_control.bounds));
+    CHECK(!interiors_overlap(auto_control.bounds, bandage_control.bounds));
+    CHECK(!interiors_overlap(range_control.bounds, bandage_control.bounds));
     CHECK(range_control.bounds.x > auto_control.bounds.x);
+    CHECK(bandage_control.bounds.x > range_control.bounds.x);
     const LogicalPoint auto_pointer{
         auto_control.bounds.x + auto_control.bounds.width / 2.0,
         auto_control.bounds.y + auto_control.bounds.height / 2.0,
@@ -809,6 +834,7 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(auto_control.bounds.contains(auto_pointer));
     CHECK(!utility_back.bounds.contains(auto_pointer));
     CHECK(!range_control.bounds.contains(auto_pointer));
+    CHECK(!bandage_control.bounds.contains(auto_pointer));
     const LogicalPoint range_pointer{
         range_control.bounds.x + range_control.bounds.width / 2.0,
         range_control.bounds.y + range_control.bounds.height / 2.0,
@@ -816,6 +842,15 @@ void test_combat_primary_and_secondary_action_pages() {
     CHECK(range_control.bounds.contains(range_pointer));
     CHECK(!utility_back.bounds.contains(range_pointer));
     CHECK(!auto_control.bounds.contains(range_pointer));
+    CHECK(!bandage_control.bounds.contains(range_pointer));
+    const LogicalPoint bandage_pointer{
+        bandage_control.bounds.x + bandage_control.bounds.width / 2.0,
+        bandage_control.bounds.y + bandage_control.bounds.height / 2.0,
+    };
+    CHECK(bandage_control.bounds.contains(bandage_pointer));
+    CHECK(!utility_back.bounds.contains(bandage_pointer));
+    CHECK(!auto_control.bounds.contains(bandage_pointer));
+    CHECK(!range_control.bounds.contains(bandage_pointer));
   }
 
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
@@ -981,6 +1016,21 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(std::get<ShowCombatRangeAction>(
       range_disabled[1].payload).combatant == 2);
 
+  const auto bandage_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::utility,
+      .bandage_combatant = CombatantId{2},
+  });
+  CHECK(bandage_disabled.size() == 2U);
+  CHECK(bandage_disabled[0].kind == ShellControlKind::combat_action_page);
+  CHECK(std::get<SetCombatActionPageAction>(
+      bandage_disabled[0].payload).page == CombatActionPage::secondary);
+  CHECK(bandage_disabled[1].kind == ShellControlKind::bandage_combatant);
+  CHECK(!bandage_disabled[1].enabled);
+  CHECK(std::get<BandageCombatantAction>(
+      bandage_disabled[1].payload).combatant == 2);
+
   const auto auto_only_primary = compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
@@ -1035,6 +1085,31 @@ void test_combat_primary_and_secondary_action_pages() {
       range_only_secondary[0].payload).page == CombatActionPage::primary);
   CHECK(std::get<SetCombatActionPageAction>(
       range_only_secondary[1].payload).page == CombatActionPage::utility);
+
+  const auto bandage_only_primary = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .bandage_combatant = CombatantId{2},
+      .bandage_combatant_available = true,
+  });
+  CHECK(bandage_only_primary.size() == 1U);
+  CHECK(bandage_only_primary[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(std::get<SetCombatActionPageAction>(
+      bandage_only_primary[0].payload).page == CombatActionPage::secondary);
+
+  const auto bandage_only_secondary = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::secondary,
+      .bandage_combatant = CombatantId{2},
+      .bandage_combatant_available = true,
+  });
+  CHECK(bandage_only_secondary.size() == 2U);
+  CHECK(std::get<SetCombatActionPageAction>(
+      bandage_only_secondary[0].payload).page == CombatActionPage::primary);
+  CHECK(std::get<SetCombatActionPageAction>(
+      bandage_only_secondary[1].payload).page == CombatActionPage::utility);
 
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
@@ -1258,6 +1333,24 @@ void test_combat_primary_and_secondary_action_pages() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .combat_action_page = CombatActionPage::utility,
+      .bandage_combatant_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::utility,
+      .bandage_combatant = CombatantId{-1},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::utility,
+      .bandage_combatant = CombatantId{256},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
       .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{-1},
   }).empty());
@@ -1383,6 +1476,19 @@ void test_combat_primary_and_secondary_action_pages() {
       .screen = ScreenContext::combat,
       .action_panel = panel,
       .guard_combatant = CombatantId{2},
+      .bandage_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .combat_action_page = CombatActionPage::utility,
+      .show_combat_range_combatant = CombatantId{2},
+      .bandage_combatant = CombatantId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
       .finish_combatant = CombatantId{2},
       .delay_combatant = CombatantId{2},
       .center_active_combatant = CombatantId{3},
@@ -1483,6 +1589,13 @@ void test_combat_primary_and_secondary_action_pages() {
       .action_panel = panel,
       .navigation_available = true,
       .show_combat_range_combatant = CombatantId{2},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .bandage_combatant = CombatantId{2},
   }).empty());
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::exploration,
@@ -1690,6 +1803,47 @@ void test_combat_primary_and_secondary_action_pages() {
       .show_combat_range_combatant = CombatantId{2},
   }).empty());
 
+  const auto utility_trio_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = three_minimum,
+      .combat_action_page = CombatActionPage::utility,
+      .auto_combatant = CombatantId{2},
+      .auto_combatant_available = true,
+      .show_combat_range_combatant = CombatantId{2},
+      .show_combat_range_available = true,
+      .bandage_combatant = CombatantId{2},
+      .bandage_combatant_available = true,
+  });
+  CHECK(utility_trio_minimum.size() == 4U);
+  CHECK(utility_trio_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(utility_trio_minimum[1].kind == ShellControlKind::auto_combatant);
+  CHECK(utility_trio_minimum[2].kind ==
+      ShellControlKind::show_combat_range);
+  CHECK(utility_trio_minimum[3].kind ==
+      ShellControlKind::bandage_combatant);
+  for (const auto& control : std::span{utility_trio_minimum}.subspan(1)) {
+    CHECK(control.bounds.width == 44.0);
+    CHECK(control.bounds.height == 44.0);
+  }
+  CHECK(!interiors_overlap(
+      utility_trio_minimum[1].bounds,
+      utility_trio_minimum[2].bounds));
+  CHECK(!interiors_overlap(
+      utility_trio_minimum[1].bounds,
+      utility_trio_minimum[3].bounds));
+  CHECK(!interiors_overlap(
+      utility_trio_minimum[2].bounds,
+      utility_trio_minimum[3].bounds));
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = {0.0, 0.0, 171.0, 120.0},
+      .combat_action_page = CombatActionPage::utility,
+      .auto_combatant = CombatantId{2},
+      .show_combat_range_combatant = CombatantId{2},
+      .bandage_combatant = CombatantId{2},
+  }).empty());
+
   const auto range_primary_minimum = compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = two_minimum,
@@ -1735,6 +1889,54 @@ void test_combat_primary_and_secondary_action_pages() {
         .action_panel = {0.0, 0.0, 121.0, 120.0},
         .combat_action_page = page,
         .show_combat_range_combatant = CombatantId{2},
+    }).empty());
+  }
+
+  const auto bandage_primary_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .bandage_combatant = CombatantId{2},
+      .bandage_combatant_available = true,
+  });
+  CHECK(bandage_primary_minimum.size() == 1U);
+  CHECK(bandage_primary_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  const auto bandage_secondary_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .combat_action_page = CombatActionPage::secondary,
+      .bandage_combatant = CombatantId{2},
+      .bandage_combatant_available = true,
+  });
+  CHECK(bandage_secondary_minimum.size() == 2U);
+  CHECK(bandage_secondary_minimum[0].bounds.width == 44.0);
+  CHECK(bandage_secondary_minimum[1].bounds.width == 44.0);
+  CHECK(!interiors_overlap(
+      bandage_secondary_minimum[0].bounds,
+      bandage_secondary_minimum[1].bounds));
+  const auto bandage_utility_minimum = compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = two_minimum,
+      .combat_action_page = CombatActionPage::utility,
+      .bandage_combatant = CombatantId{2},
+      .bandage_combatant_available = true,
+  });
+  CHECK(bandage_utility_minimum.size() == 2U);
+  CHECK(bandage_utility_minimum[0].kind ==
+      ShellControlKind::combat_action_page);
+  CHECK(bandage_utility_minimum[1].kind ==
+      ShellControlKind::bandage_combatant);
+  CHECK(bandage_utility_minimum[1].bounds.width >= 44.0);
+  for (const auto page : {
+           CombatActionPage::primary,
+           CombatActionPage::secondary,
+           CombatActionPage::utility,
+       }) {
+    CHECK(compute_shell_control_layout({
+        .screen = ScreenContext::combat,
+        .action_panel = {0.0, 0.0, 121.0, 120.0},
+        .combat_action_page = page,
+        .bandage_combatant = CombatantId{2},
     }).empty());
   }
 

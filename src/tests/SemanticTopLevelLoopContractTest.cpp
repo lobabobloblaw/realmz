@@ -316,6 +316,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticShowCombatRangeEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic range input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticBandageCombatantEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic Bandage input");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must not apply semantic party selection");
@@ -713,6 +717,31 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(range_wrapper, "mouseDown") == 0,
       "public semantic Range enqueue must not synthesize Classic input");
 
+  const std::string push_bandage = function_body(
+      source, "push_semantic_bandage_combatant_event");
+  const std::string compact_push_bandage = without_whitespace(push_bandage);
+  require(count_identifier(
+              push_bandage, "RealmzIsSemanticBandageCombatantTag") == 1,
+      "semantic Bandage enqueue must validate exactly one tag");
+  require(count_identifier(push_bandage, "app1Evt") == 1,
+      "semantic Bandage enqueue must use app1Evt exactly once");
+  require(count_identifier(push_bandage, "keyDown") == 0 &&
+          count_identifier(push_bandage, "mouseDown") == 0,
+      "semantic Bandage enqueue must not synthesize Classic input");
+  require(compact_push_bandage.contains("ev.what=app1Evt;") &&
+          compact_push_bandage.contains("ev.message=tagged_message;"),
+      "semantic Bandage must retain its tagged app1Evt payload");
+
+  const std::string bandage_wrapper = function_body(
+      source, "PushSemanticBandageCombatantEvent");
+  require(without_whitespace(bandage_wrapper).contains(
+              "returnem.push_semantic_bandage_combatant_event("
+              "tagged_message);"),
+      "public semantic Bandage enqueue must delegate to tagged queue");
+  require(count_identifier(bandage_wrapper, "keyDown") == 0 &&
+          count_identifier(bandage_wrapper, "mouseDown") == 0,
+      "public semantic Bandage enqueue must not synthesize Classic input");
+
   const std::string next_event = function_body(source, "get_next_event");
   const std::string compact_next = without_whitespace(next_event);
   require(count_identifier(
@@ -821,16 +850,20 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticShowCombatRangeEvent") == 1,
       "semantic gameplay wrapper must have one late Range consumer");
   require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticBandageCombatantEvent") == 1,
+      "semantic gameplay wrapper must have one late Bandage consumer");
+  require(count_identifier(
               semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
       "semantic gameplay wrapper must use one narrow selection adapter");
   require(count_identifier(semantic_wrapper, "get_next_event") == 2,
       "semantic gameplay wrapper must have one Classic and one scoped poll");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 15,
-      "semantic gameplay wrapper must recognize all fifteen tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 12,
+  require(count_identifier(semantic_wrapper, "app1Evt") == 16,
+      "semantic gameplay wrapper must recognize all sixteen tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 13,
       "only late movement, inventory, spellbook, guard, finish, delay, center, "
-      "switch-weapon, cycle-focus, combat-items, Auto, or Range validation may "
-      "produce keyDown");
+      "switch-weapon, cycle-focus, combat-items, Auto, Range, or Bandage "
+      "validation may produce keyDown");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
@@ -893,6 +926,10 @@ void verify_event_manager(const fs::path& repository_root) {
               source, "RealmzConsumeSemanticShowCombatRangeEvent") == 1,
       "EventManager may consume semantic Range input only inside its gameplay "
       "wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticBandageCombatantEvent") == 1,
+      "EventManager may consume semantic Bandage input only inside its "
+      "gameplay wrapper");
   require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
       "EventManager may apply semantic selection only inside its gameplay wrapper");
 
@@ -1083,6 +1120,17 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", range_keydown);
   const std::size_t range_rejected_message = compact_semantic.find(
       "ret->message=0", range_null);
+  const std::size_t bandage_branch = compact_semantic.find(
+      "RealmzIsSemanticBandageCombatantTag(ret->message)",
+      range_rejected_message);
+  const std::size_t bandage_consume = compact_semantic.find(
+      "RealmzConsumeSemanticBandageCombatantEvent(", bandage_branch);
+  const std::size_t bandage_keydown = compact_semantic.find(
+      "ret->what=keyDown", bandage_consume);
+  const std::size_t bandage_null = compact_semantic.find(
+      "ret->what=nullEvent", bandage_keydown);
+  const std::size_t bandage_rejected_message = compact_semantic.find(
+      "ret->message=0", bandage_null);
   require(classic_branch != std::string::npos &&
           first_poll != std::string::npos &&
           scope_type != std::string::npos &&
@@ -1171,7 +1219,12 @@ void verify_event_manager(const fs::path& repository_root) {
           range_consume != std::string::npos &&
           range_keydown != std::string::npos &&
           range_null != std::string::npos &&
-          range_rejected_message != std::string::npos,
+          range_rejected_message != std::string::npos &&
+          bandage_branch != std::string::npos &&
+          bandage_consume != std::string::npos &&
+          bandage_keydown != std::string::npos &&
+          bandage_null != std::string::npos &&
+          bandage_rejected_message != std::string::npos,
       "semantic gameplay wrapper is missing its centralized fail-closed route");
   require(classic_branch < first_poll && first_poll < scope_type &&
           scope_type < begin_scope && begin_scope < end_scope &&
@@ -1255,13 +1308,24 @@ void verify_event_manager(const fs::path& repository_root) {
           range_branch < range_consume &&
           range_consume < range_keydown &&
           range_keydown < range_null &&
-          range_null < range_rejected_message,
+          range_null < range_rejected_message &&
+          range_rejected_message < bandage_branch &&
+          bandage_branch < bandage_consume &&
+          bandage_consume < bandage_keydown &&
+          bandage_keydown < bandage_null &&
+          bandage_null < bandage_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
       "Range must leave semantic gameplay scope before its late Classic key "
       "handoff, so showrange's later raw WaitNextEvent cannot inherit shell "
       "route eligibility");
+  require(scope_block_close < bandage_branch &&
+          bandage_branch < bandage_consume &&
+          bandage_consume < bandage_keydown,
+      "Bandage must leave semantic gameplay scope before its lowercase b "
+      "handoff, so getchoice's raw WaitNextEvent cannot inherit shell route "
+      "eligibility");
   require(compact_semantic.contains(
               "if(!remastered){*ret=em.get_next_event(0);"
               "return(ret->what!=nullEvent);}"),
@@ -1269,10 +1333,16 @@ void verify_event_manager(const fs::path& repository_root) {
 
   const std::string get_next = function_body(source, "GetNextEvent");
   const std::string wait_next = function_body(source, "WaitNextEvent");
+  const std::string compact_wait_next = without_whitespace(wait_next);
   require(count_identifier(get_next, "get_next_event") == 1,
       "GetNextEvent must use the guarded EventManager dequeue path");
   require(count_identifier(wait_next, "get_next_event") == 1,
       "WaitNextEvent must use the guarded EventManager dequeue path");
+  require(compact_wait_next.contains(
+              "*ret=em.get_next_event(sleep);"
+              "return(ret->what!=nullEvent);"),
+      "raw WaitNextEvent callers must still use the surface-aware dequeue, "
+      "which makes queued gameplay tags inert outside an active scope");
   require(count_identifier(source, "push_semantic_key_event") == 0,
       "obsolete direct semantic key enqueue path must remain absent");
 
@@ -1434,6 +1504,9 @@ void verify_window_manager_named_combat_sinks(
            "legacy_key_message_for_show_combat_range",
            "semantic_show_combat_range_tag",
            "PushSemanticShowCombatRangeEvent",
+           "legacy_key_message_for_bandage_combatant",
+           "semantic_bandage_combatant_tag",
+           "PushSemanticBandageCombatantEvent",
        }) {
     require(count_identifier(invocation, identifier) == 1,
         std::string("runtime legacy bridge construction must contain exactly ") +
@@ -1497,6 +1570,11 @@ void verify_window_manager_named_combat_sinks(
       "legacy_key_message_for_show_combat_range",
       "semantic_show_combat_range_tag",
       "PushSemanticShowCombatRangeEvent");
+  verify_field(
+      "bandage_combatant",
+      "legacy_key_message_for_bandage_combatant",
+      "semantic_bandage_combatant_tag",
+      "PushSemanticBandageCombatantEvent");
 }
 
 void verify_window_manager_shell_dispatch_freshness(
@@ -1526,9 +1604,13 @@ void verify_window_manager_shell_dispatch_freshness(
       "std::get_if<realmz::presentation::ShowCombatRangeAction>"
       "(&control.payload)",
       auto_payload);
+  const std::size_t bandage_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::BandageCombatantAction>"
+      "(&control.payload)",
+      range_payload);
   const std::size_t ordinary_branch = compact_dispatch.find(
       "}else{constautolive_control=std::ranges::find_if(",
-      range_payload);
+      bandage_payload);
   const std::size_t current_controls = compact_dispatch.find(
       "this->remastered_shell_controls,", ordinary_branch);
   const std::size_t exact_enabled_descriptor = compact_dispatch.find(
@@ -1569,7 +1651,8 @@ void verify_window_manager_shell_dispatch_freshness(
       ".contains(control.bounds)",
       secondary_page);
   const std::size_t utility_action_guard = compact_dispatch.find(
-      "((auto_combatant||show_combat_range)&&", secondary_layout);
+      "((auto_combatant||show_combat_range||bandage_combatant)&&",
+      secondary_layout);
   const std::size_t auto_guard = compact_dispatch.find(
       "(auto_combatant&&", utility_action_guard);
   const std::size_t auto_kind = compact_dispatch.find(
@@ -1582,10 +1665,16 @@ void verify_window_manager_shell_dispatch_freshness(
       "control.kind!=realmz::presentation::ShellControlKind::"
       "show_combat_range",
       range_guard);
+  const std::size_t bandage_guard = compact_dispatch.find(
+      "(bandage_combatant&&", range_kind);
+  const std::size_t bandage_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "bandage_combatant",
+      bandage_guard);
   const std::size_t utility_page = compact_dispatch.find(
       "this->remastered_combat_action_page!="
       "realmz::presentation::CombatActionPage::utility",
-      range_kind);
+      bandage_kind);
   const std::size_t utility_layout = compact_dispatch.find(
       "this->adaptive_shell_plan->adaptive_layout->action_bar"
       ".contains(control.bounds)",
@@ -1601,6 +1690,7 @@ void verify_window_manager_shell_dispatch_freshness(
           combat_items_payload != std::string::npos &&
           auto_payload != std::string::npos &&
           range_payload != std::string::npos &&
+          bandage_payload != std::string::npos &&
           ordinary_branch != std::string::npos &&
           current_controls != std::string::npos &&
           exact_enabled_descriptor != std::string::npos &&
@@ -1621,19 +1711,22 @@ void verify_window_manager_shell_dispatch_freshness(
           auto_kind != std::string::npos &&
           range_guard != std::string::npos &&
           range_kind != std::string::npos &&
+          bandage_guard != std::string::npos &&
+          bandage_kind != std::string::npos &&
           utility_page != std::string::npos &&
           utility_layout != std::string::npos &&
           reject != std::string::npos &&
           action != std::string::npos &&
           bridge_dispatch != std::string::npos,
       "bridge-bound shell dispatch must retain its live descriptor, fresh "
-      "route, and Weapon/Cycle Focus/Combat Items/Auto/Range page-layout "
-      "rejection gate");
+      "route, and Weapon/Cycle Focus/Combat Items/Auto/Range/Bandage "
+      "page-layout rejection gate");
   require(switch_payload < cycle_payload &&
           cycle_payload < combat_items_payload &&
           combat_items_payload < auto_payload &&
           auto_payload < range_payload &&
-          range_payload < ordinary_branch &&
+          range_payload < bandage_payload &&
+          bandage_payload < ordinary_branch &&
           ordinary_branch < current_controls &&
           current_controls < exact_enabled_descriptor &&
           exact_enabled_descriptor < fresh_route &&
@@ -1649,12 +1742,13 @@ void verify_window_manager_shell_dispatch_freshness(
           secondary_layout < utility_action_guard &&
           utility_action_guard < auto_guard && auto_guard < auto_kind &&
           auto_kind < range_guard && range_guard < range_kind &&
-          range_kind < utility_page && utility_page < utility_layout &&
+          range_kind < bandage_guard && bandage_guard < bandage_kind &&
+          bandage_kind < utility_page && utility_page < utility_layout &&
           utility_layout < reject &&
           reject < action && action < bridge_dispatch,
       "cached shell descriptors and stale Weapon/Cycle Focus/Combat Items/"
-      "Auto/Range routes must be rejected before any runtime legacy bridge "
-      "dispatch");
+      "Auto/Range/Bandage routes must be rejected before any runtime legacy "
+      "bridge dispatch");
 
   const std::string action_source = code_only(read_file(
       repository_root / "src/presentation/UIAction.hpp"));
@@ -1709,8 +1803,12 @@ void verify_window_manager_shell_dispatch_freshness(
   const std::string composition = function_body(
       source, "present_remastered_frame");
   const std::string compact_composition = without_whitespace(composition);
+  const std::size_t composed_bandage_eligibility = compact_composition.find(
+      "constboolbandage_combatant_available=bandage_combatant&&"
+      "snapshot.combat&&snapshot.combat->bandage_available&&");
   const std::size_t composed_page = compact_composition.find(
-      ".combat_action_page=shell_model->combat_action_page");
+      ".combat_action_page=shell_model->combat_action_page",
+      composed_bandage_eligibility);
   const std::size_t composed_auto = compact_composition.find(
       ".auto_combatant=auto_combatant", composed_page);
   const std::size_t composed_auto_available = compact_composition.find(
@@ -1721,9 +1819,15 @@ void verify_window_manager_shell_dispatch_freshness(
   const std::size_t composed_range_available = compact_composition.find(
       ".show_combat_range_available=show_combat_range_available",
       composed_range);
+  const std::size_t composed_bandage = compact_composition.find(
+      ".bandage_combatant=bandage_combatant",
+      composed_range_available);
+  const std::size_t composed_bandage_available = compact_composition.find(
+      ".bandage_combatant_available=bandage_combatant_available",
+      composed_bandage);
   const std::size_t live_controls = compact_composition.find(
       "constboolevery_enabled_control_is_live=std::ranges::all_of(",
-      composed_range_available);
+      composed_bandage_available);
   const std::size_t live_page = compact_composition.find(
       "std::get_if<realmz::presentation::SetCombatActionPageAction>"
       "(&control.payload)",
@@ -1786,11 +1890,44 @@ void verify_window_manager_shell_dispatch_freshness(
       live_range_member);
   const std::size_t live_range_stamina = compact_composition.find(
       "combatant->stamina.current>0", live_range_party_kind);
-  require(composed_page != std::string::npos &&
+  const std::size_t live_bandage = compact_composition.find(
+      "std::get_if<realmz::presentation::BandageCombatantAction>"
+      "(&control.payload)",
+      live_range_stamina);
+  const std::size_t live_bandage_kind = compact_composition.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "bandage_combatant",
+      live_bandage);
+  const std::size_t live_bandage_available = compact_composition.find(
+      "!snapshot.combat->bandage_available", live_bandage_kind);
+  const std::size_t live_bandage_actor = compact_composition.find(
+      "snapshot.combat->acting_combatant!="
+      "bandage_combatant->combatant",
+      live_bandage_available);
+  const std::size_t live_bandage_mapper = compact_composition.find(
+      "legacy_key_message_for_bandage_combatant(", live_bandage_actor);
+  const std::size_t live_bandage_combatant = compact_composition.find(
+      "std::ranges::find(snapshot.combat->combatants,"
+      "bandage_combatant->combatant,",
+      live_bandage_mapper);
+  const std::size_t live_bandage_member = compact_composition.find(
+      "snapshot.party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(bandage_combatant->combatant))",
+      live_bandage_combatant);
+  const std::size_t live_bandage_party_kind = compact_composition.find(
+      "combatant->kind=="
+      "realmz::presentation::CombatantKind::party_member",
+      live_bandage_member);
+  const std::size_t live_bandage_stamina = compact_composition.find(
+      "combatant->stamina.current>0", live_bandage_party_kind);
+  require(composed_bandage_eligibility != std::string::npos &&
+          composed_page != std::string::npos &&
           composed_auto != std::string::npos &&
           composed_auto_available != std::string::npos &&
           composed_range != std::string::npos &&
           composed_range_available != std::string::npos &&
+          composed_bandage != std::string::npos &&
+          composed_bandage_available != std::string::npos &&
           live_controls != std::string::npos &&
           live_page != std::string::npos &&
           live_page_transition != std::string::npos &&
@@ -1809,14 +1946,26 @@ void verify_window_manager_shell_dispatch_freshness(
           live_range_combatant != std::string::npos &&
           live_range_member != std::string::npos &&
           live_range_party_kind != std::string::npos &&
-          live_range_stamina != std::string::npos,
-      "Auto and Range composition must retain their utility-page requests "
-      "and first live actor/membership validation");
-  require(composed_page < composed_auto &&
+          live_range_stamina != std::string::npos &&
+          live_bandage != std::string::npos &&
+          live_bandage_kind != std::string::npos &&
+          live_bandage_available != std::string::npos &&
+          live_bandage_actor != std::string::npos &&
+          live_bandage_mapper != std::string::npos &&
+          live_bandage_combatant != std::string::npos &&
+          live_bandage_member != std::string::npos &&
+          live_bandage_party_kind != std::string::npos &&
+          live_bandage_stamina != std::string::npos,
+      "Auto, Range, and Bandage composition must retain their utility-page "
+      "requests and first live actor/membership validation");
+  require(composed_bandage_eligibility < composed_page &&
+          composed_page < composed_auto &&
           composed_auto < composed_auto_available &&
           composed_auto_available < composed_range &&
           composed_range < composed_range_available &&
-          composed_range_available < live_controls &&
+          composed_range_available < composed_bandage &&
+          composed_bandage < composed_bandage_available &&
+          composed_bandage_available < live_controls &&
           live_controls < live_page && live_page < live_page_transition &&
           live_page_transition < live_auto && live_auto < live_auto_kind &&
           live_auto_kind < live_auto_actor &&
@@ -1832,10 +1981,19 @@ void verify_window_manager_shell_dispatch_freshness(
           live_range_mapper < live_range_combatant &&
           live_range_combatant < live_range_member &&
           live_range_member < live_range_party_kind &&
-          live_range_party_kind < live_range_stamina,
-      "Auto and Range controls must compose with the current combat page and "
-      "validate through the shared transition and live snapshot before "
-      "interaction");
+          live_range_party_kind < live_range_stamina &&
+          live_range_stamina < live_bandage &&
+          live_bandage < live_bandage_kind &&
+          live_bandage_kind < live_bandage_available &&
+          live_bandage_available < live_bandage_actor &&
+          live_bandage_actor < live_bandage_mapper &&
+          live_bandage_mapper < live_bandage_combatant &&
+          live_bandage_combatant < live_bandage_member &&
+          live_bandage_member < live_bandage_party_kind &&
+          live_bandage_party_kind < live_bandage_stamina,
+      "Auto, Range, and Bandage controls must compose with the current combat "
+      "page and validate through the shared transition and live snapshot "
+      "before interaction");
 
   const std::string compact_source = without_whitespace(source);
   const std::size_t eligibility_signature = compact_source.find(
@@ -2184,6 +2342,80 @@ void verify_window_manager_shell_dispatch_freshness(
       "Range route eligibility must require an active matching combat scope "
       "and revalidate its fresh acting party combatant before accepting the "
       "current utility control");
+
+  const std::size_t bandage_route = compact_eligibility.find(
+      "std::get_if<realmz::presentation::BandageCombatantAction>"
+      "(&control.payload)",
+      range_route_accept);
+  const std::size_t bandage_surface_guard = compact_eligibility.find(
+      "if(!surface_matches_context||", bandage_route);
+  const std::size_t bandage_mapper = compact_eligibility.find(
+      "legacy_key_message_for_bandage_combatant(", bandage_surface_guard);
+  const std::size_t bandage_snapshot = compact_eligibility.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      bandage_mapper);
+  const std::size_t bandage_available = compact_eligibility.find(
+      "!snapshot->combat->bandage_available", bandage_snapshot);
+  const std::size_t bandage_acting_actor = compact_eligibility.find(
+      "snapshot->combat->acting_combatant!="
+      "bandage_combatant->combatant",
+      bandage_available);
+  const std::size_t bandage_party_member = compact_eligibility.find(
+      "snapshot->party.member(static_cast<realmz::presentation::"
+      "PartyMemberId>(bandage_combatant->combatant))",
+      bandage_acting_actor);
+  const std::size_t bandage_combatant_view = compact_eligibility.find(
+      "std::ranges::find(snapshot->combat->combatants,"
+      "bandage_combatant->combatant,",
+      bandage_party_member);
+  const std::size_t bandage_membership_rejection = compact_eligibility.find(
+      "if((combatant==snapshot->combat->combatants.end())||!member||",
+      bandage_combatant_view);
+  const std::size_t bandage_party_kind = compact_eligibility.find(
+      "combatant->kind!="
+      "realmz::presentation::CombatantKind::party_member",
+      bandage_membership_rejection);
+  const std::size_t bandage_active = compact_eligibility.find(
+      "!combatant->active", bandage_party_kind);
+  const std::size_t bandage_targetable = compact_eligibility.find(
+      "!combatant->targetable", bandage_active);
+  const std::size_t bandage_stamina = compact_eligibility.find(
+      "combatant->stamina.current<=0", bandage_targetable);
+  const std::size_t bandage_route_accept = compact_eligibility.find(
+      "continue;", bandage_stamina);
+  require(bandage_route != std::string::npos &&
+          bandage_surface_guard != std::string::npos &&
+          bandage_mapper != std::string::npos &&
+          bandage_snapshot != std::string::npos &&
+          bandage_available != std::string::npos &&
+          bandage_acting_actor != std::string::npos &&
+          bandage_party_member != std::string::npos &&
+          bandage_combatant_view != std::string::npos &&
+          bandage_membership_rejection != std::string::npos &&
+          bandage_party_kind != std::string::npos &&
+          bandage_active != std::string::npos &&
+          bandage_targetable != std::string::npos &&
+          bandage_stamina != std::string::npos &&
+          bandage_route_accept != std::string::npos,
+      "fresh Bandage eligibility must retain its mapper, Classic canundo "
+      "copy, acting actor, PartyView, and CombatView validation");
+  require(range_route_accept < bandage_route &&
+          bandage_route < bandage_surface_guard &&
+          bandage_surface_guard < bandage_mapper &&
+          bandage_mapper < bandage_snapshot &&
+          bandage_snapshot < bandage_available &&
+          bandage_available < bandage_acting_actor &&
+          bandage_acting_actor < bandage_party_member &&
+          bandage_party_member < bandage_combatant_view &&
+          bandage_combatant_view < bandage_membership_rejection &&
+          bandage_membership_rejection < bandage_party_kind &&
+          bandage_party_kind < bandage_active &&
+          bandage_active < bandage_targetable &&
+          bandage_targetable < bandage_stamina &&
+          bandage_stamina < bandage_route_accept,
+      "Bandage route eligibility must require an active matching combat scope "
+      "and revalidate canundo plus its fresh acting party combatant before "
+      "accepting the current utility control");
 }
 
 void verify_top_level_loop(
@@ -2264,6 +2496,10 @@ void verify_top_level_loop(
               body, "RealmzConsumeSemanticShowCombatRangeEvent") == 0,
       std::string(function_name) +
           " must leave tagged Range consumption to EventManager");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticBandageCombatantEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged Bandage consumption to EventManager");
   require(count_identifier(body, "RealmzApplyPartyMemberSelection") == 0,
       std::string(function_name) +
           " must leave selection mutation to EventManager's narrow adapter");
@@ -2379,6 +2615,119 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           count_identifier(auto_case_branch, "Rand") == 0,
       "combat Auto key branch must only select the shared Classic command "
       "route");
+  const std::size_t bandage_case = compact_combat.find("case'b':");
+  const std::size_t bandage_next_case = compact_combat.find(
+      "case'r':", bandage_case);
+  const std::size_t bandage_top = compact_combat.find(
+      "buttonrect.top=386+downshift;", bandage_case);
+  const std::size_t bandage_bottom = compact_combat.find(
+      "buttonrect.bottom=buttonrect.top+18;", bandage_top);
+  const std::size_t bandage_left = compact_combat.find(
+      "buttonrect.left=364+leftshift;", bandage_bottom);
+  const std::size_t bandage_right = compact_combat.find(
+      "buttonrect.right=buttonrect.left+60;", bandage_left);
+  const std::size_t bandage_button_down = compact_combat.find(
+      "downbutton(TRUE);", bandage_right);
+  const std::size_t bandage_canundo_rejection = compact_combat.find(
+      "if(!canundo)", bandage_button_down);
+  const std::size_t bandage_warning = compact_combat.find(
+      "warn(84);", bandage_canundo_rejection);
+  const std::size_t bandage_rejected_button_up = compact_combat.find(
+      "upbutton(TRUE);", bandage_warning);
+  const std::size_t bandage_accepted_path = compact_combat.find(
+      "}else{", bandage_rejected_button_up);
+  const std::size_t bandage_prompt = compact_combat.find(
+      "flashmessage((StringPtr)\"Selectcharactertobandage.\","
+      "30,100,-1,10105);",
+      bandage_accepted_path);
+  const std::size_t bandage_screen_port = compact_combat.find(
+      "SetPort(GetWindowPort(screen));", bandage_prompt);
+  const std::size_t bandage_choice = compact_combat.find(
+      "getchoice(0,0,TRUE);", bandage_screen_port);
+  const std::size_t bandage_look_port = compact_combat.find(
+      "SetPort(GetWindowPort(look));", bandage_choice);
+  const std::size_t bandage_clear_prompt = compact_combat.find(
+      "flashmessage((StringPtr)\"\",30,100,-1,0);",
+      bandage_look_port);
+  const std::size_t bandage_restore_screen_port = compact_combat.find(
+      "SetPort(GetWindowPort(screen));", bandage_clear_prompt);
+  const std::size_t bandage_target_loop = compact_combat.find(
+      "for(t=0;t<=charnum;t++){", bandage_restore_screen_port);
+  const std::size_t bandage_selected_target = compact_combat.find(
+      "if(track[t]){", bandage_target_loop);
+  const std::size_t bandage_mutation = compact_combat.find(
+      "c[t].bleeding=FALSE;", bandage_selected_target);
+  const std::size_t bandage_target_redraw = compact_combat.find(
+      "updatepictbox(t,TRUE,0);", bandage_mutation);
+  const std::size_t bandage_turn_advance = compact_combat.find(
+      "getup(FALSE);", bandage_target_redraw);
+  const std::size_t bandage_break = compact_combat.find(
+      "break;", bandage_turn_advance);
+  require(bandage_case != std::string::npos &&
+          bandage_next_case != std::string::npos &&
+          bandage_top != std::string::npos &&
+          bandage_bottom != std::string::npos &&
+          bandage_left != std::string::npos &&
+          bandage_right != std::string::npos &&
+          bandage_button_down != std::string::npos &&
+          bandage_canundo_rejection != std::string::npos &&
+          bandage_warning != std::string::npos &&
+          bandage_rejected_button_up != std::string::npos &&
+          bandage_accepted_path != std::string::npos &&
+          bandage_prompt != std::string::npos &&
+          bandage_screen_port != std::string::npos &&
+          bandage_choice != std::string::npos &&
+          bandage_look_port != std::string::npos &&
+          bandage_clear_prompt != std::string::npos &&
+          bandage_restore_screen_port != std::string::npos &&
+          bandage_target_loop != std::string::npos &&
+          bandage_selected_target != std::string::npos &&
+          bandage_mutation != std::string::npos &&
+          bandage_target_redraw != std::string::npos &&
+          bandage_turn_advance != std::string::npos &&
+          bandage_break != std::string::npos,
+      "combat must retain the exact bounded Classic Bandage button, canundo "
+      "rejection, target selection, mutation, and turn handoff");
+  require(bandage_case < bandage_top && bandage_top < bandage_bottom &&
+          bandage_bottom < bandage_left && bandage_left < bandage_right &&
+          bandage_right < bandage_button_down &&
+          bandage_button_down < bandage_canundo_rejection &&
+          bandage_canundo_rejection < bandage_warning &&
+          bandage_warning < bandage_rejected_button_up &&
+          bandage_rejected_button_up < bandage_accepted_path &&
+          bandage_accepted_path < bandage_prompt &&
+          bandage_prompt < bandage_screen_port &&
+          bandage_screen_port < bandage_choice &&
+          bandage_choice < bandage_look_port &&
+          bandage_look_port < bandage_clear_prompt &&
+          bandage_clear_prompt < bandage_restore_screen_port &&
+          bandage_restore_screen_port < bandage_target_loop &&
+          bandage_target_loop < bandage_selected_target &&
+          bandage_selected_target < bandage_mutation &&
+          bandage_mutation < bandage_target_redraw &&
+          bandage_target_redraw < bandage_turn_advance &&
+          bandage_turn_advance < bandage_break &&
+          bandage_break < bandage_next_case,
+      "combat Bandage must preserve both canundo outcomes and complete its "
+      "accepted raw target/mutation path before the Range case");
+  const std::string bandage_case_branch = compact_combat.substr(
+      bandage_case, bandage_next_case - bandage_case);
+  require(count_identifier(bandage_case_branch, "canundo") == 1 &&
+          count_identifier(bandage_case_branch, "warn") == 1 &&
+          count_identifier(bandage_case_branch, "upbutton") == 1 &&
+          count_identifier(bandage_case_branch, "flashmessage") == 2 &&
+          count_identifier(bandage_case_branch, "SetPort") == 3 &&
+          count_identifier(bandage_case_branch, "getchoice") == 1 &&
+          count_identifier(bandage_case_branch, "bleeding") == 1 &&
+          count_identifier(bandage_case_branch, "updatepictbox") == 1 &&
+          count_identifier(bandage_case_branch, "getup") == 1 &&
+          count_identifier(bandage_case_branch, "WaitNextEvent") == 0 &&
+          count_identifier(bandage_case_branch, "GetNextEvent") == 0 &&
+          count_identifier(
+              bandage_case_branch, "GetNextSemanticGameplayEvent") == 0 &&
+          count_identifier(bandage_case_branch, "Rand") == 0,
+      "combat Bandage must preserve one Classic canundo split and delegate "
+      "selection to getchoice without opening another semantic input route");
   const std::size_t range_case = compact_combat.find("case'r':");
   const std::size_t range_next_case = compact_combat.find(
       "case'd':", range_case);
@@ -3072,6 +3421,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_combat_items_consumer_count = 0;
   std::size_t global_auto_consumer_count = 0;
   std::size_t global_range_consumer_count = 0;
+  std::size_t global_bandage_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
@@ -3118,6 +3468,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticAutoCombatantEvent");
     global_range_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticShowCombatRangeEvent");
+    global_bandage_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticBandageCombatantEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
   }
@@ -3161,14 +3513,24 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic Auto input directly");
   require(global_range_consumer_count == 0,
       "legacy loops must not consume tagged semantic Range input directly");
+  require(global_bandage_consumer_count == 0,
+      "legacy loops must not consume tagged semantic Bandage input directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
 
   const std::string getchoice = function_body(getchoice_source, "getchoice");
+  const std::string compact_getchoice = without_whitespace(getchoice);
   require(count_identifier(getchoice, "WaitNextEvent") == 1,
       "getchoice must retain its nested WaitNextEvent loop");
   require(count_identifier(getchoice, "GetNextEvent") == 0,
       "getchoice must not substitute a top-level GetNextEvent");
+  require(compact_getchoice.contains(
+              "WaitNextEvent(everyEvent,&gTheEvent,0L,0L);"),
+      "getchoice must retain the exact raw Classic WaitNextEvent target poll");
+  require(count_identifier(getchoice, "app1Evt") == 0 &&
+          count_identifier(getchoice, "RealmzIsSemanticGameplayTag") == 0,
+      "getchoice must remain shell-inert and leave inactive-surface tagged "
+      "event filtering to EventManager's raw dequeue path");
   require_no_semantic_scope_or_consumer(getchoice, "getchoice");
 
   const std::string updatemain = function_body(misc, "updatemain");
@@ -3199,6 +3561,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t combat_items_consume_calls = 0;
   std::size_t auto_consume_calls = 0;
   std::size_t range_consume_calls = 0;
+  std::size_t bandage_consume_calls = 0;
   std::vector<fs::path> wrapper_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
@@ -3256,6 +3619,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticAutoCombatantEvent");
     range_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticShowCombatRangeEvent");
+    bandage_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticBandageCombatantEvent");
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -3310,6 +3675,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   require(range_consume_calls == 0,
       "only EventManager may call "
       "RealmzConsumeSemanticShowCombatRangeEvent");
+  require(bandage_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticBandageCombatantEvent");
 }
 
 } // namespace

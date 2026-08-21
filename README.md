@@ -31,14 +31,14 @@ the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
-Previous/Next, Auto, and Range controls each carry the stable active-party
-combatant ID in typed
+Previous/Next, Auto, Range, and Bandage controls each carry the stable
+active-party combatant ID in typed
 `GuardCombatantAction`, `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
 `CycleCombatFocusAction`, `AutoCombatantAction`, and
-`ShowCombatRangeAction` commands. The combat Items control carries both that
-acting ID and the stable selected party-member ID in an
-`OpenCombatItemsAction`. Their combat-only guarded routes late-validate the
+`ShowCombatRangeAction` and `BandageCombatantAction` commands. The combat Items
+control carries both that acting ID and the stable selected party-member ID in
+an `OpenCombatItemsAction`. Their combat-only guarded routes late-validate the
 fresh acting combatant and fail closed before returning the exact preserved
 Classic key record; Items also revalidates that the same member still exists
 and remains selected. Delay is
@@ -48,8 +48,10 @@ returns the exact Classic `c` message `0x00000863`, and Switch Weapon returns
 the exact Classic `w` message `0x00000D77`. Center Previous returns the exact
 Classic `p` message `0x00002370`, while Center Next returns the exact Classic
 `n` message `0x00002D6E`; Combat Items returns the exact Classic `i` message
-`0x00002269`, Auto returns the exact Classic `a` message `0x00000061`, and
-Range returns the exact Classic `r` message `0x00000F72`.
+`0x00002269`, Auto returns the exact Classic `a` message `0x00000061`, Range
+returns the exact Classic `r` message `0x00000F72`, and Bandage—available only
+while Classic's current-turn bandage gate remains open—returns the exact
+Classic `b` message `0x00000B62`.
 The weapon action does not encode a desired set, and focus
 cycling does not encode a destination. The preserved Classic handlers
 remain authoritative for the Guard, Finish, and Delay combat-state mutations
@@ -59,10 +61,11 @@ the complete Items modal—including selection, use, mutation, targeting, and
 any resulting attack, movement, or turn effects. Classic also owns every Auto
 decision, random choice, animation/movement or attack mutation, and turn
 effect. Classic owns Range's overlay drawing, event flush, raw mouse/key
-dismissal wait, recentering, and redraw path after the key handoff. These
-bounded routes are not a camera, range-overlay, combat, modal, automation, RNG,
-turn, or save replay; other combat commands remain inside the interactive
-Classic frame.
+dismissal wait, recentering, and redraw path after the key handoff. Classic also
+owns Bandage's raw party-member picker, abort behavior, bleeding mutation,
+portrait refresh, and turn advance. These bounded routes are not a camera,
+range-overlay, bandage-target, combat, modal, automation, RNG, turn, or save
+replay; other combat commands remain inside the interactive Classic frame.
 The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a

@@ -12,6 +12,7 @@ extern "C" {
 #include "realmz_orig/structs.h"
 
 extern short currentscenario;
+extern short canundo;
 extern short fat;
 extern short incombat;
 extern short monsterturn;
@@ -154,6 +155,7 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
   if (incombat) {
     CombatView combat;
     combat.active = true;
+    combat.bandage_available = canundo != 0;
     combat.round = static_cast<int16_t>(combatround);
     if (!monsterturn && (charup >= 0) && (charup < party_count)) {
       combat.acting_combatant = static_cast<CombatantId>(charup);

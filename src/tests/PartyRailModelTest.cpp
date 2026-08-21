@@ -175,6 +175,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   snapshot.screen = ScreenContext::combat;
   snapshot.combat = CombatView{
       .active = true,
+      .bandage_available = true,
       .round = 4,
       .acting_combatant = 1,
       .combatants = {
@@ -286,6 +287,16 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(combat_range.tab_order == auto_combatant.tab_order + 1);
   CHECK(combat_range.focus_identifier != auto_combatant.focus_identifier);
   CHECK(combat_range.availability_reason->label == "Game rules apply");
+  const auto& bandage =
+      action_with(model, ActionIntent::bandage_combatant);
+  CHECK(bandage.can_invoke());
+  CHECK(bandage.availability == ActionAvailability::deferred_to_engine);
+  CHECK(bandage.command == "action.combat.bandage");
+  CHECK(bandage.label == "Bandage");
+  CHECK(bandage.combatant == guard.combatant);
+  CHECK(bandage.tab_order == combat_range.tab_order + 1);
+  CHECK(bandage.focus_identifier != combat_range.focus_identifier);
+  CHECK(bandage.availability_reason->label == "Game rules apply");
   CHECK(model.combat_action_page == CombatActionPage::primary);
 
   const auto secondary_page_model = build_presentation_shell_model(
@@ -304,6 +315,17 @@ void test_combat_actions_track_the_active_party_combatant() {
       });
   CHECK(utility_page_model.combat_action_page ==
       CombatActionPage::utility);
+
+  snapshot.combat->bandage_available = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& unavailable_bandage =
+      action_with(model, ActionIntent::bandage_combatant);
+  CHECK(!unavailable_bandage.can_invoke());
+  CHECK(unavailable_bandage.availability == ActionAvailability::unavailable);
+  CHECK(unavailable_bandage.combatant == 1);
+  CHECK(unavailable_bandage.availability_reason->label ==
+      "Bandage is unavailable now");
+  snapshot.combat->bandage_available = true;
 
   snapshot.party.members[0].movement =
       snapshot.party.members[0].movement_maximum;
@@ -343,6 +365,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::show_combat_range);
   CHECK(range_before_movement.can_invoke());
   CHECK(range_before_movement.combatant == available_delay.combatant);
+  const auto& bandage_before_movement =
+      action_with(model, ActionIntent::bandage_combatant);
+  CHECK(bandage_before_movement.can_invoke());
+  CHECK(bandage_before_movement.combatant == available_delay.combatant);
 
   snapshot.party.members.erase(snapshot.party.members.begin());
   model = build_presentation_shell_model(snapshot);
@@ -382,6 +408,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(model, ActionIntent::show_combat_range);
   CHECK(unmatched_range.can_invoke());
   CHECK(unmatched_range.combatant == unmatched_delay.combatant);
+  const auto& unmatched_bandage =
+      action_with(model, ActionIntent::bandage_combatant);
+  CHECK(unmatched_bandage.can_invoke());
+  CHECK(unmatched_bandage.combatant == unmatched_delay.combatant);
   snapshot.party = sample_snapshot().party;
 
   auto no_selection = snapshot;
@@ -407,6 +437,10 @@ void test_combat_actions_track_the_active_party_combatant() {
       action_with(no_selection_model, ActionIntent::show_combat_range);
   CHECK(range_without_selection.can_invoke());
   CHECK(range_without_selection.combatant == 1);
+  const auto& bandage_without_selection =
+      action_with(no_selection_model, ActionIntent::bandage_combatant);
+  CHECK(bandage_without_selection.can_invoke());
+  CHECK(bandage_without_selection.combatant == 1);
 
   const auto check_combat_actions_unavailable = [&snapshot]() {
     const auto unavailable = build_presentation_shell_model(snapshot);
@@ -421,6 +455,7 @@ void test_combat_actions_track_the_active_party_combatant() {
              ActionIntent::combat_items,
              ActionIntent::auto_combatant,
              ActionIntent::show_combat_range,
+             ActionIntent::bandage_combatant,
          }) {
       const auto& combat_action = action_with(unavailable, intent);
       CHECK(!combat_action.can_invoke());

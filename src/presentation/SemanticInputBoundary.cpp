@@ -64,6 +64,10 @@ constexpr uint32_t kSemanticShowCombatRangeSignature = 0x52520000U;
 constexpr uint32_t kSemanticShowCombatRangeMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticShowCombatRangeSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticShowCombatRangeIdMask = 0x000000FFU;
+constexpr uint32_t kSemanticBandageCombatantSignature = 0x52480000U;
+constexpr uint32_t kSemanticBandageCombatantMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticBandageCombatantSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticBandageCombatantIdMask = 0x000000FFU;
 constexpr uint32_t kSemanticFinishCombatantSignature = 0x52460000U;
 constexpr uint32_t kSemanticFinishCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticFinishCombatantSurfaceMask = 0x0000FF00U;
@@ -148,6 +152,11 @@ struct DecodedAutoCombatant {
 };
 
 struct DecodedShowCombatRange {
+  realmz::presentation::CombatantId combatant;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedBandageCombatant {
   realmz::presentation::CombatantId combatant;
   RealmzSemanticInputSurface surface;
 };
@@ -445,6 +454,24 @@ std::optional<DecodedShowCombatRange> decode_show_combat_range(
   };
 }
 
+std::optional<DecodedBandageCombatant> decode_bandage_combatant(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticBandageCombatantMask) !=
+      kSemanticBandageCombatantSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticBandageCombatantSurfaceMask) >> 8U;
+  if (surface_value != REALMZ_SEMANTIC_INPUT_COMBAT) {
+    return std::nullopt;
+  }
+  return DecodedBandageCombatant{
+      .combatant = static_cast<realmz::presentation::CombatantId>(
+          tagged_message & kSemanticBandageCombatantIdMask),
+      .surface = surface_value,
+  };
+}
+
 bool authorize_completed_scope(
     RealmzSemanticInputSurface expected_surface) noexcept {
   const bool completed_expected_scope =
@@ -486,6 +513,12 @@ bool has_full_movement(
   const auto* member = snapshot.party.member(
       static_cast<realmz::presentation::PartyMemberId>(combatant));
   return member && (member->movement == member->movement_maximum);
+}
+
+bool is_bandage_available(
+    const realmz::presentation::GameSnapshot& snapshot,
+    realmz::presentation::CombatantId) noexcept {
+  return snapshot.combat && snapshot.combat->bandage_available;
 }
 
 template <typename DecodedCombatant, typename MessageMapper>
@@ -754,6 +787,18 @@ uint32_t semantic_show_combat_range_tag(
       static_cast<uint32_t>(combatant);
 }
 
+uint32_t semantic_bandage_combatant_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept {
+  if ((surface != REALMZ_SEMANTIC_INPUT_COMBAT) ||
+      (combatant < 0) || (combatant > 0xFF)) {
+    return 0;
+  }
+  return kSemanticBandageCombatantSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(combatant);
+}
+
 } // namespace realmz::presentation
 
 extern "C" void RealmzBeginSemanticInputSurface(
@@ -973,6 +1018,17 @@ RealmzSemanticShowCombatRangeTagSurface(uint32_t tagged_message) {
   return show_range ? show_range->surface : REALMZ_SEMANTIC_INPUT_NONE;
 }
 
+extern "C" uint8_t RealmzIsSemanticBandageCombatantTag(
+    uint32_t tagged_message) {
+  return decode_bandage_combatant(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticBandageCombatantTagSurface(uint32_t tagged_message) {
+  const auto bandage = decode_bandage_combatant(tagged_message);
+  return bandage ? bandage->surface : REALMZ_SEMANTIC_INPUT_NONE;
+}
+
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
@@ -989,7 +1045,8 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_cycle_combat_focus(tagged_message) ||
           decode_open_combat_items(tagged_message) ||
           decode_auto_combatant(tagged_message) ||
-          decode_show_combat_range(tagged_message))
+          decode_show_combat_range(tagged_message) ||
+          decode_bandage_combatant(tagged_message))
       ? 1
       : 0;
 }
@@ -1040,6 +1097,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto show_range = decode_show_combat_range(tagged_message)) {
     return show_range->surface;
+  }
+  if (const auto bandage = decode_bandage_combatant(tagged_message)) {
+    return bandage->surface;
   }
   return REALMZ_SEMANTIC_INPUT_NONE;
 }
@@ -1420,4 +1480,16 @@ extern "C" uint8_t RealmzConsumeSemanticShowCombatRangeEvent(
       decode_show_combat_range(tagged_message),
       classic_key_message,
       realmz::presentation::legacy_key_message_for_show_combat_range);
+}
+
+extern "C" uint8_t RealmzConsumeSemanticBandageCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  return consume_semantic_combatant_event(
+      expected_surface,
+      decode_bandage_combatant(tagged_message),
+      classic_key_message,
+      realmz::presentation::legacy_key_message_for_bandage_combatant,
+      is_bandage_available);
 }

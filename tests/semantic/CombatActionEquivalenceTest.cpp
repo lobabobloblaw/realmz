@@ -51,6 +51,7 @@ enum class CombatCommand {
   next,
   auto_combatant,
   show_combat_range,
+  bandage_combatant,
   items,
 };
 
@@ -121,6 +122,12 @@ constexpr std::array kCombatCases{
         .expected_semantic_tag = 0x52520302U,
     },
     CombatCase{
+        .command = CombatCommand::bandage_combatant,
+        .label = "Bandage",
+        .expected_classic_message = 0x00000B62U,
+        .expected_semantic_tag = 0x52480302U,
+    },
+    CombatCase{
         .command = CombatCommand::items,
         .label = "Combat Items",
         .expected_classic_message = 0x00002269U,
@@ -158,6 +165,7 @@ enum class StateByte : std::size_t {
   snapshot_is_combat,
   combat_present,
   combat_active,
+  bandage_available,
   acting_combatant,
   actor_party_member_present,
   actor_combatant_present,
@@ -202,6 +210,7 @@ void reset_fixture_state() {
   set_state(StateByte::snapshot_is_combat, 1);
   set_state(StateByte::combat_present, 1);
   set_state(StateByte::combat_active, 1);
+  set_state(StateByte::bandage_available, 1);
   set_state(
       StateByte::acting_combatant,
       static_cast<uint8_t>(kActingCombatant));
@@ -269,6 +278,7 @@ void reset_fixture_state() {
   if (state(StateByte::combat_present) != 0) {
     CombatView combat{
         .active = state(StateByte::combat_active) != 0,
+        .bandage_available = state(StateByte::bandage_available) != 0,
         .round = 3,
         .acting_combatant =
             static_cast<CombatantId>(state(StateByte::acting_combatant)),
@@ -319,6 +329,9 @@ void reset_fixture_state() {
           kActingCombatant, kRuntimeContext);
     case CombatCommand::show_combat_range:
       return legacy_key_message_for_show_combat_range(
+          kActingCombatant, kRuntimeContext);
+    case CombatCommand::bandage_combatant:
+      return legacy_key_message_for_bandage_combatant(
           kActingCombatant, kRuntimeContext);
     case CombatCommand::items:
       if (!action_case.selected_member) {
@@ -374,6 +387,8 @@ void reset_fixture_state() {
       return AutoCombatantAction{kActingCombatant};
     case CombatCommand::show_combat_range:
       return ShowCombatRangeAction{kActingCombatant};
+    case CombatCommand::bandage_combatant:
+      return BandageCombatantAction{kActingCombatant};
     case CombatCommand::items:
       if (!action_case.selected_member) {
         throw std::logic_error("Combat Items case has no selected member");
@@ -570,6 +585,23 @@ void append_trace(
             tag);
         return tag != 0;
       },
+      .bandage_combatant = [&traces](
+          CombatantId actor,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& context) {
+        const uint32_t tag = semantic_bandage_combatant_tag(
+            actor, REALMZ_SEMANTIC_INPUT_COMBAT);
+        append_trace(
+            traces,
+            CombatCommand::bandage_combatant,
+            actor,
+            std::nullopt,
+            std::nullopt,
+            message,
+            context,
+            tag);
+        return tag != 0;
+      },
   };
 
   return RuntimeLegacyCommandBridge(
@@ -642,6 +674,11 @@ void append_trace(
                  &classic_message) != 0;
     case CombatCommand::show_combat_range:
       return RealmzConsumeSemanticShowCombatRangeEvent(
+                 REALMZ_SEMANTIC_INPUT_COMBAT,
+                 tag,
+                 &classic_message) != 0;
+    case CombatCommand::bandage_combatant:
+      return RealmzConsumeSemanticBandageCombatantEvent(
                  REALMZ_SEMANTIC_INPUT_COMBAT,
                  tag,
                  &classic_message) != 0;
@@ -820,7 +857,7 @@ void test_combat_items_stops_at_modal_request_handoff() {
 
 void test_combat_range_stops_at_classic_modal_handoff() {
   const CombatCase& show_range =
-      kCombatCases[kCombatCases.size() - 2];
+      kCombatCases[kCombatCases.size() - 3];
   CHECK(show_range.command == CombatCommand::show_combat_range);
 
   reset_fixture_state();
@@ -837,6 +874,45 @@ void test_combat_range_stops_at_classic_modal_handoff() {
   // The fixture ends at the preserved lowercase "r" request. Classic owns
   // drawing, the raw dismissal wait, recentering, and later input; none of
   // those modal effects are simulated by this pre-Classic state image.
+}
+
+void test_bandage_stops_at_classic_target_picker_handoff() {
+  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 2];
+  CHECK(bandage.command == CombatCommand::bandage_combatant);
+
+  reset_fixture_state();
+  const PreClassicStateBytes initial_state = pre_classic_state;
+  const QueuedSemanticTrace queued = dispatch_semantic_action(bandage, 500);
+
+  complete_combat_input_scope();
+  uint32_t output = kUnchangedClassicMessage;
+  CHECK(consume_semantic_request(
+      CombatCommand::bandage_combatant, queued.semantic_tag, output));
+  CHECK(output == 0x00000B62U);
+  CHECK(pre_classic_state == initial_state);
+
+  // The fixture ends at the preserved lowercase "b" request. Classic owns
+  // canundo enforcement, target selection, bleeding mutation, feedback, and
+  // turn handling; none of those effects are simulated here.
+}
+
+void test_bandage_unavailable_rejection_is_single_use() {
+  const CombatCase& bandage = kCombatCases[kCombatCases.size() - 2];
+  reset_fixture_state();
+  const QueuedSemanticTrace queued = dispatch_semantic_action(bandage, 600);
+
+  set_state(StateByte::bandage_available, 0);
+  const PreClassicStateBytes unavailable_state = pre_classic_state;
+  complete_combat_input_scope();
+  uint32_t output = kUnchangedClassicMessage;
+  CHECK(!consume_semantic_request(
+      CombatCommand::bandage_combatant, queued.semantic_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(pre_classic_state == unavailable_state);
+
+  set_state(StateByte::bandage_available, 1);
+  check_second_consume_is_unauthorized(
+      bandage, queued.semantic_tag, pre_classic_state, 1, 1);
 }
 
 } // namespace
@@ -863,6 +939,8 @@ int main() {
     test_combat_items_stale_selected_member_is_single_use();
     test_combat_items_stops_at_modal_request_handoff();
     test_combat_range_stops_at_classic_modal_handoff();
+    test_bandage_stops_at_classic_target_picker_handoff();
+    test_bandage_unavailable_rejection_is_single_use();
     RealmzInvalidateSemanticInputBoundary();
     std::cout << "CombatActionEquivalenceTest passed ("
               << checks_run << " checks)\n";

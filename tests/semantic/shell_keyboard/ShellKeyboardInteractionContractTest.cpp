@@ -88,6 +88,9 @@ private:
     handlers.show_combat_range = [](const ShowCombatRangeAction&) {
       return DispatchResult::handled();
     };
+    handlers.bandage_combatant = [](const BandageCombatantAction&) {
+      return DispatchResult::handled();
+    };
     return handlers;
   }
 
@@ -1074,10 +1077,22 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = ShowCombatRangeAction{2},
   };
+  const ShellControlPlacement bandage{
+      .region = ShellRegionId{1116},
+      .kind = ShellControlKind::bandage_combatant,
+      .bounds = {356.0, 72.0, 160.0, 48.0},
+      .label = "BANDAGE",
+      .accessibility_label = "Choose a party member to bandage",
+      .focus_identifier = "focus.action.combat.bandage",
+      .tab_order = 1116,
+      .enabled = true,
+      .payload = BandageCombatantAction{2},
+  };
   const std::vector primary{guard, finish, delay, center, more};
   const std::vector secondary{
       back, weapon, previous, next, items, utility_more};
-  const std::vector utility{utility_back, auto_combatant, combat_range};
+  const std::vector utility{
+      utility_back, auto_combatant, combat_range, bandage};
 
   // Insertion order cannot disturb the primary combat traversal order.
   CHECK(!harness.recompose({more, center, delay, finish, guard}));
@@ -1331,10 +1346,12 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(is_valid_combat_action_page_transition(
       CombatActionPage::secondary, utility_page));
   CHECK(bridge.actions().size() == 4U);
-  CHECK(harness.recompose({combat_range, auto_combatant, utility_back}));
+  CHECK(harness.recompose(
+      {bandage, combat_range, auto_combatant, utility_back}));
   CHECK(!harness.keyboard().focused_identifier());
 
-  // Utility traversal is BACK, AUTO, RANGE regardless of insertion order.
+  // Utility traversal is BACK, AUTO, RANGE, BANDAGE regardless of insertion
+  // order.
   for (const auto& expected : utility) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
@@ -1523,6 +1540,89 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!range_route_release.shell.invoked_control);
   CHECK(!range_route_release.dispatch);
   CHECK(bridge.actions().size() == 6U);
+
+  // Bandage dispatches once with its stable acting-combatant identity. Target
+  // choice remains inside the preserved Classic flow.
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(bandage.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    const auto repeated = harness.handle(key_down(
+        ShellKeyboardKey::space, kSpaceToken, false, true));
+    CHECK(repeated.shell.consumed);
+    CHECK(!repeated.shell.invoked_control);
+    CHECK(!repeated.dispatch);
+  }
+  const auto bandage_release = harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken));
+  CHECK(bandage_release.shell.consumed);
+  CHECK(bandage_release.shell.invoked_control.has_value());
+  CHECK(bandage_release.shell.invoked_control->kind ==
+      ShellControlKind::bandage_combatant);
+  CHECK(bandage_release.dispatch.has_value());
+  CHECK(bandage_release.dispatch->status == DispatchStatus::handled);
+  CHECK(bridge.actions().size() == 7U);
+  CHECK(std::get<BandageCombatantAction>(
+      bridge.actions()[6].payload).combatant == 2);
+  CHECK(!harness.handle(
+      key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
+  CHECK(bridge.actions().size() == 7U);
+
+  // Actor, enabled state, page, and route changes cancel a held Bandage
+  // activation while the physical release remains owned.
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.keyboard().focused_identifier() == bandage.focus_identifier);
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[3].payload = BandageCombatantAction{3};
+  CHECK(harness.recompose(std::move(changed)));
+  const auto stale_bandage_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(stale_bandage_release.shell.consumed);
+  CHECK(!stale_bandage_release.shell.invoked_control);
+  CHECK(!stale_bandage_release.dispatch);
+  CHECK(bridge.actions().size() == 7U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(bandage.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  changed = utility;
+  changed[3].enabled = false;
+  CHECK(harness.recompose(std::move(changed)));
+  const auto disabled_bandage_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(disabled_bandage_release.shell.consumed);
+  CHECK(!disabled_bandage_release.shell.invoked_control);
+  CHECK(!disabled_bandage_release.dispatch);
+  CHECK(bridge.actions().size() == 7U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(bandage.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.recompose(secondary));
+  const auto bandage_page_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(bandage_page_release.shell.consumed);
+  CHECK(!bandage_page_release.shell.invoked_control);
+  CHECK(!bandage_page_release.dispatch);
+  CHECK(bridge.actions().size() == 7U);
+
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.focus(bandage.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  CHECK(harness.set_route_enabled(false));
+  CHECK(!harness.set_route_enabled(true));
+  const auto bandage_route_release = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken));
+  CHECK(bandage_route_release.shell.consumed);
+  CHECK(!bandage_route_release.shell.invoked_control);
+  CHECK(!bandage_route_release.dispatch);
+  CHECK(bridge.actions().size() == 7U);
 }
 
 using DescriptorMutation =

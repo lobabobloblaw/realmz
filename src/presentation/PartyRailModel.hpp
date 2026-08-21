@@ -115,6 +115,7 @@ enum class ActionIntent {
   combat_items,
   auto_combatant,
   show_combat_range,
+  bandage_combatant,
   cancel,
   encounter_choice,
 };

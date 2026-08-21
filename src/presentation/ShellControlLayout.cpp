@@ -28,6 +28,7 @@ constexpr uint32_t kOpenCombatItemsRegion = 1112U;
 constexpr uint32_t kCombatUtilityPageRegion = 1113U;
 constexpr uint32_t kAutoCombatantRegion = 1114U;
 constexpr uint32_t kShowCombatRangeRegion = 1115U;
+constexpr uint32_t kBandageCombatantRegion = 1116U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -123,6 +124,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(*request.auto_combatant);
   const bool valid_show_combat_range = request.show_combat_range_combatant &&
       valid_combatant(*request.show_combat_range_combatant);
+  const bool valid_bandage_combatant = request.bandage_combatant &&
+      valid_combatant(*request.bandage_combatant);
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -134,6 +137,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       combat_items_combatant,
       request.auto_combatant,
       request.show_combat_range_combatant,
+      request.bandage_combatant,
   };
   std::optional<CombatantId> common_combatant;
   bool invalid_combatant = false;
@@ -164,7 +168,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.combat_items ? 1U : 0U);
   const size_t utility_combat_control_count =
       (request.auto_combatant ? 1U : 0U) +
-      (request.show_combat_range_combatant ? 1U : 0U);
+      (request.show_combat_range_combatant ? 1U : 0U) +
+      (request.bandage_combatant ? 1U : 0U);
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
@@ -172,7 +177,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const bool has_valid_secondary_action = valid_switch_weapon ||
       valid_center_previous || valid_center_next || valid_combat_items;
   const bool has_valid_utility_action =
-      valid_auto_combatant || valid_show_combat_range;
+      valid_auto_combatant || valid_show_combat_range ||
+      valid_bandage_combatant;
   const size_t combat_page_control_count = primary_combat_page
       ? ((has_valid_secondary_action || has_valid_utility_action) ? 1U : 0U)
       : (secondary_combat_page
@@ -203,7 +209,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.combat_items_available || request.auto_combatant ||
       request.auto_combatant_available ||
       request.show_combat_range_combatant ||
-      request.show_combat_range_available || secondary_combat_page ||
+      request.show_combat_range_available || request.bandage_combatant ||
+      request.bandage_combatant_available || secondary_combat_page ||
       utility_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
@@ -225,7 +232,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.combat_items && !valid_combat_items) ||
       (request.combat_items_available && !valid_combat_items) ||
       (request.auto_combatant_available && !valid_auto_combatant) ||
-      (request.show_combat_range_available && !valid_show_combat_range)) {
+      (request.show_combat_range_available && !valid_show_combat_range) ||
+      (request.bandage_combatant_available && !valid_bandage_combatant)) {
     return {};
   }
 
@@ -420,6 +428,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .enabled = request.show_combat_range_available,
           .payload = ShowCombatRangeAction{
               *request.show_combat_range_combatant},
+      });
+      x += button_width + gap;
+    }
+    if (request.bandage_combatant) {
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{kBandageCombatantRegion},
+          .kind = ShellControlKind::bandage_combatant,
+          .bounds = {x, y, button_width, button_height},
+          .label = "BANDAGE",
+          .accessibility_label = "Choose a party member to bandage",
+          .focus_identifier = "focus.action.combat.bandage",
+          .tab_order = 1116,
+          .enabled = request.bandage_combatant_available,
+          .payload = BandageCombatantAction{*request.bandage_combatant},
       });
     }
     return result;

@@ -12,6 +12,7 @@ short currentscenario = 0;
 short fat = 0;
 short incombat = 0;
 short monsterturn = 0;
+short canundo = 0;
 short nummon = 0;
 int32_t partyx = 0;
 int32_t partyy = 0;
@@ -60,6 +61,7 @@ void reset_legacy_state() {
   fat = 0;
   incombat = 0;
   monsterturn = 0;
+  canundo = 0;
   nummon = 0;
   partyx = partyy = landlevel = dunglevel = 0;
   std::memset(moneypool, 0, sizeof(moneypool));
@@ -168,6 +170,7 @@ void test_combat_capture() {
   reset_legacy_state();
   seed_party();
   incombat = 1;
+  canundo = 1;
   combatround = 5;
   charup = 0;
   monsterup = 1;
@@ -193,6 +196,7 @@ void test_combat_capture() {
   CHECK(snapshot.screen == ScreenContext::combat);
   CHECK(snapshot.combat.has_value());
   CHECK(snapshot.combat->round == 5);
+  CHECK(snapshot.combat->bandage_available);
   CHECK(snapshot.combat->acting_combatant == 0);
   CHECK(snapshot.combat->combatants.size() == 4);
   CHECK(snapshot.combat->combatants[0].active);
@@ -201,6 +205,10 @@ void test_combat_capture() {
   CHECK(snapshot.combat->combatants[3].kind == CombatantKind::ally);
   CHECK(snapshot.combat->combatants[3].name == "Guard");
   CHECK(snapshot.combat->combatants[3].cell_x == 10);
+
+  canundo = 0;
+  snapshot = source.capture();
+  CHECK(!snapshot.combat->bandage_available);
 
   monsterturn = 1;
   snapshot = source.capture();

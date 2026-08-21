@@ -120,6 +120,12 @@ uint8_t RealmzIsSemanticShowCombatRangeTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticShowCombatRangeTagSurface(
     uint32_t tagged_message);
 
+// Bandage tags carry only the acting combatant. Classic remains authoritative
+// for target selection and all resulting combat-state mutation.
+uint8_t RealmzIsSemanticBandageCombatantTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticBandageCombatantTagSurface(
+    uint32_t tagged_message);
+
 // EventManager uses these generic predicates to keep every tagged gameplay
 // command out of nested Classic loops without interpreting its payload.
 uint8_t RealmzIsSemanticGameplayTag(uint32_t tagged_message);
@@ -243,6 +249,14 @@ uint8_t RealmzConsumeSemanticShowCombatRangeEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the live acting party combatant and Classic's canundo Bandage
+// gate, then returns the preserved lowercase "b" key record. Classic owns the
+// target picker, selection state, feedback, mutations, and turn handling.
+uint8_t RealmzConsumeSemanticBandageCombatantEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -310,6 +324,10 @@ enum class CombatFocusDirection;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_show_combat_range_tag(
+    CombatantId combatant,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_bandage_combatant_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept;
 

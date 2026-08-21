@@ -30,6 +30,7 @@ extern "C" {
 CGrafPtr look = nullptr;
 CGrafPtr gWindow = nullptr;
 short currentscenario = 0;
+short canundo = 0;
 short fat = 0;
 short incombat = 0;
 short monsterturn = 0;
@@ -93,7 +94,7 @@ struct CombatCase {
   uint32_t classic_message = 0;
 };
 
-std::array<CombatCase, 10> combat_cases() {
+std::array<CombatCase, 11> combat_cases() {
   return {
       CombatCase{
           .tag = semantic_guard_combatant_tag(
@@ -159,6 +160,12 @@ std::array<CombatCase, 10> combat_cases() {
           .consume = RealmzConsumeSemanticShowCombatRangeEvent,
           .classic_message = 0x00000F72U,
       },
+      CombatCase{
+          .tag = semantic_bandage_combatant_tag(
+              1, REALMZ_SEMANTIC_INPUT_COMBAT),
+          .consume = RealmzConsumeSemanticBandageCombatantEvent,
+          .classic_message = 0x00000B62U,
+      },
   };
 }
 
@@ -168,6 +175,7 @@ void reset_legacy_globals() {
   gWindow = nullptr;
   front_window = nullptr;
   currentscenario = 0;
+  canundo = 0;
   fat = 0;
   incombat = 0;
   monsterturn = 0;
@@ -204,6 +212,7 @@ void seed_active_party_combatant() {
   gWindow = look;
   front_window = look;
   incombat = 1;
+  canundo = 1;
   charnum = 1;
   charselectnew = 1;
   charup = 1;
@@ -247,6 +256,26 @@ void test_moved_combatant_delay_is_rejected() {
   c[1].movement = 8;
   uint32_t output = kUnchangedMessage;
   CHECK(RealmzConsumeSemanticDelayCombatantEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+}
+
+void test_bandage_without_classic_canundo_is_rejected() {
+  seed_active_party_combatant();
+  const uint32_t tag = semantic_bandage_combatant_tag(
+      1, REALMZ_SEMANTIC_INPUT_COMBAT);
+  CHECK(tag != 0);
+  complete_combat_scope();
+
+  canundo = 0;
+  uint32_t output = kUnchangedMessage;
+  CHECK(RealmzConsumeSemanticBandageCombatantEvent(
+      REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
+  CHECK(output == kUnchangedMessage);
+
+  // Re-enabling canundo cannot reuse the consumed top-level authorization.
+  canundo = 1;
+  CHECK(RealmzConsumeSemanticBandageCombatantEvent(
       REALMZ_SEMANTIC_INPUT_COMBAT, tag, &output) == 0);
   CHECK(output == kUnchangedMessage);
 }
@@ -297,6 +326,7 @@ int main() {
   try {
     test_exact_combat_action_messages();
     test_moved_combatant_delay_is_rejected();
+    test_bandage_without_classic_canundo_is_rejected();
     test_stale_acting_combatant_is_rejected();
     test_non_gameplay_front_window_is_rejected();
     test_stale_selected_member_is_rejected();

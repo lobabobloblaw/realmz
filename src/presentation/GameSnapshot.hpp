@@ -147,6 +147,9 @@ struct CombatantView {
 
 struct CombatView {
   bool active = false;
+  // Value-only copy of Classic's canundo gate, which also controls whether
+  // the current acting party member may enter the Bandage target picker.
+  bool bandage_available = false;
   int16_t round = 0;
   size_t visible_columns = 0;
   size_t visible_rows = 0;

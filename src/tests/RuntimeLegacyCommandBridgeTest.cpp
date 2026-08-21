@@ -45,6 +45,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     RuntimeLegacyAutoCombatantSink,
     RuntimeLegacyShowCombatRangeSink>);
+static_assert(std::is_same_v<
+    RuntimeLegacyShowCombatRangeSink,
+    RuntimeLegacyBandageCombatantSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -87,6 +90,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::show_combat_range),
     std::optional<RuntimeLegacyShowCombatRangeSink>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCombatActionSinks::bandage_combatant),
+    std::optional<RuntimeLegacyBandageCombatantSink>>);
 static_assert(std::numeric_limits<PartyMemberId>::min() == 0);
 static_assert(std::numeric_limits<PartyMemberId>::max() == 0xFF);
 
@@ -1438,6 +1444,7 @@ void test_named_combat_mapping_and_dispatch() {
   int open_combat_items_calls = 0;
   int auto_combatant_calls = 0;
   int show_combat_range_calls = 0;
+  int bandage_combatant_calls = 0;
   bool accept_center = true;
   bool accept_switch_weapon = true;
   CombatantId received_guard_combatant = -1;
@@ -1449,6 +1456,7 @@ void test_named_combat_mapping_and_dispatch() {
   CombatantId received_items_combatant = -1;
   CombatantId received_auto_combatant = -1;
   CombatantId received_range_combatant = -1;
+  CombatantId received_bandage_combatant = -1;
   PartyMemberId received_items_member = 0;
   uint32_t received_guard_message = 0;
   uint32_t received_finish_message = 0;
@@ -1459,6 +1467,7 @@ void test_named_combat_mapping_and_dispatch() {
   uint32_t received_items_message = 0;
   uint32_t received_auto_message = 0;
   uint32_t received_range_message = 0;
+  uint32_t received_bandage_message = 0;
   CombatFocusDirection received_cycle_focus_direction =
       CombatFocusDirection::next;
 
@@ -1568,6 +1577,17 @@ void test_named_combat_mapping_and_dispatch() {
         CHECK(captured_context == context);
         return true;
       };
+  RuntimeLegacyBandageCombatantSink bandage_combatant_sink =
+      [&bandage_combatant_calls, &received_bandage_combatant,
+          &received_bandage_message, &context](CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++bandage_combatant_calls;
+        received_bandage_combatant = combatant;
+        received_bandage_message = message;
+        CHECK(captured_context == context);
+        return true;
+      };
 
   const RuntimeLegacyMovementSink movement_sink =
       [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
@@ -1610,6 +1630,7 @@ void test_named_combat_mapping_and_dispatch() {
           .open_combat_items = open_combat_items_sink,
           .auto_combatant = auto_combatant_sink,
           .show_combat_range = show_combat_range_sink,
+          .bandage_combatant = bandage_combatant_sink,
       });
 
   CHECK(bridge.dispatch(UIAction{
@@ -1758,6 +1779,24 @@ void test_named_combat_mapping_and_dispatch() {
   CHECK(show_combat_range_calls == 1);
   CHECK(received_range_combatant == 15);
   CHECK(received_range_message == 0x00000F72U);
+  CHECK(bandage_combatant_calls == 0);
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 370,
+      .payload = BandageCombatantAction{16},
+  }).status == DispatchStatus::handled);
+  CHECK(guard_calls == 1);
+  CHECK(finish_calls == 1);
+  CHECK(delay_calls == 1);
+  CHECK(center_calls == 1);
+  CHECK(switch_weapon_calls == 1);
+  CHECK(cycle_focus_calls == 2);
+  CHECK(open_combat_items_calls == 1);
+  CHECK(auto_combatant_calls == 1);
+  CHECK(show_combat_range_calls == 1);
+  CHECK(bandage_combatant_calls == 1);
+  CHECK(received_bandage_combatant == 16);
+  CHECK(received_bandage_message == 0x00000B62U);
 
   for (const auto world : {
            WorldPresentation::none,
@@ -3256,6 +3295,245 @@ void test_show_combat_range_mapping_and_dispatch() {
   CHECK(sink_thrown.detail.find("range sink failure") != std::string::npos);
 }
 
+void test_bandage_combatant_mapping_and_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+  };
+  int bandage_calls = 0;
+  bool accept_bandage = true;
+  CombatantId received_combatant = -1;
+  uint32_t received_message = 0;
+  const RuntimeLegacyBandageCombatantSink bandage_sink =
+      [&bandage_calls, &accept_bandage, &received_combatant,
+          &received_message, &context](CombatantId combatant,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++bandage_calls;
+        received_combatant = combatant;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept_bandage;
+      };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+  const RuntimeLegacyOpenInventorySink inventory_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSpellbookSink spellbook_sink =
+      [](PartyMemberId, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenSaveGameSink save_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyOpenLoadGameSink load_sink =
+      [](RuntimeLegacyMenuCommand, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  RuntimeLegacyCommandBridge bridge(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .bandage_combatant = bandage_sink,
+      });
+
+  for (const auto world : {
+           WorldPresentation::none,
+           WorldPresentation::outdoor,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.world_presentation = world;
+    CHECK(legacy_key_message_for_bandage_combatant(0, context) ==
+        0x00000B62U);
+    CHECK(legacy_key_message_for_bandage_combatant(255, context) ==
+        0x00000B62U);
+  }
+  context.world_presentation = WorldPresentation::none;
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 431,
+      .payload = BandageCombatantAction{9},
+  }).status == DispatchStatus::handled);
+  CHECK(bandage_calls == 1);
+  CHECK(received_combatant == 9);
+  CHECK(received_message == 0x00000B62U);
+
+  for (const CombatantId boundary : {0, 255}) {
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 432,
+        .payload = BandageCombatantAction{boundary},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(bandage_calls == 3);
+  CHECK(received_combatant == 255);
+  CHECK(received_message == 0x00000B62U);
+
+  constexpr std::array non_combat_screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : non_combat_screens) {
+    context.screen = screen;
+    CHECK(!legacy_key_message_for_bandage_combatant(9, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 433,
+        .payload = BandageCombatantAction{9},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(bandage_calls == 3);
+
+  context.screen = ScreenContext::combat;
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_bandage_combatant(9, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 434,
+      .payload = BandageCombatantAction{9},
+  }).status == DispatchStatus::rejected);
+  CHECK(bandage_calls == 3);
+
+  context.adaptive_eligible = true;
+  for (const CombatantId invalid : {
+           std::numeric_limits<CombatantId>::min(),
+           CombatantId{-1},
+           CombatantId{256},
+           std::numeric_limits<CombatantId>::max(),
+       }) {
+    CHECK(!legacy_key_message_for_bandage_combatant(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = 435,
+        .payload = BandageCombatantAction{invalid},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(bandage_calls == 3);
+
+  accept_bandage = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = 436,
+      .payload = BandageCombatantAction{9},
+  }).status == DispatchStatus::failed);
+  CHECK(bandage_calls == 4);
+  accept_bandage = true;
+
+  RuntimeLegacyCommandBridge missing_provider(
+      RuntimeLegacyContextProvider{},
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .bandage_combatant = bandage_sink,
+      });
+  const auto no_provider = missing_provider.dispatch(UIAction{
+      .sequence = 437,
+      .payload = BandageCombatantAction{9},
+  });
+  CHECK(no_provider.status == DispatchStatus::failed);
+  CHECK(no_provider.detail.find("context provider") != std::string::npos);
+  CHECK(bandage_calls == 4);
+
+  RuntimeLegacyCommandBridge empty_bandage_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .bandage_combatant = RuntimeLegacyBandageCombatantSink{},
+      });
+  const auto no_sink = empty_bandage_sink.dispatch(UIAction{
+      .sequence = 438,
+      .payload = BandageCombatantAction{9},
+  });
+  CHECK(no_sink.status == DispatchStatus::failed);
+  CHECK(no_sink.detail.find("bandage-combatant sink") != std::string::npos);
+  CHECK(bandage_calls == 4);
+
+  RuntimeLegacyCommandBridge without_bandage_sink(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{});
+  CHECK(without_bandage_sink.dispatch(UIAction{
+      .sequence = 439,
+      .payload = BandageCombatantAction{9},
+  }).status == DispatchStatus::unsupported);
+
+  RuntimeLegacyCommandBridge provider_throws(
+      []() -> RuntimeLegacyCommandContext {
+        throw std::runtime_error("bandage provider failure");
+      },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .bandage_combatant = bandage_sink,
+      });
+  const auto provider_thrown = provider_throws.dispatch(UIAction{
+      .sequence = 440,
+      .payload = BandageCombatantAction{9},
+  });
+  CHECK(provider_thrown.status == DispatchStatus::failed);
+  CHECK(provider_thrown.detail.find("bandage provider failure") !=
+      std::string::npos);
+  CHECK(bandage_calls == 4);
+
+  const RuntimeLegacyBandageCombatantSink throwing_bandage_sink =
+      [](CombatantId,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) -> bool {
+        throw std::runtime_error("bandage sink failure");
+      };
+  RuntimeLegacyCommandBridge bandage_sink_throws(
+      [&context] { return context; },
+      movement_sink,
+      party_selection_sink,
+      inventory_sink,
+      spellbook_sink,
+      save_sink,
+      load_sink,
+      RuntimeLegacyCombatActionSinks{
+          .bandage_combatant = throwing_bandage_sink,
+      });
+  const auto sink_thrown = bandage_sink_throws.dispatch(UIAction{
+      .sequence = 441,
+      .payload = BandageCombatantAction{9},
+  });
+  CHECK(sink_thrown.status == DispatchStatus::failed);
+  CHECK(sink_thrown.detail.find("bandage sink failure") != std::string::npos);
+}
+
 void test_named_combat_sink_registration_semantics() {
   const RuntimeLegacyCommandContext context{
       .screen = ScreenContext::combat,
@@ -3327,6 +3605,10 @@ void test_named_combat_sink_registration_semantics() {
           .sequence = 388,
           .payload = ShowCombatRangeAction{9},
       },
+      UIAction{
+          .sequence = 389,
+          .payload = BandageCombatantAction{10},
+      },
   };
 
   RuntimeLegacyCommandBridge no_combat_sinks(
@@ -3362,6 +3644,7 @@ void test_named_combat_sink_registration_semantics() {
           .open_combat_items = RuntimeLegacyOpenCombatItemsSink{},
           .auto_combatant = RuntimeLegacyAutoCombatantSink{},
           .show_combat_range = RuntimeLegacyShowCombatRangeSink{},
+          .bandage_combatant = RuntimeLegacyBandageCombatantSink{},
       });
   for (const auto& action : actions) {
     const auto result = empty_combat_sinks.dispatch(action);
@@ -3440,6 +3723,10 @@ void test_named_combat_sink_registration_semantics() {
   CHECK(sparse_combat_sinks.dispatch(UIAction{
       .sequence = 392,
       .payload = ShowCombatRangeAction{6},
+  }).status == DispatchStatus::unsupported);
+  CHECK(sparse_combat_sinks.dispatch(UIAction{
+      .sequence = 393,
+      .payload = BandageCombatantAction{6},
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(center_calls == 1);
@@ -3599,6 +3886,10 @@ void test_positional_combat_constructor_compatibility() {
   CHECK(through_center.dispatch(UIAction{
       .sequence = 401,
       .payload = ShowCombatRangeAction{4},
+  }).status == DispatchStatus::unsupported);
+  CHECK(through_center.dispatch(UIAction{
+      .sequence = 402,
+      .payload = BandageCombatantAction{4},
   }).status == DispatchStatus::unsupported);
   CHECK(guard_calls == 1);
   CHECK(finish_calls == 1);
@@ -3793,6 +4084,7 @@ int main() {
     test_open_combat_items_mapping_and_dispatch();
     test_auto_combatant_mapping_and_dispatch();
     test_show_combat_range_mapping_and_dispatch();
+    test_bandage_combatant_mapping_and_dispatch();
     test_named_combat_sink_registration_semantics();
     test_positional_combat_constructor_compatibility();
     test_exception_boundary();
