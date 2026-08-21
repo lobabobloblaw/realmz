@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <phosg/Strings.hh>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -158,6 +159,7 @@ extern "C" int RealmzConfigureSemanticReplayChild(
     }
     static_cast<void>(
         realmz::replay::install_replay_runtime(std::move(config)));
+    phosg::set_log_level(phosg::LogLevel::L_WARNING);
     return 0;
   } catch (const realmz::replay::ReplayConfigError& error) {
     write_bounded_diagnostic(

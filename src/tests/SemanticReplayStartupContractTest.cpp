@@ -100,9 +100,13 @@ void verify_early_child_dispatch(const fs::path& root) {
       "set_semantic_replay_user_data_root");
   const std::size_t install_runtime =
       configure_body.find("install_replay_runtime");
+  const std::size_t quiet_logging =
+      configure_body.find("phosg::set_log_level(phosg::LogLevel::L_WARNING)");
   require(validate_slots != std::string_view::npos &&
-          validate_slots < set_root && set_root < install_runtime,
-      "slot validation and replay root must precede runtime publication");
+          quiet_logging != std::string_view::npos &&
+          validate_slots < set_root && set_root < install_runtime &&
+          install_runtime < quiet_logging,
+      "validated replay startup must publish its runtime before limiting logs");
 
   const std::string_view run_body =
       function_body(child_source, "RealmzRunSemanticReplayChild(void)");
