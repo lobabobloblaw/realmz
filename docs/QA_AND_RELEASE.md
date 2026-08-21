@@ -14,7 +14,7 @@ python3 -m unittest discover -s tests/release -p 'test_*.py' -v
 
 The source verifier is read-only. Development mode reports local changes but does not fail because of them. It does fail if source ancestry, dependency pins, a partially landed asset census, or a present provenance record is invalid.
 
-`run-core-tests.sh` compiles dependency-free tests directly with `${CXX:-c++}` in C++23 mode and warning-as-error flags. Temporary executables are created under `mktemp` and removed on exit. It covers presentation routing, adaptive-shell geometry, input transforms and pointer capture, legacy screen-context classification, party/action accessibility models, 128 state-invariant mode switches, deterministic resource failures, live legacy-snapshot copying, asset validation, and user-data safety. It deliberately does not configure the full SDL application.
+`run-core-tests.sh` compiles dependency-free tests directly with `${CXX:-c++}` in C++23 mode (using the `c++2b` spelling accepted by the macOS 14 toolchain) and warning-as-error flags. Aggregate fixtures deliberately rely on default member initialization, so `missing-field-initializers` is the sole disabled warning. Temporary executables are created under `mktemp` and removed on exit. It covers presentation routing, adaptive-shell geometry, input transforms and pointer capture, legacy screen-context classification, party/action accessibility models, 128 state-invariant mode switches, deterministic resource failures, live legacy-snapshot copying, asset validation, and user-data safety. It deliberately does not configure the full SDL application.
 
 The same command exercises the synthetic semantic-replay fixture, process, and
 equivalence protocols. `scripts/semantic_replay_equivalence.py` now composes a

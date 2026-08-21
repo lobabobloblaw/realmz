@@ -2045,7 +2045,7 @@ void test_center_combat_cursor_tag_encoding_and_collisions() {
       REALMZ_SEMANTIC_INPUT_COMBAT);
 
   std::set<uint32_t> tags;
-  for (const auto [combatant, cell] : {
+  for (const auto& [combatant, cell] : {
            std::pair{CombatantId{0}, CombatFieldCell{.x = 0, .y = 0}},
            std::pair{CombatantId{1}, CombatFieldCell{.x = 1, .y = 2}},
            std::pair{CombatantId{109}, CombatFieldCell{.x = 44, .y = 55}},

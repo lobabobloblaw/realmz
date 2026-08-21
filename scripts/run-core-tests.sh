@@ -26,11 +26,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 common_flags=(
-  -std=c++23
+  # macOS 14's Apple Clang implements C++23 under its pre-standard spelling.
+  -std=c++2b
   -Wall
   -Wextra
   -pedantic
   -Werror
+  # Aggregate fixtures intentionally rely on default member initialization.
+  -Wno-missing-field-initializers
   -Isrc
 )
 

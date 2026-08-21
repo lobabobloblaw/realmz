@@ -18,11 +18,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 flags=(
-  -std=c++23
+  -std=c++2b
   -Wall
   -Wextra
   -Wpedantic
   -Werror
+  -Wno-missing-field-initializers
   -Isrc
 )
 

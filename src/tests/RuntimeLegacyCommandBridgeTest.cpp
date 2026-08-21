@@ -4689,7 +4689,7 @@ void test_center_combat_cursor_mapping_and_dispatch() {
   CHECK(received_cell == (CombatFieldCell{.x = 42, .y = 17}));
   CHECK(received_message == 0x00002E6DU);
 
-  for (const auto [combatant, cell] : {
+  for (const auto& [combatant, cell] : {
            std::pair{CombatantId{0}, CombatFieldCell{.x = 0, .y = 0}},
            std::pair{CombatantId{255}, CombatFieldCell{.x = 89, .y = 89}},
        }) {

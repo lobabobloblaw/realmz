@@ -101,10 +101,12 @@ constexpr uint32_t kSemanticGuardCombatantSignature = 0x52470000U;
 constexpr uint32_t kSemanticGuardCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticGuardCombatantSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticGuardCombatantIdMask = 0x000000FFU;
+constexpr RealmzSemanticInputSurface kNoSemanticInputSurface =
+    REALMZ_SEMANTIC_INPUT_NONE;
 uint32_t scope_depth = 0;
 bool scope_invalid = false;
-RealmzSemanticInputSurface scope_surface = REALMZ_SEMANTIC_INPUT_NONE;
-RealmzSemanticInputSurface completed_surface = REALMZ_SEMANTIC_INPUT_NONE;
+RealmzSemanticInputSurface scope_surface = kNoSemanticInputSurface;
+RealmzSemanticInputSurface completed_surface = kNoSemanticInputSurface;
 
 struct DecodedMovement {
   realmz::presentation::MovementCommand command;
@@ -647,7 +649,7 @@ bool authorize_completed_scope(
       is_semantic_input_surface(expected_surface);
   // Delivery authorization is single-use regardless of whether the payload or
   // processing-time context validates. A later event needs a fresh scope.
-  completed_surface = REALMZ_SEMANTIC_INPUT_NONE;
+  completed_surface = kNoSemanticInputSurface;
   return completed_expected_scope;
 }
 
@@ -1091,11 +1093,11 @@ uint32_t semantic_center_combat_cursor_tag(
 
 extern "C" void RealmzBeginSemanticInputSurface(
     RealmzSemanticInputSurface surface) {
-  completed_surface = REALMZ_SEMANTIC_INPUT_NONE;
+  completed_surface = kNoSemanticInputSurface;
   if (scope_depth == 0) {
     scope_surface = is_semantic_input_surface(surface)
         ? surface
-        : REALMZ_SEMANTIC_INPUT_NONE;
+        : kNoSemanticInputSurface;
     scope_invalid = !is_semantic_input_surface(surface);
   } else {
     // Nested scopes are a programming error. Stay fail-closed until the
@@ -1107,16 +1109,16 @@ extern "C" void RealmzBeginSemanticInputSurface(
 
 extern "C" void RealmzEndSemanticInputSurface(void) {
   if (scope_depth == 0) {
-    completed_surface = REALMZ_SEMANTIC_INPUT_NONE;
-    scope_surface = REALMZ_SEMANTIC_INPUT_NONE;
+    completed_surface = kNoSemanticInputSurface;
+    scope_surface = kNoSemanticInputSurface;
     return;
   }
   --scope_depth;
   if (scope_depth == 0) {
     completed_surface = scope_invalid
-        ? REALMZ_SEMANTIC_INPUT_NONE
+        ? kNoSemanticInputSurface
         : scope_surface;
-    scope_surface = REALMZ_SEMANTIC_INPUT_NONE;
+    scope_surface = kNoSemanticInputSurface;
     scope_invalid = false;
   }
 }
@@ -1125,14 +1127,14 @@ extern "C" RealmzSemanticInputSurface
 RealmzCurrentSemanticInputSurface(void) {
   return ((scope_depth == 1) && !scope_invalid)
       ? scope_surface
-      : REALMZ_SEMANTIC_INPUT_NONE;
+      : kNoSemanticInputSurface;
 }
 
 extern "C" void RealmzInvalidateSemanticInputBoundary(void) {
   scope_depth = 0;
   scope_invalid = false;
-  scope_surface = REALMZ_SEMANTIC_INPUT_NONE;
-  completed_surface = REALMZ_SEMANTIC_INPUT_NONE;
+  scope_surface = kNoSemanticInputSurface;
+  completed_surface = kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticMovementTag(
@@ -1143,7 +1145,7 @@ extern "C" uint8_t RealmzIsSemanticMovementTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticMovementTagSurface(uint32_t tagged_message) {
   const auto movement = decode_movement(tagged_message);
-  return movement ? movement->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return movement ? movement->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticPartySelectionTag(
@@ -1154,7 +1156,7 @@ extern "C" uint8_t RealmzIsSemanticPartySelectionTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticPartySelectionTagSurface(uint32_t tagged_message) {
   const auto selection = decode_party_selection(tagged_message);
-  return selection ? selection->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return selection ? selection->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenInventoryTag(
@@ -1165,7 +1167,7 @@ extern "C" uint8_t RealmzIsSemanticOpenInventoryTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticOpenInventoryTagSurface(uint32_t tagged_message) {
   const auto inventory = decode_open_inventory(tagged_message);
-  return inventory ? inventory->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return inventory ? inventory->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenSpellbookTag(
@@ -1176,7 +1178,7 @@ extern "C" uint8_t RealmzIsSemanticOpenSpellbookTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticOpenSpellbookTagSurface(uint32_t tagged_message) {
   const auto spellbook = decode_open_spellbook(tagged_message);
-  return spellbook ? spellbook->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return spellbook ? spellbook->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenSaveGameTag(
@@ -1187,7 +1189,7 @@ extern "C" uint8_t RealmzIsSemanticOpenSaveGameTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticOpenSaveGameTagSurface(uint32_t tagged_message) {
   const auto save_game = decode_open_save_game(tagged_message);
-  return save_game ? save_game->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return save_game ? save_game->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenLoadGameTag(
@@ -1198,7 +1200,7 @@ extern "C" uint8_t RealmzIsSemanticOpenLoadGameTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticOpenLoadGameTagSurface(uint32_t tagged_message) {
   const auto load_game = decode_open_load_game(tagged_message);
-  return load_game ? load_game->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return load_game ? load_game->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticGuardCombatantTag(
@@ -1209,7 +1211,7 @@ extern "C" uint8_t RealmzIsSemanticGuardCombatantTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticGuardCombatantTagSurface(uint32_t tagged_message) {
   const auto guard = decode_guard_combatant(tagged_message);
-  return guard ? guard->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return guard ? guard->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticFinishCombatantTag(
@@ -1220,7 +1222,7 @@ extern "C" uint8_t RealmzIsSemanticFinishCombatantTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticFinishCombatantTagSurface(uint32_t tagged_message) {
   const auto finish = decode_finish_combatant(tagged_message);
-  return finish ? finish->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return finish ? finish->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticDelayCombatantTag(
@@ -1231,7 +1233,7 @@ extern "C" uint8_t RealmzIsSemanticDelayCombatantTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticDelayCombatantTagSurface(uint32_t tagged_message) {
   const auto delay = decode_delay_combatant(tagged_message);
-  return delay ? delay->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return delay ? delay->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticCenterActiveCombatantTag(
@@ -1242,7 +1244,7 @@ extern "C" uint8_t RealmzIsSemanticCenterActiveCombatantTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticCenterActiveCombatantTagSurface(uint32_t tagged_message) {
   const auto center = decode_center_active_combatant(tagged_message);
-  return center ? center->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return center ? center->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticSwitchWeaponTag(
@@ -1253,7 +1255,7 @@ extern "C" uint8_t RealmzIsSemanticSwitchWeaponTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticSwitchWeaponTagSurface(uint32_t tagged_message) {
   const auto switch_weapon = decode_switch_weapon(tagged_message);
-  return switch_weapon ? switch_weapon->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return switch_weapon ? switch_weapon->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticCycleCombatFocusTag(
@@ -1266,7 +1268,7 @@ RealmzSemanticCycleCombatFocusTagSurface(uint32_t tagged_message) {
   const auto cycle_focus = decode_cycle_combat_focus(tagged_message);
   return cycle_focus
       ? cycle_focus->surface
-      : REALMZ_SEMANTIC_INPUT_NONE;
+      : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenCombatItemsTag(
@@ -1279,7 +1281,7 @@ RealmzSemanticOpenCombatItemsTagSurface(uint32_t tagged_message) {
   const auto combat_items = decode_open_combat_items(tagged_message);
   return combat_items
       ? combat_items->surface
-      : REALMZ_SEMANTIC_INPUT_NONE;
+      : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticAutoCombatantTag(
@@ -1292,7 +1294,7 @@ RealmzSemanticAutoCombatantTagSurface(uint32_t tagged_message) {
   const auto auto_combatant = decode_auto_combatant(tagged_message);
   return auto_combatant
       ? auto_combatant->surface
-      : REALMZ_SEMANTIC_INPUT_NONE;
+      : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticShowCombatRangeTag(
@@ -1303,7 +1305,7 @@ extern "C" uint8_t RealmzIsSemanticShowCombatRangeTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticShowCombatRangeTagSurface(uint32_t tagged_message) {
   const auto show_range = decode_show_combat_range(tagged_message);
-  return show_range ? show_range->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return show_range ? show_range->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticBandageCombatantTag(
@@ -1314,7 +1316,7 @@ extern "C" uint8_t RealmzIsSemanticBandageCombatantTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticBandageCombatantTagSurface(uint32_t tagged_message) {
   const auto bandage = decode_bandage_combatant(tagged_message);
-  return bandage ? bandage->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return bandage ? bandage->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticUndoCombatantTag(
@@ -1325,7 +1327,7 @@ extern "C" uint8_t RealmzIsSemanticUndoCombatantTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticUndoCombatantTagSurface(uint32_t tagged_message) {
   const auto undo = decode_undo_combatant(tagged_message);
-  return undo ? undo->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return undo ? undo->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenCombatSpellbookTag(
@@ -1336,7 +1338,7 @@ extern "C" uint8_t RealmzIsSemanticOpenCombatSpellbookTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticOpenCombatSpellbookTagSurface(uint32_t tagged_message) {
   const auto spellbook = decode_open_combat_spellbook(tagged_message);
-  return spellbook ? spellbook->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return spellbook ? spellbook->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenCombatTargetingTag(
@@ -1347,7 +1349,7 @@ extern "C" uint8_t RealmzIsSemanticOpenCombatTargetingTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticOpenCombatTargetingTagSurface(uint32_t tagged_message) {
   const auto targeting = decode_open_combat_targeting(tagged_message);
-  return targeting ? targeting->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return targeting ? targeting->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticEscapeCombatTag(
@@ -1358,7 +1360,7 @@ extern "C" uint8_t RealmzIsSemanticEscapeCombatTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticEscapeCombatTagSurface(uint32_t tagged_message) {
   const auto escape = decode_escape_combat(tagged_message);
-  return escape ? escape->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return escape ? escape->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticOpenCombatScrollCaseTag(
@@ -1369,7 +1371,7 @@ extern "C" uint8_t RealmzIsSemanticOpenCombatScrollCaseTag(
 extern "C" RealmzSemanticInputSurface
 RealmzSemanticOpenCombatScrollCaseTagSurface(uint32_t tagged_message) {
   const auto scroll_case = decode_open_combat_scroll_case(tagged_message);
-  return scroll_case ? scroll_case->surface : REALMZ_SEMANTIC_INPUT_NONE;
+  return scroll_case ? scroll_case->surface : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticCenterCombatCursorTag(
@@ -1382,7 +1384,7 @@ RealmzSemanticCenterCombatCursorTagSurface(uint32_t tagged_message) {
   const auto center_cursor = decode_center_combat_cursor(tagged_message);
   return center_cursor
       ? center_cursor->surface
-      : REALMZ_SEMANTIC_INPUT_NONE;
+      : kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzIsSemanticGameplayTag(
@@ -1483,7 +1485,7 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
           decode_center_combat_cursor(tagged_message)) {
     return center_cursor->surface;
   }
-  return REALMZ_SEMANTIC_INPUT_NONE;
+  return kNoSemanticInputSurface;
 }
 
 extern "C" uint8_t RealmzConsumeSemanticMovementEvent(
