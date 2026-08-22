@@ -16,6 +16,7 @@ short items(void) {
   char first = -1;
   char backvalue = 0;
   Boolean equip, play, ident;
+  int enable_recomposite; /* Remastered: Hoisted for C90 label compatibility. */
   Rect r;
 
   SetMenuBar(copywright);
@@ -155,7 +156,7 @@ short items(void) {
 
 backup:
 
-  int enable_recomposite = WindowManager_SetEnableRecomposite(0);
+  enable_recomposite = WindowManager_SetEnableRecomposite(0);
 
   SetPort(GetWindowPort(itemswindow));
   TextMode(0);

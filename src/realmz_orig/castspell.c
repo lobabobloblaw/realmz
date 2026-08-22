@@ -5,6 +5,7 @@
 short castspell(void) {
   Rect light, typerect;
   short type, smallclickdirection, keylevel[3], oldkeylevel[3], tempcaste;
+  int enable_recomposite; /* Remastered: Hoisted for C90 label compatibility. */
   DialogRef describe = NIL;
   Boolean loop, nopower, try, oldred, def, shhh, skipdefault = 0;
 
@@ -64,7 +65,7 @@ selectagain:
   DrawDialog(spellwindow);
 wayback:
 
-  int enable_recomposite = WindowManager_SetEnableRecomposite(0);
+  enable_recomposite = WindowManager_SetEnableRecomposite(0);
 
   if ((incombat) || (!charnum)) {
     GetDialogItem(spellwindow, 45, &itemType, &itemHandle, &itemRect);
