@@ -156,6 +156,30 @@ enum class ContextualWorldEntryMode {
   encounter,
 };
 
+struct WorldPositionView {
+  int32_t x = 0;
+  int32_t y = 0;
+
+  bool operator==(const WorldPositionView&) const = default;
+};
+
+struct WorldClockView {
+  int32_t day = 0;
+  int32_t hour = 0;
+  int32_t minute = 0;
+
+  bool operator==(const WorldClockView&) const = default;
+};
+
+struct WorldContextView {
+  std::optional<WorldPositionView> visible_position;
+  WorldClockView clock;
+  int16_t search_raw_value = 0;
+  int16_t torch_raw_value = 0;
+
+  bool operator==(const WorldContextView&) const = default;
+};
+
 struct WorldView {
   WorldPresentation presentation = WorldPresentation::none;
   int32_t party_x = 0;
@@ -182,6 +206,10 @@ struct WorldView {
   // Appending preserves positional source compatibility for existing snapshots.
   ContextualWorldEntryMode contextual_world_entry_mode =
       ContextualWorldEntryMode::unavailable;
+  // Detached, display-facing context exists only while Classic is in a world
+  // navigation screen. A hidden coordinate display deliberately carries no
+  // position value, while clock and raw conditions remain exact snapshots.
+  std::optional<WorldContextView> context;
 
   bool operator==(const WorldView&) const = default;
 

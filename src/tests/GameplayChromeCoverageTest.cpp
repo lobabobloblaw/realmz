@@ -113,15 +113,15 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.info.narrative_messages", Surface::exploration,
         Kind::essential_information, Status::missing},
     {"exploration.info.world_coordinates", Surface::exploration,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"exploration.info.calendar_clock", Surface::exploration,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"exploration.info.fatigue", Surface::exploration,
         Kind::essential_information, Status::semantic_complete},
     {"exploration.info.pooled_money", Surface::exploration,
         Kind::essential_information, Status::semantic_complete},
     {"exploration.info.search_and_torch_state", Surface::exploration,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
 
     {"dungeon.viewport.pointer_navigation", Surface::dungeon,
         Kind::interaction, Status::retained_in_crop},
@@ -176,15 +176,15 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.info.narrative_messages", Surface::dungeon,
         Kind::essential_information, Status::missing},
     {"dungeon.info.world_coordinates", Surface::dungeon,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.calendar_clock", Surface::dungeon,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.fatigue", Surface::dungeon,
         Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.pooled_money", Surface::dungeon,
         Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.search_and_torch_state", Surface::dungeon,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
 
     {"combat.viewport.pointer_actions", Surface::combat,
         Kind::interaction, Status::retained_in_crop},
@@ -691,15 +691,138 @@ void test_manifest_matches_independent_oracle() {
         "semantic_set_search_state_tag/RealmzConsumeSemanticSetSearchStateEvent");
   }
 
-  for (const auto stable_id : {
-           "exploration.info.search_and_torch_state",
-           "dungeon.info.search_and_torch_state",
+  constexpr std::string_view kWorldContextAnchor =
+      "src/presentation/WorldContextLayout.cpp::"
+      "compute_world_context_layout";
+
+  for (const auto& [stable_id, surface, coordinate_source] : std::array{
+           std::tuple{
+               "exploration.info.world_coordinates",
+               Surface::exploration,
+               "checked int32 lookx + partyx and looky + partyy additions"},
+           std::tuple{
+               "dungeon.info.world_coordinates",
+               Surface::dungeon,
+               "exact signed floorx and floory values"},
        }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::semantic_complete);
+    const auto* coordinates = find_manifest_entry(manifest, stable_id);
+    CHECK(coordinates != nullptr);
+    for (const auto evidence : std::array<std::string_view, 12>{
+             "shared responsive action-header world-context strip",
+             "persistent action-page tabs",
+             "world-only",
+             coordinate_source,
+             "without clamping",
+             "Any nonzero xydisplayflag",
+             "conceals both coordinates as literal ? values",
+             "no raw-coordinate leakage",
+             "absent in combat",
+             "complete internal semantic text",
+             "without an OS-publication claim",
+             "no action, tag, input, Classic-source, or replay-vocabulary change",
+         }) {
+      CHECK(coordinates->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(coordinates->source_anchor == kWorldContextAnchor);
+  }
+
+  for (const auto& [stable_id, surface, world_surface] : std::array{
+           std::tuple{
+               "exploration.info.calendar_clock",
+               Surface::exploration,
+               "outdoor exploration"},
+           std::tuple{
+               "dungeon.info.calendar_clock",
+               Surface::dungeon,
+               "dungeon map and first-person play"},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::semantic_complete);
+    const auto* clock = find_manifest_entry(manifest, stable_id);
+    CHECK(clock != nullptr);
+    for (const auto evidence : std::array<std::string_view, 15>{
+             "shared responsive action-header world-context strip",
+             "persistent action-page tabs",
+             "world-only campaign day and time",
+             world_surface,
+             "Classic's signed-short boundary",
+             "no +1",
+             "no calendar conversion",
+             "deterministic %I:%M %p-equivalent",
+             "zero-padded English 12-hour",
+             "raw hour and minute",
+             "no locale or timezone normalization",
+             "absent in combat",
+             "complete internal semantic text",
+             "without an OS-publication claim",
+             "no action, tag, input, Classic-source, or replay-vocabulary change",
+         }) {
+      CHECK(clock->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(clock->source_anchor == kWorldContextAnchor);
+  }
+
+  for (const auto& [stable_id, surface, world_surface] : std::array{
+           std::tuple{
+               "exploration.info.search_and_torch_state",
+               Surface::exploration,
+               "outdoor exploration"},
+           std::tuple{
+               "dungeon.info.search_and_torch_state",
+               Surface::dungeon,
+               "dungeon map and first-person play"},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::semantic_complete);
     const auto* state = find_manifest_entry(manifest, stable_id);
     CHECK(state != nullptr);
-    CHECK(state->status == Status::missing);
-    CHECK(state->evidence.find("Torch state") != std::string_view::npos);
+    for (const auto evidence : std::array<std::string_view, 16>{
+             "shared responsive action-header world-context strip",
+             "persistent action-page tabs",
+             "world-only Search",
+             world_surface,
+             "raw signed partycondition[5]",
+             "raw signed partycondition[0]",
+             "Any nonzero value, including negative, is active",
+             "exact signed raw values are retained and displayed",
+             "duration, turns, or charges",
+             "usable Torch source remains action-availability data only",
+             "active and inactive states",
+             "explicit non-color markers",
+             "absent in combat",
+             "complete internal semantic text",
+             "without an OS-publication claim",
+             "no action, tag, input, Classic-source, or replay-vocabulary change",
+         }) {
+      CHECK(state->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(state->source_anchor == kWorldContextAnchor);
   }
+
+  size_t world_context_anchor_count = 0U;
+  std::vector<std::string_view> missing_information_ids;
+  for (const auto& entry : manifest) {
+    if (entry.source_anchor == kWorldContextAnchor) {
+      ++world_context_anchor_count;
+    }
+    if ((entry.kind == Kind::essential_information) &&
+        (entry.status == Status::missing)) {
+      missing_information_ids.push_back(entry.stable_id);
+    }
+  }
+  CHECK(world_context_anchor_count == 6U);
+  const std::vector<std::string_view> expected_missing_information_ids{
+      "exploration.info.narrative_messages",
+      "dungeon.info.narrative_messages",
+      "combat.info.narrative_messages",
+      "combat.info.inspected_combatant",
+      "combat.info.conditions_and_attacks",
+      "combat.info.round",
+      "combat.info.enemies_remaining",
+  };
+  CHECK(missing_information_ids == expected_missing_information_ids);
 }
 
 void test_selected_item_drilldown_rows_are_semantically_complete() {
@@ -910,7 +1033,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0xB4CBF4B4E225642BULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x593B4959098E4C22ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -999,7 +1122,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0xB4CBF4B4E225642BULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x593B4959098E4C22ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -1058,10 +1181,10 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 61U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 28U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 67U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 22U);
   CHECK(missing_interaction_count == 15U);
-  CHECK(missing_information_count == 13U);
+  CHECK(missing_information_count == 7U);
 }
 
 void expect_issue(

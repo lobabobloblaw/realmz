@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -24,6 +25,17 @@ void check(bool condition, const char* expression, int line) {
 }
 
 #define CHECK(expression) check(static_cast<bool>(expression), #expression, __LINE__)
+
+template <typename Callable>
+void check_invalid_argument(Callable&& callable) {
+  bool threw = false;
+  try {
+    std::forward<Callable>(callable)();
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+}
 
 constexpr std::array kPartyEffectKinds{
     PartyEffectKind::waterworld,
@@ -111,6 +123,21 @@ GameSnapshot sample_snapshot() {
   snapshot.world.usable_torch_source = TorchSource{.member = 1, .slot = 7};
   snapshot.world.contextual_world_entry_mode =
       ContextualWorldEntryMode::encounter;
+  return snapshot;
+}
+
+GameSnapshot sample_world_context_snapshot() {
+  auto snapshot = sample_snapshot();
+  snapshot.screen = ScreenContext::exploration;
+  snapshot.world.presentation = WorldPresentation::outdoor;
+  snapshot.world.searching = false;
+  snapshot.party.effects[4].raw_value = 0;
+  snapshot.world.context = WorldContextView{
+      .visible_position = WorldPositionView{.x = -42, .y = 87},
+      .clock = WorldClockView{.day = 200, .hour = 0, .minute = 0},
+      .search_raw_value = 0,
+      .torch_raw_value = 0,
+  };
   return snapshot;
 }
 
@@ -467,6 +494,264 @@ void test_party_status_is_exact_ordered_and_context_independent() {
   const auto second = build_party_rail_model(snapshot);
   CHECK(first == second);
   CHECK(snapshot == before);
+}
+
+void test_world_context_model_is_exact_validated_and_context_independent() {
+  {
+    auto snapshot = sample_snapshot();
+    CHECK(!snapshot.world.context.has_value());
+    CHECK(!build_world_context_model(snapshot).has_value());
+    CHECK(!build_presentation_shell_model(snapshot).world_context.has_value());
+
+    // An absent context preserves old synthetic fixtures without consulting
+    // world-only fields or their typed effect sequence.
+    std::swap(snapshot.party.effects[0], snapshot.party.effects[1]);
+    CHECK(!build_world_context_model(snapshot).has_value());
+  }
+
+  auto snapshot = sample_world_context_snapshot();
+  snapshot.world.context->visible_position = WorldPositionView{
+      .x = std::numeric_limits<int32_t>::min(),
+      .y = std::numeric_limits<int32_t>::max(),
+  };
+  snapshot.world.context->clock = WorldClockView{
+      .day = std::numeric_limits<int16_t>::min(),
+      .hour = 23,
+      .minute = 59,
+  };
+  snapshot.world.context->search_raw_value =
+      std::numeric_limits<int16_t>::min();
+  snapshot.party.effects[4].raw_value =
+      std::numeric_limits<int16_t>::min();
+  snapshot.world.searching = true;
+  snapshot.world.context->torch_raw_value =
+      std::numeric_limits<int16_t>::max();
+  const auto snapshot_before = snapshot;
+
+  const auto exact = build_world_context_model(snapshot);
+  CHECK(exact.has_value());
+  CHECK(exact->presentation == WorldPresentation::outdoor);
+  CHECK(exact->visible_position ==
+      (WorldPositionView{
+          .x = std::numeric_limits<int32_t>::min(),
+          .y = std::numeric_limits<int32_t>::max(),
+      }));
+  CHECK(exact->day == std::numeric_limits<int16_t>::min());
+  CHECK(exact->hour == 23);
+  CHECK(exact->minute == 59);
+  CHECK(exact->clock_text == "11:59 PM");
+  CHECK(exact->search.raw_value == std::numeric_limits<int16_t>::min());
+  CHECK(exact->search.state.identifier == "world.search.active");
+  CHECK(exact->search.state.label == "Search on");
+  CHECK(exact->search.state.emphasis == StateEmphasis::information);
+  CHECK(exact->search.state.marker == StateMarker::condition);
+  CHECK(exact->torch.raw_value == std::numeric_limits<int16_t>::max());
+  CHECK(exact->torch.state.identifier == "world.torch.lit");
+  CHECK(exact->torch.state.label == "Torch lit");
+  CHECK(exact->torch.state.emphasis == StateEmphasis::positive);
+  CHECK(exact->torch.state.marker == StateMarker::check);
+  CHECK(snapshot == snapshot_before);
+  CHECK(build_world_context_model(snapshot) == exact);
+  CHECK(build_presentation_shell_model(snapshot).world_context == exact);
+
+  snapshot.world.context->visible_position.reset();
+  CHECK(!build_world_context_model(snapshot)->visible_position.has_value());
+
+  struct ClockCase {
+    int32_t hour;
+    int32_t minute;
+    const char* text;
+  };
+  constexpr std::array clock_cases{
+      ClockCase{0, 0, "12:00 AM"},
+      ClockCase{0, 9, "12:09 AM"},
+      ClockCase{1, 5, "01:05 AM"},
+      ClockCase{11, 59, "11:59 AM"},
+      ClockCase{12, 0, "12:00 PM"},
+      ClockCase{13, 1, "01:01 PM"},
+      ClockCase{23, 59, "11:59 PM"},
+  };
+  snapshot = sample_world_context_snapshot();
+  for (const auto& test_case : clock_cases) {
+    snapshot.world.context->clock.hour = test_case.hour;
+    snapshot.world.context->clock.minute = test_case.minute;
+    const auto model = build_world_context_model(snapshot);
+    CHECK(model->hour == test_case.hour);
+    CHECK(model->minute == test_case.minute);
+    CHECK(model->clock_text == test_case.text);
+  }
+
+  for (const int32_t day : {
+           static_cast<int32_t>(std::numeric_limits<int16_t>::min()),
+           static_cast<int32_t>(std::numeric_limits<int16_t>::max())}) {
+    snapshot.world.context->clock.day = day;
+    CHECK(build_world_context_model(snapshot)->day == day);
+  }
+  snapshot.world.context->clock.day =
+      static_cast<int32_t>(std::numeric_limits<int16_t>::min()) - 1;
+  check_invalid_argument(
+      [&] { static_cast<void>(build_world_context_model(snapshot)); });
+  snapshot.world.context->clock.day =
+      static_cast<int32_t>(std::numeric_limits<int16_t>::max()) + 1;
+  check_invalid_argument(
+      [&] { static_cast<void>(build_world_context_model(snapshot)); });
+
+  snapshot = sample_world_context_snapshot();
+  for (const int32_t invalid_hour : {-1, 24}) {
+    snapshot.world.context->clock.hour = invalid_hour;
+    check_invalid_argument(
+        [&] { static_cast<void>(build_world_context_model(snapshot)); });
+  }
+  snapshot = sample_world_context_snapshot();
+  for (const int32_t invalid_minute : {-1, 60}) {
+    snapshot.world.context->clock.minute = invalid_minute;
+    check_invalid_argument(
+        [&] { static_cast<void>(build_world_context_model(snapshot)); });
+  }
+
+  constexpr std::array raw_values{
+      std::numeric_limits<int16_t>::min(),
+      static_cast<int16_t>(-1),
+      static_cast<int16_t>(0),
+      static_cast<int16_t>(1),
+      std::numeric_limits<int16_t>::max(),
+  };
+  for (const int16_t search_raw : raw_values) {
+    for (const int16_t torch_raw : raw_values) {
+      snapshot = sample_world_context_snapshot();
+      snapshot.world.context->search_raw_value = search_raw;
+      snapshot.party.effects[4].raw_value = search_raw;
+      snapshot.world.searching = search_raw != 0;
+      snapshot.world.context->torch_raw_value = torch_raw;
+      const auto model = build_world_context_model(snapshot);
+      CHECK(model->search.raw_value == search_raw);
+      CHECK(model->torch.raw_value == torch_raw);
+      CHECK(model->search.state.identifier == (search_raw != 0
+          ? "world.search.active"
+          : "world.search.inactive"));
+      CHECK(model->search.state.label == (search_raw != 0
+          ? "Search on"
+          : "Search off"));
+      CHECK(model->search.state.emphasis == (search_raw != 0
+          ? StateEmphasis::information
+          : StateEmphasis::inactive));
+      CHECK(model->search.state.marker == (search_raw != 0
+          ? StateMarker::condition
+          : StateMarker::unavailable));
+      CHECK(model->torch.state.identifier == (torch_raw != 0
+          ? "world.torch.lit"
+          : "world.torch.unlit"));
+      CHECK(model->torch.state.label == (torch_raw != 0
+          ? "Torch lit"
+          : "Torch unlit"));
+      CHECK(model->torch.state.emphasis == (torch_raw != 0
+          ? StateEmphasis::positive
+          : StateEmphasis::inactive));
+      CHECK(model->torch.state.marker == (torch_raw != 0
+          ? StateMarker::check
+          : StateMarker::unavailable));
+    }
+  }
+
+  snapshot = sample_world_context_snapshot();
+  snapshot.world.context->torch_raw_value = -7;
+  snapshot.world.usable_torch_source.reset();
+  const auto no_usable_torch = build_world_context_model(snapshot);
+  snapshot.world.usable_torch_source = TorchSource{.member = 5, .slot = 29};
+  CHECK(build_world_context_model(snapshot) == no_usable_torch);
+  snapshot.world.context->torch_raw_value = 0;
+  CHECK(build_world_context_model(snapshot)->torch.state.identifier ==
+      "world.torch.unlit");
+  CHECK(snapshot.world.usable_torch_source.has_value());
+
+  snapshot = sample_world_context_snapshot();
+  snapshot.world.context->search_raw_value = 1;
+  check_invalid_argument(
+      [&] { static_cast<void>(build_world_context_model(snapshot)); });
+  snapshot = sample_world_context_snapshot();
+  snapshot.world.searching = true;
+  check_invalid_argument(
+      [&] { static_cast<void>(build_world_context_model(snapshot)); });
+  snapshot = sample_world_context_snapshot();
+  snapshot.world.context->search_raw_value = -1;
+  snapshot.party.effects[4].raw_value = -1;
+  snapshot.world.searching = false;
+  check_invalid_argument(
+      [&] { static_cast<void>(build_world_context_model(snapshot)); });
+  snapshot = sample_world_context_snapshot();
+  std::swap(snapshot.party.effects[0], snapshot.party.effects[1]);
+  check_invalid_argument(
+      [&] { static_cast<void>(build_world_context_model(snapshot)); });
+  snapshot = sample_world_context_snapshot();
+  snapshot.party.effects[7].kind = PartyEffectKind::sentry;
+  check_invalid_argument(
+      [&] { static_cast<void>(build_world_context_model(snapshot)); });
+
+  constexpr std::array screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::combat,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  constexpr std::array presentations{
+      WorldPresentation::none,
+      WorldPresentation::outdoor,
+      WorldPresentation::dungeon_map,
+      WorldPresentation::dungeon_first_person,
+  };
+  for (const auto screen : screens) {
+    for (const auto presentation : presentations) {
+      snapshot = sample_world_context_snapshot();
+      snapshot.screen = screen;
+      snapshot.world.presentation = presentation;
+      const bool valid =
+          ((screen == ScreenContext::exploration) &&
+           (presentation == WorldPresentation::outdoor)) ||
+          ((screen == ScreenContext::dungeon) &&
+           ((presentation == WorldPresentation::dungeon_map) ||
+            (presentation == WorldPresentation::dungeon_first_person)));
+      if (valid) {
+        const auto model = build_world_context_model(snapshot);
+        CHECK(model.has_value());
+        CHECK(model->presentation == presentation);
+      } else {
+        check_invalid_argument(
+            [&] { static_cast<void>(build_world_context_model(snapshot)); });
+      }
+    }
+  }
+
+  snapshot = sample_world_context_snapshot();
+  const auto expected = build_world_context_model(snapshot);
+  for (const bool in_camp : {false, true}) {
+    snapshot.world.in_camp = in_camp;
+    for (const auto source : {
+             std::optional<TorchSource>{},
+             std::optional<TorchSource>{TorchSource{.member = 2, .slot = 8}}}) {
+      snapshot.world.usable_torch_source = source;
+      for (const auto page : {
+               WorldActionPage::travel,
+               WorldActionPage::party,
+               WorldActionPage::game}) {
+        ShellViewPreferences preferences;
+        preferences.world_action_page = page;
+        const auto shell = build_presentation_shell_model(
+            snapshot, {}, preferences);
+        CHECK(shell.world_context == expected);
+        CHECK(shell.world_action_page == page);
+      }
+    }
+  }
+  snapshot.party.members.clear();
+  snapshot.party.selected_member.reset();
+  CHECK(build_world_context_model(snapshot) == expected);
+  CHECK(build_presentation_shell_model(snapshot).world_context == expected);
 }
 
 void test_selection_fallback_and_meter_bounds() {
@@ -1839,6 +2124,7 @@ int main() {
     test_party_rail_and_non_color_states();
     test_all_member_vitals_are_exact_and_context_independent();
     test_party_status_is_exact_ordered_and_context_independent();
+    test_world_context_model_is_exact_validated_and_context_independent();
     test_selection_fallback_and_meter_bounds();
     test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();

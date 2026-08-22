@@ -10868,12 +10868,18 @@ void verify_party_status_ribbon_contract(
       model_source, "active_party_effects");
   const std::string compact_active_effects =
       without_whitespace(active_effects);
-  const std::size_t sequence_validation = compact_active_effects.find(
+  const std::string sequence_validator = function_body(
+      model_source, "validate_party_effect_sequence");
+  const std::string compact_sequence_validator =
+      without_whitespace(sequence_validator);
+  const std::size_t sequence_validation = compact_sequence_validator.find(
       "if(effects[index].kind!=kPartyEffectKinds[index]){");
-  const std::size_t sequence_rejection = compact_active_effects.find(
+  const std::size_t sequence_rejection = compact_sequence_validator.find(
       "throwstd::invalid_argument(", sequence_validation);
+  const std::size_t validation_call = compact_active_effects.find(
+      "validate_party_effect_sequence(effects);");
   const std::size_t active_iteration = compact_active_effects.find(
-      "for(constauto&effect:effects){", sequence_rejection);
+      "for(constauto&effect:effects){", validation_call);
   const std::size_t zero_filter = compact_active_effects.find(
       "if(effect.raw_value==0){continue;}", active_iteration);
   const std::size_t raw_retention = compact_active_effects.find(
@@ -10882,12 +10888,13 @@ void verify_party_status_ribbon_contract(
       ".state=party_effect_state(effect.kind),", raw_retention);
   require(sequence_validation != std::string::npos &&
           sequence_rejection != std::string::npos &&
+          validation_call != std::string::npos &&
           active_iteration != std::string::npos &&
           zero_filter != std::string::npos &&
           raw_retention != std::string::npos &&
           token_mapping != std::string::npos &&
           sequence_validation < sequence_rejection &&
-          sequence_rejection < active_iteration &&
+          validation_call < active_iteration &&
           active_iteration < zero_filter && zero_filter < raw_retention &&
           raw_retention < token_mapping,
       "party-effect modeling must reject a malformed fixed sequence before "
@@ -11429,25 +11436,25 @@ void verify_party_status_ribbon_contract(
       "pooled money must remain world-only");
   const std::string compact_coverage_test =
       without_whitespace(raw_coverage_test);
-  require(raw_coverage_header.find("0xB4CBF4B4E225642BULL") !=
+  require(raw_coverage_header.find("0x593B4959098E4C22ULL") !=
               std::string::npos &&
-          raw_coverage_test.find("0xB4CBF4B4E225642BULL") !=
+          raw_coverage_test.find("0x593B4959098E4C22ULL") !=
               std::string::npos &&
           compact_coverage_test.contains(
               "Status::retained_in_crop)]==6U") &&
           compact_coverage_test.contains(
-              "Status::semantic_complete)]==61U") &&
-          compact_coverage_test.contains("Status::missing)]==28U") &&
+              "Status::semantic_complete)]==67U") &&
+          compact_coverage_test.contains("Status::missing)]==22U") &&
           compact_coverage_test.contains(
               "missing_interaction_count==15U") &&
           compact_coverage_test.contains(
-              "missing_information_count==13U") &&
+              "missing_information_count==7U") &&
           compact_coverage_test.contains(
               "kExpectedManifestRows.size()==95U") &&
           count_identifier(code_only(raw_coverage_test),
               "test_manifest_matches_independent_oracle") == 2,
-      "coverage tests must pin the reviewed digest, 95 rows, 6/61/28 "
-      "statuses, 15/13 missing split, and execute the independent oracle");
+      "coverage tests must pin the reviewed digest, 95 rows, 6/67/22 "
+      "statuses, 15/7 missing split, and execute the independent oracle");
 
   const std::string readme = read_file(repository_root / "README.md");
   const std::string qa = read_file(
@@ -11466,8 +11473,8 @@ void verify_party_status_ribbon_contract(
               std::string::npos &&
           compact_readme.contains(
               "95-rowinventoryremainsdeliberatelyincomplete:sixrolesare"
-              "`retained_in_crop`,61are`semantic_complete`,and28remain"
-              "`missing`(15interactionsand13") &&
+              "`retained_in_crop`,67are`semantic_complete`,and22remain"
+              "`missing`(15interactionsandseven") &&
           readme.find("cropping stays disabled") != std::string::npos,
       "README must document exact PARTY STATUS scope, exclusions, no OS "
       "claim, reviewed totals, and disabled cropping");
@@ -11479,8 +11486,8 @@ void verify_party_status_ribbon_contract(
               "Combatintentionallyomitsfatigueandpool") &&
           qa.find("No OS accessibility publisher") != std::string::npos &&
           compact_qa.contains(
-              "95-rowinventorycurrentlycontainssix`retained_in_crop`,61"
-              "`semantic_complete`,and28`missing`roles:15interactionsand13") &&
+              "95-rowinventorycurrentlycontainssix`retained_in_crop`,67"
+              "`semantic_complete`,and22`missing`roles:15interactionsandseven") &&
           qa.find("Cropping remains disabled") != std::string::npos &&
           qa.find("semantic_controls_ready = false") != std::string::npos,
       "QA docs must retain exact PARTY STATUS manual scope, reviewed totals, "
@@ -11492,6 +11499,1288 @@ void verify_party_status_ribbon_contract(
           count_identifier(present, "semantic_controls_ready") == 1,
       "PARTY STATUS completion must not enable the cropped Classic frame");
 }
+
+void verify_world_context_status_strip_contract(
+    const fs::path& repository_root) {
+  const auto braced_definition = [](
+      std::string_view source,
+      std::string_view name) {
+    const std::size_t definition = find_identifier(source, name);
+    require(definition != std::string_view::npos,
+        std::string("missing World Context structural definition: ") +
+            std::string(name));
+    const std::size_t opening = source.find('{', definition);
+    require(opening != std::string_view::npos,
+        std::string("missing World Context structural body: ") +
+            std::string(name));
+    const std::size_t closing = matching_delimiter(
+        source, opening, '{', '}');
+    return std::string(
+        source.substr(opening, closing - opening + 1U));
+  };
+
+  const std::string raw_classic_structs = read_file(
+      repository_root / "src/realmz_orig/structs.h");
+  const std::string classic_structs = code_only(raw_classic_structs);
+  const std::string raw_classic_misc = read_file(
+      repository_root / "src/realmz_orig/misc.c");
+  const std::string classic_misc = code_only(raw_classic_misc);
+  const std::string raw_classic_time = read_file(
+      repository_root / "src/realmz_orig/textbox-time.c");
+  const std::string classic_time = code_only(raw_classic_time);
+  const std::string raw_classic_conditions = read_file(
+      repository_root / "src/realmz_orig/tickcheck.c-updatetorch.c");
+  const std::string classic_conditions = code_only(raw_classic_conditions);
+  const std::string classic_reduce = code_only(read_file(
+      repository_root / "src/realmz_orig/reduce.c"));
+  const std::string classic_buttonchoice = code_only(read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c"));
+
+  const std::string raw_snapshot_header = read_file(
+      repository_root / "src/presentation/GameSnapshot.hpp");
+  const std::string snapshot_header = code_only(raw_snapshot_header);
+  const std::string raw_snapshot_source = read_file(
+      repository_root /
+          "src/presentation/LegacyGameSnapshotSource.cpp");
+  const std::string snapshot_source = code_only(raw_snapshot_source);
+  const std::string raw_snapshot_test = read_file(
+      repository_root /
+          "src/tests/LegacyGameSnapshotSourceTest.cpp");
+  const std::string snapshot_test = code_only(raw_snapshot_test);
+
+  const std::string raw_model_header = read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp");
+  const std::string model_header = code_only(raw_model_header);
+  const std::string raw_model_source = read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp");
+  const std::string model_source = code_only(raw_model_source);
+  const std::string raw_model_test = read_file(
+      repository_root / "src/tests/PartyRailModelTest.cpp");
+  const std::string model_test = code_only(raw_model_test);
+
+  const std::string raw_layout_header = read_file(
+      repository_root / "src/presentation/WorldContextLayout.hpp");
+  const std::string layout_header = code_only(raw_layout_header);
+  const std::string raw_layout_source = read_file(
+      repository_root / "src/presentation/WorldContextLayout.cpp");
+  const std::string layout_source = code_only(raw_layout_source);
+  const std::string raw_layout_test = read_file(
+      repository_root / "src/tests/WorldContextLayoutTest.cpp");
+  const std::string layout_test = code_only(raw_layout_test);
+  const std::string raw_window_source = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string window_source = code_only(raw_window_source);
+
+  // Classic remains the meaning authority. Map-preview xy(mode != 0) is a
+  // separate branch; only xy(0)'s world coordinates, hidden state, clock, and
+  // raw Search/Torch meanings are projected by this read-only strip.
+  const std::string condition_enum = braced_definition(
+      classic_structs, "PartyCondition");
+  const std::string compact_condition_enum =
+      without_whitespace(condition_enum);
+  require(compact_condition_enum.contains(
+              "PARTY_COND_TORCH_LIT=0,") &&
+          compact_condition_enum.contains("PARTY_COND_SEARCH=5,") &&
+          count_identifier(condition_enum, "PARTY_COND_TORCH_LIT") == 1 &&
+          count_identifier(condition_enum, "PARTY_COND_SEARCH") == 1,
+      "Classic must explicitly pin Torch to partycondition[0] and Search "
+      "to partycondition[5]");
+
+  const std::string xy = function_body(classic_misc, "xy");
+  const std::string compact_xy = without_whitespace(xy);
+  const std::size_t preview_branch = compact_xy.find("if(mode){");
+  const std::size_t preview_x = compact_xy.find(
+      "MyrNumToString(themap.startx,myString);", preview_branch);
+  const std::size_t preview_y = compact_xy.find(
+      "MyrNumToString(themap.starty,myString);", preview_x);
+  const std::size_t live_branch = compact_xy.find("}else{", preview_y);
+  const std::size_t dungeon_branch = compact_xy.find(
+      "if(indung){", live_branch);
+  const std::size_t dungeon_x = compact_xy.find(
+      "MyrNumToString(floorx,myString);", dungeon_branch);
+  const std::size_t dungeon_y = compact_xy.find(
+      "MyrNumToString(floory,myString);", dungeon_x);
+  const std::size_t outdoor_branch = compact_xy.find("}else{", dungeon_y);
+  const std::size_t outdoor_x = compact_xy.find(
+      "MyrNumToString(lookx+partyx,myString);", outdoor_branch);
+  const std::size_t outdoor_y = compact_xy.find(
+      "MyrNumToString(looky+partyy,myString);", outdoor_x);
+  require(preview_branch != std::string::npos &&
+          preview_x != std::string::npos && preview_y != std::string::npos &&
+          live_branch != std::string::npos &&
+          dungeon_branch != std::string::npos &&
+          dungeon_x != std::string::npos && dungeon_y != std::string::npos &&
+          outdoor_branch != std::string::npos &&
+          outdoor_x != std::string::npos && outdoor_y != std::string::npos &&
+          preview_branch < preview_x && preview_x < preview_y &&
+          preview_y < live_branch && live_branch < dungeon_branch &&
+          dungeon_branch < dungeon_x && dungeon_x < dungeon_y &&
+          dungeon_y < outdoor_branch && outdoor_branch < outdoor_x &&
+          outdoor_x < outdoor_y &&
+          count_identifier(xy, "xydisplayflag") == 4 &&
+          count_text(raw_classic_misc, "MyrDrawCString(\"?\")") == 4,
+      "Classic xy(0) must use floor coordinates in dungeons, summed outdoor "
+      "coordinates otherwise, and replace both with ? for any nonzero "
+      "xydisplayflag while excluding map-preview mode 1");
+
+  const std::string timeclick = function_body(classic_time, "timeclick");
+  const std::string compact_timeclick = without_whitespace(timeclick);
+  require(raw_classic_time.find(
+              "strftime(s, 20, \"%I:%M %p\", &tyme);") !=
+              std::string::npos &&
+          compact_timeclick.contains("string(tyme.tm_yday);") &&
+          !compact_timeclick.contains("string(tyme.tm_yday+1);") &&
+          without_whitespace(classic_misc).contains(
+              "voidstring(shortnumber){") &&
+          function_body(classic_misc, "string").find("MyrNumToString") !=
+              std::string::npos,
+      "Classic clock truth must be exact %I:%M %p plus tm_yday with no +1 "
+      "and a signed-short display boundary");
+
+  const std::string tickcheck = function_body(
+      classic_conditions, "tickcheck");
+  const std::string compact_tickcheck = without_whitespace(tickcheck);
+  const std::string updatetorch = function_body(
+      classic_conditions, "updatetorch");
+  const std::string compact_updatetorch =
+      without_whitespace(updatetorch);
+  require(compact_tickcheck.contains(
+              "if(partycondition[PARTY_COND_TORCH_LIT]){") &&
+          !compact_tickcheck.contains(
+              "partycondition[PARTY_COND_TORCH_LIT]>0") &&
+          compact_updatetorch.contains(
+              "if(partycondition[PARTY_COND_TORCH_LIT]){") &&
+          !compact_updatetorch.contains(
+              "partycondition[PARTY_COND_TORCH_LIT]>0"),
+      "Classic tickcheck and updatetorch must treat every signed nonzero "
+      "Torch value as active");
+  const std::string reduce = function_body(classic_reduce, "reduce");
+  const std::string compact_reduce = without_whitespace(reduce);
+  require(compact_reduce.contains(
+              "for(t=0;t<10;t++)if(partycondition[t]>0)"
+              "partycondition[t]--;") &&
+          compact_reduce.contains(
+              "if(partycondition[PARTY_COND_TORCH_LIT]>0)"
+              "partycondition[PARTY_COND_TORCH_LIT]--;") &&
+          !compact_reduce.contains(
+              "if(partycondition[t])partycondition[t]--;") &&
+          !compact_reduce.contains(
+              "if(partycondition[t]!=0)partycondition[t]--;"),
+      "Classic reduce must decrement only positive values so negative Torch, "
+      "Search, and equipment sentinels persist");
+  const std::string buttonchoice = function_body(
+      classic_buttonchoice, "buttonchoice");
+  const std::string compact_buttonchoice =
+      without_whitespace(buttonchoice);
+  const std::size_t search_branch = compact_buttonchoice.find(
+      "if(theControl==search){");
+  const std::size_t search_truth = compact_buttonchoice.find(
+      "if(partycondition[PARTY_COND_SEARCH]){", search_branch);
+  const std::size_t search_clear = compact_buttonchoice.find(
+      "partycondition[PARTY_COND_SEARCH]=0;", search_truth);
+  const std::size_t search_set = compact_buttonchoice.find(
+      "partycondition[PARTY_COND_SEARCH]=-1;", search_clear);
+  require(search_branch != std::string::npos &&
+          search_truth != std::string::npos &&
+          search_clear != std::string::npos &&
+          search_set != std::string::npos &&
+          search_branch < search_truth && search_truth < search_clear &&
+          search_clear < search_set,
+      "Classic Search must toggle any truthy raw value to 0 and inactive to "
+      "the persistent -1 sentinel");
+
+  // Snapshot types are values only. The world-only optional owns no legacy
+  // address, and the capture branches before touching hidden or irrelevant
+  // coordinate expressions.
+  const std::string position_view = braced_definition(
+      snapshot_header, "WorldPositionView");
+  const std::string clock_view = braced_definition(
+      snapshot_header, "WorldClockView");
+  const std::string context_view = braced_definition(
+      snapshot_header, "WorldContextView");
+  const std::string world_view = braced_definition(
+      snapshot_header, "WorldView");
+  require(without_whitespace(position_view).contains(
+              "int32_tx=0;int32_ty=0;") &&
+          without_whitespace(clock_view).contains(
+              "int32_tday=0;int32_thour=0;int32_tminute=0;") &&
+          without_whitespace(context_view).contains(
+              "std::optional<WorldPositionView>visible_position;") &&
+          without_whitespace(context_view).contains(
+              "WorldClockViewclock;") &&
+          without_whitespace(context_view).contains(
+              "int16_tsearch_raw_value=0;int16_ttorch_raw_value=0;") &&
+          without_whitespace(world_view).contains(
+              "std::optional<WorldContextView>context;") &&
+          count_identifier(position_view, "operator") == 1 &&
+          count_identifier(clock_view, "operator") == 1 &&
+          count_identifier(context_view, "operator") == 1,
+      "World Context snapshot DTOs must retain exact int32 coordinates/clock, "
+      "signed int16 Search/Torch, and one optional value on WorldView");
+  for (const auto forbidden : {
+           "SDL_Renderer", "SDL_Texture", "UIAction", "FILE",
+           "LegacyGameSnapshotSource", "character", "partycondition"}) {
+    require(count_identifier(position_view, forbidden) == 0 &&
+            count_identifier(clock_view, forbidden) == 0 &&
+            count_identifier(context_view, forbidden) == 0,
+        std::string("detached World Context DTO leaked dependency ") +
+            forbidden);
+  }
+
+  const std::string checked_sum = function_body(
+      snapshot_source, "checked_world_coordinate_sum");
+  const std::string compact_checked_sum =
+      without_whitespace(checked_sum);
+  require(compact_checked_sum.contains(
+              "constint64_tsum=static_cast<int64_t>(left)+"
+              "static_cast<int64_t>(right);") &&
+          compact_checked_sum.contains(
+              "std::numeric_limits<int32_t>::min()") &&
+          compact_checked_sum.contains(
+              "std::numeric_limits<int32_t>::max()") &&
+          count_identifier(checked_sum, "overflow_error") == 1 &&
+          compact_checked_sum.contains("returnstatic_cast<int32_t>(sum);"),
+      "outdoor World Context sums must widen to int64, reject both int32 "
+      "overflows, and narrow only after validation");
+
+  const std::string capture = function_body(snapshot_source, "capture");
+  const std::string compact_capture = without_whitespace(capture);
+  const std::string world_gate_text =
+      "if((snapshot.screen==ScreenContext::exploration)||"
+      "(snapshot.screen==ScreenContext::dungeon)){";
+  const std::size_t world_gate = compact_capture.find(world_gate_text);
+  require(world_gate != std::string::npos,
+      "legacy World Context capture must engage only for world screens");
+  const std::size_t world_gate_open = compact_capture.find('{', world_gate);
+  const std::size_t world_gate_close = matching_delimiter(
+      compact_capture, world_gate_open, '{', '}');
+  const std::string context_capture = compact_capture.substr(
+      world_gate_open, world_gate_close - world_gate_open + 1U);
+  const std::size_t hidden_bypass = context_capture.find(
+      "if(xydisplayflag==0){");
+  require(hidden_bypass != std::string::npos,
+      "coordinate capture must branch on exact visible state before values");
+  const std::size_t visible_open = context_capture.find('{', hidden_bypass);
+  const std::size_t visible_close = matching_delimiter(
+      context_capture, visible_open, '{', '}');
+  const std::string visible_capture = context_capture.substr(
+      visible_open, visible_close - visible_open + 1U);
+  const std::size_t capture_dungeon = visible_capture.find(
+      "if(snapshot.screen==ScreenContext::dungeon){");
+  const std::size_t capture_floorx = visible_capture.find(
+      ".x=floorx,", capture_dungeon);
+  const std::size_t capture_floory = visible_capture.find(
+      ".y=floory,", capture_floorx);
+  const std::size_t capture_outdoor = visible_capture.find(
+      "checked_world_coordinate_sum(lookx,partyx,", capture_floory);
+  const std::size_t capture_outdoor_y = visible_capture.find(
+      "checked_world_coordinate_sum(looky,partyy,", capture_outdoor);
+  require(capture_dungeon != std::string::npos &&
+          capture_floorx != std::string::npos &&
+          capture_floory != std::string::npos &&
+          capture_outdoor != std::string::npos &&
+          capture_outdoor_y != std::string::npos &&
+          capture_dungeon < capture_floorx && capture_floorx < capture_floory &&
+          capture_floory < capture_outdoor &&
+          capture_outdoor < capture_outdoor_y &&
+          count_identifier(context_capture,
+              "checked_world_coordinate_sum") == 2 &&
+          count_identifier(visible_capture,
+              "checked_world_coordinate_sum") == 2,
+      "visible dungeon capture must use floorx/floory without evaluating "
+      "outdoor sums; visible outdoor capture must use both checked sums");
+  require(without_whitespace(context_capture).contains(
+              ".day=static_cast<int32_t>(tyme.tm_yday),") &&
+          without_whitespace(context_capture).contains(
+              ".hour=static_cast<int32_t>(tyme.tm_hour),") &&
+          without_whitespace(context_capture).contains(
+              ".minute=static_cast<int32_t>(tyme.tm_min),") &&
+          without_whitespace(context_capture).contains(
+              "partycondition[PARTY_COND_SEARCH]") &&
+          without_whitespace(context_capture).contains(
+              "partycondition[PARTY_COND_TORCH_LIT]") &&
+          count_identifier(context_capture, "visible_position") == 2 &&
+          count_identifier(context_capture, "xydisplayflag") == 1 &&
+          count_identifier(context_capture, "UIAction") == 0,
+      "world-only capture must copy exact tm and signed Search/Torch fields "
+      "while leaving hidden position disengaged and remaining read-only");
+
+  const std::string raw_capture_exact_test = function_body(
+      raw_snapshot_test, "test_world_context_capture_is_exact_and_detached");
+  const std::string capture_coordinate_test = function_body(
+      snapshot_test,
+      "test_world_context_coordinate_visibility_and_checked_sources");
+  const std::string capture_scope_test = function_body(
+      snapshot_test, "test_world_context_conditions_and_screen_scope");
+  const std::string compact_capture_coordinate_test =
+      without_whitespace(capture_coordinate_test);
+  const std::string compact_capture_scope_test =
+      without_whitespace(capture_scope_test);
+  for (const auto test_name : {
+           "test_world_context_capture_is_exact_and_detached",
+           "test_world_context_coordinate_visibility_and_checked_sources",
+           "test_world_context_conditions_and_screen_scope"}) {
+    require(count_identifier(snapshot_test, test_name) == 2,
+        std::string("World Context snapshot test is not executed: ") +
+            test_name);
+  }
+  require(without_whitespace(raw_capture_exact_test).contains(
+              "lookx=1'000;looky=-2'000;partyx=-25;partyy=75;") &&
+          count_identifier(raw_capture_exact_test, "numeric_limits") >= 12 &&
+          count_identifier(raw_capture_exact_test, "invalid_clock") >= 4 &&
+          without_whitespace(raw_capture_exact_test).contains(
+              "partycondition[PARTY_COND_SEARCH]=0;") &&
+          without_whitespace(raw_capture_exact_test).contains(
+              "partycondition[PARTY_COND_TORCH_LIT]=0;"),
+      "snapshot tests must prove exact coordinates, tm boundaries, signed "
+      "conditions, and post-capture detachment");
+  require(compact_capture_coordinate_test.contains("xydisplayflag=1;") &&
+          compact_capture_coordinate_test.contains(
+              "xydisplayflag=static_cast<char>(-1);") &&
+          count_identifier(capture_coordinate_test,
+              "visible_position") >= 3 &&
+          count_identifier(capture_coordinate_test,
+              "check_overflow_error") == 4 &&
+          count_identifier(capture_coordinate_test,
+              "numeric_limits") >= 12 &&
+          count_identifier(capture_coordinate_test, "indung") == 1,
+      "snapshot tests must execute positive/negative hidden flags, dungeon "
+      "sum bypass, and all signed overflow edges");
+  require(compact_capture_scope_test.contains("initems=1;") &&
+          compact_capture_scope_test.contains("inshop=1;") &&
+          compact_capture_scope_test.contains("encountflag=1;") &&
+          compact_capture_scope_test.contains("incombat=1;") &&
+          compact_capture_scope_test.contains("indung=1;") &&
+          count_identifier(capture_scope_test, "raw_values") >= 2 &&
+          count_identifier(capture_scope_test, "require_absent_context") >= 6,
+      "snapshot tests must execute int16 raw boundaries and reject capture "
+      "on every representative non-world scope");
+
+  // The model validates the detached producer rather than inferring from any
+  // action page or Torch inventory source. It preserves signed raw values and
+  // emits stable marker-bearing tokens for both active and inactive states.
+  const std::string condition_model = braced_definition(
+      model_header, "WorldConditionModel");
+  const std::string context_model = braced_definition(
+      model_header, "WorldContextModel");
+  const std::string shell_model = braced_definition(
+      model_header, "PresentationShellModel");
+  require(without_whitespace(condition_model).contains(
+              "int16_traw_value=0;StateTokenModelstate;") &&
+          without_whitespace(context_model).contains(
+              "WorldPresentationpresentation=WorldPresentation::none;") &&
+          without_whitespace(context_model).contains(
+              "std::optional<WorldPositionView>visible_position;") &&
+          without_whitespace(context_model).contains(
+              "int16_tday=0;int32_thour=0;int32_tminute=0;") &&
+          without_whitespace(context_model).contains(
+              "std::stringclock_text;") &&
+          count_identifier(context_model, "WorldConditionModel") == 2 &&
+          count_identifier(context_model, "search") == 1 &&
+          count_identifier(context_model, "torch") == 1 &&
+          without_whitespace(shell_model).contains(
+              "std::optional<WorldContextModel>world_context;"),
+      "World Context model must retain exact signed values, presentation, "
+      "optional position, clock text, two typed states, and one shell optional");
+
+  const std::string valid_pair = function_body(
+      model_source, "is_valid_world_context_pair");
+  const std::string compact_valid_pair = without_whitespace(valid_pair);
+  require(compact_valid_pair.contains(
+              "if(screen==ScreenContext::exploration){"
+              "returnpresentation==WorldPresentation::outdoor;") &&
+          compact_valid_pair.contains(
+              "if(screen==ScreenContext::dungeon){") &&
+          compact_valid_pair.contains(
+              "presentation==WorldPresentation::dungeon_map") &&
+          compact_valid_pair.contains(
+              "presentation==WorldPresentation::dungeon_first_person") &&
+          compact_valid_pair.contains("returnfalse;"),
+      "present World Context must fail closed except exploration/outdoor and "
+      "dungeon map/first-person pairings");
+
+  const std::string clock_text = function_body(
+      model_source, "world_clock_text");
+  const std::string compact_clock_text = without_whitespace(clock_text);
+  require(compact_clock_text.contains("int32_tdisplay_hour=hour%12;") &&
+          compact_clock_text.contains(
+              "if(display_hour==0){display_hour=12;}") &&
+          compact_clock_text.contains(
+              "two_digit_clock_component(display_hour)+") &&
+          compact_clock_text.contains(
+              "two_digit_clock_component(minute)+") &&
+          compact_clock_text.contains("(hour<12?") &&
+          count_identifier(clock_text, "strftime") == 0 &&
+          count_identifier(clock_text, "mktime") == 0 &&
+          count_identifier(clock_text, "locale") == 0 &&
+          count_identifier(clock_text, "timezone") == 0,
+      "World Context clock formatting must be deterministic zero-padded "
+      "English 12-hour text with no locale, timezone, or tm conversion");
+
+  const std::string search_state = function_body(
+      model_source, "world_search_state");
+  const std::string torch_state = function_body(
+      model_source, "world_torch_state");
+  require(without_whitespace(search_state).contains("raw_value!=0") &&
+          without_whitespace(torch_state).contains("raw_value!=0") &&
+          raw_model_source.find("\"world.search.active\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Search on\"") != std::string::npos &&
+          raw_model_source.find("\"world.search.inactive\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Search off\"") != std::string::npos &&
+          raw_model_source.find("\"world.torch.lit\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Torch lit\"") != std::string::npos &&
+          raw_model_source.find("\"world.torch.unlit\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Torch unlit\"") != std::string::npos &&
+          count_identifier(search_state, "StateEmphasis") == 2 &&
+          count_identifier(search_state, "StateMarker") == 2 &&
+          count_identifier(torch_state, "StateEmphasis") == 2 &&
+          count_identifier(torch_state, "StateMarker") == 2,
+      "Search/Torch models must use exact stable labels and non-color markers "
+      "for raw-zero and every signed nonzero value");
+
+  const std::string build_context = function_body(
+      model_source, "build_world_context_model");
+  const std::string compact_build_context =
+      without_whitespace(build_context);
+  const std::size_t absent_context = compact_build_context.find(
+      "if(!snapshot.world.context){returnstd::nullopt;}");
+  const std::size_t pairing_validation = compact_build_context.find(
+      "if(!is_valid_world_context_pair(", absent_context);
+  const std::size_t day_minimum = compact_build_context.find(
+      "context.clock.day<std::numeric_limits<int16_t>::min()",
+      pairing_validation);
+  const std::size_t day_maximum = compact_build_context.find(
+      "context.clock.day>std::numeric_limits<int16_t>::max()",
+      day_minimum);
+  const std::size_t hour_validation = compact_build_context.find(
+      "context.clock.hour<0", day_maximum);
+  const std::size_t minute_validation = compact_build_context.find(
+      "context.clock.minute<0", hour_validation);
+  const std::size_t canonical_validation = compact_build_context.find(
+      "validate_party_effect_sequence(snapshot.party.effects);",
+      minute_validation);
+  const std::size_t search_projection = compact_build_context.find(
+      "snapshot.party.effects[kSearchEffectIndex]", canonical_validation);
+  const std::size_t exact_search = compact_build_context.find(
+      "context.search_raw_value!=search_effect.raw_value", search_projection);
+  const std::size_t searching_truth = compact_build_context.find(
+      "snapshot.world.searching!=(context.search_raw_value!=0)", exact_search);
+  require(absent_context != std::string::npos &&
+          pairing_validation != std::string::npos &&
+          day_minimum != std::string::npos && day_maximum != std::string::npos &&
+          hour_validation != std::string::npos &&
+          compact_build_context.contains("context.clock.hour>23") &&
+          minute_validation != std::string::npos &&
+          compact_build_context.contains("context.clock.minute>59") &&
+          canonical_validation != std::string::npos &&
+          search_projection != std::string::npos &&
+          exact_search != std::string::npos &&
+          searching_truth != std::string::npos &&
+          absent_context < pairing_validation &&
+          pairing_validation < day_minimum && day_minimum < day_maximum &&
+          day_maximum < hour_validation && hour_validation < minute_validation &&
+          minute_validation < canonical_validation &&
+          canonical_validation < search_projection &&
+          search_projection < exact_search && exact_search < searching_truth &&
+          without_whitespace(model_source).contains(
+              "constexprstd::size_tkSearchEffectIndex=4;") &&
+          count_identifier(build_context, "usable_torch_source") == 0 &&
+          count_identifier(build_context, "WorldActionPage") == 0 &&
+          count_identifier(build_context, "PartyMemberId") == 0 &&
+          count_identifier(build_context, "in_camp") == 0,
+      "World Context model must preserve absent fixtures, validate exact "
+      "screen/time/canonical Search consistency, and remain independent of "
+      "action page, camp, member, and usable Torch source");
+  require(compact_build_context.contains(
+              ".day=static_cast<int16_t>(context.clock.day),") &&
+          compact_build_context.contains(".hour=context.clock.hour,") &&
+          compact_build_context.contains(".minute=context.clock.minute,") &&
+          compact_build_context.contains(
+              ".clock_text=world_clock_text(context.clock.hour,"
+              "context.clock.minute),") &&
+          compact_build_context.contains(
+              ".raw_value=context.search_raw_value,") &&
+          compact_build_context.contains(
+              ".state=world_search_state(context.search_raw_value),") &&
+          compact_build_context.contains(
+              ".raw_value=context.torch_raw_value,") &&
+          compact_build_context.contains(
+              ".state=world_torch_state(context.torch_raw_value),"),
+      "valid World Context output must copy exact signed values and derive "
+      "only its deterministic clock and stable state tokens");
+
+  const std::string build_shell = function_body(
+      model_source, "build_presentation_shell_model");
+  require(without_whitespace(build_shell).contains(
+              "result.world_context=build_world_context_model(snapshot);") &&
+          count_identifier(build_shell, "build_world_context_model") == 1,
+      "the presentation shell must assign exactly one optional World Context "
+      "from the immutable snapshot");
+
+  const std::string context_model_test = function_body(
+      model_test,
+      "test_world_context_model_is_exact_validated_and_context_independent");
+  const std::string compact_context_model_test =
+      without_whitespace(context_model_test);
+  require(count_identifier(model_test,
+              "test_world_context_model_is_exact_validated_and_context_independent") ==
+              2 &&
+          compact_context_model_test.contains(
+              "!build_world_context_model(snapshot).has_value()") &&
+          compact_context_model_test.contains(
+              "!build_presentation_shell_model(snapshot).world_context."
+              "has_value()") &&
+          count_identifier(context_model_test, "check_invalid_argument") >=
+              10 &&
+          count_identifier(context_model_test, "numeric_limits") >= 17 &&
+          count_identifier(context_model_test, "raw_values") >= 3 &&
+          count_identifier(context_model_test, "usable_torch_source") >= 4 &&
+          count_identifier(context_model_test, "WorldActionPage") >= 3 &&
+          count_identifier(context_model_test, "in_camp") >= 2 &&
+          count_identifier(context_model_test, "snapshot_before") >= 2 &&
+          compact_context_model_test.contains("snapshot==snapshot_before") &&
+          compact_context_model_test.contains(
+              "build_world_context_model(snapshot)==exact") &&
+          compact_context_model_test.contains(
+              "build_presentation_shell_model(snapshot).world_context==exact"),
+      "World Context model tests must execute absent compatibility, strict "
+      "negative gates, signed boundaries, context independence, determinism, "
+      "shell assignment, and immutable input");
+  for (const auto expected_clock : {
+           "12:00 AM", "12:09 AM", "01:05 AM", "11:59 AM",
+           "12:00 PM", "01:01 PM", "11:59 PM"}) {
+    require(raw_model_test.find(
+                std::string("\"") + expected_clock + "\"") !=
+            std::string::npos,
+        std::string("model tests are missing deterministic clock case ") +
+            expected_clock);
+  }
+  for (const auto stable_token : {
+           "world.search.active", "world.search.inactive",
+           "world.torch.lit", "world.torch.unlit"}) {
+    require(raw_model_test.find(
+                std::string("\"") + stable_token + "\"") !=
+            std::string::npos,
+        std::string("model tests are missing exact World Context token ") +
+            stable_token);
+  }
+
+  // The standalone layout is pure and fail-closed. It validates three real,
+  // ordered typed tabs, derives a contained strip after the third, preserves
+  // complete raw/token text, and computes compact/wide geometry only.
+  const std::string request_model = braced_definition(
+      layout_header, "WorldContextLayoutRequest");
+  const std::string compact_request_model =
+      without_whitespace(request_model);
+  require(compact_request_model.contains(
+              "constWorldContextModel&world_context;") &&
+          compact_request_model.contains("ScreenContextscreen;") &&
+          compact_request_model.contains("LogicalRectaction_panel;") &&
+          compact_request_model.contains("TypographyModeltypography;") &&
+          compact_request_model.contains(
+              "std::span<constShellControlPlacement>action_controls;") &&
+          count_identifier(request_model, "world_context") == 1 &&
+          count_identifier(request_model, "screen") == 1 &&
+          count_identifier(request_model, "action_panel") == 1 &&
+          count_identifier(request_model, "typography") == 1 &&
+          count_identifier(request_model, "action_controls") == 1,
+      "World Context layout request must expose exactly its typed immutable "
+      "model, surface, panel, typography, and action-control inputs");
+  const std::string density = braced_definition(
+      layout_header, "WorldContextLayoutDensity");
+  require(count_identifier(density, "compact") == 1 &&
+          count_identifier(density, "wide") == 1,
+      "World Context layout must have exactly compact and wide densities");
+  const std::string condition_layout = braced_definition(
+      layout_header, "WorldContextConditionLayout");
+  const std::string line_layout = braced_definition(
+      layout_header, "WorldContextLineLayout");
+  const std::string world_layout = braced_definition(
+      layout_header, "WorldContextLayout");
+  require(without_whitespace(condition_layout).contains(
+              "int16_traw_value=0;StateTokenModelstate;") &&
+          count_identifier(condition_layout, "marker_text") == 1 &&
+          count_identifier(condition_layout, "render_text") == 1 &&
+          count_identifier(line_layout, "bounds") == 1 &&
+          count_identifier(line_layout, "text") == 1 &&
+          count_identifier(line_layout, "text_style") == 1 &&
+          count_identifier(line_layout, "emphasis") == 1 &&
+          count_identifier(world_layout, "bounds") == 1 &&
+          count_identifier(world_layout, "density") == 1 &&
+          count_identifier(world_layout, "lines") == 1 &&
+          without_whitespace(world_layout).contains(
+              "std::array<WorldContextConditionLayout,2>condition_tokens;") &&
+          count_identifier(world_layout, "accessibility_text") == 1,
+      "renderer-ready World Context layout must retain exact signed tokens, "
+      "marker text, line geometry/style, density, and complete internal text");
+  require(count_identifier(layout_header,
+              "compute_world_context_layout") == 1 &&
+          count_identifier(layout_source,
+              "compute_world_context_layout") == 1,
+      "World Context layout must expose one pure declaration and definition");
+  for (const auto forbidden : {
+           "SDL_Renderer", "SDL_Texture", "ResourceManager", "UIAction",
+           "LegacyCommandBridge", "RuntimeLegacyCommandBridge",
+           "SemanticInputBoundary", "EventManager", "PushEvent",
+           "dispatch_remastered_shell_control", "keyDown", "mouseDown"}) {
+    require(count_identifier(layout_header, forbidden) == 0 &&
+            count_identifier(layout_source, forbidden) == 0,
+        std::string("pure World Context layout must not depend on ") +
+            forbidden);
+  }
+  require(raw_layout_header.find("SDL_") == std::string::npos &&
+          raw_layout_source.find("SDL_") == std::string::npos &&
+          raw_layout_header.find(
+              "makes no claim that an operating-system accessibility "
+              "publisher") != std::string::npos,
+      "World Context layout must remain renderer/SDL-free and describe its "
+      "complete internal text without an OS-publication claim");
+
+  const std::string header_validation = function_body(
+      layout_source, "validate_header");
+  const std::string compact_header_validation =
+      without_whitespace(header_validation);
+  const std::string compact_layout_source =
+      without_whitespace(layout_source);
+  require(compact_header_validation.contains(
+              "std::array<constShellControlPlacement*,3>tabs{};") &&
+          count_identifier(header_validation,
+              "SetWorldActionPageAction") == 2 &&
+          compact_header_validation.contains(
+              "control.kind==ShellControlKind::world_action_page") &&
+          compact_header_validation.contains("tab_count!=tabs.size()") &&
+          compact_header_validation.contains(
+              "constexprstd::arraykExpectedPages{"
+              "WorldActionPage::travel,WorldActionPage::party,"
+              "WorldActionPage::game,};") &&
+          compact_header_validation.contains(
+              "constdoublefirst_gap=tabs[1]->bounds.x-"
+              "tabs[0]->bounds.right();") &&
+          compact_header_validation.contains(
+              "constdoublesecond_gap=tabs[2]->bounds.x-"
+              "tabs[1]->bounds.right();") &&
+          compact_header_validation.contains("first_gap<=0.0") &&
+          compact_header_validation.contains("second_gap<=0.0") &&
+          compact_header_validation.contains(
+              "!nearly_equal(first_gap,second_gap)") &&
+          compact_header_validation.contains(
+              "constdoublestrip_left=tabs[2]->bounds.right()+second_gap;") &&
+          compact_header_validation.contains(
+              "request.action_panel.contains(strip)") &&
+          count_identifier(header_validation, "interiors_overlap") >= 2 &&
+          count_identifier(header_validation, "invalid_argument") >= 8,
+      "layout must validate exactly three ordered live typed tabs, one "
+      "consistent positive gap, a contained strip after the third tab, and "
+      "logical nonoverlap before returning geometry");
+  require(compact_layout_source.contains(
+              "constexprdoublekPanelRightInset=14.0;") &&
+          compact_layout_source.contains(
+              "constexprdoublekTabGapScale=0.008;") &&
+          compact_layout_source.contains(
+              "constexprdoublekMinimumTabGap=6.0;") &&
+          compact_layout_source.contains(
+              "constexprdoublekMaximumTabGap=10.0;") &&
+          compact_layout_source.contains(
+              "constexprdoublekMaximumTabWidth=112.0;") &&
+          compact_header_validation.contains(
+              "constdoubleavailable_width=request.action_panel.width-"
+              "2.0*kPanelRightInset;") &&
+          compact_header_validation.contains(
+              "constdoubleexpected_gap=std::clamp(available_width*"
+              "kTabGapScale,kMinimumTabGap,kMaximumTabGap);") &&
+          compact_header_validation.contains(
+              "constdoubleexpected_width=std::min(kMaximumTabWidth,"
+              "(available_width-expected_gap*(tabs.size()-1U))/"
+              "tabs.size());") &&
+          compact_header_validation.contains(
+              "constdoubleexpected_x=request.action_panel.x+"
+              "kPanelRightInset+static_cast<double>(index)*"
+              "(expected_width+expected_gap);") &&
+          compact_header_validation.contains(
+              "!nearly_equal(tabs[index]->bounds.x,expected_x)") &&
+          compact_header_validation.contains(
+              "!nearly_equal(tabs[index]->bounds.width,expected_width)"),
+      "layout must recompute ShellControlLayout's canonical x origin, "
+      "responsive gap, and tab width so uniformly forged geometry fails "
+      "closed before deriving the information strip");
+
+  const std::string layout_condition = function_body(
+      layout_source, "layout_condition");
+  const std::string compact_layout_condition =
+      without_whitespace(layout_condition);
+  require(compact_layout_condition.contains(
+              "constboolactive=condition.raw_value!=0;") &&
+          compact_layout_condition.contains(
+              ".raw_value=condition.raw_value,") &&
+          compact_layout_condition.contains(".state=condition.state,") &&
+          compact_layout_condition.contains(".marker_text=marker,") &&
+          count_identifier(layout_condition, "raw_value") >= 3 &&
+          count_identifier(layout_condition, "marker_text") >= 2 &&
+          raw_layout_source.find("SEARCH ON") != std::string::npos &&
+          raw_layout_source.find("SEARCH OFF") != std::string::npos &&
+          raw_layout_source.find("TORCH LIT") != std::string::npos &&
+          raw_layout_source.find("TORCH UNLIT") != std::string::npos &&
+          raw_layout_source.find("RAW {}") != std::string::npos,
+      "layout condition tokens must retain exact signed raw values, stable "
+      "model states, and explicit non-color marker text");
+
+  const std::string compute_layout = function_body(
+      layout_source, "compute_world_context_layout");
+  const std::string compact_compute_layout =
+      without_whitespace(compute_layout);
+  const std::size_t validate_model_call = compact_compute_layout.find(
+      "validate_model(request);");
+  const std::size_t validate_header_call = compact_compute_layout.find(
+      "constautoheader=validate_header(request);", validate_model_call);
+  const std::size_t visible_position = compact_compute_layout.find(
+      "if(request.world_context.visible_position){", validate_header_call);
+  const std::size_t visible_x = compact_compute_layout.find(
+      "request.world_context.visible_position->x", visible_position);
+  const std::size_t visible_y = compact_compute_layout.find(
+      "request.world_context.visible_position->y", visible_x);
+  const std::size_t hidden_position = compact_compute_layout.find(
+      "position_text=", visible_y);
+  const std::size_t search_layout = compact_compute_layout.find(
+      "layout_condition(request.world_context.search,true)", hidden_position);
+  const std::size_t torch_layout = compact_compute_layout.find(
+      "layout_condition(request.world_context.torch,false)", search_layout);
+  const std::size_t day_format = compact_compute_layout.find(
+      "request.world_context.day,", torch_layout);
+  const std::size_t clock_format = compact_compute_layout.find(
+      "request.world_context.clock_text", day_format);
+  const std::size_t result_start = compact_compute_layout.find(
+      "WorldContextLayoutresult{", clock_format);
+  const std::size_t compact_branch = compact_compute_layout.find(
+      "if(result.density==WorldContextLayoutDensity::compact){", clock_format);
+  const std::size_t wide_branch = compact_compute_layout.find(
+      "}else{", compact_branch);
+  const std::size_t internal_text = compact_compute_layout.find(
+      "result.accessibility_text=", wide_branch);
+  require(validate_model_call != std::string::npos &&
+          validate_header_call != std::string::npos &&
+          visible_position != std::string::npos &&
+          visible_x != std::string::npos && visible_y != std::string::npos &&
+          hidden_position != std::string::npos &&
+          search_layout != std::string::npos && torch_layout != std::string::npos &&
+          day_format != std::string::npos && clock_format != std::string::npos &&
+          result_start != std::string::npos &&
+          compact_branch != std::string::npos &&
+          wide_branch != std::string::npos &&
+          internal_text != std::string::npos &&
+          validate_model_call < validate_header_call &&
+          validate_header_call < visible_position &&
+          visible_position < visible_x && visible_x < visible_y &&
+          visible_y < hidden_position && hidden_position < search_layout &&
+          search_layout < torch_layout &&
+          torch_layout < day_format && day_format < clock_format &&
+          clock_format < result_start && result_start < compact_branch &&
+          compact_branch < wide_branch &&
+          wide_branch < internal_text &&
+          count_identifier(compute_layout, "emplace_back") == 3,
+      "layout must validate first, derive visible/hidden context without raw "
+      "leakage, preserve Search/Torch/day/time order, use two compact lines "
+      "or one wide line, and retain complete internal semantic text");
+  require(raw_layout_source.find(
+              "X ?  Y ? · COORDINATES HIDDEN") != std::string::npos &&
+          raw_layout_source.find("coordinates hidden") != std::string::npos &&
+          raw_layout_source.find("{} · DAY {} · {}") != std::string::npos &&
+          raw_layout_source.find(
+              "World context; {}; day {}; time {}; {}, raw {}; {}, raw {}.") !=
+              std::string::npos &&
+          compact_compute_layout.contains(
+              "condition_tokens[0].render_text") &&
+          compact_compute_layout.contains(
+              "condition_tokens[1].render_text") &&
+          count_identifier(compute_layout, "WorldActionPage") == 0 &&
+          count_identifier(compute_layout, "UIAction") == 0 &&
+          count_identifier(compute_layout, "dispatch") == 0,
+      "World Context visible/internal strings must show exact day/time/raw "
+      "conditions, conceal both hidden coordinates, and add no action path");
+  require(compact_compute_layout.contains(
+              "constboolfull_line_fits=fitted_text_style("
+              "request.typography.caption,header.strip_bounds,"
+              "full_text.size()).has_value();") &&
+          compact_compute_layout.contains(
+              ".density=full_line_fits?WorldContextLayoutDensity::wide:"
+              "WorldContextLayoutDensity::compact,"),
+      "wide/compact selection must derive from whether the complete exact "
+      "one-line content honors the practical text floor, not a fixed width");
+
+  const std::string fit_text = function_body(
+      layout_source, "fit_text_style");
+  const std::string compact_fit_text = without_whitespace(fit_text);
+  const std::string fitted_text = function_body(
+      layout_source, "fitted_text_style");
+  const std::string compact_fitted_text =
+      without_whitespace(fitted_text);
+  require(without_whitespace(layout_source).contains(
+              "constexprdoublekMinimumPracticalPointSize=8.0;") &&
+          without_whitespace(layout_source).contains(
+              "constexprdoublekMinimumPracticalLineHeight=10.0;") &&
+          compact_fitted_text.contains(
+              "point_size<kMinimumPracticalPointSize") &&
+          compact_fitted_text.contains(
+              "line_height<kMinimumPracticalLineHeight") &&
+          compact_fitted_text.contains("returnstd::nullopt;") &&
+          compact_fit_text.contains("fitted_text_style(") &&
+          count_identifier(fit_text, "invalid_argument") == 1,
+      "layout must fail closed instead of rendering below the 8pt/10pt "
+      "practical text floor");
+
+  const std::string complete_layout_test = function_body(
+      layout_test, "test_complete_responsive_matrix");
+  const std::string width_layout_test = function_body(
+      layout_test,
+      "test_every_supported_width_selects_content_fitting_density");
+  const std::string verify_complete_layout = function_body(
+      layout_test, "verify_complete_layout");
+  const std::string clock_layout_test = function_body(
+      layout_test, "test_clock_and_condition_text_boundaries");
+  const std::string invalid_layout_test = function_body(
+      layout_test,
+      "test_invalid_models_geometry_typography_and_tabs_fail_closed");
+  for (const auto test_name : {
+           "test_complete_responsive_matrix",
+           "test_every_supported_width_selects_content_fitting_density",
+           "test_clock_and_condition_text_boundaries",
+           "test_invalid_models_geometry_typography_and_tabs_fail_closed"}) {
+    require(count_identifier(layout_test, test_name) == 2,
+        std::string("World Context layout test is not executed: ") +
+            test_name);
+  }
+  const std::string compact_complete_layout =
+      without_whitespace(complete_layout_test);
+  const std::string compact_verify_complete =
+      without_whitespace(verify_complete_layout);
+  require(count_identifier(complete_layout_test, "panels") >= 2 &&
+          count_identifier(complete_layout_test, "surfaces") >= 2 &&
+          count_identifier(complete_layout_test, "pages") >= 2 &&
+          count_identifier(complete_layout_test, "text_scales") >= 2 &&
+          count_identifier(complete_layout_test, "backing_scales") >= 2 &&
+          count_identifier(complete_layout_test, "positions") >= 2 &&
+          count_identifier(complete_layout_test, "conditions") >= 2 &&
+          compact_complete_layout.contains(
+              "ScreenContext::exploration,WorldPresentation::outdoor") &&
+          compact_complete_layout.contains(
+              "ScreenContext::dungeon,WorldPresentation::dungeon_map") &&
+          compact_complete_layout.contains(
+              "WorldPresentation::dungeon_first_person") &&
+          compact_verify_complete.contains("layout==repeat") &&
+          compact_verify_complete.contains("model==model_before") &&
+          compact_verify_complete.contains("controls==controls_before") &&
+          count_identifier(verify_complete_layout, "contains") >= 4 &&
+          count_identifier(verify_complete_layout,
+              "interiors_overlap") >= 5 &&
+          count_identifier(verify_complete_layout, "BackingTransform") == 1 &&
+          compact_verify_complete.contains(
+              "line.text_style.point_size>=8.0") &&
+          compact_verify_complete.contains(
+              "line.text_style.line_height>=10.0") &&
+          compact_verify_complete.contains(
+              "control.bounds.width>=44.0") &&
+          compact_verify_complete.contains(
+              "control.bounds.height>=44.0"),
+      "responsive tests must execute compact/wide world surfaces, every page, "
+      "text/backing scales, visible/hidden positions, signed conditions, "
+      "determinism, immutable input, contained logical/physical nonoverlap, "
+      "and 44-point tab geometry");
+  const std::string compact_width_layout_test =
+      without_whitespace(width_layout_test);
+  require(compact_width_layout_test.contains(
+              "for(intwidth=1024;width<=1600;++width){") &&
+          count_identifier(width_layout_test, "surfaces") >= 3 &&
+          count_identifier(width_layout_test, "pages") >= 3 &&
+          count_identifier(width_layout_test, "models") >= 3 &&
+          count_identifier(width_layout_test, "verify_complete_layout") == 1 &&
+          count_identifier(width_layout_test, "saw_visible_compact") >= 3 &&
+          count_identifier(width_layout_test, "saw_visible_wide") >= 3 &&
+          count_identifier(width_layout_test, "saw_hidden_compact") >= 3 &&
+          count_identifier(width_layout_test, "saw_hidden_wide") >= 3 &&
+          count_identifier(width_layout_test, "visible_expected") >= 2 &&
+          count_identifier(width_layout_test, "hidden_expected") >= 2,
+      "layout tests must execute every supported integer width across all "
+      "world surfaces/pages and prove both content-fitting densities for "
+      "visible and hidden exact strings");
+  require(count_identifier(clock_layout_test, "ClockCase") >= 5 &&
+          raw_layout_test.find("\"12:00 AM\"") != std::string::npos &&
+          raw_layout_test.find("\"12:05 AM\"") != std::string::npos &&
+          raw_layout_test.find("\"12:00 PM\"") != std::string::npos &&
+          raw_layout_test.find("\"11:59 PM\"") != std::string::npos &&
+          raw_layout_test.find(
+              "\"X ?  Y ? · COORDINATES HIDDEN · DAY 3 · 12:00 PM\"") !=
+              std::string::npos &&
+          count_identifier(clock_layout_test, "raw_value") == 0 &&
+          count_identifier(clock_layout_test, "condition_tokens") >= 2,
+      "layout tests must pin 12-hour boundaries, hidden text, exact condition "
+      "rendering, and explicit non-color markers");
+  require(count_identifier(invalid_layout_test, "expect_invalid") >= 30 &&
+          count_identifier(invalid_layout_test, "bad_surface") >= 4 &&
+          count_identifier(invalid_layout_test, "bad_clock") >= 10 &&
+          count_identifier(invalid_layout_test, "bad_token") >= 20 &&
+          count_identifier(invalid_layout_test, "bad_panel") >= 6 &&
+          count_identifier(invalid_layout_test, "bad_type") >= 8 &&
+          count_identifier(invalid_layout_test, "bad_tabs") >= 40 &&
+          count_identifier(invalid_layout_test, "MovePartyAction") >= 2,
+      "negative layout tests must execute malformed screens, clock, tokens, "
+      "panel, typography, typed tabs, overlap, and too-small text geometry");
+  const std::string compact_invalid_layout_test =
+      without_whitespace(invalid_layout_test);
+  require(compact_invalid_layout_test.contains(
+              "bad_tabs[1].bounds.width+=1.0;") &&
+          compact_invalid_layout_test.contains(
+              "for(auto&tab:bad_tabs){tab.bounds.x+=1.0;}") &&
+          compact_invalid_layout_test.contains(
+              "bad_tabs[index].bounds.width-=1.0;"
+              "bad_tabs[index].bounds.x-=static_cast<double>(index);") &&
+          compact_invalid_layout_test.contains(
+              "bad_tabs[1].bounds.x+=1.0;"
+              "bad_tabs[2].bounds.x+=2.0;"),
+      "negative layout tests must reject isolated width, uniform shift, "
+      "uniform shrink with preserved gaps, and forged-gap tab geometry");
+
+  // WindowManager precomputes the pure strip from the base action controls,
+  // before party/drawer controls are appended, then hands it to the one common
+  // panel renderer. The action-bar branch only iterates renderer-ready lines.
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  const std::size_t action_controls = compact_present.find(
+      "this->remastered_shell_controls="
+      "realmz::presentation::compute_shell_control_layout({");
+  const std::size_t precomputed_context = compact_present.find(
+      "world_context_layout="
+      "realmz::presentation::compute_world_context_layout({",
+      action_controls);
+  const std::size_t party_controls = compact_present.find(
+      "realmz::presentation::compute_party_rail_layout({",
+      precomputed_context);
+  const std::size_t drawer_controls = compact_present.find(
+      "realmz::presentation::compute_drawer_control_layout(",
+      party_controls);
+  require(action_controls != std::string::npos &&
+          precomputed_context != std::string::npos &&
+          party_controls != std::string::npos &&
+          drawer_controls != std::string::npos &&
+          action_controls < precomputed_context &&
+          precomputed_context < party_controls &&
+          party_controls < drawer_controls &&
+          compact_present.contains(
+              ".world_context=*shell_model->world_context,") &&
+          compact_present.contains(
+              ".action_controls=this->remastered_shell_controls,") &&
+          count_identifier(present, "compute_world_context_layout") == 1,
+      "WindowManager must compute World Context once after base action tabs "
+      "and before appending party/drawer controls, using the shell model and "
+      "the exact controls it validates");
+
+  const std::string draw_panels = function_body(
+      window_source, "draw_shell_panel_contents");
+  const std::string compact_draw_panels = without_whitespace(draw_panels);
+  const std::size_t action_branch_marker = compact_draw_panels.find(
+      "if(kind==ShellPanelKind::action_bar){");
+  require(action_branch_marker != std::string::npos,
+      "the common shell renderer is missing its action-bar branch");
+  const std::size_t action_branch_open = compact_draw_panels.find(
+      '{', action_branch_marker);
+  const std::size_t action_branch_close = matching_delimiter(
+      compact_draw_panels, action_branch_open, '{', '}');
+  const std::string action_branch = compact_draw_panels.substr(
+      action_branch_open,
+      action_branch_close - action_branch_open + 1U);
+  const std::size_t optional_strip = action_branch.find(
+      "if(world_context_layout){");
+  const std::size_t line_iteration = action_branch.find(
+      "for(constauto&line:world_context_layout->lines){", optional_strip);
+  const std::size_t line_text = action_branch.find(
+      "line.text", line_iteration);
+  const std::size_t line_bounds = action_branch.find(
+      "line.bounds", line_text);
+  const std::size_t line_emphasis = action_branch.find(
+      "line.emphasis", line_bounds);
+  const std::size_t line_style = action_branch.find(
+      "line.text_style", line_emphasis);
+  require(optional_strip != std::string::npos &&
+          line_iteration != std::string::npos &&
+          line_text != std::string::npos &&
+          line_bounds != std::string::npos &&
+          line_emphasis != std::string::npos &&
+          line_style != std::string::npos &&
+          optional_strip < line_iteration && line_iteration < line_text &&
+          line_text < line_bounds && line_bounds < line_emphasis &&
+          line_emphasis < line_style &&
+          count_identifier(action_branch, "format") == 0 &&
+          count_identifier(action_branch, "to_string") == 0 &&
+          count_identifier(action_branch, "ScreenContext") == 0 &&
+          count_identifier(action_branch, "UIAction") == 0 &&
+          count_identifier(action_branch,
+              "dispatch_remastered_shell_control") == 0 &&
+          count_identifier(action_branch, "PushEvent") == 0 &&
+          count_identifier(action_branch, "keyDown") == 0 &&
+          count_identifier(action_branch, "mouseDown") == 0 &&
+          count_identifier(action_branch, "accessibility_text") == 0,
+      "the common action-bar renderer must iterate only layout-returned lines "
+      "with no local formatting, screen branch, action/input route, or OS "
+      "publication");
+  require(count_identifier(draw_panels, "world_context_layout") == 2 &&
+          compact_present.contains(
+              "*shell_model,world_context_layout,"
+              "this->remastered_shell_controls,"),
+      "present_remastered_frame must pass the precomputed optional World "
+      "Context into the common panel renderer");
+
+  // Both supported build harnesses execute the pure layout test. Six existing
+  // information rows—and only those rows—are promoted by this slice; overall
+  // arithmetic, digest, remaining IDs, docs, and crop state remain explicit.
+  const std::string raw_cmake = read_file(repository_root / "CMakeLists.txt");
+  const std::string raw_core_tests = read_file(
+      repository_root / "scripts/run-core-tests.sh");
+  require(count_text(raw_cmake,
+              "src/presentation/WorldContextLayout.cpp") == 1 &&
+          count_text(raw_cmake,
+              "src/tests/WorldContextLayoutTest.cpp") == 1 &&
+          count_identifier(code_only(raw_cmake),
+              "WorldContextLayoutTest") >= 4 &&
+          count_text(raw_core_tests,
+              "run_cpp_test WorldContextLayoutTest") == 1 &&
+          count_text(raw_core_tests,
+              "src/tests/WorldContextLayoutTest.cpp") == 1 &&
+          count_text(raw_core_tests,
+              "src/presentation/WorldContextLayout.cpp") == 1,
+      "CMake and run-core-tests must both compile and execute the World "
+      "Context layout source/test exactly once");
+
+  const std::string raw_coverage_header = read_file(
+      repository_root / "src/presentation/GameplayChromeCoverage.hpp");
+  const std::string raw_coverage_source = read_file(
+      repository_root / "src/presentation/GameplayChromeCoverage.cpp");
+  const std::string raw_coverage_test = read_file(
+      repository_root / "src/tests/GameplayChromeCoverageTest.cpp");
+  const auto coverage_row = [&raw_coverage_source](
+      std::string_view stable_id) {
+    const std::string quoted = "\"" + std::string(stable_id) + "\"";
+    const std::size_t start = raw_coverage_source.find(quoted);
+    require(start != std::string::npos,
+        std::string("manifest is missing World Context role ") +
+            std::string(stable_id));
+    const std::size_t end = raw_coverage_source.find("},", start);
+    require(end != std::string::npos,
+        std::string("World Context manifest role is unterminated: ") +
+            std::string(stable_id));
+    return raw_coverage_source.substr(start, end - start + 2U);
+  };
+  constexpr std::array promoted_rows{
+      std::string_view("exploration.info.world_coordinates"),
+      std::string_view("exploration.info.calendar_clock"),
+      std::string_view("exploration.info.search_and_torch_state"),
+      std::string_view("dungeon.info.world_coordinates"),
+      std::string_view("dungeon.info.calendar_clock"),
+      std::string_view("dungeon.info.search_and_torch_state"),
+  };
+  for (const auto stable_id : promoted_rows) {
+    const std::string row = coverage_row(stable_id);
+    require(row.find("Kind::essential_information") != std::string::npos &&
+            row.find("Status::semantic_complete") != std::string::npos &&
+            row.find("world-context strip") != std::string::npos &&
+            row.find("absent in combat") != std::string::npos &&
+            row.find("complete internal semantic text") !=
+                std::string::npos &&
+            row.find("OS-publication claim") != std::string::npos &&
+            row.find("no action, tag, input, Classic-source, or "
+                     "replay-vocabulary change") != std::string::npos &&
+            row.find(
+                "src/presentation/WorldContextLayout.cpp::"
+                "compute_world_context_layout") != std::string::npos,
+        std::string("manifest World Context row lacks bounded evidence: ") +
+            std::string(stable_id));
+  }
+  for (const auto stable_id : {
+           std::string_view("exploration.info.world_coordinates"),
+           std::string_view("dungeon.info.world_coordinates")}) {
+    const std::string row = coverage_row(stable_id);
+    require(row.find("Any nonzero xydisplayflag") != std::string::npos &&
+            row.find("literal ? values") != std::string::npos &&
+            row.find("no raw-coordinate leakage") != std::string::npos &&
+            row.find("without clamping") != std::string::npos,
+        std::string("coordinate evidence is incomplete for ") +
+            std::string(stable_id));
+  }
+  for (const auto stable_id : {
+           std::string_view("exploration.info.calendar_clock"),
+           std::string_view("dungeon.info.calendar_clock")}) {
+    const std::string row = coverage_row(stable_id);
+    require(row.find("signed-short boundary") != std::string::npos &&
+            row.find("no +1") != std::string::npos &&
+            row.find("%I:%M %p-equivalent") != std::string::npos &&
+            row.find("zero-padded English 12-hour") != std::string::npos &&
+            row.find("no locale or timezone normalization") !=
+                std::string::npos,
+        std::string("calendar/clock evidence is incomplete for ") +
+            std::string(stable_id));
+  }
+  for (const auto stable_id : {
+           std::string_view("exploration.info.search_and_torch_state"),
+           std::string_view("dungeon.info.search_and_torch_state")}) {
+    const std::string row = coverage_row(stable_id);
+    require(row.find("partycondition[5]") != std::string::npos &&
+            row.find("partycondition[0]") != std::string::npos &&
+            row.find("Any nonzero value, including negative, is active") !=
+                std::string::npos &&
+            row.find("usable Torch source remains action-availability") !=
+                std::string::npos &&
+            row.find("explicit non-color markers") != std::string::npos,
+        std::string("Search/Torch evidence is incomplete for ") +
+            std::string(stable_id));
+  }
+  require(count_text(raw_coverage_source,
+              "src/presentation/WorldContextLayout.cpp::"
+              "compute_world_context_layout") == 6 &&
+          raw_coverage_source.find("\"combat.info.world_coordinates\"") ==
+              std::string::npos &&
+          raw_coverage_source.find("\"combat.info.calendar_clock\"") ==
+              std::string::npos &&
+          raw_coverage_source.find(
+              "\"combat.info.search_and_torch_state\"") ==
+              std::string::npos,
+      "exactly six named world-only information rows may use the World "
+      "Context layout anchor");
+
+  const std::string compact_coverage_test =
+      without_whitespace(raw_coverage_test);
+  require(raw_coverage_header.find("0x593B4959098E4C22ULL") !=
+              std::string::npos &&
+          raw_coverage_test.find("0x593B4959098E4C22ULL") !=
+              std::string::npos &&
+          compact_coverage_test.contains(
+              "Status::retained_in_crop)]==6U") &&
+          compact_coverage_test.contains(
+              "Status::semantic_complete)]==67U") &&
+          compact_coverage_test.contains("Status::missing)]==22U") &&
+          compact_coverage_test.contains(
+              "missing_interaction_count==15U") &&
+          compact_coverage_test.contains(
+              "missing_information_count==7U") &&
+          compact_coverage_test.contains(
+              "kExpectedManifestRows.size()==95U") &&
+          count_identifier(code_only(raw_coverage_test),
+              "test_manifest_matches_independent_oracle") == 2,
+      "coverage tests must pin digest 0x593B4959098E4C22, 95 rows, "
+      "6/67/22 statuses, the 15/7 missing split, and execute the independent "
+      "oracle");
+  const std::string compact_missing_ids =
+      "conststd::vector<std::string_view>expected_missing_information_ids{"
+      "\"exploration.info.narrative_messages\","
+      "\"dungeon.info.narrative_messages\","
+      "\"combat.info.narrative_messages\","
+      "\"combat.info.inspected_combatant\","
+      "\"combat.info.conditions_and_attacks\","
+      "\"combat.info.round\","
+      "\"combat.info.enemies_remaining\",};";
+  require(compact_coverage_test.contains(compact_missing_ids) &&
+          compact_coverage_test.contains(
+              "world_context_anchor_count==6U") &&
+          compact_coverage_test.contains(
+              "missing_information_ids==expected_missing_information_ids"),
+      "the independent oracle must pin exactly the seven remaining "
+      "essential-information IDs after six World Context promotions");
+
+  const std::string readme = read_file(repository_root / "README.md");
+  const std::string qa = read_file(
+      repository_root / "docs/QA_AND_RELEASE.md");
+  const std::string compact_readme = without_whitespace(readme);
+  const std::string compact_qa = without_whitespace(qa);
+  require(readme.find("**WORLD CONTEXT**") != std::string::npos &&
+          readme.find("lookx + partyx") != std::string::npos &&
+          readme.find("floorx") != std::string::npos &&
+          readme.find("xydisplayflag") != std::string::npos &&
+          readme.find("%I:%M %p") != std::string::npos &&
+          readme.find("partycondition[5]") != std::string::npos &&
+          readme.find("[0]") != std::string::npos &&
+          readme.find("without claiming OS publication") !=
+              std::string::npos &&
+          compact_readme.contains(
+              "sixrolesare`retained_in_crop`,67are`semantic_complete`,"
+              "and22remain`missing`(15interactionsandseven") &&
+          readme.find("cropping stays disabled") != std::string::npos,
+      "README must bound World Context truth, raw/hidden behavior, no OS "
+      "claim, reviewed 6/67/22 totals, and disabled cropping");
+  require(qa.find("**WORLD CONTEXT**") != std::string::npos &&
+          qa.find("lookx + partyx") != std::string::npos &&
+          qa.find("floorx") != std::string::npos &&
+          qa.find("xydisplayflag") != std::string::npos &&
+          qa.find("%I:%M %p") != std::string::npos &&
+          qa.find("partycondition[5]") != std::string::npos &&
+          qa.find("[0]") != std::string::npos &&
+          qa.find("without an OS-publication claim") !=
+              std::string::npos &&
+          compact_qa.contains(
+              "six`retained_in_crop`,67`semantic_complete`,and22`missing`"
+              "roles:15interactionsandsevenessential-informationroles") &&
+          qa.find("Cropping remains disabled") != std::string::npos &&
+          qa.find("semantic_controls_ready = false") != std::string::npos,
+      "QA docs must retain bounded World Context claims, reviewed totals, "
+      "no OS publisher, and hardcoded uncropped state");
+  require(compact_present.contains(".semantic_controls_ready=false,") &&
+          count_identifier(present, "semantic_controls_ready") == 1,
+      "World Context completion must leave semantic_controls_ready false and "
+      "the complete Classic crop enabled");
+
+  // This is information-only vocabulary. No action/tag/input mapping, Event
+  // Manager route, replay schema, or Classic source gains a WorldContext type.
+  std::string semantic_vocabulary;
+  for (const auto& relative : {
+           fs::path("src/presentation/UIAction.hpp"),
+           fs::path("src/presentation/SemanticInputBoundary.h"),
+           fs::path("src/presentation/SemanticInputBoundary.cpp"),
+           fs::path("src/presentation/RemasteredInputMapper.hpp"),
+           fs::path("src/presentation/RemasteredInputMapper.cpp"),
+           fs::path("src/EventManager.h"),
+           fs::path("src/EventManager.cpp")}) {
+    semantic_vocabulary += code_only(read_file(repository_root / relative));
+  }
+  std::string replay_vocabulary;
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (entry.is_regular_file()) {
+      require(entry.path().filename().string().find("WorldContext") ==
+              std::string::npos,
+          "World Context must not add a replay file");
+      replay_vocabulary += code_only(read_file(entry.path()));
+    }
+  }
+  replay_vocabulary += code_only(read_file(
+      repository_root / "src/SemanticReplayChild.cpp"));
+  std::string classic_vocabulary;
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/realmz_orig")) {
+    if (entry.is_regular_file()) {
+      require(entry.path().filename().string().find("WorldContext") ==
+              std::string::npos,
+          "World Context must not add a Classic source file");
+      classic_vocabulary += code_only(read_file(entry.path()));
+    }
+  }
+  for (const auto information_only_name : {
+           "WorldPositionView", "WorldClockView", "WorldContextView",
+           "WorldConditionModel", "WorldContextModel",
+           "WorldContextLayoutDensity", "WorldContextConditionLayout",
+           "WorldContextLineLayout", "WorldContextLayoutRequest",
+           "build_world_context_model", "compute_world_context_layout"}) {
+    require(count_identifier(
+                semantic_vocabulary, information_only_name) == 0 &&
+            count_identifier(replay_vocabulary, information_only_name) == 0 &&
+            count_identifier(classic_vocabulary, information_only_name) == 0,
+        std::string("World Context information leaked into action/input, "
+                    "replay, or Classic vocabulary named ") +
+            information_only_name);
+  }
+}
+
+
+
 
 void verify_selected_party_details_renderer_contract(
     const fs::path& repository_root) {
@@ -11881,7 +13170,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0xB4CBF4B4E225642BULL") !=
+          coverage_header.find("0x593B4959098E4C22ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -11971,7 +13260,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0xB4CBF4B4E225642BULL") !=
+          coverage_test.find("0x593B4959098E4C22ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -15785,6 +17074,7 @@ int main(int argc, char** argv) {
     verify_selected_item_drilldown_window_manager_contract(repository_root);
     verify_all_member_party_vitals_contract(repository_root);
     verify_party_status_ribbon_contract(repository_root);
+    verify_world_context_status_strip_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

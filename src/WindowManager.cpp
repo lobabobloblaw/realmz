@@ -53,6 +53,7 @@
 #include "presentation/PartyRailModel.hpp"
 #include "presentation/SelectedPartyDetailsLayout.hpp"
 #include "presentation/SemanticInputBoundary.h"
+#include "presentation/WorldContextLayout.hpp"
 #include "replay/ReplayRuntime.hpp"
 #include "remaster/assets/PartyPortraitTextureCache.hpp"
 #include "remaster/assets/ShellMaterialTextureCache.hpp"
@@ -2840,6 +2841,8 @@ void draw_shell_panel_contents(
     realmz::presentation::ShellPanelKind kind,
     const realmz::presentation::LogicalRect& panel,
     const realmz::presentation::PresentationShellModel& model,
+    const std::optional<realmz::presentation::WorldContextLayout>&
+        world_context_layout,
     const std::vector<realmz::presentation::ShellControlPlacement>& controls,
     std::optional<realmz::presentation::ShellRegionId> pressed_control,
     std::optional<realmz::presentation::ShellRegionId> focused_control,
@@ -3038,6 +3041,19 @@ void draw_shell_panel_contents(
   }
 
   if (kind == ShellPanelKind::action_bar) {
+    if (world_context_layout) {
+      for (const auto& line : world_context_layout->lines) {
+        draw_shell_text(
+            renderer,
+            font,
+            line.text,
+            line.bounds,
+            shell_state_color(line.emphasis),
+            backing_scale,
+            line.text_style,
+            TTF_STYLE_BOLD);
+      }
+    }
     const bool has_semantic_movement = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -3954,6 +3970,8 @@ void WindowManager::present_remastered_frame() {
   }
 
   std::optional<realmz::presentation::PresentationShellModel> shell_model;
+  std::optional<realmz::presentation::WorldContextLayout>
+      world_context_layout;
   TTF_Font* shell_font = nullptr;
   bool shell_keyboard_route_enabled = false;
   if (this->adaptive_shell_plan->adaptive_layout && TTF_WasInit()) {
@@ -4941,6 +4959,17 @@ void WindowManager::present_remastered_frame() {
                   money_management_control_visible,
               .money_management_available = money_management_available,
           });
+      if (shell_model->world_context) {
+        world_context_layout =
+            realmz::presentation::compute_world_context_layout({
+                .world_context = *shell_model->world_context,
+                .screen = shell_model->screen,
+                .action_panel =
+                    this->adaptive_shell_plan->adaptive_layout->action_bar,
+                .typography = shell_model->typography,
+                .action_controls = this->remastered_shell_controls,
+            });
+      }
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
             realmz::presentation::compute_party_rail_layout({
@@ -6032,6 +6061,7 @@ void WindowManager::present_remastered_frame() {
             panel->panel,
             panel->destination,
             *shell_model,
+            world_context_layout,
             this->remastered_shell_controls,
             pressed_control,
             focused_control,

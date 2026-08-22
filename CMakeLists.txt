@@ -88,6 +88,7 @@ set(PRESENTATION_CORE_SOURCES
     src/presentation/ShellControlLayout.cpp
     src/presentation/ShellKeyboardInteraction.cpp
     src/presentation/UIPrimitives.cpp
+    src/presentation/WorldContextLayout.cpp
 )
 
 add_library(realmz_presentation_core STATIC ${PRESENTATION_CORE_SOURCES})
@@ -204,6 +205,13 @@ if(REALMZ_BUILD_CORE_TESTS)
         realmz_presentation_core)
     realmz_configure_core_target(ShellControlLayoutTest)
     add_test(NAME ShellControlLayoutTest COMMAND ShellControlLayoutTest)
+
+    add_executable(WorldContextLayoutTest
+        src/tests/WorldContextLayoutTest.cpp)
+    target_link_libraries(WorldContextLayoutTest PRIVATE
+        realmz_presentation_core)
+    realmz_configure_core_target(WorldContextLayoutTest)
+    add_test(NAME WorldContextLayoutTest COMMAND WorldContextLayoutTest)
 
     add_executable(ShellKeyboardInteractionTest
         src/tests/ShellKeyboardInteractionTest.cpp)

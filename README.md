@@ -54,6 +54,23 @@ matching Classic's early fatigue return and the absence of a combat pooled-money
 role. This slice makes no OS-accessibility publication claim, does not treat raw
 effect values as durations, and adds no action, tag, input, Classic-source, or
 replay-vocabulary path.
+A shared responsive, read-only **WORLD CONTEXT** strip sits in the action
+header beside the persistent page tabs on outdoor exploration, dungeon-map,
+and dungeon-first-person surfaces; it is absent in combat. Outdoor coordinates
+use checked signed-32-bit `lookx + partyx` and `looky + partyy` additions, while
+dungeon coordinates preserve exact signed `floorx` and `floory`. Any nonzero
+`xydisplayflag` conceals both values as `?`, with no raw-coordinate leakage;
+otherwise the exact signed values appear without clamping. Campaign day stays
+at Classic's signed-short display boundary with no `+1` or calendar conversion,
+and raw hour/minute become deterministic, locale- and timezone-independent,
+zero-padded English 12-hour text equivalent to `%I:%M %p`. Search and Torch
+retain and display exact signed `partycondition[5]` and `[0]`; any nonzero value,
+including negative, is active, and neither raw value is described as a duration,
+turns, or charges. A usable Torch source remains action-availability data only.
+Explicit non-color markers make both active and inactive states visible. The
+layout keeps complete internal semantic text without claiming OS publication,
+and this information slice adds no action, tag, input, Classic-source, or replay
+path.
 World commands are organized into persistent, directly
 selectable **Travel**, **Party**, and **Game** pages so every target keeps the
 44-point minimum at the 1024×768 floor. Party contains Items, Equipment,
@@ -363,8 +380,8 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 61 are `semantic_complete`, and 28 remain `missing` (15
-interactions and 13 essential-information roles), so
+`retained_in_crop`, 67 are `semantic_complete`, and 22 remain `missing` (15
+interactions and seven essential-information roles), so
 cropping stays disabled. Known missing outdoor and dungeon roles include Heal,
 Trade, selected-member condition drilldowns, and the per-member Auto controls.
 Money management, the context-sensitive Shop/Temple/seamless-encounter entry,
@@ -374,16 +391,16 @@ information is instead covered by the separate read-only PARTY STATUS ribbon.
 Known
 missing combat roles include conditional Turn Undead, per-member Auto, and the distinct
 focused-combatant inspection controls for character or monster details, items,
-conditions, and monster attacks. Remaining information gaps include ordered
-capture and retention of Classic messages for Event Log; authoritative
-coordinates and calendar/clock; complete combined Search/Torch state (Search
-appearing as one party effect does not capture or present persistent Torch
-index 0); focused-combatant details; complete combat conditions and attacks;
-and combat round and enemies-remaining counts. The common code-native rail now
-covers all-member vitals, party-wide effects, world fatigue, and world pooled
-money, but it does not implicitly satisfy those distinct remaining roles or
-represent member/bank holdings. The bounded selected-member Details renderer
-likewise remains a separate information surface.
+conditions, and monster attacks. Remaining information gaps are the three
+surface-specific narrative-message rows for Event Log, plus combat
+focused-combatant details, complete conditions and attacks, round, and
+enemies-remaining counts. Those are exactly the seven remaining
+essential-information rows. The common code-native rail covers all-member
+vitals, party-wide effects, world fatigue, and world pooled money; the separate
+world-context strip covers world coordinates, campaign day/time, and combined
+Search/Torch state on exploration and dungeon. Neither implicitly satisfies the
+remaining roles or represents member/bank holdings. The bounded selected-member
+Details renderer likewise remains a separate information surface.
 
 Pointer, popup, text-input, and cursor
 coordinates continue through the embedded Classic frame. Title and modal

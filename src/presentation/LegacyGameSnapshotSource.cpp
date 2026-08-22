@@ -4,7 +4,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <ctime>
 #include <iterator>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -27,6 +30,10 @@ extern int32_t fieldx;
 extern int32_t fieldy;
 extern int32_t landlevel;
 extern int32_t dunglevel;
+extern int32_t lookx;
+extern int32_t looky;
+extern int32_t floorx;
+extern int32_t floory;
 extern int32_t moneypool[3];
 extern char charnum;
 extern char charselectnew;
@@ -38,6 +45,7 @@ extern char combatround;
 extern char head;
 extern char encountflag;
 extern char viewtype;
+extern char xydisplayflag;
 extern Boolean initems;
 extern Boolean inswap;
 extern Boolean inbooty;
@@ -60,6 +68,7 @@ extern char pos[6][2];
 extern char monpos[100][2];
 extern struct encount2 enc2;
 extern Rect lookrect;
+extern struct tm tyme;
 }
 
 namespace realmz::presentation {
@@ -112,6 +121,20 @@ WorldPresentation world_presentation() noexcept {
         : WorldPresentation::dungeon_map;
   }
   return WorldPresentation::outdoor;
+}
+
+int32_t checked_world_coordinate_sum(
+    int32_t left,
+    int32_t right,
+    const char* coordinate_name) {
+  const int64_t sum =
+      static_cast<int64_t>(left) + static_cast<int64_t>(right);
+  if ((sum < static_cast<int64_t>(std::numeric_limits<int32_t>::min())) ||
+      (sum > static_cast<int64_t>(std::numeric_limits<int32_t>::max()))) {
+    throw std::overflow_error(
+        std::string(coordinate_name) + " coordinate is outside int32 range");
+  }
+  return static_cast<int32_t>(sum);
 }
 
 std::vector<int16_t> active_conditions(const short (&conditions)[40]) {
@@ -306,6 +329,36 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
   snapshot.world.land_level = landlevel;
   snapshot.world.dungeon_level = dunglevel;
   snapshot.world.facing = facing_from_legacy_head(head);
+  if ((snapshot.screen == ScreenContext::exploration) ||
+      (snapshot.screen == ScreenContext::dungeon)) {
+    WorldContextView context{
+        .clock = WorldClockView{
+            .day = static_cast<int32_t>(tyme.tm_yday),
+            .hour = static_cast<int32_t>(tyme.tm_hour),
+            .minute = static_cast<int32_t>(tyme.tm_min),
+        },
+        .search_raw_value = static_cast<int16_t>(
+            partycondition[PARTY_COND_SEARCH]),
+        .torch_raw_value = static_cast<int16_t>(
+            partycondition[PARTY_COND_TORCH_LIT]),
+    };
+    if (xydisplayflag == 0) {
+      if (snapshot.screen == ScreenContext::dungeon) {
+        context.visible_position = WorldPositionView{
+            .x = floorx,
+            .y = floory,
+        };
+      } else {
+        context.visible_position = WorldPositionView{
+            .x = checked_world_coordinate_sum(
+                lookx, partyx, "outdoor x"),
+            .y = checked_world_coordinate_sum(
+                looky, partyy, "outdoor y"),
+        };
+      }
+    }
+    snapshot.world.context = context;
+  }
 
   if (incombat) {
     CombatView combat;

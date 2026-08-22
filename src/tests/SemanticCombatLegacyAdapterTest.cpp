@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <ctime>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
@@ -43,6 +44,10 @@ int32_t fieldx = 0;
 int32_t fieldy = 0;
 int32_t landlevel = 0;
 int32_t dunglevel = 0;
+int32_t lookx = 0;
+int32_t looky = 0;
+int32_t floorx = 0;
+int32_t floory = 0;
 int32_t moneypool[3] = {};
 char charnum = -1;
 char charselectnew = -1;
@@ -54,6 +59,7 @@ char q[110] = {};
 char head = 1;
 char encountflag = 0;
 char viewtype = 1;
+char xydisplayflag = 0;
 Boolean initems = 0;
 Boolean inswap = 0;
 Boolean inbooty = 0;
@@ -77,6 +83,7 @@ struct itemattr allhelms[200] = {};
 struct itemattr allmagic[200] = {};
 struct itemattr allsupply[200] = {};
 Rect lookrect = {};
+struct tm tyme = {};
 
 CGrafPtr FrontWindow(void) {
   return front_window;
@@ -250,6 +257,10 @@ void reset_legacy_globals() {
   partyy = 0;
   fieldx = 0;
   fieldy = 0;
+  lookx = 0;
+  looky = 0;
+  floorx = 0;
+  floory = 0;
   lookrect = {};
   landlevel = 0;
   dunglevel = 0;
@@ -264,6 +275,7 @@ void reset_legacy_globals() {
   head = 1;
   encountflag = 0;
   viewtype = 1;
+  xydisplayflag = 0;
   initems = 0;
   inswap = 0;
   inbooty = 0;
@@ -286,6 +298,7 @@ void reset_legacy_globals() {
   std::memset(allhelms, 0, sizeof(allhelms));
   std::memset(allmagic, 0, sizeof(allmagic));
   std::memset(allsupply, 0, sizeof(allsupply));
+  std::memset(&tyme, 0, sizeof(tyme));
 }
 
 void seed_active_party_combatant() {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -14,6 +15,7 @@ constexpr int32_t kActionTabStart = 1000;
 constexpr int32_t kDrawerTabStart = 2000;
 constexpr int16_t kSlowCondition = 6;
 constexpr int16_t kSpeedyCondition = 23;
+constexpr std::size_t kSearchEffectIndex = 4;
 
 constexpr std::array kPartyEffectKinds{
     PartyEffectKind::waterworld,
@@ -309,7 +311,7 @@ StateTokenModel party_effect_state(PartyEffectKind kind) {
   throw std::invalid_argument("unknown party effect kind");
 }
 
-std::vector<PartyEffectModel> active_party_effects(
+void validate_party_effect_sequence(
     const std::array<PartyEffectView, 8>& effects) {
   for (std::size_t index = 0; index < effects.size(); ++index) {
     if (effects[index].kind != kPartyEffectKinds[index]) {
@@ -317,6 +319,11 @@ std::vector<PartyEffectModel> active_party_effects(
           "party effect sequence must match Classic indices 1 through 8");
     }
   }
+}
+
+std::vector<PartyEffectModel> active_party_effects(
+    const std::array<PartyEffectView, 8>& effects) {
+  validate_party_effect_sequence(effects);
 
   std::vector<PartyEffectModel> result;
   result.reserve(effects.size());
@@ -331,6 +338,64 @@ std::vector<PartyEffectModel> active_party_effects(
     });
   }
   return result;
+}
+
+StateTokenModel world_search_state(int16_t raw_value) {
+  return raw_value != 0
+      ? token(
+            "world.search.active",
+            "Search on",
+            StateEmphasis::information,
+            StateMarker::condition)
+      : token(
+            "world.search.inactive",
+            "Search off",
+            StateEmphasis::inactive,
+            StateMarker::unavailable);
+}
+
+StateTokenModel world_torch_state(int16_t raw_value) {
+  return raw_value != 0
+      ? token(
+            "world.torch.lit",
+            "Torch lit",
+            StateEmphasis::positive,
+            StateMarker::check)
+      : token(
+            "world.torch.unlit",
+            "Torch unlit",
+            StateEmphasis::inactive,
+            StateMarker::unavailable);
+}
+
+std::string two_digit_clock_component(int32_t value) {
+  return std::string{
+      static_cast<char>('0' + (value / 10)),
+      static_cast<char>('0' + (value % 10)),
+  };
+}
+
+std::string world_clock_text(int32_t hour, int32_t minute) {
+  int32_t display_hour = hour % 12;
+  if (display_hour == 0) {
+    display_hour = 12;
+  }
+  return two_digit_clock_component(display_hour) + ":" +
+      two_digit_clock_component(minute) +
+      (hour < 12 ? " AM" : " PM");
+}
+
+bool is_valid_world_context_pair(
+    ScreenContext screen,
+    WorldPresentation presentation) noexcept {
+  if (screen == ScreenContext::exploration) {
+    return presentation == WorldPresentation::outdoor;
+  }
+  if (screen == ScreenContext::dungeon) {
+    return (presentation == WorldPresentation::dungeon_map) ||
+        (presentation == WorldPresentation::dungeon_first_person);
+  }
+  return false;
 }
 
 MeterModel fatigue_model(int16_t fatigue) {
@@ -1202,6 +1267,61 @@ std::vector<KeyboardTargetModel> build_keyboard_order(
 
 } // namespace
 
+std::optional<WorldContextModel> build_world_context_model(
+    const GameSnapshot& snapshot) {
+  if (!snapshot.world.context) {
+    return std::nullopt;
+  }
+
+  if (!is_valid_world_context_pair(
+          snapshot.screen, snapshot.world.presentation)) {
+    throw std::invalid_argument(
+        "world context requires a matching world screen and presentation");
+  }
+
+  const auto& context = *snapshot.world.context;
+  if ((context.clock.day < std::numeric_limits<int16_t>::min()) ||
+      (context.clock.day > std::numeric_limits<int16_t>::max())) {
+    throw std::invalid_argument("world context day is outside int16 range");
+  }
+  if ((context.clock.hour < 0) || (context.clock.hour > 23)) {
+    throw std::invalid_argument("world context hour must be in 0 through 23");
+  }
+  if ((context.clock.minute < 0) || (context.clock.minute > 59)) {
+    throw std::invalid_argument(
+        "world context minute must be in 0 through 59");
+  }
+
+  validate_party_effect_sequence(snapshot.party.effects);
+  const auto& search_effect = snapshot.party.effects[kSearchEffectIndex];
+  if (context.search_raw_value != search_effect.raw_value) {
+    throw std::invalid_argument(
+        "world context search must match the canonical Search effect");
+  }
+  if (snapshot.world.searching != (context.search_raw_value != 0)) {
+    throw std::invalid_argument(
+        "world searching state must match the raw Search condition");
+  }
+
+  return WorldContextModel{
+      .presentation = snapshot.world.presentation,
+      .visible_position = context.visible_position,
+      .day = static_cast<int16_t>(context.clock.day),
+      .hour = context.clock.hour,
+      .minute = context.clock.minute,
+      .clock_text = world_clock_text(
+          context.clock.hour, context.clock.minute),
+      .search = WorldConditionModel{
+          .raw_value = context.search_raw_value,
+          .state = world_search_state(context.search_raw_value),
+      },
+      .torch = WorldConditionModel{
+          .raw_value = context.torch_raw_value,
+          .state = world_torch_state(context.torch_raw_value),
+      },
+  };
+}
+
 PartyRailModel build_party_rail_model(const GameSnapshot& snapshot) {
   PartyRailModel result{
       .revision = snapshot.revision,
@@ -1266,6 +1386,7 @@ PresentationShellModel build_presentation_shell_model(
       ? preferences.combat_action_page
       : CombatActionPage::primary;
   result.party_rail = build_party_rail_model(snapshot);
+  result.world_context = build_world_context_model(snapshot);
   result.selected_details = selected_details(
       snapshot,
       result.party_rail);

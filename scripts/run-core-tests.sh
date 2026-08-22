@@ -124,6 +124,13 @@ run_cpp_test ShellControlLayoutTest \
   src/presentation/AdaptiveShell.cpp \
   src/presentation/ResponsiveLayout.cpp
 
+run_cpp_test WorldContextLayoutTest \
+  src/tests/WorldContextLayoutTest.cpp \
+  src/presentation/WorldContextLayout.cpp \
+  src/presentation/ShellControlLayout.cpp \
+  src/presentation/AdaptiveShell.cpp \
+  src/presentation/ResponsiveLayout.cpp
+
 run_cpp_test ShellKeyboardInteractionTest \
   src/tests/ShellKeyboardInteractionTest.cpp \
   src/presentation/ShellKeyboardInteraction.cpp

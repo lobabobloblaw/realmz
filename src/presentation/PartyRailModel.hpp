@@ -71,6 +71,26 @@ struct PartyStatusModel {
   bool operator==(const PartyStatusModel&) const = default;
 };
 
+struct WorldConditionModel {
+  int16_t raw_value = 0;
+  StateTokenModel state;
+
+  bool operator==(const WorldConditionModel&) const = default;
+};
+
+struct WorldContextModel {
+  WorldPresentation presentation = WorldPresentation::none;
+  std::optional<WorldPositionView> visible_position;
+  int16_t day = 0;
+  int32_t hour = 0;
+  int32_t minute = 0;
+  std::string clock_text;
+  WorldConditionModel search;
+  WorldConditionModel torch;
+
+  bool operator==(const WorldContextModel&) const = default;
+};
+
 // Stable semantic command identifiers are intentionally separate from physical
 // keys. A later input layer may remap keys without changing this model.
 using CommandIdentifier = std::string;
@@ -318,11 +338,15 @@ struct PresentationShellModel {
   MotionModel motion;
   std::vector<AnimationCueModel> animation_cues;
   std::vector<KeyboardTargetModel> keyboard_tab_order;
+  std::optional<WorldContextModel> world_context;
 
   bool operator==(const PresentationShellModel&) const = default;
 };
 
 [[nodiscard]] PartyRailModel build_party_rail_model(
+    const GameSnapshot& snapshot);
+
+[[nodiscard]] std::optional<WorldContextModel> build_world_context_model(
     const GameSnapshot& snapshot);
 
 // The model is deterministic for identical values. Message events are ordered

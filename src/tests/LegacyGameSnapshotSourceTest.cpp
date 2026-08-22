@@ -1,9 +1,11 @@
 #include <array>
+#include <ctime>
 #include <cstring>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "presentation/LegacyGameSnapshotSource.hpp"
 #include "presentation/LegacyTorchSource.h"
@@ -25,6 +27,10 @@ int32_t fieldx = 0;
 int32_t fieldy = 0;
 int32_t landlevel = 0;
 int32_t dunglevel = 0;
+int32_t lookx = 0;
+int32_t looky = 0;
+int32_t floorx = 0;
+int32_t floory = 0;
 int32_t moneypool[3] = {};
 char charnum = -1;
 char charselectnew = -1;
@@ -36,6 +42,7 @@ char up = 0;
 char head = 1;
 char encountflag = 0;
 char viewtype = 1;
+char xydisplayflag = 0;
 Boolean initems = 0;
 Boolean inswap = 0;
 Boolean inbooty = 0;
@@ -60,6 +67,7 @@ struct itemattr allhelms[200] = {};
 struct itemattr allmagic[200] = {};
 struct itemattr allsupply[200] = {};
 Rect lookrect = {};
+struct tm tyme = {};
 }
 
 using namespace realmz::presentation;
@@ -78,6 +86,17 @@ void check(bool condition, const char* expression, int line) {
 
 #define CHECK(expression) check(static_cast<bool>(expression), #expression, __LINE__)
 
+template <typename Callable>
+void check_overflow_error(Callable&& callable) {
+  bool threw = false;
+  try {
+    std::forward<Callable>(callable)();
+  } catch (const std::overflow_error&) {
+    threw = true;
+  }
+  CHECK(threw);
+}
+
 void reset_legacy_state() {
   currentscenario = 0;
   fat = 0;
@@ -88,6 +107,7 @@ void reset_legacy_state() {
   canundo = 0;
   nummon = 0;
   partyx = partyy = fieldx = fieldy = landlevel = dunglevel = 0;
+  lookx = looky = floorx = floory = 0;
   lookrect = {};
   std::memset(moneypool, 0, sizeof(moneypool));
   charnum = -1;
@@ -98,6 +118,7 @@ void reset_legacy_state() {
   head = 1;
   encountflag = 0;
   viewtype = 1;
+  xydisplayflag = 0;
   initems = inswap = inbooty = inshop = intemple = indung = incamp = 0;
   shopavail = templeavail = canshop = 0;
   spellcasting = 0;
@@ -113,6 +134,7 @@ void reset_legacy_state() {
   std::memset(allhelms, 0, sizeof(allhelms));
   std::memset(allmagic, 0, sizeof(allmagic));
   std::memset(allsupply, 0, sizeof(allsupply));
+  std::memset(&tyme, 0, sizeof(tyme));
 }
 
 void set_name(char* destination, std::size_t capacity, const char* name) {
@@ -294,6 +316,172 @@ void test_party_status_capture_is_exact_fixed_and_detached() {
     CHECK(zero_snapshot.party.effects[index].raw_value == 0);
   }
   CHECK(!zero_snapshot.world.searching);
+}
+
+void test_world_context_capture_is_exact_and_detached() {
+  reset_legacy_state();
+  lookx = 1'000;
+  looky = -2'000;
+  partyx = -25;
+  partyy = 75;
+  floorx = 777;
+  floory = 888;
+  tyme.tm_yday = std::numeric_limits<int16_t>::max();
+  tyme.tm_hour = 23;
+  tyme.tm_min = 59;
+  partycondition[PARTY_COND_SEARCH] =
+      std::numeric_limits<int16_t>::min();
+  partycondition[PARTY_COND_TORCH_LIT] =
+      std::numeric_limits<int16_t>::max();
+
+  LegacyGameSnapshotSource source;
+  const auto outdoor = source.capture();
+  CHECK(outdoor.screen == ScreenContext::exploration);
+  CHECK(outdoor.world.context.has_value());
+  CHECK(outdoor.world.context->visible_position ==
+      (WorldPositionView{.x = 975, .y = -1'925}));
+  CHECK(outdoor.world.context->clock ==
+      (WorldClockView{
+          .day = std::numeric_limits<int16_t>::max(),
+          .hour = 23,
+          .minute = 59,
+      }));
+  CHECK(outdoor.world.context->search_raw_value ==
+      std::numeric_limits<int16_t>::min());
+  CHECK(outdoor.world.context->torch_raw_value ==
+      std::numeric_limits<int16_t>::max());
+
+  lookx = looky = partyx = partyy = 0;
+  tyme.tm_yday = -500;
+  tyme.tm_hour = 0;
+  tyme.tm_min = 0;
+  partycondition[PARTY_COND_SEARCH] = 0;
+  partycondition[PARTY_COND_TORCH_LIT] = 0;
+  CHECK(outdoor.world.context->visible_position ==
+      (WorldPositionView{.x = 975, .y = -1'925}));
+  CHECK(outdoor.world.context->clock.day ==
+      std::numeric_limits<int16_t>::max());
+  CHECK(outdoor.world.context->clock.hour == 23);
+  CHECK(outdoor.world.context->clock.minute == 59);
+  CHECK(outdoor.world.context->search_raw_value ==
+      std::numeric_limits<int16_t>::min());
+  CHECK(outdoor.world.context->torch_raw_value ==
+      std::numeric_limits<int16_t>::max());
+
+  // Capture copies the raw tm fields even when a later model will reject
+  // invalid display-clock values.
+  tyme.tm_yday = std::numeric_limits<int32_t>::min();
+  tyme.tm_hour = -1;
+  tyme.tm_min = 60;
+  const auto invalid_clock = source.capture();
+  CHECK(invalid_clock.world.context->clock.day ==
+      std::numeric_limits<int32_t>::min());
+  CHECK(invalid_clock.world.context->clock.hour == -1);
+  CHECK(invalid_clock.world.context->clock.minute == 60);
+
+  tyme.tm_yday = std::numeric_limits<int32_t>::max();
+  tyme.tm_hour = 24;
+  tyme.tm_min = -1;
+  const auto other_invalid_clock = source.capture();
+  CHECK(other_invalid_clock.world.context->clock.day ==
+      std::numeric_limits<int32_t>::max());
+  CHECK(other_invalid_clock.world.context->clock.hour == 24);
+  CHECK(other_invalid_clock.world.context->clock.minute == -1);
+}
+
+void test_world_context_coordinate_visibility_and_checked_sources() {
+  LegacyGameSnapshotSource source;
+
+  reset_legacy_state();
+  lookx = std::numeric_limits<int32_t>::max();
+  partyx = 1;
+  looky = std::numeric_limits<int32_t>::min();
+  partyy = -1;
+  xydisplayflag = 1;
+  const auto hidden_positive = source.capture();
+  CHECK(hidden_positive.world.context.has_value());
+  CHECK(!hidden_positive.world.context->visible_position.has_value());
+
+  xydisplayflag = static_cast<char>(-1);
+  const auto hidden_negative = source.capture();
+  CHECK(hidden_negative.world.context.has_value());
+  CHECK(!hidden_negative.world.context->visible_position.has_value());
+
+  reset_legacy_state();
+  indung = 1;
+  floorx = std::numeric_limits<int32_t>::min();
+  floory = std::numeric_limits<int32_t>::max();
+  lookx = std::numeric_limits<int32_t>::max();
+  partyx = 1;
+  looky = std::numeric_limits<int32_t>::min();
+  partyy = -1;
+  const auto dungeon = source.capture();
+  CHECK(dungeon.screen == ScreenContext::dungeon);
+  CHECK(dungeon.world.context.has_value());
+  CHECK(dungeon.world.context->visible_position ==
+      (WorldPositionView{
+          .x = std::numeric_limits<int32_t>::min(),
+          .y = std::numeric_limits<int32_t>::max(),
+      }));
+
+  reset_legacy_state();
+  lookx = std::numeric_limits<int32_t>::max();
+  partyx = 1;
+  check_overflow_error([&] { static_cast<void>(source.capture()); });
+  reset_legacy_state();
+  lookx = std::numeric_limits<int32_t>::min();
+  partyx = -1;
+  check_overflow_error([&] { static_cast<void>(source.capture()); });
+  reset_legacy_state();
+  looky = std::numeric_limits<int32_t>::max();
+  partyy = 1;
+  check_overflow_error([&] { static_cast<void>(source.capture()); });
+  reset_legacy_state();
+  looky = std::numeric_limits<int32_t>::min();
+  partyy = -1;
+  check_overflow_error([&] { static_cast<void>(source.capture()); });
+}
+
+void test_world_context_conditions_and_screen_scope() {
+  LegacyGameSnapshotSource source;
+  constexpr std::array<int16_t, 5> raw_values{
+      std::numeric_limits<int16_t>::min(),
+      -1,
+      0,
+      1,
+      std::numeric_limits<int16_t>::max(),
+  };
+  for (const int16_t raw_value : raw_values) {
+    reset_legacy_state();
+    partycondition[PARTY_COND_SEARCH] = raw_value;
+    partycondition[PARTY_COND_TORCH_LIT] = raw_value;
+    const auto snapshot = source.capture();
+    CHECK(snapshot.world.context.has_value());
+    CHECK(snapshot.world.context->search_raw_value == raw_value);
+    CHECK(snapshot.world.context->torch_raw_value == raw_value);
+  }
+
+  const auto require_absent_context = [&] {
+    CHECK(!source.capture().world.context.has_value());
+  };
+  reset_legacy_state();
+  initems = 1;
+  require_absent_context();
+  reset_legacy_state();
+  inshop = 1;
+  require_absent_context();
+  reset_legacy_state();
+  encountflag = 1;
+  require_absent_context();
+  reset_legacy_state();
+  incombat = 1;
+  require_absent_context();
+
+  // A nested non-world screen wins over the persisted dungeon flag.
+  reset_legacy_state();
+  indung = 1;
+  initems = 1;
+  require_absent_context();
 }
 
 void test_noncombat_scroll_case_eligibility_capture() {
@@ -910,6 +1098,9 @@ int main() {
   try {
     test_party_world_and_inventory_capture();
     test_party_status_capture_is_exact_fixed_and_detached();
+    test_world_context_capture_is_exact_and_detached();
+    test_world_context_coordinate_visibility_and_checked_sources();
+    test_world_context_conditions_and_screen_scope();
     test_noncombat_scroll_case_eligibility_capture();
     test_camp_state_capture_is_value_only();
     test_search_state_capture_is_value_only();

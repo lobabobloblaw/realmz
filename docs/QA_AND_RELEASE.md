@@ -190,6 +190,23 @@ thresholds, then exact signed pooled Gold, Gems, and Jewelry from
 fatigue and pool. No OS accessibility publisher, action, tag, input route,
 Classic source, or replay vocabulary is claimed or added by this information
 slice.
+A shared responsive, read-only **WORLD CONTEXT** strip occupies the action
+header beside the persistent page tabs on outdoor exploration, dungeon-map,
+and dungeon-first-person surfaces and is absent in combat. Outdoor coordinates
+come from checked signed-32-bit `lookx + partyx` and `looky + partyy` additions;
+dungeon coordinates preserve exact signed `floorx` and `floory`. Any nonzero
+`xydisplayflag` conceals both values as `?` without raw-coordinate leakage;
+otherwise signed values display exactly, without clamping. Campaign day remains
+at Classic's signed-short display boundary with no `+1` or calendar conversion.
+Raw hour and minute render as deterministic, zero-padded English 12-hour text
+equivalent to `%I:%M %p`, with no locale or timezone normalization. Search and
+Torch retain and display exact signed `partycondition[5]` and `[0]`; any
+nonzero value, including negative, is active. Neither raw value is described as
+a duration, turns, or charges, and a usable Torch source remains action-
+availability data only. Explicit non-color markers expose both active and
+inactive states. Layout retains complete internal semantic text without an OS-
+publication claim. This information-only slice adds no action, tag, input,
+Classic-source, or replay-vocabulary path.
 On eligible exploration and dungeon screens, party cards expose typed
 `SelectPartyMemberAction` payloads. Their distinct tagged event is
 late-validated against a fresh party snapshot, then a narrow
@@ -575,8 +592,8 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 61
-`semantic_complete`, and 28 `missing` roles: 15 interactions and 13
+The 95-row inventory currently contains six `retained_in_crop`, 67
+`semantic_complete`, and 22 `missing` roles: 15 interactions and seven
 essential-information roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
@@ -587,19 +604,18 @@ inventory remains authoritative and must reject an omitted role:
 | Dungeon | The corresponding dungeon Heal, Trade, condition drilldown, and per-member Auto, including dungeon-specific availability and input semantics. Money management, context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and quick Equipment remain distinct covered rows. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
-Known `missing` essential-information roles across these surfaces include
-ordered capture and retention of the Classic message/flash stream for Event
-Log; authoritative coordinates and calendar/clock; complete combined
-Search/Torch state (Search appearing in the effect ribbon does not capture or
-present persistent Torch index 0); focused-combatant information; complete
-combat conditions and attacks; and combat round and enemies-remaining counts.
-The common rail now covers the three all-member-vitals rows, all three
-party-condition rows, and the two world fatigue and pooled-money rows. Those
-claims remain bounded: the pool does not represent member or bank holdings,
-combat exposes neither fatigue nor pooled money, and none promotes the
-remaining focused-combatant or combat-detail roles. Snapshot fields or the
-current placeholder Event Log do not satisfy information completeness merely
-by existing. The selected-member Details inspector remains a distinct bounded
+The seven `missing` essential-information roles are exactly the exploration,
+dungeon, and combat narrative-message rows; combat focused-combatant
+information; complete combat conditions and attacks; combat round; and combat
+enemies remaining. The common rail covers the three all-member-vitals rows,
+all three party-condition rows, and the two world fatigue and pooled-money
+rows. The separate world-context strip covers coordinates, campaign day/time,
+and combined Search/Torch state on exploration and dungeon. Those claims remain
+bounded: the pool does not represent member or bank holdings, combat exposes
+neither fatigue, pooled money, nor world context, and none promotes a remaining
+message, focused-combatant, or combat-detail row. Snapshot fields or the current
+placeholder Event Log do not satisfy information completeness merely by
+existing. The selected-member Details inspector remains a distinct bounded
 renderer.
 
 ## Required automated coverage
@@ -654,6 +670,22 @@ Release-candidate tests must include:
   visibility; finite contained non-overlapping geometry that preserves every
   44-point member card; no OS-publication claim; immutable input; and no new
   action, tag, input, Classic-source, or replay path;
+- WORLD CONTEXT detached capture, model, shared responsive action-header
+  layout beside persistent page tabs, and common rendering on outdoor,
+  dungeon-map, and dungeon-first-person surfaces, with explicit combat
+  absence: checked signed-32-bit `lookx + partyx` / `looky + partyy` outdoor
+  coordinates; exact signed `floorx` / `floory` dungeon coordinates; any-
+  nonzero `xydisplayflag` concealing both as `?` with no raw leakage; exact
+  signed visible values without clamping; campaign day at the Classic signed-
+  short display boundary with no `+1` or calendar conversion; deterministic
+  zero-padded English 12-hour `%I:%M %p`-equivalent formatting from raw hour
+  and minute with no locale or timezone normalization; exact signed
+  `partycondition[5]` Search and `[0]` Torch retention/display, including
+  negative any-nonzero activity; no duration/turn/charge interpretation;
+  usable Torch source isolated to action availability; active and inactive
+  non-color markers; complete internal semantic text without an OS-publication
+  claim; immutable input; and no new action, tag, input, Classic-source, or
+  replay path;
 - logical/physical coordinate transforms, hit testing, stable semantic focus,
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
@@ -799,6 +831,24 @@ Automated checks do not replace these release decisions:
   verify finite containment, non-overlap after physical rounding, practical
   text floors, and unchanged 44-point card geometry. Do not infer an OS
   accessibility publisher from complete internal layout text;
+- WORLD CONTEXT on disposable outdoor, dungeon-map, dungeon-first-person, and
+  combat fixtures. Exercise zero, negative, and signed-boundary outdoor offsets
+  and positions while checking the exact signed-32-bit sums, plus exact signed
+  dungeon `floorx` / `floory`. Set `xydisplayflag` to zero, positive, and
+  negative values and prove every nonzero case replaces both coordinates with
+  `?` and leaks neither raw value. Exercise negative, zero, and positive signed-
+  short campaign days with no `+1`, plus raw hours 0, 1, 11, 12, 13, and 23 and
+  minutes 0, 9, and 59; compare exact zero-padded English 12-hour output without
+  relying on host locale or timezone. Exercise zero, positive, negative, and
+  signed-boundary `partycondition[5]` Search and `[0]` Torch values, confirming
+  exact raw text, any-nonzero activity, explicit active/inactive non-color
+  markers, and no duration/turn/charge wording. Independently vary usable Torch
+  source availability and prove it affects only the action, not displayed Torch
+  state. At compact and wide sizes, minimum and enlarged text, and
+  0.75x/1x/2x backing scales, confirm strip containment beside persistent tabs,
+  complete internal semantic text without assuming an OS publisher, combat
+  absence, immutable state, and no new action, tag, input, Classic-source, or
+  replay path;
 - before accepting any future crop-enabling change, review the globally complete
   versioned outdoor, dungeon, and combat chrome inventory row by row against an
   uncropped Classic reference, including every manifest field and cited source
@@ -813,7 +863,8 @@ Automated checks do not replace these release decisions:
   confirm every role is either wholly retained in the crop or semantically
   complete, every interactive target remains visible and keyboard/pointer
   operable, messages preserve order without loss or duplication, and money,
-  fatigue, and focused-combatant state remain complete and legible. Deliberately
+  fatigue, world context, and focused-combatant state remain complete and
+  legible. Deliberately
   invalidate each readiness input—global coverage, typed context variant,
   granular legacy window/front/full-frame state, inventory revision, nonzero
   snapshot/model revision and model context, model completeness, font, layout,
