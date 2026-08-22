@@ -38,6 +38,17 @@ void check(bool condition, const char* expression, int line) {
 [[nodiscard]] PartyRailModel party(size_t count, size_t selected = 0U) {
   PartyRailModel result;
   result.selected_member = static_cast<PartyMemberId>(selected);
+  result.status.fatigue = MeterModel{
+      .current = 4,
+      .maximum = 135,
+      .fill_fraction = 4.0 / 135.0,
+      .state = StateTokenModel{
+          .identifier = "fatigue.baseline",
+          .label = "Baseline",
+          .emphasis = StateEmphasis::positive,
+          .marker = StateMarker::check,
+      },
+  };
   result.members.reserve(count);
   for (size_t index = 0; index < count; ++index) {
     result.members.emplace_back(PartyRailMemberModel{
@@ -75,7 +86,8 @@ void check(bool condition, const char* expression, int line) {
 [[nodiscard]] PartyRailLayout layout_for(const PartyRailModel& model) {
   return compute_party_rail_layout({
       .party_panel = wide_party_panel(),
-      .members = model.members,
+      .party_rail = model,
+      .screen = ScreenContext::exploration,
       .typography = typography(),
   });
 }

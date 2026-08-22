@@ -55,6 +55,22 @@ struct MeterModel {
   bool operator==(const MeterModel&) const = default;
 };
 
+struct PartyEffectModel {
+  PartyEffectKind kind = PartyEffectKind::waterworld;
+  int16_t raw_value = 0;
+  StateTokenModel state;
+
+  bool operator==(const PartyEffectModel&) const = default;
+};
+
+struct PartyStatusModel {
+  std::vector<PartyEffectModel> active_effects;
+  MeterModel fatigue;
+  std::array<int32_t, 3> pooled_money{};
+
+  bool operator==(const PartyStatusModel&) const = default;
+};
+
 // Stable semantic command identifiers are intentionally separate from physical
 // keys. A later input layer may remap keys without changing this model.
 using CommandIdentifier = std::string;
@@ -90,9 +106,7 @@ struct PartyRailModel {
   SnapshotRevision revision = 0;
   std::vector<PartyRailMemberModel> members;
   std::optional<PartyMemberId> selected_member;
-  std::array<int32_t, 3> pooled_money{};
-  int16_t fatigue = 0;
-  StateTokenModel fatigue_state;
+  PartyStatusModel status;
 
   bool operator==(const PartyRailModel&) const = default;
 };

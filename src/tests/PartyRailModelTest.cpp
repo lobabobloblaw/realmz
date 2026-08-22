@@ -25,6 +25,39 @@ void check(bool condition, const char* expression, int line) {
 
 #define CHECK(expression) check(static_cast<bool>(expression), #expression, __LINE__)
 
+constexpr std::array kPartyEffectKinds{
+    PartyEffectKind::waterworld,
+    PartyEffectKind::dragon_hide,
+    PartyEffectKind::discover_secret,
+    PartyEffectKind::wizard_eye,
+    PartyEffectKind::search,
+    PartyEffectKind::free_fall_levitate,
+    PartyEffectKind::sentry,
+    PartyEffectKind::charm_resistance,
+};
+
+constexpr std::array<const char*, 8> kPartyEffectIdentifiers{
+    "party.effect.waterworld",
+    "party.effect.dragon_hide",
+    "party.effect.discover_secret",
+    "party.effect.wizard_eye",
+    "party.effect.search",
+    "party.effect.free_fall_levitate",
+    "party.effect.sentry",
+    "party.effect.charm_resistance",
+};
+
+constexpr std::array<const char*, 8> kPartyEffectLabels{
+    "Waterworld",
+    "Dragon Hide",
+    "Discover Secret",
+    "Wizard Eye",
+    "Search",
+    "Free Fall / Levitate",
+    "Sentry",
+    "Charm Resistance",
+};
+
 const ActionControlModel& action_with(
     const PresentationShellModel& model,
     ActionIntent intent) {
@@ -88,10 +121,16 @@ void test_party_rail_and_non_color_states() {
   CHECK(model.revision == 77);
   CHECK(model.members.size() == 2);
   CHECK(model.selected_member == 2);
-  CHECK((model.pooled_money == std::array<int32_t, 3>{15, 20, 25}));
-  CHECK(model.fatigue_state.identifier == "fatigue.present");
-  CHECK(model.fatigue_state.label == "Fatigued");
-  CHECK(model.fatigue_state.marker == StateMarker::alert);
+  CHECK((model.status.pooled_money ==
+      std::array<int32_t, 3>{15, 20, 25}));
+  CHECK(model.status.active_effects.empty());
+  CHECK(model.status.fatigue.current == 4);
+  CHECK(model.status.fatigue.maximum == 135);
+  CHECK(std::abs(model.status.fatigue.fill_fraction - (4.0 / 135.0)) <
+      0.0000001);
+  CHECK(model.status.fatigue.state.identifier == "fatigue.baseline");
+  CHECK(model.status.fatigue.state.label == "Baseline");
+  CHECK(model.status.fatigue.state.marker == StateMarker::check);
   CHECK(!model.members[0].selected);
   CHECK(model.members[1].selected);
   CHECK(model.members[1].stamina.fill_fraction == 0.2);
@@ -232,6 +271,202 @@ void test_all_member_vitals_are_exact_and_context_independent() {
       }
     }
   }
+}
+
+void test_party_status_is_exact_ordered_and_context_independent() {
+  GameSnapshot snapshot;
+
+  // PartyView itself establishes the complete fixed 1..8 identity sequence.
+  for (std::size_t index = 0; index < snapshot.party.effects.size(); ++index) {
+    CHECK(snapshot.party.effects[index].kind == kPartyEffectKinds[index]);
+    CHECK(static_cast<uint8_t>(snapshot.party.effects[index].kind) ==
+        index + 1U);
+    CHECK(snapshot.party.effects[index].raw_value == 0);
+  }
+  auto model = build_party_rail_model(snapshot);
+  CHECK(model.status.active_effects.empty());
+
+  const auto rejects_effect_sequence = [](const GameSnapshot& malformed) {
+    try {
+      static_cast<void>(build_party_rail_model(malformed));
+      return false;
+    } catch (const std::invalid_argument&) {
+      return true;
+    }
+  };
+  auto malformed = snapshot;
+  std::swap(malformed.party.effects[0], malformed.party.effects[1]);
+  CHECK(rejects_effect_sequence(malformed));
+  malformed = snapshot;
+  malformed.party.effects[7].kind = PartyEffectKind::sentry;
+  CHECK(rejects_effect_sequence(malformed));
+  malformed = snapshot;
+  malformed.party.effects[0].kind = static_cast<PartyEffectKind>(0);
+  CHECK(rejects_effect_sequence(malformed));
+  malformed = snapshot;
+  malformed.party.effects[7].kind = static_cast<PartyEffectKind>(9);
+  CHECK(rejects_effect_sequence(malformed));
+
+  // Every effect activates independently for any nonzero signed raw value.
+  for (std::size_t active_index = 0;
+       active_index < snapshot.party.effects.size();
+       ++active_index) {
+    for (const int sign : {1, -1}) {
+      snapshot.party.effects = PartyView{}.effects;
+      snapshot.party.effects[active_index].raw_value = static_cast<int16_t>(
+          sign * static_cast<int>(active_index + 1U));
+      const auto before = snapshot;
+      model = build_party_rail_model(snapshot);
+      CHECK(snapshot == before);
+      CHECK(model.status.active_effects.size() == 1U);
+      const auto& effect = model.status.active_effects.front();
+      CHECK(effect.kind == kPartyEffectKinds[active_index]);
+      CHECK(effect.raw_value ==
+          snapshot.party.effects[active_index].raw_value);
+      CHECK(effect.state.identifier == kPartyEffectIdentifiers[active_index]);
+      CHECK(effect.state.label == kPartyEffectLabels[active_index]);
+      CHECK(effect.state.emphasis == StateEmphasis::information);
+      CHECK(effect.state.marker == StateMarker::condition);
+    }
+  }
+
+  constexpr std::array<int16_t, 8> all_raw_values{
+      std::numeric_limits<int16_t>::min(),
+      -300,
+      -1,
+      1,
+      2,
+      300,
+      12345,
+      std::numeric_limits<int16_t>::max(),
+  };
+  for (std::size_t index = 0; index < snapshot.party.effects.size(); ++index) {
+    snapshot.party.effects[index].raw_value = all_raw_values[index];
+  }
+  const auto all_effects_snapshot = snapshot;
+  model = build_party_rail_model(snapshot);
+  CHECK(snapshot == all_effects_snapshot);
+  CHECK(model.status.active_effects.size() == 8U);
+  for (std::size_t index = 0;
+       index < model.status.active_effects.size();
+       ++index) {
+    const auto& effect = model.status.active_effects[index];
+    CHECK(effect.kind == kPartyEffectKinds[index]);
+    CHECK(effect.raw_value == all_raw_values[index]);
+    CHECK(effect.state.identifier == kPartyEffectIdentifiers[index]);
+    CHECK(effect.state.label == kPartyEffectLabels[index]);
+  }
+
+  struct FatigueCase {
+    int16_t current;
+    double fill_fraction;
+    const char* identifier;
+    const char* label;
+    StateEmphasis emphasis;
+    StateMarker marker;
+  };
+  constexpr std::array fatigue_cases{
+      FatigueCase{
+          std::numeric_limits<int16_t>::min(), 0.0,
+          "fatigue.baseline", "Baseline",
+          StateEmphasis::positive, StateMarker::check},
+      FatigueCase{
+          4, 4.0 / 135.0, "fatigue.baseline", "Baseline",
+          StateEmphasis::positive, StateMarker::check},
+      FatigueCase{
+          70, 70.0 / 135.0, "fatigue.baseline", "Baseline",
+          StateEmphasis::positive, StateMarker::check},
+      FatigueCase{
+          71, 71.0 / 135.0, "fatigue.elevated", "Elevated",
+          StateEmphasis::caution, StateMarker::alert},
+      FatigueCase{
+          105, 105.0 / 135.0, "fatigue.elevated", "Elevated",
+          StateEmphasis::caution, StateMarker::alert},
+      FatigueCase{
+          106, 106.0 / 135.0, "fatigue.critical", "Critical",
+          StateEmphasis::critical, StateMarker::stop},
+      FatigueCase{
+          135, 1.0, "fatigue.critical", "Critical",
+          StateEmphasis::critical, StateMarker::stop},
+      FatigueCase{
+          std::numeric_limits<int16_t>::max(), 1.0,
+          "fatigue.critical", "Critical",
+          StateEmphasis::critical, StateMarker::stop},
+  };
+  for (const auto& test_case : fatigue_cases) {
+    snapshot.party.fatigue = test_case.current;
+    model = build_party_rail_model(snapshot);
+    CHECK(model.status.fatigue.current == test_case.current);
+    CHECK(model.status.fatigue.maximum == 135);
+    CHECK(std::abs(
+        model.status.fatigue.fill_fraction - test_case.fill_fraction) <
+        0.0000001);
+    CHECK(model.status.fatigue.state.identifier == test_case.identifier);
+    CHECK(model.status.fatigue.state.label == test_case.label);
+    CHECK(model.status.fatigue.state.emphasis == test_case.emphasis);
+    CHECK(model.status.fatigue.state.marker == test_case.marker);
+  }
+
+  snapshot.party.pooled_money = {
+      std::numeric_limits<int32_t>::min(),
+      -1,
+      std::numeric_limits<int32_t>::max(),
+  };
+  model = build_party_rail_model(snapshot);
+  CHECK(model.status.pooled_money[0] ==
+      std::numeric_limits<int32_t>::min());
+  CHECK(model.status.pooled_money[1] == -1);
+  CHECK(model.status.pooled_money[2] ==
+      std::numeric_limits<int32_t>::max());
+
+  snapshot.party.fatigue = 106;
+  snapshot.party.members = {
+      PartyMemberView{
+          .id = 3,
+          .name = "Status witness",
+          .stamina = {0, 0},
+          .selected = false,
+          .conscious = false,
+      },
+  };
+  const auto expected_status = build_party_rail_model(snapshot).status;
+  constexpr std::array screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::combat,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : screens) {
+    snapshot.screen = screen;
+    for (const bool in_camp : {false, true}) {
+      snapshot.world.in_camp = in_camp;
+      for (const bool conscious : {false, true}) {
+        snapshot.party.members[0].conscious = conscious;
+        for (const bool selected : {false, true}) {
+          snapshot.party.members[0].selected = selected;
+          snapshot.party.selected_member = selected
+              ? std::optional<PartyMemberId>{3}
+              : std::nullopt;
+          const auto before = snapshot;
+          const auto independent = build_party_rail_model(snapshot);
+          CHECK(independent.status == expected_status);
+          CHECK(snapshot == before);
+        }
+      }
+    }
+  }
+
+  const auto before = snapshot;
+  const auto first = build_party_rail_model(snapshot);
+  const auto second = build_party_rail_model(snapshot);
+  CHECK(first == second);
+  CHECK(snapshot == before);
 }
 
 void test_selection_fallback_and_meter_bounds() {
@@ -1603,6 +1838,7 @@ int main() {
   try {
     test_party_rail_and_non_color_states();
     test_all_member_vitals_are_exact_and_context_independent();
+    test_party_status_is_exact_ordered_and_context_independent();
     test_selection_fallback_and_meter_bounds();
     test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();

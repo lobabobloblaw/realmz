@@ -41,6 +41,28 @@ struct MeterView {
   }
 };
 
+// Typed, value-only identities for Classic's eight party-wide conditions.
+// The enum order deliberately matches partycondition[1] through [8]; the
+// snapshot still captures each signed raw value explicitly rather than relying
+// on the underlying enum representation.
+enum class PartyEffectKind : uint8_t {
+  waterworld = 1,
+  dragon_hide = 2,
+  discover_secret = 3,
+  wizard_eye = 4,
+  search = 5,
+  free_fall_levitate = 6,
+  sentry = 7,
+  charm_resistance = 8,
+};
+
+struct PartyEffectView {
+  PartyEffectKind kind = PartyEffectKind::waterworld;
+  int16_t raw_value = 0;
+
+  bool operator==(const PartyEffectView&) const = default;
+};
+
 struct PartyMemberView {
   PartyMemberId id = 0;
   std::string name;
@@ -74,6 +96,18 @@ struct PartyView {
   std::optional<PartyMemberId> selected_member;
   std::array<int32_t, 3> pooled_money{};
   int16_t fatigue = 0;
+  // Fixed projection of partycondition[1] through [8]. Indices 0 and 9 are
+  // intentionally outside this semantic party-status sequence.
+  std::array<PartyEffectView, 8> effects{
+      PartyEffectView{PartyEffectKind::waterworld, 0},
+      PartyEffectView{PartyEffectKind::dragon_hide, 0},
+      PartyEffectView{PartyEffectKind::discover_secret, 0},
+      PartyEffectView{PartyEffectKind::wizard_eye, 0},
+      PartyEffectView{PartyEffectKind::search, 0},
+      PartyEffectView{PartyEffectKind::free_fall_levitate, 0},
+      PartyEffectView{PartyEffectKind::sentry, 0},
+      PartyEffectView{PartyEffectKind::charm_resistance, 0},
+  };
 
   bool operator==(const PartyView&) const = default;
 

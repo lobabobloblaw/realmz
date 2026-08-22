@@ -1,6 +1,7 @@
 #include <array>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -215,6 +216,84 @@ void test_party_world_and_inventory_capture() {
   CHECK(snapshot.party.members[1].normal_attacks == -4);
   CHECK(snapshot.party.members[1].attack_bonus == 1);
   CHECK(snapshot.inventory->items[0].item_id == 901);
+}
+
+void test_party_status_capture_is_exact_fixed_and_detached() {
+  reset_legacy_state();
+  constexpr std::array kinds{
+      PartyEffectKind::waterworld,
+      PartyEffectKind::dragon_hide,
+      PartyEffectKind::discover_secret,
+      PartyEffectKind::wizard_eye,
+      PartyEffectKind::search,
+      PartyEffectKind::free_fall_levitate,
+      PartyEffectKind::sentry,
+      PartyEffectKind::charm_resistance,
+  };
+  constexpr std::array<int16_t, 8> raw_values{
+      std::numeric_limits<int16_t>::min(),
+      std::numeric_limits<int16_t>::max(),
+      -7,
+      4,
+      -1,
+      6,
+      -327,
+      8,
+  };
+
+  // Values outside the semantic range are deliberately distinct sentinels.
+  partycondition[PARTY_COND_TORCH_LIT] = 1111;
+  partycondition[PARTY_COND_UNUSED_9] = -2222;
+  for (std::size_t index = 0; index < raw_values.size(); ++index) {
+    partycondition[index + 1U] = raw_values[index];
+  }
+  fat = std::numeric_limits<int16_t>::min();
+  moneypool[0] = std::numeric_limits<int32_t>::min();
+  moneypool[1] = 0;
+  moneypool[2] = std::numeric_limits<int32_t>::max();
+
+  LegacyGameSnapshotSource source;
+  const auto snapshot = source.capture();
+  CHECK(snapshot.party.effects.size() == 8U);
+  for (std::size_t index = 0; index < snapshot.party.effects.size(); ++index) {
+    CHECK(snapshot.party.effects[index].kind == kinds[index]);
+    CHECK(static_cast<uint8_t>(snapshot.party.effects[index].kind) ==
+        index + 1U);
+    CHECK(snapshot.party.effects[index].raw_value == raw_values[index]);
+    CHECK(snapshot.party.effects[index].raw_value != 1111);
+    CHECK(snapshot.party.effects[index].raw_value != -2222);
+  }
+  CHECK(snapshot.party.fatigue == std::numeric_limits<int16_t>::min());
+  CHECK(snapshot.party.pooled_money[0] ==
+      std::numeric_limits<int32_t>::min());
+  CHECK(snapshot.party.pooled_money[1] == 0);
+  CHECK(snapshot.party.pooled_money[2] ==
+      std::numeric_limits<int32_t>::max());
+  CHECK(snapshot.world.searching);
+
+  // The projection remains detached after every backing value changes.
+  std::memset(partycondition, 0, sizeof(partycondition));
+  fat = std::numeric_limits<int16_t>::max();
+  moneypool[0] = moneypool[1] = moneypool[2] = 91;
+  for (std::size_t index = 0; index < snapshot.party.effects.size(); ++index) {
+    CHECK(snapshot.party.effects[index].kind == kinds[index]);
+    CHECK(snapshot.party.effects[index].raw_value == raw_values[index]);
+  }
+  CHECK(snapshot.party.fatigue == std::numeric_limits<int16_t>::min());
+  CHECK(snapshot.party.pooled_money[0] ==
+      std::numeric_limits<int32_t>::min());
+  CHECK(snapshot.party.pooled_money[1] == 0);
+  CHECK(snapshot.party.pooled_money[2] ==
+      std::numeric_limits<int32_t>::max());
+
+  const auto zero_snapshot = source.capture();
+  for (std::size_t index = 0;
+       index < zero_snapshot.party.effects.size();
+       ++index) {
+    CHECK(zero_snapshot.party.effects[index].kind == kinds[index]);
+    CHECK(zero_snapshot.party.effects[index].raw_value == 0);
+  }
+  CHECK(!zero_snapshot.world.searching);
 }
 
 void test_noncombat_scroll_case_eligibility_capture() {
@@ -830,6 +909,7 @@ void test_encounter_and_bounds() {
 int main() {
   try {
     test_party_world_and_inventory_capture();
+    test_party_status_capture_is_exact_fixed_and_detached();
     test_noncombat_scroll_case_eligibility_capture();
     test_camp_state_capture_is_value_only();
     test_search_state_capture_is_value_only();

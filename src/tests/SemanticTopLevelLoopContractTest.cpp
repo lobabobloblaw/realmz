@@ -10452,6 +10452,1047 @@ void verify_all_member_party_vitals_contract(
   }
 }
 
+void verify_party_status_ribbon_contract(
+    const fs::path& repository_root) {
+  const auto braced_definition = [](
+      std::string_view source,
+      std::string_view name) {
+    const std::size_t definition = find_identifier(source, name);
+    require(definition != std::string_view::npos,
+        std::string("missing structural definition: ") +
+            std::string(name));
+    const std::size_t opening = source.find('{', definition);
+    require(opening != std::string_view::npos,
+        std::string("missing structural body: ") + std::string(name));
+    const std::size_t closing = matching_delimiter(
+        source, opening, '{', '}');
+    return std::string(
+        source.substr(opening, closing - opening + 1U));
+  };
+
+  const std::string raw_classic_structs = read_file(
+      repository_root / "src/realmz_orig/structs.h");
+  const std::string classic_structs = code_only(raw_classic_structs);
+  const std::string raw_tickcheck = read_file(
+      repository_root / "src/realmz_orig/tickcheck.c-updatetorch.c");
+  const std::string tickcheck_source = code_only(raw_tickcheck);
+  const std::string reduce_source = code_only(read_file(
+      repository_root / "src/realmz_orig/reduce.c"));
+  const std::string buttonchoice_source = code_only(read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c"));
+  const std::string wear_source = code_only(read_file(
+      repository_root / "src/realmz_orig/wear.c"));
+  const std::string removeitem_source = code_only(read_file(
+      repository_root / "src/realmz_orig/removeitem.c"));
+  const std::string updatefat_source = code_only(read_file(
+      repository_root / "src/realmz_orig/updatefat.c"));
+  const std::string booty_source = code_only(read_file(
+      repository_root / "src/realmz_orig/booty.c"));
+  const std::string classic_variables = code_only(read_file(
+      repository_root / "src/realmz_orig/variables.h"));
+
+  const std::string raw_snapshot_header = read_file(
+      repository_root / "src/presentation/GameSnapshot.hpp");
+  const std::string snapshot_header = code_only(raw_snapshot_header);
+  const std::string raw_snapshot_source = read_file(
+      repository_root /
+          "src/presentation/LegacyGameSnapshotSource.cpp");
+  const std::string snapshot_source = code_only(raw_snapshot_source);
+  const std::string snapshot_test = code_only(read_file(
+      repository_root /
+          "src/tests/LegacyGameSnapshotSourceTest.cpp"));
+
+  const std::string raw_model_header = read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp");
+  const std::string model_header = code_only(raw_model_header);
+  const std::string raw_model_source = read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp");
+  const std::string model_source = code_only(raw_model_source);
+  const std::string raw_model_test = read_file(
+      repository_root / "src/tests/PartyRailModelTest.cpp");
+  const std::string model_test = code_only(raw_model_test);
+
+  const std::string raw_layout_header = read_file(
+      repository_root / "src/presentation/PartyRailLayout.hpp");
+  const std::string layout_header = code_only(raw_layout_header);
+  const std::string raw_layout_source = read_file(
+      repository_root / "src/presentation/PartyRailLayout.cpp");
+  const std::string layout_source = code_only(raw_layout_source);
+  const std::string raw_layout_test = read_file(
+      repository_root / "src/tests/PartyRailLayoutTest.cpp");
+  const std::string layout_test = code_only(raw_layout_test);
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+
+  constexpr std::array classic_effect_names{
+      std::string_view("PARTY_COND_WATERWORLD"),
+      std::string_view("PARTY_COND_DRAGON_HIDE"),
+      std::string_view("PARTY_COND_DISCOVER_SECRET"),
+      std::string_view("PARTY_COND_WIZARD_EYE"),
+      std::string_view("PARTY_COND_SEARCH"),
+      std::string_view("PARTY_COND_FREE_FALL_LEVITATE"),
+      std::string_view("PARTY_COND_SENTRY"),
+      std::string_view("PARTY_COND_CHARM_RESISTANCE"),
+  };
+  constexpr std::array effect_kind_names{
+      std::string_view("waterworld"),
+      std::string_view("dragon_hide"),
+      std::string_view("discover_secret"),
+      std::string_view("wizard_eye"),
+      std::string_view("search"),
+      std::string_view("free_fall_levitate"),
+      std::string_view("sentry"),
+      std::string_view("charm_resistance"),
+  };
+  constexpr std::array effect_labels{
+      std::string_view("Waterworld"),
+      std::string_view("Dragon Hide"),
+      std::string_view("Discover Secret"),
+      std::string_view("Wizard Eye"),
+      std::string_view("Search"),
+      std::string_view("Free Fall / Levitate"),
+      std::string_view("Sentry"),
+      std::string_view("Charm Resistance"),
+  };
+
+  // Classic owns ten explicit partycondition meanings. The status ribbon is
+  // the ordered, truthy 1..<9 subset used by tickcheck; Torch 0 and unused 9
+  // remain outside it.
+  constexpr std::array all_classic_condition_names{
+      std::string_view("PARTY_COND_TORCH_LIT"),
+      std::string_view("PARTY_COND_WATERWORLD"),
+      std::string_view("PARTY_COND_DRAGON_HIDE"),
+      std::string_view("PARTY_COND_DISCOVER_SECRET"),
+      std::string_view("PARTY_COND_WIZARD_EYE"),
+      std::string_view("PARTY_COND_SEARCH"),
+      std::string_view("PARTY_COND_FREE_FALL_LEVITATE"),
+      std::string_view("PARTY_COND_SENTRY"),
+      std::string_view("PARTY_COND_CHARM_RESISTANCE"),
+      std::string_view("PARTY_COND_UNUSED_9"),
+  };
+  const std::string classic_condition_enum = braced_definition(
+      classic_structs, "PartyCondition");
+  const std::string compact_classic_condition_enum =
+      without_whitespace(classic_condition_enum);
+  std::size_t previous_condition = 0;
+  for (std::size_t index = 0;
+       index < all_classic_condition_names.size();
+       ++index) {
+    const std::string assignment =
+        std::string(all_classic_condition_names[index]) + "=" +
+        std::to_string(index) + ",";
+    const std::size_t position = compact_classic_condition_enum.find(
+        assignment, previous_condition);
+    require(position != std::string::npos &&
+            (index == 0U || position > previous_condition) &&
+            count_identifier(
+                classic_condition_enum,
+                all_classic_condition_names[index]) == 1,
+        std::string("Classic partycondition index is not explicit and ") +
+            "ordered: " + assignment);
+    previous_condition = position;
+  }
+
+  const std::string tickcheck = function_body(
+      tickcheck_source, "tickcheck");
+  const std::string compact_tickcheck = without_whitespace(tickcheck);
+  const std::size_t effect_loop = compact_tickcheck.find(
+      "for(t=1;t<9;t++){");
+  require(effect_loop != std::string::npos,
+      "Classic tickcheck must scan party conditions in ascending 1..<9 "
+      "order");
+  const std::size_t effect_loop_open = compact_tickcheck.find(
+      '{', effect_loop);
+  const std::size_t effect_loop_close = matching_delimiter(
+      compact_tickcheck, effect_loop_open, '{', '}');
+  const std::string effect_loop_body = compact_tickcheck.substr(
+      effect_loop_open,
+      effect_loop_close - effect_loop_open + 1U);
+  require(effect_loop_body.contains("if(partycondition[t])") &&
+          effect_loop_body.contains(
+              "ploticon2(t*8+13992+flamestage);") &&
+          !effect_loop_body.contains("partycondition[t]>0") &&
+          !effect_loop_body.contains("partycondition[t]==1"),
+      "Classic tickcheck must present every signed nonzero condition at "
+      "indices 1..8 without a positive-only gate");
+
+  const std::string reduce = function_body(reduce_source, "reduce");
+  const std::string compact_reduce = without_whitespace(reduce);
+  require(compact_reduce.contains(
+              "for(t=0;t<10;t++)if(partycondition[t]>0)"
+              "partycondition[t]--;") &&
+          !compact_reduce.contains(
+              "if(partycondition[t]!=0)partycondition[t]--;") &&
+          !compact_reduce.contains(
+              "if(partycondition[t])partycondition[t]--;"),
+      "Classic reduce must decrement only positive party conditions so "
+      "negative Search and equipment sentinels persist");
+
+  const std::string buttonchoice = function_body(
+      buttonchoice_source, "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t search_branch = compact_buttonchoice.find(
+      "if(theControl==search){");
+  const std::size_t torch_branch = compact_buttonchoice.find(
+      "if(theControl==torch){", search_branch);
+  require(search_branch != std::string::npos &&
+          torch_branch != std::string::npos &&
+          search_branch < torch_branch,
+      "Classic Search control branch is missing");
+  const std::string search_body = compact_buttonchoice.substr(
+      search_branch, torch_branch - search_branch);
+  const std::size_t search_truth = search_body.find(
+      "if(partycondition[PARTY_COND_SEARCH]){");
+  const std::size_t search_clear = search_body.find(
+      "partycondition[PARTY_COND_SEARCH]=0;", search_truth);
+  const std::size_t search_set = search_body.find(
+      "partycondition[PARTY_COND_SEARCH]=-1;", search_clear);
+  require(search_truth != std::string::npos &&
+          search_clear != std::string::npos &&
+          search_set != std::string::npos &&
+          search_truth < search_clear && search_clear < search_set,
+      "Classic Search must toggle any-nonzero to 0 and inactive to the "
+      "persistent -1 sentinel");
+
+  const std::string wear = function_body(wear_source, "wear");
+  const std::string compact_wear = without_whitespace(wear);
+  const std::string removeitem = function_body(
+      removeitem_source, "removeitem");
+  const std::string compact_removeitem = without_whitespace(removeitem);
+  for (const auto slot : {std::string_view("sp3"),
+           std::string_view("sp4")}) {
+    require(compact_wear.contains(
+                "partycondition[item." + std::string(slot) +
+                "-30]-=abs(item.sp5);") &&
+            compact_removeitem.contains(
+                "partycondition[item." + std::string(slot) +
+                "-30]=0;"),
+        std::string("Classic equipment must install a negative and remove ") +
+            "by clearing the party effect encoded by item." +
+            std::string(slot));
+  }
+
+  // Snapshot types pin the same numeric identities, retain signed raw values,
+  // and capture all eight values explicitly rather than aliasing legacy state.
+  const std::string effect_kind = braced_definition(
+      snapshot_header, "PartyEffectKind");
+  const std::string compact_effect_kind = without_whitespace(effect_kind);
+  require(without_whitespace(snapshot_header).contains(
+              "enumclassPartyEffectKind:uint8_t{"),
+      "PartyEffectKind must be a compact typed key");
+  std::size_t previous_kind = 0;
+  for (std::size_t index = 0; index < effect_kind_names.size(); ++index) {
+    const std::string assignment = std::string(effect_kind_names[index]) +
+        "=" + std::to_string(index + 1U) + ",";
+    const std::size_t position = compact_effect_kind.find(
+        assignment, previous_kind);
+    require(position != std::string::npos &&
+            (index == 0U || position > previous_kind) &&
+            count_identifier(effect_kind, effect_kind_names[index]) == 1,
+        std::string("typed party-effect key is not explicitly pinned: ") +
+            assignment);
+    previous_kind = position;
+  }
+
+  const std::string effect_view = braced_definition(
+      snapshot_header, "PartyEffectView");
+  const std::string compact_effect_view = without_whitespace(effect_view);
+  require(compact_effect_view.contains(
+              "PartyEffectKindkind=PartyEffectKind::waterworld;") &&
+          compact_effect_view.contains("int16_traw_value=0;") &&
+          count_identifier(effect_view, "kind") >= 1 &&
+          count_identifier(effect_view, "raw_value") == 1,
+      "detached PartyEffectView must retain a typed key and exact signed "
+      "16-bit raw value");
+  const std::string party_view = braced_definition(
+      snapshot_header, "PartyView");
+  const std::string compact_party_view = without_whitespace(party_view);
+  require(compact_party_view.contains(
+              "std::array<int32_t,3>pooled_money{};") &&
+          compact_party_view.contains("int16_tfatigue=0;") &&
+          compact_party_view.contains(
+              "std::array<PartyEffectView,8>effects{"),
+      "PartyView must own signed pooled money, signed fatigue, and exactly "
+      "eight detached party effects");
+  std::size_t previous_initializer = 0;
+  for (const auto kind : effect_kind_names) {
+    const std::string initializer =
+        "PartyEffectView{PartyEffectKind::" + std::string(kind) + ",0}";
+    const std::size_t position = compact_party_view.find(
+        initializer, previous_initializer);
+    require(position != std::string::npos &&
+            position >= previous_initializer,
+        std::string("PartyView default effect sequence is missing ") +
+            initializer);
+    previous_initializer = position;
+  }
+
+  const std::string capture = function_body(snapshot_source, "capture");
+  const std::string compact_capture = without_whitespace(capture);
+  require(compact_capture.contains(
+              "snapshot.party.pooled_money={moneypool[0],moneypool[1],"
+              "moneypool[2]};") &&
+          compact_capture.contains("snapshot.party.fatigue=fat;"),
+      "legacy snapshot must copy exact signed fatigue and pooled-money "
+      "indices without conversion");
+  const std::size_t effects_assignment = compact_capture.find(
+      "snapshot.party.effects={");
+  require(effects_assignment != std::string::npos,
+      "legacy snapshot is missing the fixed party-effect projection");
+  const std::size_t effects_open = compact_capture.find(
+      '{', effects_assignment);
+  const std::size_t effects_close = matching_delimiter(
+      compact_capture, effects_open, '{', '}');
+  const std::string captured_effects = compact_capture.substr(
+      effects_open, effects_close - effects_open + 1U);
+  previous_initializer = 0;
+  for (std::size_t index = 0;
+       index < effect_kind_names.size();
+       ++index) {
+    const std::string projection =
+        "PartyEffectView{PartyEffectKind::" +
+        std::string(effect_kind_names[index]) + ",partycondition[" +
+        std::string(classic_effect_names[index]) + "]}";
+    const std::size_t position = captured_effects.find(
+        projection, previous_initializer);
+    require(position != std::string::npos &&
+            position >= previous_initializer,
+        std::string("legacy snapshot effect projection is missing ") +
+            projection);
+    previous_initializer = position;
+  }
+  require(count_identifier(captured_effects, "PartyEffectView") == 8 &&
+          count_identifier(captured_effects, "PARTY_COND_TORCH_LIT") == 0 &&
+          count_identifier(captured_effects, "PARTY_COND_UNUSED_9") == 0 &&
+          count_identifier(capture, "UIAction") == 0,
+      "detached effect capture must include only indices 1..8 and remain "
+      "read-only");
+
+  const std::string capture_test = function_body(
+      snapshot_test, "test_party_status_capture_is_exact_fixed_and_detached");
+  const std::string compact_capture_test = without_whitespace(capture_test);
+  require(count_identifier(snapshot_test,
+              "test_party_status_capture_is_exact_fixed_and_detached") == 2 &&
+          compact_capture_test.contains(
+              "partycondition[PARTY_COND_TORCH_LIT]=1111;") &&
+          compact_capture_test.contains(
+              "partycondition[PARTY_COND_UNUSED_9]=-2222;") &&
+          compact_capture_test.contains(
+              "std::memset(partycondition,0,sizeof(partycondition));") &&
+          count_identifier(capture_test, "snapshot") >= 8 &&
+          count_identifier(capture_test, "zero_snapshot") >= 4 &&
+          count_identifier(capture_test, "numeric_limits") >= 6,
+      "snapshot tests must execute exact 0/9 exclusion, signed extremes, "
+      "all-zero capture, and post-capture detachment");
+
+  // The rail consolidates effects, fatigue, and pooled money into one pure
+  // status value. Canonical sequence validation happens before truthy
+  // filtering, so a malformed detached producer cannot reorder or duplicate
+  // Classic meanings.
+  const std::string effect_model = braced_definition(
+      model_header, "PartyEffectModel");
+  const std::string compact_effect_model = without_whitespace(effect_model);
+  require(compact_effect_model.contains(
+              "PartyEffectKindkind=PartyEffectKind::waterworld;") &&
+          compact_effect_model.contains("int16_traw_value=0;") &&
+          count_identifier(effect_model, "StateTokenModel") == 1 &&
+          count_identifier(effect_model, "state") == 1,
+      "PartyEffectModel must retain typed kind, signed raw value, and one "
+      "non-color state token");
+  const std::string status_model = braced_definition(
+      model_header, "PartyStatusModel");
+  const std::string compact_status_model = without_whitespace(status_model);
+  require(compact_status_model.contains(
+              "std::vector<PartyEffectModel>active_effects;") &&
+          compact_status_model.contains("MeterModelfatigue;") &&
+          compact_status_model.contains(
+              "std::array<int32_t,3>pooled_money{};"),
+      "PartyStatusModel must own ordered effects, fatigue, and three exact "
+      "pooled denominations");
+  const std::string rail_model = braced_definition(
+      model_header, "PartyRailModel");
+  require(count_identifier(rail_model, "PartyStatusModel") == 1 &&
+          count_identifier(rail_model, "status") == 1 &&
+          count_identifier(rail_model, "fatigue") == 0 &&
+          count_identifier(rail_model, "pooled_money") == 0,
+      "PartyRailModel must own one consolidated status instead of duplicate "
+      "fatigue or money fields");
+
+  const std::string canonical_kinds = braced_definition(
+      model_source, "kPartyEffectKinds");
+  std::size_t previous_model_kind = 0;
+  for (const auto kind : effect_kind_names) {
+    const std::string entry = "PartyEffectKind::" + std::string(kind);
+    const std::size_t position = canonical_kinds.find(
+        entry, previous_model_kind);
+    require(position != std::string::npos &&
+            position >= previous_model_kind &&
+            count_identifier(canonical_kinds, kind) == 1,
+        std::string("canonical model effect sequence is missing ") + entry);
+    previous_model_kind = position;
+  }
+
+  const std::string effect_state = function_body(
+      model_source, "party_effect_state");
+  const std::string raw_effect_state = function_body(
+      raw_model_source, "party_effect_state");
+  std::size_t previous_effect_case = 0;
+  for (std::size_t index = 0; index < effect_kind_names.size(); ++index) {
+    const std::string case_name =
+        "PartyEffectKind::" + std::string(effect_kind_names[index]);
+    const std::size_t position = effect_state.find(
+        case_name, previous_effect_case);
+    require(position != std::string::npos &&
+            position >= previous_effect_case &&
+            raw_effect_state.find(
+                "\"party.effect." +
+                std::string(effect_kind_names[index]) + "\"") !=
+                std::string::npos &&
+            raw_effect_state.find(
+                "\"" + std::string(effect_labels[index]) + "\"") !=
+                std::string::npos,
+        std::string("party effect model is missing stable identifier/label: ") +
+            case_name);
+    previous_effect_case = position;
+  }
+  require(count_identifier(effect_state, "case") == 8 &&
+          count_identifier(effect_state, "StateMarker") == 8 &&
+          count_identifier(effect_state, "condition") == 8 &&
+          count_identifier(effect_state, "invalid_argument") == 1 &&
+          count_identifier(effect_state, "duration") == 0 &&
+          count_identifier(effect_state, "turn") == 0,
+      "party-effect states must have exactly eight labeled, marker-bearing "
+      "cases and must not interpret raw values as durations or turns");
+
+  const std::string active_effects = function_body(
+      model_source, "active_party_effects");
+  const std::string compact_active_effects =
+      without_whitespace(active_effects);
+  const std::size_t sequence_validation = compact_active_effects.find(
+      "if(effects[index].kind!=kPartyEffectKinds[index]){");
+  const std::size_t sequence_rejection = compact_active_effects.find(
+      "throwstd::invalid_argument(", sequence_validation);
+  const std::size_t active_iteration = compact_active_effects.find(
+      "for(constauto&effect:effects){", sequence_rejection);
+  const std::size_t zero_filter = compact_active_effects.find(
+      "if(effect.raw_value==0){continue;}", active_iteration);
+  const std::size_t raw_retention = compact_active_effects.find(
+      ".raw_value=effect.raw_value,", zero_filter);
+  const std::size_t token_mapping = compact_active_effects.find(
+      ".state=party_effect_state(effect.kind),", raw_retention);
+  require(sequence_validation != std::string::npos &&
+          sequence_rejection != std::string::npos &&
+          active_iteration != std::string::npos &&
+          zero_filter != std::string::npos &&
+          raw_retention != std::string::npos &&
+          token_mapping != std::string::npos &&
+          sequence_validation < sequence_rejection &&
+          sequence_rejection < active_iteration &&
+          active_iteration < zero_filter && zero_filter < raw_retention &&
+          raw_retention < token_mapping,
+      "party-effect modeling must reject a malformed fixed sequence before "
+      "retaining every signed nonzero raw value in canonical order");
+
+  const std::string build_rail = function_body(
+      model_source, "build_party_rail_model");
+  const std::string compact_build_rail = without_whitespace(build_rail);
+  require(compact_build_rail.contains(
+              ".status=PartyStatusModel{") &&
+          compact_build_rail.contains(
+              ".active_effects=active_party_effects("
+              "snapshot.party.effects),") &&
+          compact_build_rail.contains(
+              ".fatigue=fatigue_model(snapshot.party.fatigue),") &&
+          compact_build_rail.contains(
+              ".pooled_money=snapshot.party.pooled_money,"),
+      "one context-independent rail build must project the complete party "
+      "status without conversion");
+
+  const std::string fatigue = function_body(model_source, "fatigue_model");
+  const std::string compact_fatigue = without_whitespace(fatigue);
+  const std::size_t fatigue_current = compact_fatigue.find(
+      ".current=fatigue,");
+  const std::size_t fatigue_maximum = compact_fatigue.find(
+      ".maximum=135,", fatigue_current);
+  const std::size_t fatigue_fill = compact_fatigue.find(
+      ".fill_fraction=std::clamp(static_cast<double>(fatigue)/135.0,"
+      "0.0,1.0),", fatigue_maximum);
+  const std::size_t fatigue_baseline = compact_fatigue.find(
+      "if(fatigue<=70){", fatigue_fill);
+  const std::size_t fatigue_elevated = compact_fatigue.find(
+      "elseif(fatigue<=105){", fatigue_baseline);
+  const std::size_t fatigue_critical = compact_fatigue.find(
+      "}else{", fatigue_elevated);
+  require(fatigue_current != std::string::npos &&
+          fatigue_maximum != std::string::npos &&
+          fatigue_fill != std::string::npos &&
+          fatigue_baseline != std::string::npos &&
+          fatigue_elevated != std::string::npos &&
+          fatigue_critical != std::string::npos &&
+          fatigue_current < fatigue_maximum &&
+          fatigue_maximum < fatigue_fill &&
+          fatigue_fill < fatigue_baseline &&
+          fatigue_baseline < fatigue_elevated &&
+          fatigue_elevated < fatigue_critical &&
+          raw_model_source.find("\"fatigue.baseline\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Baseline\"") != std::string::npos &&
+          raw_model_source.find("\"fatigue.elevated\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Elevated\"") != std::string::npos &&
+          raw_model_source.find("\"fatigue.critical\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Critical\"") != std::string::npos &&
+          count_identifier(fatigue, "StateMarker") == 3,
+      "fatigue must retain signed current, use raw/135 clamped fill, and "
+      "expose exact baseline/elevated/critical non-color bands");
+
+  const std::string updatefat = function_body(
+      updatefat_source, "updatefat");
+  const std::string compact_updatefat = without_whitespace(updatefat);
+  const std::size_t combat_return = compact_updatefat.find(
+      "if(incombat){WindowManager_SetEnableRecomposite("
+      "enable_recomposite);return;}");
+  const std::size_t classic_fatigue_mutation = compact_updatefat.find(
+      "fat+=num;", combat_return);
+  const std::size_t classic_fatigue_cap = compact_updatefat.find(
+      "if(fat>135)fat=135;", classic_fatigue_mutation);
+  const std::size_t classic_fatigue_floor = compact_updatefat.find(
+      "if(fat<4)fat=4;", classic_fatigue_cap);
+  const std::size_t classic_baseline_threshold = compact_updatefat.find(
+      "if(fat>70)BackPixPat(gHilite);", classic_fatigue_floor);
+  const std::size_t classic_critical_threshold = compact_updatefat.find(
+      "if(fat>105)BackPixPat(gShadow);",
+      classic_baseline_threshold);
+  const std::size_t classic_fatigue_render = compact_updatefat.find(
+      "EraseRect(&buttonrect);", classic_critical_threshold);
+  require(combat_return != std::string::npos &&
+          classic_fatigue_mutation != std::string::npos &&
+          classic_fatigue_cap != std::string::npos &&
+          classic_fatigue_floor != std::string::npos &&
+          classic_baseline_threshold != std::string::npos &&
+          classic_critical_threshold != std::string::npos &&
+          classic_fatigue_render != std::string::npos &&
+          combat_return < classic_fatigue_mutation &&
+          classic_fatigue_mutation < classic_fatigue_cap &&
+          classic_fatigue_cap < classic_fatigue_floor &&
+          classic_fatigue_floor < classic_baseline_threshold &&
+          classic_baseline_threshold < classic_critical_threshold &&
+          classic_critical_threshold < classic_fatigue_render,
+      "Classic updatefat must return from combat before fatigue mutation "
+      "and band rendering, then apply exact >70 and >105 thresholds");
+
+  const std::string status_model_test = function_body(
+      model_test, "test_party_status_is_exact_ordered_and_context_independent");
+  const std::string compact_status_model_test =
+      without_whitespace(status_model_test);
+  for (const auto threshold : {std::string_view("4,"),
+           std::string_view("70,"), std::string_view("71,"),
+           std::string_view("105,"), std::string_view("106,"),
+           std::string_view("135,")}) {
+    require(compact_status_model_test.find(threshold) != std::string::npos,
+        std::string("party-status model test is missing fatigue boundary ") +
+            std::string(threshold));
+  }
+  require(count_identifier(model_test,
+              "test_party_status_is_exact_ordered_and_context_independent") ==
+              2 &&
+          count_identifier(status_model_test, "numeric_limits") >= 6 &&
+          compact_status_model_test.contains(
+              "model.status.fatigue.maximum==135") &&
+          count_identifier(status_model_test, "fill_fraction") >= 2 &&
+          count_identifier(status_model_test, "ScreenContext") >= 10 &&
+          count_identifier(status_model_test, "in_camp") >= 2 &&
+          count_identifier(status_model_test, "conscious") >= 2 &&
+          count_identifier(status_model_test, "selected") >= 3 &&
+          compact_status_model_test.contains(
+              "independent.status==expected_status") &&
+          compact_status_model_test.contains("first==second") &&
+          compact_status_model_test.contains("snapshot==before"),
+      "party-status model tests must execute signed extremes, exact fatigue "
+      "boundaries, context independence, determinism, and immutability");
+
+  // Classic's three 32-bit pooled values are rendered in named Gold, Gems,
+  // Jewelry positions. Snapshot, model, and layout retain that exact order.
+  require(without_whitespace(classic_variables).contains(
+              "externint32_tmoneypool[3];"),
+      "Classic pooled money must remain three signed 32-bit values");
+  const std::string update_booty_money = function_body(
+      booty_source, "updatebootymoney");
+  const std::string compact_update_booty_money =
+      without_whitespace(update_booty_money);
+  const std::size_t classic_gold = compact_update_booty_money.find(
+      "MoveTo(goldleft,moneytop);MyrNumToString(moneypool[0],myString);");
+  const std::size_t classic_gems = compact_update_booty_money.find(
+      "MoveTo(gemleft,moneytop+15);MyrNumToString(moneypool[1],myString);",
+      classic_gold);
+  const std::size_t classic_jewelry = compact_update_booty_money.find(
+      "MoveTo(jewleft,moneytop+30);MyrNumToString(moneypool[2],myString);",
+      classic_gems);
+  require(classic_gold != std::string::npos &&
+          classic_gems != std::string::npos &&
+          classic_jewelry != std::string::npos &&
+          classic_gold < classic_gems && classic_gems < classic_jewelry,
+      "Classic pooled-money source must preserve moneypool[0..2] as Gold, "
+      "Gems, then Jewelry");
+  require(compact_status_model_test.contains(
+              "snapshot.party.pooled_money={"
+              "std::numeric_limits<int32_t>::min(),-1,"
+              "std::numeric_limits<int32_t>::max(),};") &&
+          compact_status_model_test.contains(
+              "model.status.pooled_money[0]=="
+              "std::numeric_limits<int32_t>::min()") &&
+          compact_status_model_test.contains(
+              "model.status.pooled_money[1]==-1") &&
+          compact_status_model_test.contains(
+              "model.status.pooled_money[2]=="
+              "std::numeric_limits<int32_t>::max()"),
+      "party-status tests must execute exact signed 32-bit pooled-money "
+      "edges in Gold/Gems/Jewelry order");
+
+  // PartyStatusLayout is a renderer-free value transformation. Effects are
+  // built before the combat/world split; only world surfaces receive fatigue
+  // and pooled-money rows.
+  const std::string effect_layout = braced_definition(
+      layout_header, "PartyStatusEffectLayout");
+  const std::string compact_effect_layout = without_whitespace(effect_layout);
+  require(compact_effect_layout.contains(
+              "PartyEffectKindkind=PartyEffectKind::waterworld;") &&
+          compact_effect_layout.contains("int16_traw_value=0;") &&
+          count_identifier(effect_layout, "PartyRailRenderableStateToken") ==
+              1,
+      "party-status effect layout must retain typed kind, signed raw value, "
+      "and the complete renderable token");
+  const std::string status_layout = braced_definition(
+      layout_header, "PartyStatusLayout");
+  for (const auto field : {
+           "bounds", "effects_bounds", "fatigue_meter_bounds",
+           "fatigue_bounds", "pooled_money_bounds", "effects_text",
+           "fatigue_text", "pooled_money_text", "accessibility_text",
+           "effect_tokens", "fatigue_state_token",
+           "fatigue_fill_fraction", "fatigue_meter_available"}) {
+    require(count_identifier(status_layout, field) >= 1,
+        std::string("PartyStatusLayout is missing field ") + field);
+  }
+  for (const auto forbidden : {
+           "SDL_Renderer", "SDL_Texture", "UIAction",
+           "LegacyCommandBridge", "RuntimeLegacyCommandBridge",
+           "SemanticInputBoundary", "ResourceManager", "ResourceDASM",
+           "dispatch", "PushEvent"}) {
+    require(count_identifier(layout_header, forbidden) == 0 &&
+            count_identifier(layout_source, forbidden) == 0,
+        std::string("pure party-status layout must not depend on ") +
+            forbidden);
+  }
+  require(layout_header.find("SDL_") == std::string::npos &&
+          layout_source.find("SDL_") == std::string::npos &&
+          raw_layout_header.find("not an OS publication") !=
+              std::string::npos,
+      "party-status layout must stay renderer-free and describe its complete "
+      "text as internal metadata, not OS publication");
+
+  const std::string validation = function_body(
+      layout_source, "validate_request");
+  const std::string compact_validation = without_whitespace(validation);
+  for (const auto surface : {
+           "ScreenContext::exploration", "ScreenContext::dungeon",
+           "ScreenContext::combat"}) {
+    require(count_identifier(validation,
+                std::string_view(surface).substr(
+                    std::string_view(surface).find("::") + 2U)) >= 1,
+        std::string("party-status layout validation is missing ") + surface);
+  }
+  require(compact_validation.contains(
+              "request.party_rail.status.active_effects.size()>8U") &&
+          compact_validation.contains(
+              "effect_kind<static_cast<uint8_t>("
+              "PartyEffectKind::waterworld)") &&
+          compact_validation.contains(
+              "effect_kind>static_cast<uint8_t>("
+              "PartyEffectKind::charm_resistance)") &&
+          compact_validation.contains(
+              "effect_kind<=*previous_effect_kind") &&
+          compact_validation.contains("effect.raw_value==0") &&
+          count_identifier(validation, "empty") >= 2 &&
+          compact_validation.contains(
+              "request.party_rail.status.fatigue.maximum!=135") &&
+          count_identifier(validation, "fill_fraction") >= 3 &&
+          count_identifier(validation, "invalid_argument") >= 5,
+      "party-status layout must reject unsupported surfaces, out-of-range or "
+      "unordered effects, zero raw values, incomplete labels, and malformed "
+      "world fatigue");
+
+  const std::string layout_status_body = function_body(
+      layout_source, "layout_status");
+  const std::string compact_layout_status =
+      without_whitespace(layout_status_body);
+  const std::size_t surface_split = compact_layout_status.find(
+      "constboolshow_world_resources="
+      "request.screen!=ScreenContext::combat;");
+  const std::size_t effect_copy = compact_layout_status.find(
+      "for(constauto&effect:source.active_effects){", surface_split);
+  const std::size_t raw_layout_retention = compact_layout_status.find(
+      ".raw_value=effect.raw_value,", effect_copy);
+  const std::size_t effect_text = compact_layout_status.find(
+      "result.effects_text=elided_effects_text(", raw_layout_retention);
+  const std::size_t accessibility_text = compact_layout_status.find(
+      "result.accessibility_text=accessible_effects_text(", effect_text);
+  const std::size_t combat_omission = compact_layout_status.find(
+      "if(!show_world_resources){returnresult;}", accessibility_text);
+  const std::size_t fatigue_bounds = compact_layout_status.find(
+      "result.fatigue_meter_bounds=LogicalRect{", combat_omission);
+  const std::size_t fatigue_format = compact_layout_status.find(
+      "result.fatigue_text=std::format(", fatigue_bounds);
+  const std::size_t money_format = compact_layout_status.find(
+      "result.pooled_money_text=", fatigue_format);
+  require(surface_split != std::string::npos &&
+          effect_copy != std::string::npos &&
+          raw_layout_retention != std::string::npos &&
+          effect_text != std::string::npos &&
+          accessibility_text != std::string::npos &&
+          combat_omission != std::string::npos &&
+          fatigue_bounds != std::string::npos &&
+          fatigue_format != std::string::npos &&
+          money_format != std::string::npos &&
+          surface_split < effect_copy && effect_copy < raw_layout_retention &&
+          raw_layout_retention < effect_text &&
+          effect_text < accessibility_text &&
+          accessibility_text < combat_omission &&
+          combat_omission < fatigue_bounds &&
+          fatigue_bounds < fatigue_format && fatigue_format < money_format,
+      "party-status layout must preserve effects on all three surfaces and "
+      "return from combat before creating fatigue or money presentation");
+  require(raw_layout_source.find("\"FAT {}/{}  {}\"") !=
+              std::string::npos &&
+          raw_layout_source.find("\"POOL G {}  GM {}  J {}\"") !=
+              std::string::npos &&
+          raw_layout_source.find(
+              "\"POOL GOLD {}  GEMS {}  JEWELRY {}\"") !=
+              std::string::npos &&
+          compact_layout_status.contains("source.pooled_money[0],") &&
+          compact_layout_status.contains("source.pooled_money[1],") &&
+          compact_layout_status.contains("source.pooled_money[2])"),
+      "world party status must format exact raw fatigue and signed pooled "
+      "Gold/Gems/Jewelry without conversion");
+
+  const std::string visible_effects = function_body(
+      layout_source, "elided_effects_text");
+  const std::string compact_visible_effects =
+      without_whitespace(visible_effects);
+  const std::string accessible_effects = function_body(
+      layout_source, "accessible_effects_text");
+  const std::string compact_accessible_effects =
+      without_whitespace(accessible_effects);
+  require(compact_visible_effects.contains(
+              "effects.size()-1U") &&
+          compact_visible_effects.contains(
+              "effects.front().state.render_text") &&
+          count_identifier(visible_effects, "utf8_prefix") >= 1 &&
+          compact_accessible_effects.contains(
+              "for(size_tindex=0;index<effects.size();++index)") &&
+          compact_accessible_effects.contains(
+              "result+=effects[index].state.label;") &&
+          count_identifier(accessible_effects, "utf8_prefix") == 0 &&
+          count_identifier(accessible_effects, "maximum_bytes") == 0 &&
+          raw_layout_source.find(" ... (+") != std::string::npos,
+      "visible effects must use deterministic +N elision while complete "
+      "ordered tokens and internal semantic text remain unelided");
+
+  const std::string all_layouts = function_body(
+      layout_test, "test_all_supported_counts_sizes_and_scales");
+  const std::string compact_all_layouts = without_whitespace(all_layouts);
+  const std::string verify_layout_body = function_body(
+      layout_test, "verify_layout");
+  const std::string compact_verify_layout =
+      without_whitespace(verify_layout_body);
+  require(compact_all_layouts.contains(
+              "for(size_tcount=1;count<=6;++count){") &&
+          compact_all_layouts.contains(
+              "verify_layout(panel,count,scale,"
+              "ScreenContext::exploration);") &&
+          compact_all_layouts.contains(
+              "verify_layout(panel,count,scale,ScreenContext::combat);") &&
+          count_identifier(all_layouts, "panels") >= 2 &&
+          count_identifier(all_layouts, "scales") >= 2 &&
+          compact_verify_layout.contains(
+              "placed.card_bounds.height>=44.0") &&
+          compact_verify_layout.contains(
+              "placed.portrait_bounds.width,44.0") &&
+          compact_verify_layout.contains(
+              "placed.portrait_bounds.height,44.0") &&
+          count_identifier(verify_layout_body, "contains") >= 10 &&
+          count_identifier(verify_layout_body, "interiors_overlap") >= 10 &&
+          count_identifier(verify_layout_body, "BackingTransform") >= 1 &&
+          compact_verify_layout.contains("model==before"),
+      "responsive layout tests must execute 1..6 members on compact/wide, "
+      "world/combat, text/backing scales with contained nonoverlapping "
+      "44-point geometry and immutable input");
+
+  const std::string complete_layout_test = function_body(
+      layout_test,
+      "test_party_status_is_complete_responsive_and_screen_specific");
+  const std::string compact_complete_layout_test =
+      without_whitespace(complete_layout_test);
+  require(count_identifier(layout_test,
+              "test_party_status_is_complete_responsive_and_screen_specific") ==
+              2 &&
+          compact_complete_layout_test.contains(
+              "exploration.status.effect_tokens.size()==8U") &&
+          compact_complete_layout_test.contains(
+              "dungeon.status==exploration.status") &&
+          compact_complete_layout_test.contains(
+              "combat.status.effect_tokens==exploration.status.effect_tokens") &&
+          compact_complete_layout_test.contains(
+              "!combat.status.fatigue_meter_bounds.has_value()") &&
+          compact_complete_layout_test.contains(
+              "!combat.status.pooled_money_bounds.has_value()") &&
+          count_text(raw_layout_test,
+              "\"EFFECTS [*] Waterworld ... (+7)\"") >= 2 &&
+          count_identifier(complete_layout_test, "raw_value") >= 2 &&
+          count_identifier(complete_layout_test, "accessibility_text") >= 6 &&
+          compact_complete_layout_test.contains(
+              "combat.members[0].card_bounds.height>=44.0"),
+      "party-status layout tests must execute all-eight signed effects, exact "
+      "+N elision, unelided text, world equivalence, effects-only combat, "
+      "determinism, and preserved 44-point cards");
+  const std::string invalid_layout_test = function_body(
+      layout_test, "test_invalid_requests_never_return_partial_layouts");
+  const std::string compact_invalid_layout_test =
+      without_whitespace(invalid_layout_test);
+  require(count_identifier(invalid_layout_test, "check_bad_status") >= 10 &&
+          compact_invalid_layout_test.contains(
+              "effect(static_cast<PartyEffectKind>(0),1,") &&
+          compact_invalid_layout_test.contains(
+              "effect(static_cast<PartyEffectKind>(9),1,") &&
+          count_identifier(invalid_layout_test, "search") >= 3 &&
+          compact_invalid_layout_test.contains(
+              "bad_status.fatigue.maximum=134;") &&
+          count_identifier(invalid_layout_test, "fill_fraction") >= 3 &&
+          count_identifier(invalid_layout_test, "clear") >= 2,
+      "layout tests must execute lower/upper kind bounds, zero, duplicate or "
+      "unordered effects, incomplete labels, and every malformed fatigue "
+      "gate");
+
+  // A single renderer consumes the pure status layout for exploration,
+  // dungeon, and combat. It draws the bounded fatigue meter visibly when the
+  // optional world row exists and performs no local formatting or dispatch.
+  const std::string draw_panels = function_body(
+      window_source, "draw_shell_panel_contents");
+  const std::string compact_draw_panels = without_whitespace(draw_panels);
+  const std::size_t party_branch_marker = compact_draw_panels.find(
+      "if(kind==ShellPanelKind::party_rail){");
+  const std::size_t party_branch_open = compact_draw_panels.find(
+      '{', party_branch_marker);
+  require(party_branch_marker != std::string::npos &&
+          party_branch_open != std::string::npos,
+      "shared renderer is missing its party-rail branch");
+  const std::size_t party_branch_close = matching_delimiter(
+      compact_draw_panels, party_branch_open, '{', '}');
+  const std::string party_branch = compact_draw_panels.substr(
+      party_branch_open,
+      party_branch_close - party_branch_open + 1U);
+  const std::size_t render_status_effects = party_branch.find(
+      "party_layout.status.effects_text");
+  const std::size_t render_fatigue_meter = party_branch.find(
+      "draw_shell_meter(renderer,*party_layout.status."
+      "fatigue_meter_bounds,", render_status_effects);
+  const std::size_t render_fatigue_text = party_branch.find(
+      "party_layout.status.fatigue_text", render_fatigue_meter);
+  const std::size_t render_money_text = party_branch.find(
+      "party_layout.status.pooled_money_text", render_fatigue_text);
+  const std::size_t render_members = party_branch.find(
+      "for(constauto&placed:party_layout.members)", render_money_text);
+  require(render_status_effects != std::string::npos &&
+          render_fatigue_meter != std::string::npos &&
+          render_fatigue_text != std::string::npos &&
+          render_money_text != std::string::npos &&
+          render_members != std::string::npos &&
+          render_status_effects < render_fatigue_meter &&
+          render_fatigue_meter < render_fatigue_text &&
+          render_fatigue_text < render_money_text &&
+          render_money_text < render_members,
+      "one shared renderer must visibly draw effects, fatigue meter/text, "
+      "pooled money, then every member card from layout output");
+  require(count_identifier(party_branch, "compute_party_rail_layout") == 1 &&
+          count_identifier(party_branch, "ScreenContext") == 0 &&
+          count_identifier(party_branch, "exploration") == 0 &&
+          count_identifier(party_branch, "dungeon") == 0 &&
+          count_identifier(party_branch, "combat") == 0 &&
+          count_identifier(party_branch, "format") == 0 &&
+          count_identifier(party_branch, "to_string") == 0 &&
+          count_identifier(party_branch, "UIAction") == 0 &&
+          count_identifier(party_branch,
+              "dispatch_remastered_shell_control") == 0 &&
+          count_identifier(party_branch, "PushEvent") == 0 &&
+          count_identifier(party_branch, "keyDown") == 0 &&
+          count_identifier(party_branch, "mouseDown") == 0 &&
+          count_identifier(party_branch, "accessibility") == 0,
+      "outdoor, dungeon, and combat status must share one renderer with no "
+      "ad-hoc formatting, action route, or OS accessibility publisher");
+
+  std::string semantic_vocabulary = code_only(read_file(
+      repository_root / "src/presentation/UIAction.hpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.h"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/presentation/RemasteredInputMapper.hpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/presentation/RemasteredInputMapper.cpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/EventManager.h"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  std::string replay_vocabulary;
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (entry.is_regular_file()) {
+      replay_vocabulary += code_only(read_file(entry.path()));
+    }
+  }
+  replay_vocabulary += code_only(read_file(
+      repository_root / "src/SemanticReplayChild.cpp"));
+  std::string classic_vocabulary;
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/realmz_orig")) {
+    if (entry.is_regular_file()) {
+      classic_vocabulary += code_only(read_file(entry.path()));
+    }
+  }
+  for (const auto information_only_name : {
+           "PartyEffectKind", "PartyEffectView", "PartyEffectModel",
+           "PartyStatusModel", "PartyStatusEffectLayout",
+           "PartyStatusLayout", "active_party_effects", "fatigue_model",
+           "effect_tokens", "party_status"}) {
+    require(count_identifier(
+                semantic_vocabulary, information_only_name) == 0 &&
+            count_identifier(replay_vocabulary, information_only_name) == 0 &&
+            count_identifier(classic_vocabulary, information_only_name) == 0,
+        std::string("PARTY STATUS information added action/tag/input, "
+                    "Classic, or replay vocabulary named ") +
+            information_only_name);
+  }
+
+  // The manifest promotion is deliberately seven existing information rows:
+  // three effect surfaces plus world-only fatigue and pooled money. Exact
+  // totals, content digest, bounded docs, and hardcoded uncropped production
+  // remain fail-closed.
+  const std::string raw_coverage_header = read_file(
+      repository_root / "src/presentation/GameplayChromeCoverage.hpp");
+  const std::string raw_coverage_source = read_file(
+      repository_root / "src/presentation/GameplayChromeCoverage.cpp");
+  const std::string raw_coverage_test = read_file(
+      repository_root / "src/tests/GameplayChromeCoverageTest.cpp");
+  const auto coverage_row = [&raw_coverage_source](
+      std::string_view stable_id) {
+    const std::string quoted = "\"" + std::string(stable_id) + "\"";
+    const std::size_t start = raw_coverage_source.find(quoted);
+    require(start != std::string::npos,
+        std::string("manifest is missing PARTY STATUS role ") +
+            std::string(stable_id));
+    const std::size_t end = raw_coverage_source.find("},", start);
+    require(end != std::string::npos,
+        std::string("manifest role is unterminated: ") +
+            std::string(stable_id));
+    return raw_coverage_source.substr(start, end - start + 2U);
+  };
+  constexpr std::array promoted_rows{
+      std::string_view("exploration.info.party_condition_indicators"),
+      std::string_view("dungeon.info.party_condition_indicators"),
+      std::string_view("combat.info.party_condition_indicators"),
+      std::string_view("exploration.info.fatigue"),
+      std::string_view("dungeon.info.fatigue"),
+      std::string_view("exploration.info.pooled_money"),
+      std::string_view("dungeon.info.pooled_money"),
+  };
+  for (const auto stable_id : promoted_rows) {
+    const std::string row = coverage_row(stable_id);
+    require(row.find("Kind::essential_information") != std::string::npos &&
+            row.find("Status::semantic_complete") != std::string::npos &&
+            row.find("PARTY STATUS ribbon presents") != std::string::npos &&
+            row.find("no action, tag, input, Classic-source, or "
+                     "replay-vocabulary") != std::string::npos &&
+            (row.find("without claiming OS publication") !=
+                    std::string::npos ||
+                row.find("no OS-publication claim") != std::string::npos),
+        std::string("manifest PARTY STATUS row lacks bounded complete ") +
+            "evidence: " + std::string(stable_id));
+  }
+  require(count_text(
+              raw_coverage_source, "PARTY STATUS ribbon presents") == 7 &&
+          raw_coverage_source.find("\"combat.info.fatigue\"") ==
+              std::string::npos &&
+          raw_coverage_source.find("\"combat.info.pooled_money\"") ==
+              std::string::npos,
+      "exactly seven existing manifest roles may be promoted; fatigue and "
+      "pooled money must remain world-only");
+  const std::string compact_coverage_test =
+      without_whitespace(raw_coverage_test);
+  require(raw_coverage_header.find("0xB4CBF4B4E225642BULL") !=
+              std::string::npos &&
+          raw_coverage_test.find("0xB4CBF4B4E225642BULL") !=
+              std::string::npos &&
+          compact_coverage_test.contains(
+              "Status::retained_in_crop)]==6U") &&
+          compact_coverage_test.contains(
+              "Status::semantic_complete)]==61U") &&
+          compact_coverage_test.contains("Status::missing)]==28U") &&
+          compact_coverage_test.contains(
+              "missing_interaction_count==15U") &&
+          compact_coverage_test.contains(
+              "missing_information_count==13U") &&
+          compact_coverage_test.contains(
+              "kExpectedManifestRows.size()==95U") &&
+          count_identifier(code_only(raw_coverage_test),
+              "test_manifest_matches_independent_oracle") == 2,
+      "coverage tests must pin the reviewed digest, 95 rows, 6/61/28 "
+      "statuses, 15/13 missing split, and execute the independent oracle");
+
+  const std::string readme = read_file(repository_root / "README.md");
+  const std::string qa = read_file(
+      repository_root / "docs/QA_AND_RELEASE.md");
+  const std::string compact_readme = without_whitespace(readme);
+  const std::string compact_qa = without_whitespace(qa);
+  require(readme.find("PARTY STATUS") != std::string::npos &&
+          readme.find("partycondition[1..8]") != std::string::npos &&
+          readme.find("Torch index 0") != std::string::npos &&
+          readme.find("unused index 9") != std::string::npos &&
+          compact_readme.contains(
+              "doesnottreatraweffectvaluesasdurations") &&
+          readme.find("Combat intentionally shows effects only") !=
+              std::string::npos &&
+          readme.find("no OS-accessibility publication claim") !=
+              std::string::npos &&
+          compact_readme.contains(
+              "95-rowinventoryremainsdeliberatelyincomplete:sixrolesare"
+              "`retained_in_crop`,61are`semantic_complete`,and28remain"
+              "`missing`(15interactionsand13") &&
+          readme.find("cropping stays disabled") != std::string::npos,
+      "README must document exact PARTY STATUS scope, exclusions, no OS "
+      "claim, reviewed totals, and disabled cropping");
+  require(qa.find("PARTY STATUS") != std::string::npos &&
+          qa.find("partycondition[1..8]") != std::string::npos &&
+          compact_qa.contains(
+              "withoutinterpretingtheretainedrawvaluesasdurations") &&
+          compact_qa.contains(
+              "Combatintentionallyomitsfatigueandpool") &&
+          qa.find("No OS accessibility publisher") != std::string::npos &&
+          compact_qa.contains(
+              "95-rowinventorycurrentlycontainssix`retained_in_crop`,61"
+              "`semantic_complete`,and28`missing`roles:15interactionsand13") &&
+          qa.find("Cropping remains disabled") != std::string::npos &&
+          qa.find("semantic_controls_ready = false") != std::string::npos,
+      "QA docs must retain exact PARTY STATUS manual scope, reviewed totals, "
+      "no OS publisher claim, and hardcoded uncropped state");
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  require(without_whitespace(present).contains(
+              ".semantic_controls_ready=false,") &&
+          count_identifier(present, "semantic_controls_ready") == 1,
+      "PARTY STATUS completion must not enable the cropped Classic frame");
+}
+
 void verify_selected_party_details_renderer_contract(
     const fs::path& repository_root) {
   const std::string model_header = code_only(read_file(
@@ -10840,7 +11881,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x65200BEDCCAF4E03ULL") !=
+          coverage_header.find("0xB4CBF4B4E225642BULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -10930,7 +11971,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x65200BEDCCAF4E03ULL") !=
+          coverage_test.find("0xB4CBF4B4E225642BULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -14743,6 +15784,7 @@ int main(int argc, char** argv) {
     verify_open_money_management_contract(repository_root);
     verify_selected_item_drilldown_window_manager_contract(repository_root);
     verify_all_member_party_vitals_contract(repository_root);
+    verify_party_status_ribbon_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

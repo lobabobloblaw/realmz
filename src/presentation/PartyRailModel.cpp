@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -13,6 +14,17 @@ constexpr int32_t kActionTabStart = 1000;
 constexpr int32_t kDrawerTabStart = 2000;
 constexpr int16_t kSlowCondition = 6;
 constexpr int16_t kSpeedyCondition = 23;
+
+constexpr std::array kPartyEffectKinds{
+    PartyEffectKind::waterworld,
+    PartyEffectKind::dragon_hide,
+    PartyEffectKind::discover_secret,
+    PartyEffectKind::wizard_eye,
+    PartyEffectKind::search,
+    PartyEffectKind::free_fall_levitate,
+    PartyEffectKind::sentry,
+    PartyEffectKind::charm_resistance,
+};
 
 constexpr std::array<std::string_view, 40> kConditionLabels{
     "In Retreat",
@@ -243,19 +255,113 @@ std::vector<StateTokenModel> selected_detail_states(
   return result;
 }
 
-StateTokenModel fatigue_state(int16_t fatigue) {
-  if (fatigue <= 0) {
-    return token(
-        "fatigue.rested",
-        "Rested",
+StateTokenModel party_effect_state(PartyEffectKind kind) {
+  switch (kind) {
+    case PartyEffectKind::waterworld:
+      return token(
+          "party.effect.waterworld",
+          "Waterworld",
+          StateEmphasis::information,
+          StateMarker::condition);
+    case PartyEffectKind::dragon_hide:
+      return token(
+          "party.effect.dragon_hide",
+          "Dragon Hide",
+          StateEmphasis::information,
+          StateMarker::condition);
+    case PartyEffectKind::discover_secret:
+      return token(
+          "party.effect.discover_secret",
+          "Discover Secret",
+          StateEmphasis::information,
+          StateMarker::condition);
+    case PartyEffectKind::wizard_eye:
+      return token(
+          "party.effect.wizard_eye",
+          "Wizard Eye",
+          StateEmphasis::information,
+          StateMarker::condition);
+    case PartyEffectKind::search:
+      return token(
+          "party.effect.search",
+          "Search",
+          StateEmphasis::information,
+          StateMarker::condition);
+    case PartyEffectKind::free_fall_levitate:
+      return token(
+          "party.effect.free_fall_levitate",
+          "Free Fall / Levitate",
+          StateEmphasis::information,
+          StateMarker::condition);
+    case PartyEffectKind::sentry:
+      return token(
+          "party.effect.sentry",
+          "Sentry",
+          StateEmphasis::information,
+          StateMarker::condition);
+    case PartyEffectKind::charm_resistance:
+      return token(
+          "party.effect.charm_resistance",
+          "Charm Resistance",
+          StateEmphasis::information,
+          StateMarker::condition);
+  }
+  throw std::invalid_argument("unknown party effect kind");
+}
+
+std::vector<PartyEffectModel> active_party_effects(
+    const std::array<PartyEffectView, 8>& effects) {
+  for (std::size_t index = 0; index < effects.size(); ++index) {
+    if (effects[index].kind != kPartyEffectKinds[index]) {
+      throw std::invalid_argument(
+          "party effect sequence must match Classic indices 1 through 8");
+    }
+  }
+
+  std::vector<PartyEffectModel> result;
+  result.reserve(effects.size());
+  for (const auto& effect : effects) {
+    if (effect.raw_value == 0) {
+      continue;
+    }
+    result.emplace_back(PartyEffectModel{
+        .kind = effect.kind,
+        .raw_value = effect.raw_value,
+        .state = party_effect_state(effect.kind),
+    });
+  }
+  return result;
+}
+
+MeterModel fatigue_model(int16_t fatigue) {
+  MeterModel result{
+      .current = fatigue,
+      .maximum = 135,
+      .fill_fraction = std::clamp(
+          static_cast<double>(fatigue) / 135.0,
+          0.0,
+          1.0),
+  };
+  if (fatigue <= 70) {
+    result.state = token(
+        "fatigue.baseline",
+        "Baseline",
         StateEmphasis::positive,
         StateMarker::check);
+  } else if (fatigue <= 105) {
+    result.state = token(
+        "fatigue.elevated",
+        "Elevated",
+        StateEmphasis::caution,
+        StateMarker::alert);
+  } else {
+    result.state = token(
+        "fatigue.critical",
+        "Critical",
+        StateEmphasis::critical,
+        StateMarker::stop);
   }
-  return token(
-      "fatigue.present",
-      "Fatigued",
-      StateEmphasis::caution,
-      StateMarker::alert);
+  return result;
 }
 
 bool has_world_navigation(ScreenContext screen) noexcept {
@@ -1100,9 +1206,11 @@ PartyRailModel build_party_rail_model(const GameSnapshot& snapshot) {
   PartyRailModel result{
       .revision = snapshot.revision,
       .selected_member = resolved_selected_member(snapshot.party),
-      .pooled_money = snapshot.party.pooled_money,
-      .fatigue = snapshot.party.fatigue,
-      .fatigue_state = fatigue_state(snapshot.party.fatigue),
+      .status = PartyStatusModel{
+          .active_effects = active_party_effects(snapshot.party.effects),
+          .fatigue = fatigue_model(snapshot.party.fatigue),
+          .pooled_money = snapshot.party.pooled_money,
+      },
   };
   result.members.reserve(snapshot.party.members.size());
   for (size_t index = 0; index < snapshot.party.members.size(); ++index) {

@@ -93,6 +93,68 @@ void check_near(double actual, double expected) {
   };
 }
 
+[[nodiscard]] PartyStatusModel default_status() {
+  return {
+      .active_effects = {},
+      .fatigue = MeterModel{
+          .current = 0,
+          .maximum = 135,
+          .fill_fraction = 0.0,
+          .state = StateTokenModel{
+              .identifier = "party.fatigue.fresh",
+              .label = "Fresh",
+              .emphasis = StateEmphasis::positive,
+              .marker = StateMarker::check,
+          },
+      },
+      .pooled_money = {0, 0, 0},
+  };
+}
+
+[[nodiscard]] PartyEffectModel effect(
+    PartyEffectKind kind,
+    int16_t raw_value,
+    std::string identifier,
+    std::string label) {
+  return {
+      .kind = kind,
+      .raw_value = raw_value,
+      .state = StateTokenModel{
+          .identifier = std::move(identifier),
+          .label = std::move(label),
+          .emphasis = StateEmphasis::information,
+          .marker = StateMarker::condition,
+      },
+  };
+}
+
+template <typename MemberRange>
+[[nodiscard]] PartyRailModel party_rail(
+    const MemberRange& members,
+    PartyStatusModel status = default_status()) {
+  return {
+      .members = std::vector<PartyRailMemberModel>(
+          members.begin(), members.end()),
+      .status = std::move(status),
+  };
+}
+
+template <typename MemberRange>
+[[nodiscard]] PartyRailLayout compute_test_layout(
+    LogicalRect panel,
+    const MemberRange& members,
+    TypographyModel type,
+    ScreenContext screen = ScreenContext::exploration,
+    PartyStatusModel status = default_status()) {
+  const auto model = party_rail(members, std::move(status));
+  return compute_party_rail_layout({
+      .party_panel = panel,
+      .party_rail = model,
+      .screen = screen,
+      .typography = type,
+  });
+}
+
 void verify_text_style(
     const TextStyleModel& style,
     const TextStyleModel& requested,
@@ -117,23 +179,130 @@ void verify_practical_representative_text_style(
 void verify_layout(
     LogicalRect panel,
     size_t member_count,
-    double text_scale) {
+    double text_scale,
+    ScreenContext screen) {
   std::vector<PartyRailMemberModel> members;
   members.reserve(member_count);
   for (size_t index = 0; index < member_count; ++index) {
     members.emplace_back(member(index));
   }
   const auto type = typography(text_scale);
-  const auto before = members;
-  const auto layout = compute_party_rail_layout({panel, members, type});
+  const auto model = party_rail(members);
+  const auto before = model;
+  const auto layout = compute_party_rail_layout({
+      .party_panel = panel,
+      .party_rail = model,
+      .screen = screen,
+      .typography = type,
+  });
 
   CHECK(layout.panel_bounds == panel);
   CHECK(layout.heading_text == "PARTY");
   CHECK(panel.contains(layout.heading_bounds));
+  CHECK(panel.contains(layout.status.bounds));
+  CHECK(layout.status.bounds.contains(layout.heading_bounds));
+  CHECK(layout.status.bounds.contains(layout.status.effects_bounds));
+  CHECK(layout.status.effects_text == "EFFECTS None");
+  CHECK(layout.status.effect_tokens.empty());
+  CHECK(!interiors_overlap(
+      layout.status.bounds, layout.members.front().card_bounds));
   verify_text_style(
       layout.heading_text_style, type.heading, layout.heading_bounds);
+  verify_text_style(
+      layout.status.effects_text_style,
+      type.caption,
+      layout.status.effects_bounds);
+  verify_practical_representative_text_style(layout.heading_text_style);
+  verify_practical_representative_text_style(
+      layout.status.effects_text_style);
+  CHECK(!interiors_overlap(
+      layout.heading_bounds, layout.status.effects_bounds));
+  const bool show_world_resources = screen != ScreenContext::combat;
+  if (show_world_resources) {
+    CHECK(layout.status.fatigue_meter_bounds.has_value());
+    CHECK(layout.status.fatigue_bounds.has_value());
+    CHECK(layout.status.pooled_money_bounds.has_value());
+    CHECK(layout.status.bounds.contains(
+        *layout.status.fatigue_meter_bounds));
+    CHECK(layout.status.bounds.contains(*layout.status.fatigue_bounds));
+    CHECK(layout.status.bounds.contains(
+        *layout.status.pooled_money_bounds));
+    CHECK(!interiors_overlap(
+        *layout.status.fatigue_meter_bounds,
+        *layout.status.fatigue_bounds));
+    CHECK(layout.status.fatigue_text == "FAT 0/135  [+] Fresh");
+    CHECK(layout.status.pooled_money_text ==
+        (panel.width < 300.0
+            ? "POOL G 0  GM 0  J 0"
+            : "POOL GOLD 0  GEMS 0  JEWELRY 0"));
+    CHECK(layout.status.accessibility_text ==
+        "party effects none; fatigue 0 of 135, band Fresh; pooled money "
+        "gold 0, gems 0, jewelry 0");
+    CHECK(layout.status.fatigue_state_token.has_value());
+    CHECK(layout.status.fatigue_state_token->label == "Fresh");
+    CHECK(layout.status.fatigue_fill_fraction == 0.0);
+    CHECK(layout.status.fatigue_meter_available);
+    verify_text_style(
+        layout.status.fatigue_text_style,
+        type.caption,
+        *layout.status.fatigue_bounds);
+    verify_text_style(
+        layout.status.pooled_money_text_style,
+        type.caption,
+        *layout.status.pooled_money_bounds);
+    verify_practical_representative_text_style(
+        layout.status.fatigue_text_style);
+    verify_practical_representative_text_style(
+        layout.status.pooled_money_text_style);
+    CHECK(!interiors_overlap(
+        layout.status.effects_bounds, *layout.status.fatigue_bounds));
+    CHECK(!interiors_overlap(
+        *layout.status.fatigue_bounds,
+        *layout.status.pooled_money_bounds));
+  } else {
+    CHECK(!layout.status.fatigue_meter_bounds.has_value());
+    CHECK(!layout.status.fatigue_bounds.has_value());
+    CHECK(!layout.status.pooled_money_bounds.has_value());
+    CHECK(layout.status.fatigue_text.empty());
+    CHECK(layout.status.pooled_money_text.empty());
+    CHECK(!layout.status.fatigue_state_token.has_value());
+    CHECK(layout.status.accessibility_text == "party effects none");
+  }
+  for (const double backing_scale : {0.75, 1.0, 2.0}) {
+    const BackingTransform transform(backing_scale);
+    const auto physical_status = transform.to_physical(layout.status.bounds);
+    const auto physical_heading =
+        transform.to_physical(layout.heading_bounds);
+    const auto physical_effects =
+        transform.to_physical(layout.status.effects_bounds);
+    for (const auto child : {physical_heading, physical_effects}) {
+      CHECK(contains(physical_status, child));
+    }
+    CHECK(!interiors_overlap(physical_heading, physical_effects));
+    CHECK(!interiors_overlap(
+        physical_status,
+        transform.to_physical(layout.members.front().card_bounds)));
+    if (show_world_resources) {
+      const auto physical_fatigue_meter =
+          transform.to_physical(*layout.status.fatigue_meter_bounds);
+      const auto physical_fatigue =
+          transform.to_physical(*layout.status.fatigue_bounds);
+      const auto physical_money =
+          transform.to_physical(*layout.status.pooled_money_bounds);
+      for (const auto child : {
+               physical_fatigue_meter,
+               physical_fatigue,
+               physical_money,
+           }) {
+        CHECK(contains(physical_status, child));
+      }
+      CHECK(!interiors_overlap(physical_effects, physical_fatigue));
+      CHECK(!interiors_overlap(physical_fatigue_meter, physical_fatigue));
+      CHECK(!interiors_overlap(physical_fatigue, physical_money));
+    }
+  }
   CHECK(layout.members.size() == member_count);
-  CHECK(members == before);
+  CHECK(model == before);
 
   for (size_t index = 0; index < member_count; ++index) {
     const auto& placed = layout.members[index];
@@ -162,6 +331,7 @@ void verify_layout(
               std::to_string(denominator));
     }
     CHECK(panel.contains(placed.card_bounds));
+    CHECK(placed.card_bounds.height >= 44.0);
     CHECK(placed.card_bounds.contains(placed.portrait_bounds));
     CHECK(placed.card_bounds.contains(placed.name_bounds));
     CHECK(placed.card_bounds.contains(placed.level_bounds));
@@ -322,7 +492,12 @@ void verify_layout(
       CHECK(card_gap <= 4.0);
     }
   }
-  CHECK(layout == compute_party_rail_layout({panel, members, type}));
+  CHECK(layout == compute_party_rail_layout({
+      .party_panel = panel,
+      .party_rail = model,
+      .screen = screen,
+      .typography = type,
+  }));
 }
 
 void test_all_supported_counts_sizes_and_scales() {
@@ -336,7 +511,9 @@ void test_all_supported_counts_sizes_and_scales() {
   for (const auto panel : panels) {
     for (const auto scale : scales) {
       for (size_t count = 1; count <= 6; ++count) {
-        verify_layout(panel, count, scale);
+        verify_layout(
+            panel, count, scale, ScreenContext::exploration);
+        verify_layout(panel, count, scale, ScreenContext::combat);
       }
     }
   }
@@ -349,16 +526,14 @@ void test_portrait_slot_is_stable_across_asset_identities() {
   unavailable.portrait_id = -32768;
   const auto panel = LogicalRect{738.88, 24.0, 261.12, 565.76};
   const auto type = typography(1.0);
-  const auto approved_layout = compute_party_rail_layout({
+  const auto approved_layout = compute_test_layout(
       panel,
       std::span<const PartyRailMemberModel>(&approved, 1U),
-      type,
-  });
-  const auto unavailable_layout = compute_party_rail_layout({
+      type);
+  const auto unavailable_layout = compute_test_layout(
       panel,
       std::span<const PartyRailMemberModel>(&unavailable, 1U),
-      type,
-  });
+      type);
 
   // Asset selection belongs to the renderer. Geometry always reserves the
   // same slot so a code-native fallback cannot cause a layout jump.
@@ -397,11 +572,10 @@ void test_state_tokens_are_complete_and_non_color() {
           StateMarker::condition},
       {"neutral", "Neutral", StateEmphasis::neutral, StateMarker::none},
   };
-  const auto layout = compute_party_rail_layout({
+  const auto layout = compute_test_layout(
       {1016.4, 24.0, 319.6, 336.256},
       std::span<const PartyRailMemberModel>(&one, 1U),
-      typography(1.0),
-  });
+      typography(1.0));
   CHECK(layout.members[0].state_tokens.size() == one.states.size());
   constexpr std::array<std::string_view, 8> markers{
       "[>]", "[i]", "[+]", "[!]", "[X]", "[-]", "[*]", ""};
@@ -451,11 +625,10 @@ void test_attack_cadence_format_is_exhaustive_and_reduced() {
 
   for (int32_t half_units = 0; half_units <= 19; ++half_units) {
     one.attack_cadence_half_units = half_units;
-    const auto layout = compute_party_rail_layout({
+    const auto layout = compute_test_layout(
         {1016.4, 24.0, 319.6, 336.256},
         std::span<const PartyRailMemberModel>(&one, 1U),
-        typography(1.0),
-    });
+        typography(1.0));
     const auto fraction = expected_fractions[
         static_cast<size_t>(half_units)];
     CHECK(layout.members[0].auxiliary_vital_text == "ATK " +
@@ -469,11 +642,10 @@ void test_attack_cadence_format_is_exhaustive_and_reduced() {
 
   for (const int32_t half_units : out_of_range) {
     one.attack_cadence_half_units = half_units;
-    const auto layout = compute_party_rail_layout({
+    const auto layout = compute_test_layout(
         {1016.4, 24.0, 319.6, 336.256},
         std::span<const PartyRailMemberModel>(&one, 1U),
-        typography(1.0),
-    });
+        typography(1.0));
     CHECK(layout.members[0].auxiliary_vital_text == "ATK > 10");
     CHECK(layout.members[0].accessibility_text.find(
         "attack cadence greater than 10") != std::string::npos);
@@ -489,11 +661,10 @@ void test_caster_and_signed_vitals_are_exact() {
   caster.spell_points.maximum = 37;
   caster.auxiliary_vital = PartyAuxiliaryVitalKind::spell_points;
   caster.attack_cadence_half_units = 19;
-  auto layout = compute_party_rail_layout({
+  auto layout = compute_test_layout(
       {738.88, 24.0, 261.12, 565.76},
       std::span<const PartyRailMemberModel>(&caster, 1U),
-      typography(2.0),
-  });
+      typography(2.0));
   CHECK(layout.members[0].armor_class_text == "AC -12");
   CHECK(layout.members[0].stamina_value_text == "ST -9/-2");
   CHECK(layout.members[0].auxiliary_vital_text == "SP 0/37");
@@ -503,11 +674,10 @@ void test_caster_and_signed_vitals_are_exact() {
 
   caster.spell_points.current = -8;
   caster.spell_points.maximum = -1;
-  layout = compute_party_rail_layout({
+  layout = compute_test_layout(
       {738.88, 24.0, 261.12, 565.76},
       std::span<const PartyRailMemberModel>(&caster, 1U),
-      typography(0.75),
-  });
+      typography(0.75));
   CHECK(layout.members[0].auxiliary_vital_text == "SP -8/-1");
   CHECK(layout.members[0].accessibility_text.find(
       "spell points -8 of -1") != std::string::npos);
@@ -530,8 +700,8 @@ void test_fallbacks_and_text_fitting() {
   unconscious.conscious = false;
   const std::array members{ready, unconscious};
   const auto type = typography(2.0);
-  const auto layout = compute_party_rail_layout({
-      {1016.4, 24.0, 319.6, 336.256}, members, type});
+  const auto layout = compute_test_layout(
+      {1016.4, 24.0, 319.6, 336.256}, members, type);
 
   CHECK(layout.members[0].state_tokens.size() == 1);
   CHECK(layout.members[0].state_tokens[0].label == "Ready");
@@ -545,6 +715,141 @@ void test_fallbacks_and_text_fitting() {
   CHECK(layout.members[1].state_tokens[0].emphasis ==
       StateEmphasis::critical);
   CHECK(layout.members[0].name_text_style.point_size < type.body.point_size);
+}
+
+[[nodiscard]] PartyStatusModel extreme_active_status() {
+  auto status = default_status();
+  status.active_effects = {
+      effect(PartyEffectKind::waterworld,
+          std::numeric_limits<int16_t>::min(),
+          "party.effect.waterworld", "Waterworld"),
+      effect(PartyEffectKind::dragon_hide, 2,
+          "party.effect.dragon_hide", "Dragon Hide"),
+      effect(PartyEffectKind::discover_secret, -3,
+          "party.effect.discover_secret", "Discover Secret"),
+      effect(PartyEffectKind::wizard_eye, 4,
+          "party.effect.wizard_eye", "Wizard Eye"),
+      effect(PartyEffectKind::search, -5,
+          "party.effect.search", "Search"),
+      effect(PartyEffectKind::free_fall_levitate, 6,
+          "party.effect.free_fall_levitate", "Free Fall / Levitate"),
+      effect(PartyEffectKind::sentry, -7,
+          "party.effect.sentry", "Sentry"),
+      effect(PartyEffectKind::charm_resistance,
+          std::numeric_limits<int16_t>::max(),
+          "party.effect.charm_resistance", "Charm Resistance"),
+  };
+  status.fatigue = MeterModel{
+      .current = std::numeric_limits<int32_t>::min(),
+      .maximum = 135,
+      .fill_fraction = 1.0,
+      .state = StateTokenModel{
+          .identifier = "party.fatigue.critical",
+          .label = "Critical",
+          .emphasis = StateEmphasis::critical,
+          .marker = StateMarker::alert,
+      },
+  };
+  status.pooled_money = {
+      std::numeric_limits<int32_t>::min(),
+      std::numeric_limits<int32_t>::max(),
+      -1234567890,
+  };
+  return status;
+}
+
+void test_party_status_is_complete_responsive_and_screen_specific() {
+  const std::array members{member(0)};
+  const auto status = extreme_active_status();
+  const LogicalRect compact_panel{738.88, 24.0, 261.12, 565.76};
+  const auto exploration = compute_test_layout(
+      compact_panel,
+      members,
+      typography(2.0),
+      ScreenContext::exploration,
+      status);
+
+  CHECK(exploration.status.effect_tokens.size() == 8U);
+  CHECK(exploration.status.effects_text ==
+      "EFFECTS [*] Waterworld ... (+7)");
+  for (size_t index = 0; index < status.active_effects.size(); ++index) {
+    CHECK(exploration.status.effect_tokens[index].kind ==
+        status.active_effects[index].kind);
+    CHECK(exploration.status.effect_tokens[index].raw_value ==
+        status.active_effects[index].raw_value);
+    CHECK(exploration.status.effect_tokens[index].state.identifier ==
+        status.active_effects[index].state.identifier);
+    CHECK(exploration.status.effect_tokens[index].state.label ==
+        status.active_effects[index].state.label);
+    CHECK(exploration.status.accessibility_text.find(
+        status.active_effects[index].state.label) != std::string::npos);
+  }
+  CHECK(exploration.status.fatigue_meter_bounds.has_value());
+  CHECK(exploration.status.fatigue_bounds.has_value());
+  CHECK(exploration.status.pooled_money_bounds.has_value());
+  CHECK(exploration.status.fatigue_text ==
+      "FAT -2147483648/135  [!] Critical");
+  CHECK(exploration.status.pooled_money_text ==
+      "POOL G -2147483648  GM 2147483647  J -1234567890");
+  CHECK(exploration.status.fatigue_state_token->identifier ==
+      "party.fatigue.critical");
+  CHECK(exploration.status.fatigue_fill_fraction == 1.0);
+  CHECK(exploration.status.fatigue_meter_available);
+  CHECK(exploration.status.accessibility_text.find(
+      "fatigue -2147483648 of 135, band Critical") !=
+      std::string::npos);
+  CHECK(exploration.status.accessibility_text.find(
+      "pooled money gold -2147483648, gems 2147483647, jewelry "
+      "-1234567890") != std::string::npos);
+  verify_practical_representative_text_style(
+      exploration.status.effects_text_style);
+  verify_practical_representative_text_style(
+      exploration.status.fatigue_text_style);
+  verify_practical_representative_text_style(
+      exploration.status.pooled_money_text_style);
+
+  const auto dungeon = compute_test_layout(
+      compact_panel,
+      members,
+      typography(2.0),
+      ScreenContext::dungeon,
+      status);
+  CHECK(dungeon.status == exploration.status);
+  CHECK(dungeon.members == exploration.members);
+
+  auto combat_status = status;
+  combat_status.fatigue = MeterModel{};
+  const auto combat = compute_test_layout(
+      {1016.4, 24.0, 319.6, 336.256},
+      members,
+      typography(1.0),
+      ScreenContext::combat,
+      combat_status);
+  CHECK(combat.status.effect_tokens == exploration.status.effect_tokens);
+  CHECK(combat.status.effects_text ==
+      "EFFECTS [*] Waterworld ... (+7)");
+  CHECK(!combat.status.fatigue_meter_bounds.has_value());
+  CHECK(!combat.status.fatigue_bounds.has_value());
+  CHECK(!combat.status.pooled_money_bounds.has_value());
+  CHECK(combat.status.fatigue_text.empty());
+  CHECK(combat.status.pooled_money_text.empty());
+  CHECK(!combat.status.fatigue_state_token.has_value());
+  CHECK(combat.status.accessibility_text ==
+      "party effects Waterworld, Dragon Hide, Discover Secret, Wizard Eye, "
+      "Search, Free Fall / Levitate, Sentry, Charm Resistance");
+  CHECK(combat.status.accessibility_text.find("fatigue") ==
+      std::string::npos);
+  CHECK(combat.status.accessibility_text.find("money") ==
+      std::string::npos);
+  CHECK(!interiors_overlap(
+      combat.status.bounds, combat.members[0].card_bounds));
+  CHECK(combat.members[0].card_bounds.height >= 44.0);
+  CHECK(combat == compute_test_layout(
+      {1016.4, 24.0, 319.6, 336.256},
+      members,
+      typography(1.0),
+      ScreenContext::combat,
+      combat_status));
 }
 
 template <typename Function>
@@ -562,45 +867,140 @@ void test_invalid_requests_never_return_partial_layouts() {
   std::vector<PartyRailMemberModel> members;
   const auto type = typography(1.0);
   check_invalid_argument([&] {
-    static_cast<void>(compute_party_rail_layout({
-        {0.0, 0.0, 300.0, 400.0}, members, type}));
+    static_cast<void>(compute_test_layout(
+        {0.0, 0.0, 300.0, 400.0}, members, type));
   });
   for (size_t index = 0; index < 7; ++index) {
     members.emplace_back(member(index));
   }
   check_invalid_argument([&] {
-    static_cast<void>(compute_party_rail_layout({
-        {0.0, 0.0, 300.0, 400.0}, members, type}));
+    static_cast<void>(compute_test_layout(
+        {0.0, 0.0, 300.0, 400.0}, members, type));
   });
   members.resize(1);
   check_invalid_argument([&] {
-    static_cast<void>(compute_party_rail_layout({
-        {0.0, 0.0, 179.0, 400.0}, members, type}));
+    static_cast<void>(compute_test_layout(
+        {0.0, 0.0, 179.0, 400.0}, members, type));
   });
   auto bad_type = type;
   bad_type.body.point_size = std::numeric_limits<double>::quiet_NaN();
   check_invalid_argument([&] {
-    static_cast<void>(compute_party_rail_layout({
-        {0.0, 0.0, 300.0, 400.0}, members, bad_type}));
+    static_cast<void>(compute_test_layout(
+        {0.0, 0.0, 300.0, 400.0}, members, bad_type));
   });
   auto invalid_vital = members[0];
   invalid_vital.auxiliary_vital =
       static_cast<PartyAuxiliaryVitalKind>(127);
   check_invalid_argument([&] {
-    static_cast<void>(compute_party_rail_layout({
+    static_cast<void>(compute_test_layout(
         {0.0, 0.0, 300.0, 400.0},
         std::span<const PartyRailMemberModel>(&invalid_vital, 1U),
-        type,
-    }));
+        type));
   });
+
+  check_invalid_argument([&] {
+    static_cast<void>(compute_test_layout(
+        {0.0, 0.0, 300.0, 400.0},
+        members,
+        type,
+        ScreenContext::inventory));
+  });
+
+  const auto check_bad_status = [&](PartyStatusModel status) {
+    check_invalid_argument([&] {
+      static_cast<void>(compute_test_layout(
+          {0.0, 0.0, 300.0, 400.0},
+          members,
+          type,
+          ScreenContext::exploration,
+          std::move(status)));
+    });
+  };
+  auto bad_status = default_status();
+  bad_status.active_effects = {
+      effect(PartyEffectKind::waterworld, 0,
+          "party.effect.waterworld", "Waterworld"),
+  };
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.active_effects = {
+      effect(static_cast<PartyEffectKind>(0), 1,
+          "party.effect.invalid", "Invalid"),
+  };
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.active_effects = {
+      effect(static_cast<PartyEffectKind>(9), 1,
+          "party.effect.invalid", "Invalid"),
+  };
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  for (size_t index = 0; index < 9U; ++index) {
+    bad_status.active_effects.emplace_back(effect(
+        PartyEffectKind::waterworld,
+        1,
+        "party.effect.too_many." + std::to_string(index),
+        "Too Many " + std::to_string(index)));
+  }
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.active_effects = {
+      effect(PartyEffectKind::search, 1,
+          "party.effect.search", "Search"),
+      effect(PartyEffectKind::search, 2,
+          "party.effect.search.duplicate", "Search Again"),
+  };
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.active_effects = {
+      effect(PartyEffectKind::search, 1,
+          "party.effect.search", "Search"),
+      effect(PartyEffectKind::dragon_hide, 2,
+          "party.effect.dragon_hide", "Dragon Hide"),
+  };
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.active_effects = {
+      effect(PartyEffectKind::search, 1, "", "Search"),
+  };
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.active_effects = {
+      effect(PartyEffectKind::search, 1, "party.effect.search", ""),
+  };
+  check_bad_status(bad_status);
+
+  bad_status = default_status();
+  bad_status.fatigue.maximum = 134;
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.fatigue.fill_fraction =
+      std::numeric_limits<double>::quiet_NaN();
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.fatigue.fill_fraction =
+      std::numeric_limits<double>::infinity();
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.fatigue.fill_fraction = -0.01;
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.fatigue.fill_fraction = 1.01;
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.fatigue.state.identifier.clear();
+  check_bad_status(bad_status);
+  bad_status = default_status();
+  bad_status.fatigue.state.label.clear();
+  check_bad_status(bad_status);
 
   members.clear();
   for (size_t index = 0; index < 6; ++index) {
     members.emplace_back(member(index));
   }
   check_invalid_argument([&] {
-    static_cast<void>(compute_party_rail_layout({
-        {0.0, 0.0, 180.0, 160.0}, members, type}));
+    static_cast<void>(compute_test_layout(
+        {0.0, 0.0, 180.0, 160.0}, members, type));
   });
 }
 
@@ -614,6 +1014,7 @@ int main() {
     test_attack_cadence_format_is_exhaustive_and_reduced();
     test_caster_and_signed_vitals_are_exact();
     test_fallbacks_and_text_fitting();
+    test_party_status_is_complete_responsive_and_screen_specific();
     test_invalid_requests_never_return_partial_layouts();
     std::cout << "PartyRailLayoutTest passed (" << checks_run
               << " checks)\n";

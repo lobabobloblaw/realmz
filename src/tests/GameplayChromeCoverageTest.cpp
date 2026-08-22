@@ -109,7 +109,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.info.selected_member_details", Surface::exploration,
         Kind::essential_information, Status::semantic_complete},
     {"exploration.info.party_condition_indicators", Surface::exploration,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"exploration.info.narrative_messages", Surface::exploration,
         Kind::essential_information, Status::missing},
     {"exploration.info.world_coordinates", Surface::exploration,
@@ -117,9 +117,9 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.info.calendar_clock", Surface::exploration,
         Kind::essential_information, Status::missing},
     {"exploration.info.fatigue", Surface::exploration,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"exploration.info.pooled_money", Surface::exploration,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"exploration.info.search_and_torch_state", Surface::exploration,
         Kind::essential_information, Status::missing},
 
@@ -172,7 +172,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.info.selected_member_details", Surface::dungeon,
         Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.party_condition_indicators", Surface::dungeon,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.narrative_messages", Surface::dungeon,
         Kind::essential_information, Status::missing},
     {"dungeon.info.world_coordinates", Surface::dungeon,
@@ -180,9 +180,9 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.info.calendar_clock", Surface::dungeon,
         Kind::essential_information, Status::missing},
     {"dungeon.info.fatigue", Surface::dungeon,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.pooled_money", Surface::dungeon,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.search_and_torch_state", Surface::dungeon,
         Kind::essential_information, Status::missing},
 
@@ -241,7 +241,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"combat.info.selected_member_details", Surface::combat,
         Kind::essential_information, Status::semantic_complete},
     {"combat.info.party_condition_indicators", Surface::combat,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"combat.info.narrative_messages", Surface::combat,
         Kind::essential_information, Status::missing},
     {"combat.info.inspected_combatant", Surface::combat,
@@ -480,16 +480,6 @@ void test_manifest_matches_independent_oracle() {
   }
 
   expect_manifest_entry(manifest,
-      "exploration.info.party_condition_indicators",
-      Surface::exploration, Kind::essential_information, Status::missing);
-  expect_manifest_entry(manifest,
-      "dungeon.info.party_condition_indicators",
-      Surface::dungeon, Kind::essential_information, Status::missing);
-  expect_manifest_entry(manifest,
-      "combat.info.party_condition_indicators",
-      Surface::combat, Kind::essential_information, Status::missing);
-
-  expect_manifest_entry(manifest,
       "combat.action.inspect_focused_combatant",
       Surface::combat, Kind::interaction, Status::missing);
   expect_manifest_entry(manifest,
@@ -541,21 +531,100 @@ void test_manifest_matches_independent_oracle() {
         "compute_party_rail_layout/layout_member");
   }
 
-  for (const auto& [stable_id, surface] : std::array{
-           std::pair{
+  for (const auto& [stable_id, surface, context_evidence] : std::array{
+           std::tuple{
                "exploration.info.party_condition_indicators",
-               Surface::exploration},
-           std::pair{
+               Surface::exploration,
+               "during outdoor exploration"},
+           std::tuple{
                "dungeon.info.party_condition_indicators",
-               Surface::dungeon},
-           std::pair{
+               Surface::dungeon,
+               "during dungeon map and first-person play"},
+           std::tuple{
                "combat.info.party_condition_indicators",
-               Surface::combat},
+               Surface::combat,
+               "during combat"},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::semantic_complete);
+    const auto* effects = find_manifest_entry(manifest, stable_id);
+    CHECK(effects != nullptr);
+    for (const auto evidence : {
+             "shared code-native PARTY STATUS ribbon",
+             context_evidence,
+             "signed partycondition indices 1 through 8",
+             "excluding Torch index 0 and unused index 9",
+             "every nonzero value",
+             "negative Search or equipment sentinels",
+             "Classic index order",
+             "Waterworld, Dragon Hide, Discover Secret, Wizard Eye, Search, "
+             "Free Fall / Levitate, Sentry, and Charm Resistance",
+             "without describing raw values as durations",
+             "every complete token and unelided semantic accessibility",
+             "deterministic visible +N elision",
+             "no OS-publication claim",
+             "no action, tag, input, Classic-source, or replay-vocabulary",
+         }) {
+      CHECK(effects->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(effects->source_anchor ==
+        "src/presentation/PartyRailLayout.cpp::"
+        "compute_party_rail_layout");
+  }
+
+  for (const auto& [stable_id, surface] : std::array{
            std::pair{"exploration.info.fatigue", Surface::exploration},
            std::pair{"dungeon.info.fatigue", Surface::dungeon},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::semantic_complete);
+    const auto* fatigue = find_manifest_entry(manifest, stable_id);
+    CHECK(fatigue != nullptr);
+    for (const auto evidence : {
+             "exact signed fatigue as FAT raw/135",
+             "bounded meter",
+             "baseline through 70",
+             "elevated from 71 through 105",
+             "critical above 105",
+             "two strict thresholds",
+             "without normalizing the retained raw value",
+             "absent from the combat ribbon",
+             "without claiming OS publication",
+             "no action, tag, input, Classic-source, or replay-vocabulary",
+         }) {
+      CHECK(fatigue->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(fatigue->source_anchor ==
+        "src/presentation/PartyRailLayout.cpp::"
+        "compute_party_rail_layout");
+  }
+
+  for (const auto& [stable_id, surface] : std::array{
            std::pair{
                "exploration.info.pooled_money", Surface::exploration},
            std::pair{"dungeon.info.pooled_money", Surface::dungeon},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::semantic_complete);
+    const auto* money = find_manifest_entry(manifest, stable_id);
+    CHECK(money != nullptr);
+    for (const auto evidence : {
+             "exact signed moneypool indices 0, 1, and 2",
+             "Gold, Gems, Jewelry order",
+             "no clamp, denomination conversion",
+             "member or bank holdings",
+             "absent from combat",
+             "without claiming OS publication",
+             "no action, tag, input, Classic-source, or replay-vocabulary",
+         }) {
+      CHECK(money->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(money->source_anchor ==
+        "src/presentation/PartyRailLayout.cpp::"
+        "compute_party_rail_layout");
+  }
+
+  for (const auto& [stable_id, surface] : std::array{
            std::pair{
                "combat.info.inspected_combatant", Surface::combat},
            std::pair{
@@ -718,7 +787,7 @@ void test_contextual_world_entry_rows_are_semantically_complete() {
   }
 }
 
-void test_pool_money_rows_are_semantically_complete_without_information_claim() {
+void test_pool_money_action_rows_remain_distinct_from_information_rows() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   for (const auto& [stable_id, surface, surface_evidence] : std::array{
            std::tuple{
@@ -768,7 +837,12 @@ void test_pool_money_rows_are_semantically_complete_without_information_claim() 
            std::pair{"dungeon.info.pooled_money", Surface::dungeon},
        }) {
     expect_manifest_entry(manifest, stable_id, surface,
-        Kind::essential_information, Status::missing);
+        Kind::essential_information, Status::semantic_complete);
+    const auto* pooled = find_manifest_entry(manifest, stable_id);
+    CHECK(pooled != nullptr);
+    CHECK(pooled->source_anchor ==
+        "src/presentation/PartyRailLayout.cpp::"
+        "compute_party_rail_layout");
   }
 }
 
@@ -836,7 +910,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x65200BEDCCAF4E03ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0xB4CBF4B4E225642BULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -925,7 +999,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x65200BEDCCAF4E03ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0xB4CBF4B4E225642BULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -984,10 +1058,10 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 54U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 35U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 61U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 28U);
   CHECK(missing_interaction_count == 15U);
-  CHECK(missing_information_count == 20U);
+  CHECK(missing_information_count == 13U);
 }
 
 void expect_issue(
@@ -1695,7 +1769,7 @@ int main(int argc, char* argv[]) {
     test_manifest_matches_independent_oracle();
     test_selected_item_drilldown_rows_are_semantically_complete();
     test_contextual_world_entry_rows_are_semantically_complete();
-    test_pool_money_rows_are_semantically_complete_without_information_claim();
+    test_pool_money_action_rows_remain_distinct_from_information_rows();
     test_manifest_source_anchors_resolve(argv[1]);
     test_inventory_revision_covers_every_ordered_manifest_field();
     test_manifest_is_deterministic_explicit_and_valid();

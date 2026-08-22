@@ -2873,12 +2873,37 @@ void draw_shell_panel_contents(
     const auto party_layout =
         realmz::presentation::compute_party_rail_layout({
             .party_panel = panel,
-            .members = model.party_rail.members,
+            .party_rail = model.party_rail,
+            .screen = model.screen,
             .typography = model.typography,
         });
     draw_shell_text(renderer, font, party_layout.heading_text,
         party_layout.heading_bounds, kHeading, backing_scale,
         party_layout.heading_text_style, TTF_STYLE_BOLD);
+    draw_shell_text(renderer, font, party_layout.status.effects_text,
+        party_layout.status.effects_bounds,
+        shell_state_color(strongest_shell_state_emphasis(
+            party_layout.status.effect_tokens)),
+        backing_scale, party_layout.status.effects_text_style);
+    if (party_layout.status.fatigue_meter_bounds) {
+      draw_shell_meter(renderer, *party_layout.status.fatigue_meter_bounds,
+          party_layout.status.fatigue_fill_fraction,
+          party_layout.status.fatigue_meter_available);
+    }
+    if (party_layout.status.fatigue_bounds &&
+        party_layout.status.fatigue_state_token) {
+      draw_shell_text(renderer, font, party_layout.status.fatigue_text,
+          *party_layout.status.fatigue_bounds,
+          shell_state_color(
+              party_layout.status.fatigue_state_token->emphasis),
+          backing_scale, party_layout.status.fatigue_text_style);
+    }
+    if (party_layout.status.pooled_money_bounds) {
+      draw_shell_text(renderer, font, party_layout.status.pooled_money_text,
+          *party_layout.status.pooled_money_bounds,
+          kMuted, backing_scale,
+          party_layout.status.pooled_money_text_style);
+    }
     for (const auto& placed : party_layout.members) {
       const auto& member = model.party_rail.members[placed.member_index];
       const auto party_control = std::ranges::find_if(
@@ -4921,7 +4946,8 @@ void WindowManager::present_remastered_frame() {
             realmz::presentation::compute_party_rail_layout({
                 .party_panel =
                     this->adaptive_shell_plan->adaptive_layout->party_rail,
-                .members = shell_model->party_rail.members,
+                .party_rail = shell_model->party_rail,
+                .screen = shell_model->screen,
                 .typography = shell_model->typography,
             });
         const bool selection_available =

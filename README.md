@@ -39,6 +39,21 @@ accessibility-label metadata; combat cards remain noninteractive. This slice
 does not claim OS publication on any surface. This information-only slice adds
 no action, semantic tag, input handoff, Classic source change, or replay
 vocabulary.
+The common rail also carries a responsive, read-only **PARTY STATUS** ribbon.
+On outdoor, dungeon-map, dungeon-first-person, and combat surfaces it presents
+Classic's eight party-wide effect indicators in fixed `partycondition[1..8]`
+order. Any signed nonzero value is active—including negative Search and
+equipment sentinels—while Torch index 0 and unused index 9 remain outside this
+role. The visible effect line uses deterministic `+N` elision when space is
+tight, but the layout retains every ordered token and a complete unelided
+internal semantic string. Outdoor and dungeon ribbons also show exact signed
+fatigue as `FAT raw/135`, with explicit baseline (`<=70`), elevated (`71..105`),
+and critical (`>105`) non-color bands, plus exact signed pooled Gold, Gems, and
+Jewelry in Classic index order. Combat intentionally shows effects only,
+matching Classic's early fatigue return and the absence of a combat pooled-money
+role. This slice makes no OS-accessibility publication claim, does not treat raw
+effect values as durations, and adds no action, tag, input, Classic-source, or
+replay-vocabulary path.
 World commands are organized into persistent, directly
 selectable **Travel**, **Party**, and **Game** pages so every target keeps the
 44-point minimum at the 1024×768 floor. Party contains Items, Equipment,
@@ -348,27 +363,27 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 54 are `semantic_complete`, and 35 remain `missing` (15
-interactions and 20 essential-information roles), so
+`retained_in_crop`, 61 are `semantic_complete`, and 28 remain `missing` (15
+interactions and 13 essential-information roles), so
 cropping stays disabled. Known missing outdoor and dungeon roles include Heal,
 Trade, selected-member condition drilldowns, and the per-member Auto controls.
 Money management, the context-sensitive Shop/Temple/seamless-encounter entry,
 Character Sheet, and the distinct quick Equipment popup are covered interaction
-rows; none implies a broader inspection or information role, and the two pooled-money
-information rows remain missing. Known
+rows; none implies a broader inspection or information role. Pooled-money
+information is instead covered by the separate read-only PARTY STATUS ribbon.
+Known
 missing combat roles include conditional Turn Undead, per-member Auto, and the distinct
 focused-combatant inspection controls for character or monster details, items,
-conditions, and monster attacks. Information gaps include ordered capture and
-retention of Classic messages for Event Log; pooled money and fatigue;
-party-wide condition indicators; authoritative coordinates, calendar/clock,
-and complete combined Search/Torch state (the persistent Torch-state
-presentation remains absent); focused-combatant details; complete combat
-conditions and attacks; and combat round and enemies-remaining counts. The
-three all-member party-vitals rows are now covered by the common code-native
-rail, but they do not implicitly satisfy those distinct party-condition,
-pooled-money, fatigue, focused-combatant, or combat-detail roles. The bounded
-selected-member Details renderer likewise remains a separate information
-surface.
+conditions, and monster attacks. Remaining information gaps include ordered
+capture and retention of Classic messages for Event Log; authoritative
+coordinates and calendar/clock; complete combined Search/Torch state (Search
+appearing as one party effect does not capture or present persistent Torch
+index 0); focused-combatant details; complete combat conditions and attacks;
+and combat round and enemies-remaining counts. The common code-native rail now
+covers all-member vitals, party-wide effects, world fatigue, and world pooled
+money, but it does not implicitly satisfy those distinct remaining roles or
+represent member/bank holdings. The bounded selected-member Details renderer
+likewise remains a separate information surface.
 
 Pointer, popup, text-input, and cursor
 coordinates continue through the embedded Classic frame. Title and modal

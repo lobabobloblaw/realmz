@@ -250,6 +250,32 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
   }
   snapshot.party.pooled_money = {moneypool[0], moneypool[1], moneypool[2]};
   snapshot.party.fatigue = fat;
+  snapshot.party.effects = {
+      PartyEffectView{
+          PartyEffectKind::waterworld,
+          partycondition[PARTY_COND_WATERWORLD]},
+      PartyEffectView{
+          PartyEffectKind::dragon_hide,
+          partycondition[PARTY_COND_DRAGON_HIDE]},
+      PartyEffectView{
+          PartyEffectKind::discover_secret,
+          partycondition[PARTY_COND_DISCOVER_SECRET]},
+      PartyEffectView{
+          PartyEffectKind::wizard_eye,
+          partycondition[PARTY_COND_WIZARD_EYE]},
+      PartyEffectView{
+          PartyEffectKind::search,
+          partycondition[PARTY_COND_SEARCH]},
+      PartyEffectView{
+          PartyEffectKind::free_fall_levitate,
+          partycondition[PARTY_COND_FREE_FALL_LEVITATE]},
+      PartyEffectView{
+          PartyEffectKind::sentry,
+          partycondition[PARTY_COND_SENTRY]},
+      PartyEffectView{
+          PartyEffectKind::charm_resistance,
+          partycondition[PARTY_COND_CHARM_RESISTANCE]},
+  };
 
   snapshot.world.presentation = world_presentation();
   snapshot.world.in_camp = incamp != 0;

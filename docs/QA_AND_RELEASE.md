@@ -174,6 +174,22 @@ in accessibility-label metadata; combat cards remain noninteractive. This
 slice does not claim OS publication on any surface. This is a shared
 information renderer, not a new action: it defines no semantic tag or input
 path and changes neither Classic sources nor replay schemas/decoders.
+The rail's responsive **PARTY STATUS** ribbon separately covers party-wide
+effects on outdoor, dungeon-map, dungeon-first-person, and combat surfaces.
+Detached capture copies exactly the eight signed values at
+`partycondition[1..8]`; any nonzero value is active, fixed index order is
+preserved, and Torch index 0 plus unused index 9 are excluded. The ribbon labels
+Waterworld, Dragon Hide, Discover Secret, Wizard Eye, Search, Free Fall /
+Levitate, Sentry, and Charm Resistance without interpreting the retained raw
+values as durations. Its visible line may deterministically elide later effects
+as `+N`, while layout tokens and internal semantic text remain complete and
+unelided. Outdoor and dungeon also render exact signed `FAT raw/135` with a
+bounded meter and non-color bands matching Classic's strict `>70` and `>105`
+thresholds, then exact signed pooled Gold, Gems, and Jewelry from
+`moneypool[0..2]` without conversion or clamping. Combat intentionally omits
+fatigue and pool. No OS accessibility publisher, action, tag, input route,
+Classic source, or replay vocabulary is claimed or added by this information
+slice.
 On eligible exploration and dungeon screens, party cards expose typed
 `SelectPartyMemberAction` payloads. Their distinct tagged event is
 late-validated against a fresh party snapshot, then a narrow
@@ -559,8 +575,8 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 54
-`semantic_complete`, and 35 `missing` roles: 15 interactions and 20
+The 95-row inventory currently contains six `retained_in_crop`, 61
+`semantic_complete`, and 28 `missing` roles: 15 interactions and 13
 essential-information roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
@@ -573,19 +589,18 @@ inventory remains authoritative and must reject an omitted role:
 
 Known `missing` essential-information roles across these surfaces include
 ordered capture and retention of the Classic message/flash stream for Event
-Log; pooled-money and fatigue status; party-wide condition indicators;
-authoritative coordinates, calendar/clock, and
-complete combined Search/Torch state (the persistent Torch-state presentation
-remains absent); focused-combatant
-information; complete combat conditions and attacks; and combat round and
-enemies-remaining counts. The common rail now covers the three all-member
-party-vitals rows, but that claim is deliberately bounded: it does not promote
-party conditions, pooled money, fatigue, focused combatants, or combat
-conditions/attacks. Snapshot fields or the current placeholder Event Log
-do not satisfy the information-completeness check merely by existing. The
-selected-member Details inspector remains a distinct bounded renderer and does
-not provide the common rail's all-member proof or establish equivalence for
-the remaining party-wide or combat roles.
+Log; authoritative coordinates and calendar/clock; complete combined
+Search/Torch state (Search appearing in the effect ribbon does not capture or
+present persistent Torch index 0); focused-combatant information; complete
+combat conditions and attacks; and combat round and enemies-remaining counts.
+The common rail now covers the three all-member-vitals rows, all three
+party-condition rows, and the two world fatigue and pooled-money rows. Those
+claims remain bounded: the pool does not represent member or bank holdings,
+combat exposes neither fatigue nor pooled money, and none promotes the
+remaining focused-combatant or combat-detail roles. Snapshot fields or the
+current placeholder Event Log do not satisfy information completeness merely
+by existing. The selected-member Details inspector remains a distinct bounded
+renderer.
 
 ## Required automated coverage
 
@@ -629,6 +644,16 @@ Release-candidate tests must include:
   unelided layout accessibility state text, exploration/dungeon control
   metadata without an OS-publication claim, input immutability, and absence of
   any new action, tag, input, Classic-source, or replay path;
+- PARTY STATUS capture, model, responsive layout, and common rendering on
+  outdoor, dungeon, and combat surfaces: exact typed signed
+  `partycondition[1..8]` capture with index 0/9 exclusion; any-nonzero activity;
+  fixed labels and ordering; negative Search/equipment sentinels; deterministic
+  visible `+N` elision with complete unelided layout tokens/text; exact signed
+  fatigue with a bounded `raw/135` meter and bands `<=70`, `71..105`, `>105`;
+  exact signed Gold/Gems/Jewelry order without conversion; effects-only combat
+  visibility; finite contained non-overlapping geometry that preserves every
+  44-point member card; no OS-publication claim; immutable input; and no new
+  action, tag, input, Classic-source, or replay path;
 - logical/physical coordinate transforms, hit testing, stable semantic focus,
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
@@ -761,6 +786,19 @@ Automated checks do not replace these release decisions:
   asserting an OS-accessibility publisher on any surface. Confirm rendering
   changes no gameplay state and creates no semantic action, tag, input,
   Classic-source, or replay path;
+- PARTY STATUS on disposable outdoor, dungeon-map, dungeon-first-person, and
+  combat fixtures. Exercise all-zero, each individual, all-eight, positive, and
+  negative party-effect values; verify fixed index order, exclusion of Torch 0
+  and unused 9, exact labels, deterministic `+N` elision, and complete internal
+  tokens/text. Test fatigue at 4, 70, 71, 105, 106, and 135 plus signed extremes,
+  proving exact visible raw text, bounded fill, and non-color band changes.
+  Test zero, negative, and 32-bit-edge pooled Gold/Gems/Jewelry without clamp or
+  conversion. Confirm exploration/dungeon show all three status roles while
+  combat shows effects only. Across one through six members, compact/tall and
+  wide/short panels, minimum/enlarged text, and 0.75x/1x/2x backing scales,
+  verify finite containment, non-overlap after physical rounding, practical
+  text floors, and unchanged 44-point card geometry. Do not infer an OS
+  accessibility publisher from complete internal layout text;
 - before accepting any future crop-enabling change, review the globally complete
   versioned outdoor, dungeon, and combat chrome inventory row by row against an
   uncropped Classic reference, including every manifest field and cited source
