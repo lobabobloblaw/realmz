@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -227,7 +228,22 @@ void test_explicit_schema_version_dispatch() {
     static_cast<void>(parse_child_config_v1(v2_json));
   });
 
-  for (const std::string version : {"0", "3", "-1", "true", "\"2\""}) {
+  Fields v3_fields = valid_fields();
+  set_field(v3_fields, "schema_version", "3");
+  const std::string v3_json = object_json(v3_fields);
+  CHECK(parse_child_config(v3_json).schema_version() == 3U);
+  CHECK(parse_child_config_v3(v3_json).schema_version() == 3U);
+  check_config_error([&] {
+    static_cast<void>(parse_child_config_v1(v3_json));
+  });
+  check_config_error([&] {
+    static_cast<void>(parse_child_config_v2(v3_json));
+  });
+  check_config_error([&] {
+    static_cast<void>(parse_child_config_v3(v1_json));
+  });
+
+  for (const std::string version : {"0", "4", "-1", "true", "\"3\""}) {
     check_config_error([&] {
       static_cast<void>(parse_child_config(
           config_with("schema_version", version)));
@@ -486,6 +502,15 @@ void test_file_loading_and_byte_bound() {
   }
   CHECK(load_child_config_v1(valid_path).schema_version() == 1);
   CHECK(load_child_config(valid_path).schema_version() == 1);
+  const fs::path v3_path = directory / "child-config-v3.json";
+  {
+    Fields fields = valid_fields();
+    set_field(fields, "schema_version", "3");
+    std::ofstream output(v3_path, std::ios::binary);
+    output << object_json(fields);
+  }
+  CHECK(load_child_config_v3(v3_path).schema_version() == 3);
+  CHECK(load_child_config(v3_path).schema_version() == 3);
   check_config_error([&] {
     static_cast<void>(load_child_config_v1(directory / "missing.json"));
   });
@@ -523,7 +548,7 @@ void test_file_loading_and_byte_bound() {
     throw std::runtime_error("could not open config mutation fixture");
   }
   std::atomic<bool> stop_mutating = false;
-  std::atomic<bool> mutation_observed = false;
+  std::atomic<std::uint64_t> mutation_count = 0;
   std::atomic<bool> mutation_failed = false;
   std::thread mutator([&] {
     char value = '\t';
@@ -537,19 +562,30 @@ void test_file_loading_and_byte_bound() {
         mutation_failed.store(true, std::memory_order_release);
         return;
       }
-      mutation_observed.store(true, std::memory_order_release);
+      mutation_count.fetch_add(1, std::memory_order_release);
       value = value == '\t' ? ' ' : '\t';
     }
   });
-  while (!mutation_observed.load(std::memory_order_acquire) &&
+  while (mutation_count.load(std::memory_order_acquire) == 0U &&
       !mutation_failed.load(std::memory_order_acquire)) {
     std::this_thread::yield();
   }
   bool mutation_rejected = false;
-  try {
-    static_cast<void>(load_child_config_v1(mutating_path));
-  } catch (const ReplayConfigError&) {
-    mutation_rejected = true;
+  constexpr std::size_t maximum_load_attempts = 64U;
+  for (std::size_t attempt = 0;
+       attempt < maximum_load_attempts && !mutation_rejected &&
+       !mutation_failed.load(std::memory_order_acquire);
+       ++attempt) {
+    const std::uint64_t mutations_before =
+        mutation_count.load(std::memory_order_acquire);
+    try {
+      static_cast<void>(load_child_config_v1(mutating_path));
+    } catch (const ReplayConfigError&) {
+      const std::uint64_t mutations_after =
+          mutation_count.load(std::memory_order_acquire);
+      mutation_rejected = mutations_after > mutations_before;
+    }
+    std::this_thread::yield();
   }
   stop_mutating.store(true, std::memory_order_release);
   mutator.join();

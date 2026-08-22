@@ -43,7 +43,14 @@ must load the copy in a compatible build and record, outside the manifest:
 
 - that the scenario is Tutorial;
 - the starting land/dungeon location and facing;
-- that no combat, modal, text-entry, or unresolved encounter is active;
+- that combat is inactive for a movement/selection-only profile or, for each
+  schema-3 weapon switch, that combat is active on a party turn and the
+  requested combatant is current, occupied, conscious, active, targetable,
+  and has positive stamina;
+- for each schema-3 weapon switch, that the requested member is already using
+  the alternate set or has a nonzero item in equipment slot 15, so the action
+  must change canonical state;
+- that no modal, text-entry, or unresolved encounter is active;
 - why the state is suitable for the intended action route; and
 - who owns or supplied the bytes and what use was authorized.
 
@@ -176,9 +183,14 @@ The output slot must differ from the input slot and must begin absent in the
 gate-owned roots. The seed, stream, timeout, executable, and every action are
 part of the reviewed profile.
 
-For a schema-2 profile, set `schema_version` to `2` and use only schema-2 action
-records. The version propagates through the runner, child configs, child
-results, and completed envelopes; it selects a distinct engine identity,
+For a schema-2 or schema-3 profile, set `schema_version` to `2` or `3` and use
+only action records admitted by that version. Schema 2 adds bounded party
+selection; schema 3 preserves it and adds actor-bound `switch_weapon_set` with
+exactly one `combatant` integer from 0 through 5. The bounded parser is
+authoritative for numeric tokens and rejects booleans and float spellings such
+as `2.0`; JSON Schema's mathematical `integer` type cannot express that lexical
+distinction by itself. The version propagates through the runner, child configs,
+child results, and completed envelopes; it selects a distinct engine identity,
 action-digest domain, and exact-comparison contract. Never change the version
 on an already reviewed request without repeating profile review.
 

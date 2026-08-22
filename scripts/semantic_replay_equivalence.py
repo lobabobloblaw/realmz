@@ -43,9 +43,13 @@ import semantic_replay_runner as replay_runner  # noqa: E402
 
 SCHEMA_VERSION = 1
 SCHEMA_VERSION_V2 = 2
-SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION, SCHEMA_VERSION_V2})
+SCHEMA_VERSION_V3 = 3
+SUPPORTED_SCHEMA_VERSIONS = frozenset(
+    {SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3}
+)
 COMPARISON_CONTRACT = "realmz.semantic-replay.exact.v1"
 COMPARISON_CONTRACT_V2 = "realmz.semantic-replay.exact.v2"
+COMPARISON_CONTRACT_V3 = "realmz.semantic-replay.exact.v3"
 SETTLEMENT_BARRIER = replay_runner.SETTLEMENT_BARRIER
 SEMANTIC_NOT_EVALUATED = "not_evaluated"
 SEMANTIC_EQUIVALENT = "equivalent"
@@ -59,6 +63,8 @@ NATIVE_V1_ACTION_KIND = "move_party"
 NATIVE_V1_ACTION_ARGUMENT = "command"
 NATIVE_V2_SELECT_ACTION_KIND = "select_party_member"
 NATIVE_V2_SELECT_ACTION_ARGUMENT = "member"
+NATIVE_V3_SWITCH_ACTION_KIND = "switch_weapon_set"
+NATIVE_V3_SWITCH_ACTION_ARGUMENT = "combatant"
 NATIVE_V1_MOVEMENT_COMMANDS = (
     "step_forward",
     "step_backward",
@@ -226,18 +232,20 @@ def _attach_schema_version(error: BaseException, schema_version: int) -> None:
 
 def _validate_schema_version(value: object) -> int:
     if not _is_supported_schema_version(value):
-        _request_error("schema_version must be 1 or 2")
+        _request_error("schema_version must be 1, 2, or 3")
     return value
 
 
 def _comparison_contract(schema_version: int) -> str:
     if not _is_supported_schema_version(schema_version):
-        _request_error("schema_version must be 1 or 2")
+        _request_error("schema_version must be 1, 2, or 3")
     if schema_version == SCHEMA_VERSION:
         return COMPARISON_CONTRACT
     if schema_version == SCHEMA_VERSION_V2:
         return COMPARISON_CONTRACT_V2
-    _request_error("schema_version must be 1 or 2")
+    if schema_version == SCHEMA_VERSION_V3:
+        return COMPARISON_CONTRACT_V3
+    _request_error("schema_version must be 1, 2, or 3")
 
 
 def _contains_control(value: str) -> bool:
@@ -494,16 +502,92 @@ def _validate_native_v2_actions(
     return tuple(validated)
 
 
+def _validate_native_v3_actions(
+    actions: Sequence[replay_runner.Action],
+) -> tuple[replay_runner.Action, ...]:
+    """Enforce the closed native v3 movement, selection, and weapon-set vocabulary."""
+
+    if len(actions) > replay_runner.MAX_ACTIONS:
+        _request_error(
+            f"actions exceeds the {replay_runner.MAX_ACTIONS}-action limit"
+        )
+    validated: list[replay_runner.Action] = []
+    for index, action in enumerate(actions):
+        context = f"actions[{index}]"
+        if not isinstance(action, replay_runner.Action):
+            _request_error(f"{context} is not a normalized replay action")
+        if not replay_runner._is_plain_int(action.ordinal) or action.ordinal != index:
+            _request_error(f"{context}.ordinal must equal its zero-based array index")
+        if not isinstance(action.kind, str):
+            _request_error(
+                f"{context}.kind must be move_party, select_party_member, or "
+                "switch_weapon_set for native v3"
+            )
+        if action.kind == NATIVE_V1_ACTION_KIND:
+            if not isinstance(action.arguments, dict) or set(action.arguments) != {
+                NATIVE_V1_ACTION_ARGUMENT
+            }:
+                _request_error(
+                    f"{context}.arguments must contain exactly the "
+                    f"{NATIVE_V1_ACTION_ARGUMENT} field for native v3 move_party"
+                )
+            command = action.arguments[NATIVE_V1_ACTION_ARGUMENT]
+            if not isinstance(command, str):
+                _request_error(f"{context}.arguments.command must be a string")
+            if command not in _NATIVE_V1_MOVEMENT_COMMAND_SET:
+                _request_error(
+                    f"{context}.arguments.command is not a supported native v3 "
+                    "movement command"
+                )
+        elif action.kind == NATIVE_V2_SELECT_ACTION_KIND:
+            if not isinstance(action.arguments, dict) or set(action.arguments) != {
+                NATIVE_V2_SELECT_ACTION_ARGUMENT
+            }:
+                _request_error(
+                    f"{context}.arguments must contain exactly the "
+                    f"{NATIVE_V2_SELECT_ACTION_ARGUMENT} field for native v3 "
+                    "select_party_member"
+                )
+            member = action.arguments[NATIVE_V2_SELECT_ACTION_ARGUMENT]
+            if not replay_runner._is_plain_int(member) or not 0 <= member <= 5:
+                _request_error(
+                    f"{context}.arguments.member must be a plain integer from 0 through 5"
+                )
+        elif action.kind == NATIVE_V3_SWITCH_ACTION_KIND:
+            if not isinstance(action.arguments, dict) or set(action.arguments) != {
+                NATIVE_V3_SWITCH_ACTION_ARGUMENT
+            }:
+                _request_error(
+                    f"{context}.arguments must contain exactly the "
+                    f"{NATIVE_V3_SWITCH_ACTION_ARGUMENT} field for native v3 "
+                    "switch_weapon_set"
+                )
+            combatant = action.arguments[NATIVE_V3_SWITCH_ACTION_ARGUMENT]
+            if not replay_runner._is_plain_int(combatant) or not 0 <= combatant <= 5:
+                _request_error(
+                    f"{context}.arguments.combatant must be a plain integer from 0 through 5"
+                )
+        else:
+            _request_error(
+                f"{context}.kind must be move_party, select_party_member, or "
+                "switch_weapon_set for native v3"
+            )
+        validated.append(action)
+    return tuple(validated)
+
+
 def _validate_native_actions(
     actions: Sequence[replay_runner.Action], schema_version: int
 ) -> tuple[replay_runner.Action, ...]:
     if not _is_supported_schema_version(schema_version):
-        _request_error("schema_version must be 1 or 2")
+        _request_error("schema_version must be 1, 2, or 3")
     if schema_version == SCHEMA_VERSION:
         return _validate_native_v1_actions(actions)
     if schema_version == SCHEMA_VERSION_V2:
         return _validate_native_v2_actions(actions)
-    _request_error("schema_version must be 1 or 2")
+    if schema_version == SCHEMA_VERSION_V3:
+        return _validate_native_v3_actions(actions)
+    _request_error("schema_version must be 1, 2, or 3")
 
 
 def _validate_normalized_request(request: EquivalenceRequest) -> None:
@@ -820,13 +904,15 @@ def _actions_sha256(
     ).encode("utf-8")
     digest = hashlib.sha256()
     if not _is_supported_schema_version(schema_version):
-        _request_error("schema_version must be 1 or 2")
+        _request_error("schema_version must be 1, 2, or 3")
     if schema_version == SCHEMA_VERSION:
         digest.update(b"realmz-semantic-replay-actions-v1\n")
     elif schema_version == SCHEMA_VERSION_V2:
         digest.update(b"realmz-semantic-replay-actions-v2\n")
+    elif schema_version == SCHEMA_VERSION_V3:
+        digest.update(b"realmz-semantic-replay-actions-v3\n")
     else:
-        _request_error("schema_version must be 1 or 2")
+        _request_error("schema_version must be 1, 2, or 3")
     digest.update(encoded)
     return digest.hexdigest()
 
@@ -877,7 +963,7 @@ def compare_child_results(
         )
 
     if not _is_supported_schema_version(schema_version):
-        invalid("comparison schema_version must be 1 or 2")
+        invalid("comparison schema_version must be 1, 2, or 3")
 
     if not isinstance(child_results, list) or len(child_results) != 2:
         invalid("runner envelope did not contain exactly two child results")
@@ -1392,7 +1478,7 @@ def _argument_parser() -> argparse.ArgumentParser:
         "--request",
         required=True,
         type=Path,
-        help="v1 or v2 semantic replay equivalence request JSON",
+        help="v1, v2, or v3 semantic replay equivalence request JSON",
     )
     parser.add_argument(
         "--inspect-profile",

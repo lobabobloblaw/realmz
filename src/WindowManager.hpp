@@ -232,6 +232,10 @@ public:
   replay_party_selection_member(
       const realmz::presentation::UIAction& action,
       std::uint32_t semantic_surface) const noexcept;
+  [[nodiscard]] std::optional<std::uint32_t>
+  replay_switch_weapon_key_message(
+      const realmz::presentation::UIAction& action,
+      std::uint32_t semantic_surface) const noexcept;
   [[nodiscard]] realmz::presentation::DispatchResult
   dispatch_replay_semantic_action(
       const realmz::presentation::UIAction& action);

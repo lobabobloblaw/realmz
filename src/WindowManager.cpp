@@ -5837,6 +5837,53 @@ WindowManager::replay_party_selection_member(
   }
 }
 
+std::optional<std::uint32_t>
+WindowManager::replay_switch_weapon_key_message(
+    const realmz::presentation::UIAction& action,
+    std::uint32_t semantic_surface) const noexcept {
+  const auto* switch_weapon =
+      std::get_if<realmz::presentation::SwitchWeaponSetAction>(
+          &action.payload);
+  if (!switch_weapon ||
+      semantic_surface != REALMZ_SEMANTIC_INPUT_COMBAT ||
+      switch_weapon->combatant < 0 || switch_weapon->combatant > 5) {
+    return std::nullopt;
+  }
+  const auto context = capture_runtime_legacy_command_context();
+  if (!context.adaptive_eligible ||
+      context.screen != realmz::presentation::ScreenContext::combat) {
+    return std::nullopt;
+  }
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if (snapshot.screen != context.screen || !snapshot.combat ||
+        !snapshot.combat->active ||
+        snapshot.combat->acting_combatant != switch_weapon->combatant) {
+      return std::nullopt;
+    }
+    const auto combatant = std::ranges::find(
+        snapshot.combat->combatants,
+        switch_weapon->combatant,
+        &realmz::presentation::CombatantView::id);
+    const auto* member = snapshot.party.member(
+        static_cast<realmz::presentation::PartyMemberId>(
+            switch_weapon->combatant));
+    if (!member || !member->conscious || member->stamina.current <= 0 ||
+        combatant == snapshot.combat->combatants.end() ||
+        combatant->kind !=
+            realmz::presentation::CombatantKind::party_member ||
+        !combatant->active || !combatant->targetable ||
+        combatant->stamina.current <= 0) {
+      return std::nullopt;
+    }
+    return realmz::presentation::legacy_key_message_for_switch_weapon(
+        switch_weapon->combatant, context);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
 realmz::presentation::DispatchResult
 WindowManager::dispatch_replay_semantic_action(
     const realmz::presentation::UIAction& action) {

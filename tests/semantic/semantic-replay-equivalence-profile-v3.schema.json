@@ -1,0 +1,66 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/semantic-replay-equivalence-profile-v3.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A privacy-safe, non-executing inspection of one validated native-v3 semantic replay profile. It is not an equivalence verdict or a coverage claim.",
+  "properties": {
+    "action_count": {
+      "maximum": 4096,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "actions_sha256": {
+      "description": "SHA-256 over the UTF-8 domain separator realmz-semantic-replay-actions-v3 followed by LF and the RFC 8785-equivalent canonical action array used by the runtime vocabulary.",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    },
+    "fixture_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    },
+    "fixture_tree_sha256": {
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    },
+    "input_slot": {
+      "pattern": "^[A-J](?![\\s\\S])",
+      "type": "string"
+    },
+    "output_slot": {
+      "pattern": "^[A-J](?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_seed": {
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_stream": {
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 3
+    },
+    "settlement_barrier": {
+      "const": "next_semantic_gameplay_poll"
+    },
+    "status": {
+      "const": "profile_inspected"
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "fixture_manifest_sha256",
+    "fixture_tree_sha256",
+    "actions_sha256",
+    "action_count",
+    "input_slot",
+    "output_slot",
+    "settlement_barrier",
+    "rng_seed",
+    "rng_stream"
+  ],
+  "title": "Realmz semantic replay equivalence profile inspection v3",
+  "type": "object"
+}

@@ -1375,6 +1375,9 @@ Boolean GetNextSemanticGameplayEvent(
       replay_delivered_party_member;
   std::optional<realmz::replay::ReplayPartySelectionDeliveryOutcome>
       replay_party_selection_delivery;
+  std::optional<realmz::presentation::CombatantId>
+      replay_expected_switch_combatant;
+  std::optional<std::uint32_t> replay_expected_switch_tag;
   if (replay && replay->action_plan_started()) {
     try {
       const auto directive = replay->next_gameplay_poll();
@@ -1396,6 +1399,9 @@ Boolean GetNextSemanticGameplayEvent(
           std::holds_alternative<
               realmz::presentation::SelectPartyMemberAction>(
               directive.action->payload);
+      const auto* switch_weapon =
+          std::get_if<realmz::presentation::SwitchWeaponSetAction>(
+              &directive.action->payload);
       if (movement) {
         const auto expected =
             WindowManager::instance().replay_movement_key_message(
@@ -1414,6 +1420,25 @@ Boolean GetNextSemanticGameplayEvent(
               "replay party selection is invalid for the current gameplay "
               "surface or party");
         }
+      } else if (switch_weapon) {
+        const auto expected =
+            WindowManager::instance().replay_switch_weapon_key_message(
+                *directive.action, surface);
+        if (!expected) {
+          throw realmz::replay::ReplayRuntimeError(
+              "replay weapon switch is invalid for the current combatant "
+              "or gameplay surface");
+        }
+        const auto expected_tag =
+            realmz::presentation::semantic_switch_weapon_tag(
+                switch_weapon->combatant, surface);
+        if (expected_tag == 0) {
+          throw realmz::replay::ReplayRuntimeError(
+              "replay weapon switch could not bind its semantic tag");
+        }
+        replay_expected_key_message = *expected;
+        replay_expected_switch_combatant = switch_weapon->combatant;
+        replay_expected_switch_tag = expected_tag;
       } else {
         throw realmz::replay::ReplayRuntimeError(
             "replay action is outside the configured native vocabulary");
@@ -1422,16 +1447,25 @@ Boolean GetNextSemanticGameplayEvent(
       if (replay->replay_route() == realmz::replay::ReplayRoute::classic) {
         *ret = {};
         ret->when = TickCount();
-        if (movement) {
+        if (movement || switch_weapon) {
           ret->what = keyDown;
           ret->message = replay_expected_key_message;
-          replay->acknowledge_action_delivery(
-              directive.action->sequence,
-              replay_expected_key_message,
-              {
-                  .kind = realmz::replay::ReplayObservedEventKind::key_down,
-                  .message = ret->message,
-              });
+          const realmz::replay::ReplayObservedEvent observed{
+              .kind = realmz::replay::ReplayObservedEventKind::key_down,
+              .message = ret->message,
+          };
+          if (switch_weapon) {
+            replay->acknowledge_switch_weapon_delivery(
+                directive.action->sequence,
+                *replay_expected_switch_combatant,
+                replay_expected_key_message,
+                observed);
+          } else {
+            replay->acknowledge_action_delivery(
+                directive.action->sequence,
+                replay_expected_key_message,
+                observed);
+          }
           return true;
         }
 
@@ -1658,7 +1692,11 @@ Boolean GetNextSemanticGameplayEvent(
   } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticSwitchWeaponTag(ret->message)) {
     uint32_t classic_key_message = 0;
-    if (still_remastered && RealmzConsumeSemanticSwitchWeaponEvent(
+    const bool replay_switch_tag_matches =
+        !replay_expected_switch_tag ||
+        (ret->message == *replay_expected_switch_tag);
+    if (still_remastered && replay_switch_tag_matches &&
+        RealmzConsumeSemanticSwitchWeaponEvent(
             surface, ret->message, &classic_key_message)) {
       ret->what = keyDown;
       ret->message = classic_key_message;
@@ -1833,6 +1871,17 @@ Boolean GetNextSemanticGameplayEvent(
                 *replay_expected_party_member),
             replay_party_selection_delivery.value_or(
                 realmz::replay::ReplayPartySelectionDeliveryOutcome::rejected));
+      } else if (replay_expected_switch_combatant) {
+        replay->acknowledge_switch_weapon_delivery(
+            replay_semantic_action->sequence,
+            *replay_expected_switch_combatant,
+            replay_expected_key_message,
+            {
+                .kind = (ret->what == keyDown)
+                    ? realmz::replay::ReplayObservedEventKind::key_down
+                    : realmz::replay::ReplayObservedEventKind::other,
+                .message = ret->message,
+            });
       } else {
         replay->acknowledge_action_delivery(
             replay_semantic_action->sequence,

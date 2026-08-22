@@ -112,6 +112,10 @@ private:
 // the native v2 action vocabulary and result contract.
 [[nodiscard]] ReplayChildConfig parse_child_config_v2(std::string_view json);
 
+// V3 retains the complete structural protocol and policies while selecting
+// the native v3 action vocabulary and result contract.
+[[nodiscard]] ReplayChildConfig parse_child_config_v3(std::string_view json);
+
 // Startup dispatcher accepting exactly the supported schema versions. It
 // never infers a vocabulary from action contents.
 [[nodiscard]] ReplayChildConfig parse_child_config(std::string_view json);
@@ -120,6 +124,8 @@ private:
 [[nodiscard]] ReplayChildConfig load_child_config_v1(
     const std::filesystem::path& path);
 [[nodiscard]] ReplayChildConfig load_child_config_v2(
+    const std::filesystem::path& path);
+[[nodiscard]] ReplayChildConfig load_child_config_v3(
     const std::filesystem::path& path);
 [[nodiscard]] ReplayChildConfig load_child_config(
     const std::filesystem::path& path);

@@ -315,10 +315,11 @@ The unversioned `semantic-replay-run-request.schema.json`,
 `semantic-replay-child-config.schema.json`,
 `semantic-replay-child-result.schema.json`, and
 `semantic-replay-run-envelope.schema.json` files close its immutable version-1
-contracts. Parallel version-2 contracts use the corresponding
-`-v2.schema.json` names. A request explicitly names one physical executable,
-the two distinct user-data roots, existing input and fresh output slots,
-normalized actions, a timeout, and fixed 64-bit RNG seed and stream values.
+contracts. Parallel version-2 and version-3 contracts use the corresponding
+`-v2.schema.json` and `-v3.schema.json` names. A request explicitly names one
+physical executable, the two distinct user-data roots, existing input and fresh
+output slots, normalized actions, a timeout, and fixed 64-bit RNG seed and
+stream values.
 Action identifiers and keys use normalized lowercase ASCII; string argument
 values use printable ASCII so both protocol implementations apply the same
 dependency-free validation. Run it with:
@@ -352,13 +353,18 @@ remains under an unknown renamed path. Protocol workspaces contain configs and
 results, not staged fixture bytes.
 
 The Realmz binary now recognizes `--semantic-replay-child CONFIG`. Its bounded
-native bootstrap validates and installs an explicit schema-1 or schema-2 policy
-before `ToolBoxInit`, selects the isolated root and presentation, disables
-preference persistence and bundled fallback for the staged input subtree, and
-supplies deterministic RNG draws. Schema 1 remains the immutable,
-movement-only vocabulary used by the existing private receipts. Schema 2 is a
+native bootstrap validates and installs an explicit schema-1, schema-2, or
+schema-3 policy before `ToolBoxInit`. It selects the isolated root and
+presentation, disables preference persistence and bundled fallback for the
+staged input subtree, and supplies deterministic RNG draws. Schema 1 remains
+the immutable, movement-only vocabulary used by the existing private receipts.
+Schema 2 is a
 strict superset that adds `select_party_member` with exactly one plain integer
-`member` argument from 0 through 5. Before the explicit input-slot load or any
+`member` argument from 0 through 5. Schema 3 preserves both earlier vocabularies
+and adds `switch_weapon_set` with exactly one plain integer `combatant` argument
+from 0 through 5. The bounded parser rejects booleans and float spellings such
+as `2.0`; JSON Schema's mathematical `integer` type cannot independently encode
+that lexical distinction. Before the explicit input-slot load or any
 resulting mutation, the child validates the complete action plan against its
 declared version. Unknown or cross-version plans, unsupported kinds, malformed
 arguments, invalid movement commands, and noncontiguous ordinals fail closed
@@ -386,6 +392,13 @@ narrow legacy adapter reports changed or unchanged; a rejected application is
 terminal. Reselecting the active member is an intentional, delivered no-op and
 never emulates the Classic second portrait click that opens a modal. Its
 post-action checkpoint must still report the requested member selected. The
+schema-3 weapon-switch path requires the requested conscious, active party
+combatant on the live combat surface and a state-changing alternate set before
+delivery. Classic and semantic routes must both produce the exact lowercase
+`w` key receipt, and the following checkpoint must show that member's canonical
+`alternate_weapon_set` value flipped before the action enters the trace. It
+does not assume that the same combatant remains active after the surrounding
+combat loop settles. The
 canonical state oracle encodes every declared field in fixed-width big-endian
 form and hashes the initial-plus-post-action trace with explicit checkpoint
 indexes.
@@ -397,8 +410,10 @@ the same schema version as its request and child config. Linked sanitizer tests
 preserve the schema-1 matrix across both native routes for all eight outdoor
 compass commands and all four first-person dungeon commands. A parallel
 schema-2 matrix repeats those movements and adds changed and idempotent party
-selection. Those are delivery/settlement mapping tests, not Tutorial traversal
-evidence.
+selection. Schema-3 tests preserve those inherited records, exercise weapon
+switching through both linked routes, and cover state-changing preconditions
+and settlement failures in native snapshots. Those are delivery/settlement
+mapping tests, not real-fixture combat or Tutorial traversal evidence.
 Dependency-free tests cover live state capture, controller ordering, completion
 ordering, version isolation, and result contents.
 
@@ -407,13 +422,15 @@ The opt-in live comparison layer is
 profile, and envelope remain
 `semantic-replay-equivalence-request.schema.json`,
 `semantic-replay-equivalence-profile.schema.json`, and
-`semantic-replay-equivalence-envelope.schema.json`. Their parallel schema-2
-contracts use the corresponding `-v2.schema.json` names. A request names the
+`semantic-replay-equivalence-envelope.schema.json`. Their parallel schema-2 and
+schema-3 contracts use the corresponding `-v2.schema.json` and
+`-v3.schema.json` names. A request names the
 physical executable, manifest and source paths, the expected exact manifest and
 fixture-tree digests, a fresh output slot, versioned native actions, timeout,
 and deterministic RNG seed and stream. Schema 1 admits only movement; schema 2
-admits the same movement records plus the closed party-selection record. The
-versions use distinct action-digest domains and comparison contracts, and the
+adds the closed party-selection record; schema 3 adds the closed actor-bound
+weapon-switch record. The versions use distinct action-digest domains and
+comparison contracts, and the
 selected version propagates through the runner request, both child configs and
 results, and both completed envelopes. The manifest supplies the input slot.
 Inspect the bound profile without staging or child launch:
@@ -481,6 +498,8 @@ drawn value. A separately reviewed
 covers changed and idempotent selection of one member on one exact private
 dungeon fixture; it does not establish movement or broader selection
 equivalence. The repository still contains no private fixture or raw envelope.
+Schema 3 has synthetic and linked-native coverage only; no accepted real-engine
+combat envelope or receipt exists yet.
 
 The dependency-free native checks are included in the core test runner:
 
@@ -518,14 +537,16 @@ The outdoor and first-person dungeon portions of the native-v1 movement
 milestone now have separate completed local envelopes and the digest-only
 receipts linked above. The first vocabulary-expansion vertical is implemented
 under schema 2 for bounded party selection, without changing those v1 records;
-its narrow private receipt is also linked above. The remaining roadmap work is
-to:
+its narrow private receipt is also linked above. The next vertical is
+implemented under schema 3 for actor-bound weapon switching while preserving
+v1 and v2. The remaining roadmap work is to:
 
-1. continue expanding the versioned vocabulary and repeat the gate with
+1. review and run a state-changing private schema-3 combat profile;
+2. continue expanding the versioned vocabulary and repeat the gate with
    separately reviewed broader Tutorial and City profiles,
    including any combat-specific fixture and modal coverage those actions need;
    and
-2. run the intended release-candidate executable before treating replay
+3. run the intended release-candidate executable before treating replay
    equivalence as a current-build or release-wide claim.
 
 Each real-fixture invocation, rather than the synthetic gate tests, is the

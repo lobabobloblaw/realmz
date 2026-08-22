@@ -41,6 +41,15 @@ V2_ENVELOPE_SCHEMA_PATH = Path(__file__).with_name(
 V2_PROFILE_SCHEMA_PATH = Path(__file__).with_name(
     "semantic-replay-equivalence-profile-v2.schema.json"
 )
+V3_REQUEST_SCHEMA_PATH = Path(__file__).with_name(
+    "semantic-replay-equivalence-request-v3.schema.json"
+)
+V3_ENVELOPE_SCHEMA_PATH = Path(__file__).with_name(
+    "semantic-replay-equivalence-envelope-v3.schema.json"
+)
+V3_PROFILE_SCHEMA_PATH = Path(__file__).with_name(
+    "semantic-replay-equivalence-profile-v3.schema.json"
+)
 
 SPEC = importlib.util.spec_from_file_location(
     "semantic_replay_equivalence", SCRIPT_PATH
@@ -132,7 +141,11 @@ result = {
     "engine_identity": (
         "synthetic-live-gate-child-v1"
         if config["schema_version"] == 1
-        else "synthetic-live-gate-child-v2"
+        else (
+            "synthetic-live-gate-child-v2"
+            if config["schema_version"] == 2
+            else "synthetic-live-gate-child-v3"
+        )
     ),
     "settled_action_count": len(config["actions"]),
     "state_sha256": "1" * 64,
@@ -407,6 +420,53 @@ class CompletedGateTests(EquivalenceGateTestCase):
             {"synthetic-live-gate-child-v2"},
         )
 
+    def test_v3_mixed_actions_propagate_to_an_exact_v3_envelope(self) -> None:
+        self.request["schema_version"] = 3
+        self.request["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "move_party",
+                "arguments": {"command": "north"},
+            },
+            {
+                "ordinal": 1,
+                "kind": "select_party_member",
+                "arguments": {"member": 2},
+            },
+            {
+                "ordinal": 2,
+                "kind": "switch_weapon_set",
+                "arguments": {"combatant": 2},
+            },
+        ]
+        self.write_request()
+
+        envelope = self.run_gate()
+
+        self.assertEqual(envelope["schema_version"], 3)
+        self.assertEqual(
+            envelope["comparison"]["contract"],
+            "realmz.semantic-replay.exact.v3",
+        )
+        self.assertEqual(envelope["replay_profile"]["action_count"], 3)
+        self.assertEqual(
+            envelope["replay_profile"]["actions_sha256"],
+            "8840204b07a824ab0536de2bee8b86f51dcdac0f397f4610d6a578d1990e546c",
+        )
+        runner_envelope = envelope["runner_envelope"]
+        self.assertEqual(runner_envelope["schema_version"], 3)
+        self.assertEqual(
+            [result["schema_version"] for result in runner_envelope["child_results"]],
+            [3, 3],
+        )
+        self.assertEqual(
+            {
+                result["engine_identity"]
+                for result in runner_envelope["child_results"]
+            },
+            {"synthetic-live-gate-child-v3"},
+        )
+
     def test_only_declared_observables_control_the_verdict(self) -> None:
         envelope = self.run_gate()
         classic, semantic = envelope["runner_envelope"]["child_results"]
@@ -490,8 +550,9 @@ class CompletedGateTests(EquivalenceGateTestCase):
         }
         missing = object()
         for expected, invalid_versions in (
-            (1, (missing, True, 1.0, 2)),
-            (2, (missing, False, 2.0, 1)),
+            (1, (missing, True, 1.0, 2, 3)),
+            (2, (missing, False, 2.0, 1, 3)),
+            (3, (missing, True, 3.0, 1, 2)),
         ):
             for invalid_version in invalid_versions:
                 with self.subTest(
@@ -559,6 +620,22 @@ class FailClosedGateTests(EquivalenceGateTestCase):
         self.assertEqual(error.schema_version, 2)
         self.assertEqual(gate._error_envelope(error)["schema_version"], 2)
 
+    def test_v3_child_result_version_mismatch_is_a_v3_error(self) -> None:
+        self.request["schema_version"] = 3
+        self.request["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "switch_weapon_set",
+                "arguments": {"combatant": 2},
+            }
+        ]
+        self.write_request()
+
+        error = self.assert_gate_error("child.result_invalid", flags="wrong_schema")
+
+        self.assertEqual(error.schema_version, 3)
+        self.assertEqual(gate._error_envelope(error)["schema_version"], 3)
+
     def test_v2_gate_rejects_non_plain_or_downgraded_runner_envelope(self) -> None:
         self.request["schema_version"] = 2
         self.request["actions"] = [
@@ -588,6 +665,42 @@ class FailClosedGateTests(EquivalenceGateTestCase):
                     error = self.assert_gate_error("runner.envelope_invalid")
 
                 self.assertEqual(error.schema_version, 2)
+                self.assertIn("must match the equivalence request", error.message)
+
+    def test_v3_gate_rejects_missing_non_plain_or_cross_version_runner_envelope(
+        self,
+    ) -> None:
+        self.request["schema_version"] = 3
+        self.request["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "switch_weapon_set",
+                "arguments": {"combatant": 2},
+            }
+        ]
+        self.write_request()
+        run_runner = gate.replay_runner.run_request
+
+        for invalid_version in (None, True, 3.0, 1, 2):
+            with self.subTest(invalid_version=invalid_version):
+                def invalid_envelope(
+                    *args: object, **kwargs: object
+                ) -> dict[str, object]:
+                    envelope = run_runner(*args, **kwargs)
+                    if invalid_version is None:
+                        envelope.pop("schema_version")
+                    else:
+                        envelope["schema_version"] = invalid_version
+                    return envelope
+
+                with mock.patch.object(
+                    gate.replay_runner,
+                    "run_request",
+                    side_effect=invalid_envelope,
+                ):
+                    error = self.assert_gate_error("runner.envelope_invalid")
+
+                self.assertEqual(error.schema_version, 3)
                 self.assertIn("must match the equivalence request", error.message)
 
     def test_v1_gate_rejects_missing_or_boolean_runner_envelope_version(self) -> None:
@@ -1163,7 +1276,7 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         self.assert_request_error("duplicate JSON key: schema_version")
 
     def test_unknown_schema_version_fails_closed_without_downgrade(self) -> None:
-        for unknown_version in (True, 0, 3):
+        for unknown_version in (True, 0, 3.0, 4):
             with self.subTest(unknown_version=unknown_version):
                 value = copy.deepcopy(self.request)
                 value["schema_version"] = unknown_version
@@ -1184,7 +1297,8 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
                 self.assertEqual(raised.exception.code, "request.invalid")
                 self.assertEqual(raised.exception.schema_version, 1)
                 self.assertIn(
-                    "schema_version must be 1 or 2", raised.exception.message
+                    "schema_version must be 1, 2, or 3",
+                    raised.exception.message,
                 )
                 self.assertEqual(
                     gate._error_envelope(raised.exception)["schema_version"], 1
@@ -1192,32 +1306,45 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
                 verify_fixture.assert_not_called()
                 make_workspace.assert_not_called()
 
-    def test_recognized_v2_cli_validation_error_emits_schema_two(self) -> None:
-        value = copy.deepcopy(self.request)
-        value["schema_version"] = 2
-        value["actions"] = [
-            {
-                "ordinal": 0,
-                "kind": "select_party_member",
-                "arguments": {"member": True},
-            }
-        ]
-        self.write_request(value)
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-
-        with mock.patch.object(sys, "stdout", stdout), mock.patch.object(
-            sys, "stderr", stderr
+    def test_recognized_cli_validation_errors_keep_their_schema_version(self) -> None:
+        for schema_version, action in (
+            (
+                2,
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"member": True},
+                },
+            ),
+            (
+                3,
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": True},
+                },
+            ),
         ):
-            exit_code = gate.main(
-                ["--request", str(self.request_path), "--inspect-profile"]
-            )
+            with self.subTest(schema_version=schema_version):
+                value = copy.deepcopy(self.request)
+                value["schema_version"] = schema_version
+                value["actions"] = [action]
+                self.write_request(value)
+                stdout = io.StringIO()
+                stderr = io.StringIO()
 
-        self.assertEqual(exit_code, gate.EXIT_REQUEST)
-        self.assertEqual(stdout.getvalue(), "")
-        envelope = json.loads(stderr.getvalue())
-        self.assertEqual(envelope["schema_version"], 2)
-        self.assertEqual(envelope["error"]["code"], "request.invalid")
+                with mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+                    sys, "stderr", stderr
+                ):
+                    exit_code = gate.main(
+                        ["--request", str(self.request_path), "--inspect-profile"]
+                    )
+
+                self.assertEqual(exit_code, gate.EXIT_REQUEST)
+                self.assertEqual(stdout.getvalue(), "")
+                envelope = json.loads(stderr.getvalue())
+                self.assertEqual(envelope["schema_version"], schema_version)
+                self.assertEqual(envelope["error"]["code"], "request.invalid")
 
     def test_deep_or_nonfinite_json_is_a_bounded_request_error(self) -> None:
         self.request_path.write_text("[" * 600000 + "]" * 600000, encoding="utf-8")
@@ -1375,6 +1502,15 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
 
         invalid_cases = (
             (
+                "v3 weapon switch kind",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": 2},
+                },
+                "must be move_party or select_party_member",
+            ),
+            (
                 "unknown kind",
                 {"ordinal": 0, "kind": "probe", "arguments": {"member": 2}},
                 "must be move_party or select_party_member",
@@ -1465,6 +1601,145 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
                 verify_fixture.assert_not_called()
                 make_workspace.assert_not_called()
 
+    def test_native_v3_mixed_actions_and_combatant_boundaries_are_closed(self) -> None:
+        valid = copy.deepcopy(self.request)
+        valid["schema_version"] = 3
+        valid["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "move_party",
+                "arguments": {"command": "northeast"},
+            },
+            {
+                "ordinal": 1,
+                "kind": "select_party_member",
+                "arguments": {"member": 5},
+            },
+            {
+                "ordinal": 2,
+                "kind": "switch_weapon_set",
+                "arguments": {"combatant": 0},
+            },
+            {
+                "ordinal": 3,
+                "kind": "switch_weapon_set",
+                "arguments": {"combatant": 5},
+            },
+        ]
+        self.write_request(valid)
+        parsed = gate.load_request(self.request_path)
+        self.assertEqual(parsed.schema_version, 3)
+        self.assertEqual(
+            [action.kind for action in parsed.actions],
+            [
+                "move_party",
+                "select_party_member",
+                "switch_weapon_set",
+                "switch_weapon_set",
+            ],
+        )
+
+        invalid_cases = (
+            (
+                "unknown kind",
+                {"ordinal": 0, "kind": "probe", "arguments": {"combatant": 2}},
+                "must be move_party, select_party_member, or switch_weapon_set",
+            ),
+            (
+                "missing combatant",
+                {"ordinal": 0, "kind": "switch_weapon_set", "arguments": {}},
+                "exactly the combatant field",
+            ),
+            (
+                "wrong combatant key",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"member": 2},
+                },
+                "exactly the combatant field",
+            ),
+            (
+                "extra combatant argument",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": 2, "repeat": True},
+                },
+                "exactly the combatant field",
+            ),
+            (
+                "boolean combatant",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": True},
+                },
+                "plain integer from 0 through 5",
+            ),
+            (
+                "floating combatant",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": 2.0},
+                },
+                "string, integer, or boolean",
+            ),
+            (
+                "string combatant",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": "2"},
+                },
+                "plain integer from 0 through 5",
+            ),
+            (
+                "negative combatant",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": -1},
+                },
+                "plain integer from 0 through 5",
+            ),
+            (
+                "combatant above range",
+                {
+                    "ordinal": 0,
+                    "kind": "switch_weapon_set",
+                    "arguments": {"combatant": 6},
+                },
+                "plain integer from 0 through 5",
+            ),
+        )
+        for name, action, expected in invalid_cases:
+            with self.subTest(name=name):
+                invalid = copy.deepcopy(self.request)
+                invalid["schema_version"] = 3
+                invalid["actions"] = [action]
+                self.write_request(invalid)
+                with mock.patch.object(
+                    gate.fixture_tool,
+                    "verify_fixture",
+                    side_effect=AssertionError("fixture must not be inspected"),
+                ) as verify_fixture, mock.patch.object(
+                    gate,
+                    "_make_gate_workspace",
+                    side_effect=AssertionError("workspace must not be created"),
+                ) as make_workspace:
+                    with self.assertRaises(gate.EquivalenceGateError) as raised:
+                        gate.run_request_file(self.request_path)
+                self.assertEqual(raised.exception.code, "request.invalid")
+                self.assertEqual(raised.exception.schema_version, 3)
+                self.assertEqual(
+                    gate._error_envelope(raised.exception)["schema_version"], 3
+                )
+                self.assertIn(expected, raised.exception.message)
+                verify_fixture.assert_not_called()
+                make_workspace.assert_not_called()
+
     def test_direct_v2_request_cannot_bypass_closed_action_validation(self) -> None:
         value = copy.deepcopy(self.request)
         value["schema_version"] = 2
@@ -1505,6 +1780,55 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         self.assertIn("plain integer", raised.exception.message)
         verify_fixture.assert_not_called()
         make_workspace.assert_not_called()
+
+    def test_direct_v3_request_cannot_bypass_closed_action_validation(self) -> None:
+        value = copy.deepcopy(self.request)
+        value["schema_version"] = 3
+        value["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "switch_weapon_set",
+                "arguments": {"combatant": 2},
+            }
+        ]
+        self.write_request(value)
+        parsed = gate.load_request(self.request_path)
+
+        for arguments, expected in (
+            ({"combatant": True}, "plain integer"),
+            ({"combatant": 2.0}, "plain integer"),
+            ({"combatant": 6}, "plain integer"),
+            ({"combatant": 2, "member": 2}, "exactly the combatant field"),
+        ):
+            with self.subTest(arguments=arguments):
+                invalid = replace(
+                    parsed,
+                    actions=(
+                        gate.replay_runner.Action(
+                            ordinal=0,
+                            kind="switch_weapon_set",
+                            arguments=arguments,
+                        ),
+                    ),
+                )
+
+                with mock.patch.object(
+                    gate.fixture_tool,
+                    "verify_fixture",
+                    side_effect=AssertionError("fixture must not be inspected"),
+                ) as verify_fixture, mock.patch.object(
+                    gate,
+                    "_make_gate_workspace",
+                    side_effect=AssertionError("workspace must not be created"),
+                ) as make_workspace:
+                    with self.assertRaises(gate.EquivalenceGateError) as raised:
+                        gate.inspect_profile(invalid)
+
+                self.assertEqual(raised.exception.code, "request.invalid")
+                self.assertEqual(raised.exception.schema_version, 3)
+                self.assertIn(expected, raised.exception.message)
+                verify_fixture.assert_not_called()
+                make_workspace.assert_not_called()
 
     def test_direct_request_value_cannot_bypass_native_v1_action_check(self) -> None:
         self.write_request()
@@ -1649,6 +1973,34 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         self.assertEqual(profile["schema_version"], 2)
         self.assertEqual(profile["actions_sha256"], expected)
 
+    def test_v3_combatant_two_digest_has_a_pinned_canonical_protocol_vector(
+        self,
+    ) -> None:
+        action = gate.replay_runner.Action(
+            ordinal=0,
+            kind="switch_weapon_set",
+            arguments={"combatant": 2},
+        )
+        canonical = (
+            b'[{"arguments":{"combatant":2},"kind":"switch_weapon_set","ordinal":0}]'
+        )
+        expected = hashlib.sha256(
+            b"realmz-semantic-replay-actions-v3\n" + canonical
+        ).hexdigest()
+        self.assertEqual(
+            expected,
+            "36db8be0cd9bde18ec4ca33e26bd0343971796d0baf179b36599f1ab58747121",
+        )
+        self.assertEqual(gate._actions_sha256((action,), 3), expected)
+
+        value = copy.deepcopy(self.request)
+        value["schema_version"] = 3
+        value["actions"] = [action.as_json()]
+        self.write_request(value)
+        profile = gate.inspect_profile_file(self.request_path)
+        self.assertEqual(profile["schema_version"], 3)
+        self.assertEqual(profile["actions_sha256"], expected)
+
     def test_request_schema_matches_native_v1_runtime_action_contract(self) -> None:
         request_schema = json.loads(REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
         actions_schema = request_schema["properties"]["actions"]
@@ -1744,6 +2096,143 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
             "properties"
         ]["actions_sha256"]["description"]
         self.assertIn("realmz-semantic-replay-actions-v2", digest_description)
+
+    def test_v3_schemas_bind_the_closed_vocabulary_and_nested_runner_v3(self) -> None:
+        request_schema = json.loads(
+            V3_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8")
+        )
+        envelope_schema = json.loads(
+            V3_ENVELOPE_SCHEMA_PATH.read_text(encoding="utf-8")
+        )
+        profile_schema = json.loads(
+            V3_PROFILE_SCHEMA_PATH.read_text(encoding="utf-8")
+        )
+        for schema in (request_schema, envelope_schema, profile_schema):
+            self.assertEqual(schema["properties"]["schema_version"]["const"], 3)
+            self.assertIs(schema["additionalProperties"], False)
+
+        action_variants = request_schema["$defs"]["action"]["oneOf"]
+        self.assertEqual(
+            [variant["properties"]["kind"]["const"] for variant in action_variants],
+            ["move_party", "select_party_member", "switch_weapon_set"],
+        )
+        switch_arguments = action_variants[2]["properties"]["arguments"]
+        self.assertIs(switch_arguments["additionalProperties"], False)
+        self.assertEqual(switch_arguments["required"], ["combatant"])
+        self.assertEqual(
+            switch_arguments["properties"],
+            {
+                "combatant": {
+                    "maximum": 5,
+                    "minimum": 0,
+                    "type": "integer",
+                }
+            },
+        )
+        self.assertEqual(
+            envelope_schema["properties"]["runner_envelope"]["$ref"],
+            "https://realmz-castle.github.io/schemas/semantic-replay-run-envelope-v3.json",
+        )
+        self.assertEqual(
+            envelope_schema["$defs"]["comparison"]["properties"]["contract"][
+                "const"
+            ],
+            "realmz.semantic-replay.exact.v3",
+        )
+        digest_description = envelope_schema["$defs"]["replay_profile"][
+            "properties"
+        ]["actions_sha256"]["description"]
+        self.assertIn("realmz-semantic-replay-actions-v3", digest_description)
+
+    def test_all_seven_v3_schema_ids_and_reference_targets_are_exact(self) -> None:
+        expected_ids = {
+            "semantic-replay-child-config-v3.schema.json": (
+                "https://realmz-castle.github.io/schemas/"
+                "semantic-replay-child-config-v3.json"
+            ),
+            "semantic-replay-child-result-v3.schema.json": (
+                "https://realmz-castle.github.io/schemas/"
+                "semantic-replay-child-result-v3.json"
+            ),
+            "semantic-replay-equivalence-envelope-v3.schema.json": (
+                "https://realmz-castle.github.io/schemas/"
+                "semantic-replay-equivalence-envelope-v3.json"
+            ),
+            "semantic-replay-equivalence-profile-v3.schema.json": (
+                "https://realmz-castle.github.io/schemas/"
+                "semantic-replay-equivalence-profile-v3.json"
+            ),
+            "semantic-replay-equivalence-request-v3.schema.json": (
+                "https://realmz-castle.github.io/schemas/"
+                "semantic-replay-equivalence-request-v3.json"
+            ),
+            "semantic-replay-run-envelope-v3.schema.json": (
+                "https://realmz-castle.github.io/schemas/"
+                "semantic-replay-run-envelope-v3.json"
+            ),
+            "semantic-replay-run-request-v3.schema.json": (
+                "https://realmz-castle.github.io/schemas/"
+                "semantic-replay-run-request-v3.json"
+            ),
+        }
+        schemas = {
+            name: json.loads(
+                (Path(__file__).with_name(name)).read_text(encoding="utf-8")
+            )
+            for name in expected_ids
+        }
+        draft = "https://json-schema.org/draft/2020-12/schema"
+        for name, expected_id in expected_ids.items():
+            with self.subTest(name=name):
+                self.assertEqual(schemas[name]["$schema"], draft)
+                self.assertEqual(schemas[name]["$id"], expected_id)
+
+        def collect_refs(value: object) -> list[str]:
+            if isinstance(value, dict):
+                refs = [value["$ref"]] if isinstance(value.get("$ref"), str) else []
+                for child in value.values():
+                    refs.extend(collect_refs(child))
+                return refs
+            if isinstance(value, list):
+                refs = []
+                for child in value:
+                    refs.extend(collect_refs(child))
+                return refs
+            return []
+
+        expected_external_refs = {
+            "semantic-replay-child-config-v3.schema.json": set(),
+            "semantic-replay-child-result-v3.schema.json": set(),
+            "semantic-replay-equivalence-envelope-v3.schema.json": {
+                expected_ids["semantic-replay-run-envelope-v3.schema.json"]
+            },
+            "semantic-replay-equivalence-profile-v3.schema.json": set(),
+            "semantic-replay-equivalence-request-v3.schema.json": set(),
+            "semantic-replay-run-envelope-v3.schema.json": {
+                expected_ids["semantic-replay-child-result-v3.schema.json"]
+            },
+            "semantic-replay-run-request-v3.schema.json": set(),
+        }
+        known_ids = set(expected_ids.values())
+        for name, schema in schemas.items():
+            refs = collect_refs(schema)
+            external_refs = {ref for ref in refs if not ref.startswith("#/")}
+            with self.subTest(name=name, reference_kind="external"):
+                self.assertEqual(external_refs, expected_external_refs[name])
+                self.assertTrue(external_refs <= known_ids)
+            local_refs = {ref for ref in refs if ref.startswith("#/")}
+            with self.subTest(name=name, reference_kind="local-shape"):
+                self.assertTrue(
+                    all(ref.startswith("#/$defs/") for ref in local_refs)
+                )
+            for ref in local_refs:
+                definition = ref[len("#/$defs/") :]
+                with self.subTest(
+                    name=name,
+                    reference_kind="local",
+                    reference=ref,
+                ):
+                    self.assertIn(definition, schema.get("$defs", {}))
 
     def test_new_schemas_are_v1_closed_and_keep_runner_v1_nested(self) -> None:
         request_schema = json.loads(REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))

@@ -39,6 +39,8 @@ constexpr std::string_view kReplayEngineIdentityV1 =
     "Realmz-8.1.0-native-replay-v1";
 constexpr std::string_view kReplayEngineIdentityV2 =
     "Realmz-8.1.0-native-replay-v2";
+constexpr std::string_view kReplayEngineIdentityV3 =
+    "Realmz-8.1.0-native-replay-v3";
 
 [[nodiscard]] std::string_view replay_engine_identity(
     std::uint32_t schema_version) {
@@ -47,6 +49,9 @@ constexpr std::string_view kReplayEngineIdentityV2 =
   }
   if (schema_version == 2U) {
     return kReplayEngineIdentityV2;
+  }
+  if (schema_version == 3U) {
+    return kReplayEngineIdentityV3;
   }
   throw realmz::replay::ReplayConfigError(
       "native replay schema version is unsupported");
@@ -146,6 +151,8 @@ void record_live_replay_checkpoint(
             write_replay_child_result_v1(config, result);
           } else if (config.schema_version() == 2U) {
             write_replay_child_result_v2(config, result);
+          } else if (config.schema_version() == 3U) {
+            write_replay_child_result_v3(config, result);
           } else {
             throw ReplayResultError(
                 "native replay result schema version is unsupported");
@@ -226,6 +233,9 @@ extern "C" int RealmzRunSemanticReplayChild(void) {
           runtime->config().actions());
     } else if (runtime->config().schema_version() == 2U) {
       actions = realmz::replay::decode_replay_actions_v2(
+          runtime->config().actions());
+    } else if (runtime->config().schema_version() == 3U) {
+      actions = realmz::replay::decode_replay_actions_v3(
           runtime->config().actions());
     } else {
       throw realmz::replay::ReplayActionDecodeError(

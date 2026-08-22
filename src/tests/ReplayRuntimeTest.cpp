@@ -73,6 +73,15 @@ void check_runtime_error(Function&& function) {
   };
 }
 
+[[nodiscard]] realmz::presentation::UIAction switch_weapon(
+    realmz::presentation::ActionSequence sequence,
+    realmz::presentation::CombatantId combatant) {
+  return {
+      .sequence = sequence,
+      .payload = realmz::presentation::SwitchWeaponSetAction{combatant},
+  };
+}
+
 [[nodiscard]] std::string json_string(std::string_view value) {
   std::string result = "\"";
   for (const char character : value) {
@@ -127,9 +136,13 @@ void check_runtime_error(Function&& function) {
       "\"rng_seed\":\"0123456789abcdef\","
       "\"rng_stream\":\"fedcba9876543210\""
       "}";
-  return schema_version == 2U
-      ? parse_child_config_v2(json)
-      : parse_child_config_v1(json);
+  if (schema_version == 1U) {
+    return parse_child_config_v1(json);
+  }
+  if (schema_version == 2U) {
+    return parse_child_config_v2(json);
+  }
+  return parse_child_config_v3(json);
 }
 
 void test_immutable_policy_access() {
@@ -336,6 +349,204 @@ void test_v2_runtime_revalidates_typed_selection_boundaries() {
   });
 }
 
+void test_v3_weapon_switch_requires_and_settles_a_real_flip() {
+  ReplayRuntime runtime(make_config("semantic", "remastered", 3U));
+  runtime.start_action_plan({switch_weapon(1, 2)});
+
+  ReplayStateSnapshot initial;
+  initial.combat.active = true;
+  initial.combat.active_party_member = 2;
+  initial.party.members[2].occupied = true;
+  initial.party.members[2].stamina = 10;
+
+  auto directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->kind == ReplayCheckpointKind::initial);
+
+  // A false-to-true toggle would be Classic's feedback-only no-op without an
+  // item in the alternate weapon slot.
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, initial);
+  });
+  CHECK(runtime.settled_action_count() == 0U);
+
+  initial.party.members[2].equipment[15] = 47;
+  runtime.record_checkpoint(*directive.checkpoint, initial);
+  CHECK(directive.action != nullptr);
+  runtime.acknowledge_switch_weapon_delivery(
+      directive.action->sequence,
+      2,
+      kReplaySwitchWeaponKeyMessage,
+      {.kind = ReplayObservedEventKind::key_down,
+       .message = kReplaySwitchWeaponKeyMessage});
+
+  directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->action_index == 0U);
+  ReplayStateSnapshot unchanged = initial;
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, unchanged);
+  });
+  CHECK(runtime.settled_action_count() == 0U);
+
+  ReplayStateSnapshot switched = initial;
+  switched.party.members[2].alternate_weapon_set = true;
+  // Classic may advance the turn after processing the command. Settlement is
+  // bound to member 2's state, not continued turn ownership.
+  switched.combat.monster_turn = true;
+  switched.combat.active_party_member = 5;
+  runtime.record_checkpoint(*directive.checkpoint, switched);
+  CHECK(runtime.settled_action_count() == 1U);
+  CHECK(directive.finalize);
+  static_cast<void>(runtime.finalize_state_trace());
+}
+
+void test_v3_consecutive_weapon_switches_transfer_settlement_expectation() {
+  ReplayRuntime runtime(make_config("semantic", "remastered", 3U));
+  runtime.start_action_plan({
+      switch_weapon(1, 2),
+      switch_weapon(2, 2),
+  });
+
+  ReplayStateSnapshot initial;
+  initial.combat.active = true;
+  initial.combat.active_party_member = 2;
+  initial.party.members[2].occupied = true;
+  initial.party.members[2].stamina = 10;
+  initial.party.members[2].equipment[15] = 47;
+
+  auto directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->kind == ReplayCheckpointKind::initial);
+  runtime.record_checkpoint(*directive.checkpoint, initial);
+  CHECK(runtime.settled_action_count() == 0U);
+  CHECK(directive.action != nullptr);
+  runtime.acknowledge_switch_weapon_delivery(
+      directive.action->sequence,
+      2,
+      kReplaySwitchWeaponKeyMessage,
+      {.kind = ReplayObservedEventKind::key_down,
+       .message = kReplaySwitchWeaponKeyMessage});
+
+  directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->action_index == 0U);
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, initial);
+  });
+  CHECK(runtime.settled_action_count() == 0U);
+
+  ReplayStateSnapshot first_switched = initial;
+  first_switched.party.members[2].alternate_weapon_set = true;
+  runtime.record_checkpoint(*directive.checkpoint, first_switched);
+  CHECK(runtime.settled_action_count() == 1U);
+  CHECK(!directive.finalize);
+  CHECK(directive.action != nullptr);
+  runtime.acknowledge_switch_weapon_delivery(
+      directive.action->sequence,
+      2,
+      kReplaySwitchWeaponKeyMessage,
+      {.kind = ReplayObservedEventKind::key_down,
+       .message = kReplaySwitchWeaponKeyMessage});
+
+  directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->action_index == 1U);
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, first_switched);
+  });
+  CHECK(runtime.settled_action_count() == 1U);
+
+  ReplayStateSnapshot second_switched = first_switched;
+  second_switched.party.members[2].alternate_weapon_set = false;
+  runtime.record_checkpoint(*directive.checkpoint, second_switched);
+  CHECK(runtime.settled_action_count() == 2U);
+  CHECK(directive.finalize);
+  static_cast<void>(runtime.finalize_state_trace());
+}
+
+void test_v3_weapon_switch_precondition_requires_requested_active_actor() {
+  ReplayRuntime runtime(make_config("classic", "classic", 3U));
+  runtime.start_action_plan({switch_weapon(1, 1)});
+  const auto directive = runtime.next_gameplay_poll();
+
+  ReplayStateSnapshot snapshot;
+  snapshot.party.members[1].occupied = true;
+  snapshot.party.members[1].stamina = 8;
+  snapshot.party.members[1].equipment[15] = 12;
+
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, snapshot);
+  });
+  snapshot.combat.active = true;
+  snapshot.combat.monster_turn = true;
+  snapshot.combat.active_party_member = 1;
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, snapshot);
+  });
+  snapshot.combat.monster_turn = false;
+  snapshot.combat.active_party_member = 0;
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, snapshot);
+  });
+  snapshot.combat.active_party_member = 1;
+  snapshot.party.members[1].occupied = false;
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, snapshot);
+  });
+  snapshot.party.members[1].occupied = true;
+  snapshot.party.members[1].stamina = 0;
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, snapshot);
+  });
+  CHECK(runtime.settled_action_count() == 0U);
+}
+
+void test_v3_switch_from_alternate_set_does_not_require_slot_fifteen() {
+  ReplayRuntime runtime(make_config("semantic", "remastered", 3U));
+  runtime.start_action_plan({switch_weapon(1, 0)});
+
+  ReplayStateSnapshot initial;
+  initial.combat.active = true;
+  initial.combat.active_party_member = 0;
+  initial.party.members[0].occupied = true;
+  initial.party.members[0].stamina = 1;
+  initial.party.members[0].alternate_weapon_set = true;
+  CHECK(initial.party.members[0].equipment[15] == 0);
+
+  auto directive = runtime.next_gameplay_poll();
+  runtime.record_checkpoint(*directive.checkpoint, initial);
+  runtime.acknowledge_switch_weapon_delivery(
+      directive.action->sequence,
+      0,
+      kReplaySwitchWeaponKeyMessage,
+      {.kind = ReplayObservedEventKind::key_down,
+       .message = kReplaySwitchWeaponKeyMessage});
+  directive = runtime.next_gameplay_poll();
+  ReplayStateSnapshot switched = initial;
+  switched.party.members[0].alternate_weapon_set = false;
+  runtime.record_checkpoint(*directive.checkpoint, switched);
+  CHECK(runtime.settled_action_count() == 1U);
+}
+
+void test_v3_preserves_selection_and_v2_rejects_switching() {
+  ReplayRuntime v2(make_config("semantic", "remastered", 2U));
+  check_runtime_error([&] {
+    v2.start_action_plan({switch_weapon(1, 0)});
+  });
+  CHECK(!v2.action_plan_started());
+
+  ReplayRuntime v3(make_config("semantic", "remastered", 3U));
+  v3.start_action_plan({selection(1, 3)});
+  ReplayStateSnapshot initial;
+  auto directive = v3.next_gameplay_poll();
+  v3.record_checkpoint(*directive.checkpoint, initial);
+  v3.acknowledge_party_selection_delivery(
+      directive.action->sequence,
+      3,
+      ReplayPartySelectionDeliveryOutcome::changed);
+  directive = v3.next_gameplay_poll();
+  ReplayStateSnapshot selected = initial;
+  selected.party.selected_member = 3;
+  v3.record_checkpoint(*directive.checkpoint, selected);
+  CHECK(v3.settled_action_count() == 1U);
+}
+
 void test_one_shot_process_installation() {
   CHECK(installed_replay_runtime() == nullptr);
   ReplayRuntime& installed = install_replay_runtime(make_config());
@@ -363,6 +574,11 @@ int main() {
     test_v2_selection_delivery_and_snapshot_settlement();
     test_v1_runtime_keeps_movement_only_vocabulary();
     test_v2_runtime_revalidates_typed_selection_boundaries();
+    test_v3_weapon_switch_requires_and_settles_a_real_flip();
+    test_v3_consecutive_weapon_switches_transfer_settlement_expectation();
+    test_v3_weapon_switch_precondition_requires_requested_active_actor();
+    test_v3_switch_from_alternate_set_does_not_require_slot_fifteen();
+    test_v3_preserves_selection_and_v2_rejects_switching();
     test_one_shot_process_installation();
     std::cout << "ReplayRuntimeTest passed (" << checks_run << " checks)\n";
     return 0;

@@ -336,4 +336,18 @@ void write_replay_child_result_v2(
   write_private_exclusive_file(config.result_path(), payload);
 }
 
+std::string encode_replay_child_result_v3(
+    const ReplayChildConfig& config,
+    const ReplayCompletedResult& result) {
+  return encode_replay_child_result(config, result, 3U);
+}
+
+void write_replay_child_result_v3(
+    const ReplayChildConfig& config,
+    const ReplayCompletedResult& result) {
+  validate_result_path(config.result_path());
+  const std::string payload = encode_replay_child_result_v3(config, result);
+  write_private_exclusive_file(config.result_path(), payload);
+}
+
 } // namespace realmz::replay

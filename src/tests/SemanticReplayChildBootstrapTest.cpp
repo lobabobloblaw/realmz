@@ -210,11 +210,11 @@ void test_unknown_schema_rejected_before_runtime_installation() {
   const fs::path input_root = user_root / "Save" / "Game A";
   const fs::path output_root = user_root / "Save" / "Game B";
   const fs::path result_path = temporary.path() / "result.json";
-  const fs::path config_path = temporary.path() / "config-v3.json";
+  const fs::path config_path = temporary.path() / "config-v4.json";
   fs::create_directories(input_root);
   const fs::path sentinel = input_root / "state.dat";
   write_text(sentinel, "unchanged-input");
-  write_text(config_path, child_config(user_root, result_path, 3U));
+  write_text(config_path, child_config(user_root, result_path, 4U));
 
   CHECK(realmz::replay::installed_replay_runtime() == nullptr);
   CHECK(!RealmzSemanticReplayChildIsActive());
@@ -236,18 +236,20 @@ int main(int argc, char** argv) {
       scenario = argv[1];
     } else if (argc != 1) {
       std::cerr << "usage: SemanticReplayChildBootstrapTest "
-                   "[v1|v2|unknown-version]\n";
+                   "[v1|v2|v3|unknown-version]\n";
       return 2;
     }
     if (scenario == "v1") {
       test_configured_bootstrap_policies(1U);
     } else if (scenario == "v2") {
       test_configured_bootstrap_policies(2U);
+    } else if (scenario == "v3") {
+      test_configured_bootstrap_policies(3U);
     } else if (scenario == "unknown-version") {
       test_unknown_schema_rejected_before_runtime_installation();
     } else {
       std::cerr << "usage: SemanticReplayChildBootstrapTest "
-                   "[v1|v2|unknown-version]\n";
+                   "[v1|v2|v3|unknown-version]\n";
       return 2;
     }
     std::cout << "SemanticReplayChildBootstrapTest passed ("

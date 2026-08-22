@@ -234,6 +234,15 @@ void verify_replay_gameplay_controller(
           classic < classic_ack && classic_ack < classic_return,
       "Classic replay must acknowledge the exact injected key event before return");
 
+  const std::size_t classic_switch_ack =
+      semantic.find("acknowledge_switch_weapon_delivery", classic);
+  const std::size_t classic_switch_return =
+      semantic.find("return true", classic_switch_ack);
+  require(classic_switch_ack != std::string_view::npos &&
+          classic_switch_return != std::string_view::npos &&
+          classic_switch_ack < classic_switch_return,
+      "Classic weapon switching must acknowledge its typed key receipt before return");
+
   const std::size_t classic_selection_apply =
       semantic.find("RealmzApplyPartyMemberSelection", classic);
   const std::size_t classic_selection_ack =
@@ -279,6 +288,35 @@ void verify_replay_gameplay_controller(
           selection_consume < selection_apply &&
           selection_apply < semantic_selection_ack,
       "semantic selection acknowledgement must follow late validation and adapter application");
+  const std::size_t switch_consume =
+      semantic.find("RealmzConsumeSemanticSwitchWeaponEvent");
+  const std::size_t semantic_switch_ack =
+      semantic.rfind("acknowledge_switch_weapon_delivery");
+  const std::size_t switch_mapper_call =
+      semantic.find("replay_switch_weapon_key_message");
+  const std::size_t switch_mapper_rejection =
+      semantic.find("if (!expected)", switch_mapper_call);
+  const std::size_t expected_switch_tag =
+      semantic.find("semantic_switch_weapon_tag", switch_mapper_rejection);
+  const std::size_t exact_switch_tag_match = semantic.find(
+      "ret->message == *replay_expected_switch_tag", expected_switch_tag);
+  const std::size_t gated_switch_consume = semantic.find(
+      "replay_switch_tag_matches &&", exact_switch_tag_match);
+  require(switch_mapper_call != std::string_view::npos &&
+          switch_mapper_rejection != std::string_view::npos &&
+          expected_switch_tag != std::string_view::npos &&
+          exact_switch_tag_match != std::string_view::npos &&
+          gated_switch_consume != std::string_view::npos &&
+          switch_consume != std::string_view::npos &&
+          semantic_switch_ack != std::string_view::npos &&
+          switch_mapper_call < switch_mapper_rejection &&
+          switch_mapper_rejection < expected_switch_tag &&
+          expected_switch_tag < exact_switch_tag_match &&
+          exact_switch_tag_match < gated_switch_consume &&
+          gated_switch_consume < switch_consume &&
+          switch_consume < semantic_switch_ack,
+      "semantic weapon-switch acknowledgement must follow mapper validation, "
+      "exact dequeued-tag matching, and late translation");
 
   const std::string_view mapper = function_body(
       window_source, "WindowManager::replay_movement_key_message(");
@@ -301,6 +339,20 @@ void verify_replay_gameplay_controller(
           selection_mapper.find("context.adaptive_eligible") !=
               std::string_view::npos,
       "both replay selection routes must validate live surface and roster context");
+
+  const std::string_view switch_mapper = function_body(
+      window_source, "WindowManager::replay_switch_weapon_key_message(");
+  require(switch_mapper.find("capture_runtime_legacy_command_context") !=
+              std::string_view::npos &&
+          switch_mapper.find("LegacyGameSnapshotSource") !=
+              std::string_view::npos &&
+          switch_mapper.find("acting_combatant") !=
+              std::string_view::npos &&
+          switch_mapper.find("legacy_key_message_for_switch_weapon") !=
+              std::string_view::npos &&
+          switch_mapper.find("context.adaptive_eligible") !=
+              std::string_view::npos,
+      "both replay weapon-switch routes must validate the live combat actor and production key mapper");
 
   const std::string_view dispatch = function_body(
       window_source, "WindowManager::dispatch_replay_semantic_action(");

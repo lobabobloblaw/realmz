@@ -164,4 +164,68 @@ std::vector<presentation::UIAction> decode_replay_actions_v2(
   return decoded;
 }
 
+presentation::UIAction decode_replay_action_v3(
+    const ReplayAction& action) {
+  if (action.kind == "move_party" ||
+      action.kind == "select_party_member") {
+    // Delegation pins the complete inherited vocabulary to exact v2 decoding.
+    return decode_replay_action_v2(action);
+  }
+  if (action.ordinal >= kMaximumReplayActions) {
+    throw ReplayActionDecodeError(
+        "replay action ordinal exceeds the v3 4095 maximum");
+  }
+  if (action.kind != "switch_weapon_set") {
+    throw ReplayActionDecodeError(
+        action_prefix(action) + "unsupported v3 action kind: " +
+        action.kind);
+  }
+  if (action.arguments.size() != 1 ||
+      !action.arguments.contains("combatant")) {
+    throw ReplayActionDecodeError(
+        action_prefix(action) +
+        "switch_weapon_set requires exactly the combatant argument");
+  }
+  const auto* combatant =
+      std::get_if<std::int64_t>(&action.arguments.at("combatant"));
+  if (!combatant) {
+    throw ReplayActionDecodeError(
+        action_prefix(action) +
+        "switch_weapon_set combatant must be an integer");
+  }
+  if (*combatant < 0 || *combatant > 5) {
+    throw ReplayActionDecodeError(
+        action_prefix(action) +
+        "switch_weapon_set combatant must be in the range 0..5");
+  }
+
+  const auto sequence =
+      static_cast<presentation::ActionSequence>(action.ordinal) + 1U;
+  return presentation::UIAction{
+      .sequence = sequence,
+      .payload = presentation::SwitchWeaponSetAction{
+          static_cast<presentation::CombatantId>(*combatant),
+      },
+  };
+}
+
+std::vector<presentation::UIAction> decode_replay_actions_v3(
+    const std::vector<ReplayAction>& actions) {
+  if (actions.size() > kMaximumReplayActions) {
+    throw ReplayActionDecodeError(
+        "replay action list exceeds the v3 4096-action limit");
+  }
+
+  std::vector<presentation::UIAction> decoded;
+  decoded.reserve(actions.size());
+  for (std::size_t index = 0; index < actions.size(); ++index) {
+    if (actions[index].ordinal != index) {
+      throw ReplayActionDecodeError(
+          "replay actions must have contiguous zero-based ordinals");
+    }
+    decoded.emplace_back(decode_replay_action_v3(actions[index]));
+  }
+  return decoded;
+}
+
 } // namespace realmz::replay

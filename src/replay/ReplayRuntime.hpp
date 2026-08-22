@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -86,12 +87,23 @@ public:
       presentation::ActionSequence action_sequence,
       presentation::PartyMemberId delivered_member,
       ReplayPartySelectionDeliveryOutcome outcome);
+  void acknowledge_switch_weapon_delivery(
+      presentation::ActionSequence action_sequence,
+      presentation::CombatantId delivered_combatant,
+      std::uint32_t expected_key_down_message,
+      ReplayObservedEvent observed);
   [[nodiscard]] Sha256Digest finalize_state_trace() const;
   [[nodiscard]] std::size_t planned_action_count() const noexcept;
   // Counts post-action checkpoints, not merely delivered/acknowledged events.
   [[nodiscard]] std::size_t settled_action_count() const noexcept;
 
 private:
+  struct SwitchWeaponSettlementExpectation final {
+    std::uint32_t action_index = 0;
+    presentation::CombatantId combatant = 0;
+    bool expected_alternate_weapon_set = false;
+  };
+
   [[nodiscard]] ReplayDriver& require_driver();
   [[nodiscard]] const ReplayDriver& require_driver() const;
   [[nodiscard]] ReplayStateTraceHasher& require_state_trace();
@@ -102,6 +114,8 @@ private:
   std::atomic<std::uint32_t> event_tick_{0};
   std::unique_ptr<ReplayDriver> driver_;
   std::unique_ptr<ReplayStateTraceHasher> state_trace_;
+  std::optional<SwitchWeaponSettlementExpectation>
+      switch_weapon_settlement_expectation_;
 };
 
 // Thread-safe, process-lifetime, one-shot publication. A second installation

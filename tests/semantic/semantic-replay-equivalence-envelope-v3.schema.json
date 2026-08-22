@@ -1,0 +1,517 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/semantic-replay-equivalence-envelope-v3.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "canonical_mismatched_fields": {
+      "description": "The unequal state, save, and RNG observables, without duplicates and in canonical contract order. A settled-action-count disagreement is a protocol failure and cannot produce a completed verdict.",
+      "enum": [
+        [],
+        [
+          "state_sha256"
+        ],
+        [
+          "save_tree_sha256"
+        ],
+        [
+          "rng_draw_count"
+        ],
+        [
+          "state_sha256",
+          "save_tree_sha256"
+        ],
+        [
+          "state_sha256",
+          "rng_draw_count"
+        ],
+        [
+          "save_tree_sha256",
+          "rng_draw_count"
+        ],
+        [
+          "state_sha256",
+          "save_tree_sha256",
+          "rng_draw_count"
+        ]
+      ],
+      "type": "array"
+    },
+    "comparison": {
+      "additionalProperties": false,
+      "description": "Exact route-to-route values. The gate enforces that mismatched_fields names precisely the unequal pairs.",
+      "properties": {
+        "contract": {
+          "const": "realmz.semantic-replay.exact.v3"
+        },
+        "mismatched_fields": {
+          "$ref": "#/$defs/canonical_mismatched_fields"
+        },
+        "rng_draw_count": {
+          "$ref": "#/$defs/rng_draw_count_pair"
+        },
+        "save_tree_sha256": {
+          "$ref": "#/$defs/sha256_pair"
+        },
+        "settled_action_count": {
+          "$ref": "#/$defs/settled_action_count_pair"
+        },
+        "state_sha256": {
+          "$ref": "#/$defs/sha256_pair"
+        }
+      },
+      "required": [
+        "contract",
+        "state_sha256",
+        "save_tree_sha256",
+        "settled_action_count",
+        "rng_draw_count",
+        "mismatched_fields"
+      ],
+      "type": "object"
+    },
+    "error": {
+      "additionalProperties": false,
+      "description": "A bounded diagnostic. Messages must not reproduce fixture contents or manifest authorization text.",
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z](?:[a-z0-9]|[._](?=[a-z0-9]))*(?![\\s\\S])",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "fixture_evidence": {
+      "additionalProperties": false,
+      "description": "Non-content evidence from a continuously pinned manifest and source plus independent staged inputs, emitted only after successful post-run attestation.",
+      "properties": {
+        "file_count": {
+          "maximum": 100000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "independent_copies": {
+          "const": true
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "slot": {
+          "pattern": "^[A-J](?![\\s\\S])",
+          "type": "string"
+        },
+        "total_file_bytes": {
+          "maximum": 1073741824,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tree_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "trees": {
+          "additionalProperties": false,
+          "properties": {
+            "classic_input": {
+              "$ref": "#/$defs/tree_attestation"
+            },
+            "semantic_input": {
+              "$ref": "#/$defs/tree_attestation"
+            },
+            "source": {
+              "$ref": "#/$defs/tree_attestation"
+            }
+          },
+          "required": [
+            "source",
+            "classic_input",
+            "semantic_input"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "manifest_sha256",
+        "tree_sha256",
+        "slot",
+        "file_count",
+        "total_file_bytes",
+        "independent_copies",
+        "trees"
+      ],
+      "type": "object"
+    },
+    "fixture_workspace_retention": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "cleanup_attempted": {
+          "const": false
+        },
+        "contains_fixture_bytes": {
+          "const": true
+        },
+        "notice": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "path_authoritative": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cleanup_attempted",
+        "candidate_path",
+        "path_authoritative",
+        "contains_fixture_bytes",
+        "notice"
+      ],
+      "type": "object"
+    },
+    "rng_draw_count_pair": {
+      "additionalProperties": false,
+      "properties": {
+        "classic": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "semantic": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "classic",
+        "semantic"
+      ],
+      "type": "object"
+    },
+    "replay_profile": {
+      "additionalProperties": false,
+      "description": "Privacy-safe identity of the exact replay request. The gate enforces action_count and actions_sha256 against the validated request.",
+      "properties": {
+        "action_count": {
+          "maximum": 4096,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "actions_sha256": {
+          "description": "SHA-256 of the ASCII domain 'realmz-semantic-replay-actions-v3\\n' followed by the RFC 8785 canonical UTF-8 JSON encoding of the actions array.",
+          "$ref": "#/$defs/sha256"
+        },
+        "input_slot": {
+          "pattern": "^[A-J](?![\\s\\S])",
+          "type": "string"
+        },
+        "output_slot": {
+          "pattern": "^[A-J](?![\\s\\S])",
+          "type": "string"
+        },
+        "rng_seed": {
+          "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+          "type": "string"
+        },
+        "rng_stream": {
+          "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+          "type": "string"
+        },
+        "settlement_barrier": {
+          "const": "next_semantic_gameplay_poll"
+        }
+      },
+      "required": [
+        "actions_sha256",
+        "action_count",
+        "input_slot",
+        "output_slot",
+        "settlement_barrier",
+        "rng_seed",
+        "rng_stream"
+      ],
+      "type": "object"
+    },
+    "runner_workspace_retention": {
+      "additionalProperties": false,
+      "description": "Retention evidence for a runner protocol workspace on an error path. Protocol workspaces do not contain staged fixture bytes.",
+      "properties": {
+        "candidate_path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "cleanup_attempted": {
+          "const": false
+        },
+        "notice": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "type": "string"
+        },
+        "path_authoritative": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cleanup_attempted",
+        "candidate_path",
+        "path_authoritative",
+        "notice"
+      ],
+      "type": "object"
+    },
+    "settled_action_count_pair": {
+      "additionalProperties": false,
+      "description": "The two validated counts. Each already equals replay_profile.action_count, so a disagreement is not an equivalence mismatch.",
+      "properties": {
+        "classic": {
+          "maximum": 4096,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "semantic": {
+          "maximum": 4096,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "classic",
+        "semantic"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    },
+    "sha256_pair": {
+      "additionalProperties": false,
+      "properties": {
+        "classic": {
+          "$ref": "#/$defs/sha256"
+        },
+        "semantic": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "classic",
+        "semantic"
+      ],
+      "type": "object"
+    },
+    "tree_attestation": {
+      "additionalProperties": false,
+      "properties": {
+        "verified_after": {
+          "const": true
+        },
+        "verified_before": {
+          "const": true
+        }
+      },
+      "required": [
+        "verified_before",
+        "verified_after"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A fail-closed semantic replay equivalence verdict. Only completed, fully attested runs may be equivalent or not_equivalent; every failure is not_evaluated.",
+  "oneOf": [
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "error"
+            ]
+          },
+          {
+            "required": [
+              "secondary_error"
+            ]
+          },
+          {
+            "required": [
+              "runner_workspace_retention"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "comparison": {
+          "properties": {
+            "mismatched_fields": {
+              "const": []
+            }
+          },
+          "required": [
+            "mismatched_fields"
+          ]
+        },
+        "semantic_equivalence": {
+          "const": "equivalent"
+        },
+        "status": {
+          "const": "completed"
+        }
+      },
+      "required": [
+        "replay_profile",
+        "comparison",
+        "fixture_evidence",
+        "runner_envelope",
+        "fixture_workspace_retention"
+      ]
+    },
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "error"
+            ]
+          },
+          {
+            "required": [
+              "secondary_error"
+            ]
+          },
+          {
+            "required": [
+              "runner_workspace_retention"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "comparison": {
+          "properties": {
+            "mismatched_fields": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "mismatched_fields"
+          ]
+        },
+        "semantic_equivalence": {
+          "const": "not_equivalent"
+        },
+        "status": {
+          "const": "completed"
+        }
+      },
+      "required": [
+        "replay_profile",
+        "comparison",
+        "fixture_evidence",
+        "runner_envelope",
+        "fixture_workspace_retention"
+      ]
+    },
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "replay_profile"
+            ]
+          },
+          {
+            "required": [
+              "comparison"
+            ]
+          },
+          {
+            "required": [
+              "fixture_evidence"
+            ]
+          },
+          {
+            "required": [
+              "runner_envelope"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "semantic_equivalence": {
+          "const": "not_evaluated"
+        },
+        "status": {
+          "const": "error"
+        }
+      },
+      "required": [
+        "error"
+      ]
+    }
+  ],
+  "properties": {
+    "comparison": {
+      "$ref": "#/$defs/comparison"
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    },
+    "fixture_evidence": {
+      "$ref": "#/$defs/fixture_evidence"
+    },
+    "fixture_workspace_retention": {
+      "$ref": "#/$defs/fixture_workspace_retention"
+    },
+    "replay_profile": {
+      "$ref": "#/$defs/replay_profile"
+    },
+    "runner_envelope": {
+      "$ref": "https://realmz-castle.github.io/schemas/semantic-replay-run-envelope-v3.json"
+    },
+    "runner_workspace_retention": {
+      "$ref": "#/$defs/runner_workspace_retention"
+    },
+    "schema_version": {
+      "const": 3
+    },
+    "secondary_error": {
+      "$ref": "#/$defs/error"
+    },
+    "semantic_equivalence": {
+      "enum": [
+        "equivalent",
+        "not_equivalent",
+        "not_evaluated"
+      ]
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "error"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "semantic_equivalence"
+  ],
+  "title": "Realmz semantic replay equivalence envelope v3",
+  "type": "object"
+}

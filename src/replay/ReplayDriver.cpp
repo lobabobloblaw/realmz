@@ -21,6 +21,8 @@ std::string_view replay_driver_failure_name(
       return "unsupported_action";
     case ReplayDriverFailure::invalid_party_member:
       return "invalid_party_member";
+    case ReplayDriverFailure::invalid_combatant:
+      return "invalid_combatant";
     case ReplayDriverFailure::gameplay_poll_while_delivery_pending:
       return "gameplay_poll_while_delivery_pending";
     case ReplayDriverFailure::gameplay_poll_after_finalization:
@@ -41,6 +43,8 @@ std::string_view replay_driver_failure_name(
       return "delivered_party_member_mismatch";
     case ReplayDriverFailure::party_selection_rejected:
       return "party_selection_rejected";
+    case ReplayDriverFailure::delivered_combatant_mismatch:
+      return "delivered_combatant_mismatch";
   }
   return "unknown";
 }
@@ -163,6 +167,42 @@ bool ReplayDriver::acknowledge_party_selection_delivery(
   return true;
 }
 
+bool ReplayDriver::acknowledge_switch_weapon_delivery(
+    presentation::ActionSequence action_sequence,
+    presentation::CombatantId delivered_combatant,
+    std::uint32_t expected_key_down_message,
+    ReplayObservedEvent observed) noexcept {
+  if (!validate_pending_acknowledgement(action_sequence)) {
+    return false;
+  }
+  const auto* switch_weapon =
+      std::get_if<presentation::SwitchWeaponSetAction>(
+          &actions_[next_action_index_].payload);
+  if (!switch_weapon) {
+    fail(ReplayDriverFailure::delivered_action_kind_mismatch);
+    return false;
+  }
+  if (delivered_combatant != switch_weapon->combatant) {
+    fail(ReplayDriverFailure::delivered_combatant_mismatch);
+    return false;
+  }
+  if (expected_key_down_message != kReplaySwitchWeaponKeyMessage) {
+    fail(ReplayDriverFailure::expected_key_down_message_invalid);
+    return false;
+  }
+  if (observed.kind != ReplayObservedEventKind::key_down) {
+    fail(ReplayDriverFailure::delivered_event_not_key_down);
+    return false;
+  }
+  if (observed.message != expected_key_down_message) {
+    fail(ReplayDriverFailure::delivered_event_message_mismatch);
+    return false;
+  }
+
+  accept_pending_delivery();
+  return true;
+}
+
 ReplayDriverPhase ReplayDriver::phase() const noexcept {
   return phase_;
 }
@@ -190,6 +230,20 @@ ReplayDriver::selected_member_for_action(
           &actions_[action_index].payload);
   return selection
       ? std::optional<presentation::PartyMemberId>(selection->member)
+      : std::nullopt;
+}
+
+std::optional<presentation::CombatantId>
+ReplayDriver::switch_weapon_combatant_for_action(
+    std::uint32_t action_index) const noexcept {
+  if (action_index >= actions_.size()) {
+    return std::nullopt;
+  }
+  const auto* switch_weapon =
+      std::get_if<presentation::SwitchWeaponSetAction>(
+          &actions_[action_index].payload);
+  return switch_weapon
+      ? std::optional<presentation::CombatantId>(switch_weapon->combatant)
       : std::nullopt;
 }
 
@@ -229,6 +283,15 @@ void ReplayDriver::fail(ReplayDriverFailure failure) noexcept {
 }
 
 void ReplayDriver::validate_plan() noexcept {
+  switch (vocabulary_) {
+    case ReplayActionVocabulary::native_v1:
+    case ReplayActionVocabulary::native_v2:
+    case ReplayActionVocabulary::native_v3:
+      break;
+    default:
+      fail(ReplayDriverFailure::unsupported_action);
+      return;
+  }
   if (actions_.size() > kMaximumReplayActions) {
     fail(ReplayDriverFailure::action_limit_exceeded);
     return;
@@ -244,16 +307,27 @@ void ReplayDriver::validate_plan() noexcept {
         std::holds_alternative<presentation::MovePartyAction>(
             actions_[index].payload);
     const auto* selection =
-        vocabulary_ == ReplayActionVocabulary::native_v2
+        (vocabulary_ == ReplayActionVocabulary::native_v2 ||
+            vocabulary_ == ReplayActionVocabulary::native_v3)
         ? std::get_if<presentation::SelectPartyMemberAction>(
               &actions_[index].payload)
         : nullptr;
-    if (!movement && !selection) {
+    const auto* switch_weapon =
+        vocabulary_ == ReplayActionVocabulary::native_v3
+        ? std::get_if<presentation::SwitchWeaponSetAction>(
+              &actions_[index].payload)
+        : nullptr;
+    if (!movement && !selection && !switch_weapon) {
       fail(ReplayDriverFailure::unsupported_action);
       return;
     }
     if (selection && selection->member > 5U) {
       fail(ReplayDriverFailure::invalid_party_member);
+      return;
+    }
+    if (switch_weapon &&
+        (switch_weapon->combatant < 0 || switch_weapon->combatant > 5)) {
+      fail(ReplayDriverFailure::invalid_combatant);
       return;
     }
   }

@@ -275,7 +275,8 @@ contracts are the unversioned `semantic-replay-run-request.schema.json`,
 `semantic-replay-child-config.schema.json`,
 `semantic-replay-child-result.schema.json`, and
 `semantic-replay-run-envelope.schema.json` files under `tests/semantic`.
-Parallel version-2 contracts use the corresponding `-v2.schema.json` names.
+Parallel version-2 and version-3 contracts use the corresponding
+`-v2.schema.json` and `-v3.schema.json` names.
 Invoke it only with an explicit request:
 
 ```sh
@@ -319,12 +320,16 @@ candidate automatically. These workspaces contain protocol configs and results,
 not staged fixture bytes.
 
 Realmz now recognizes `--semantic-replay-child CONFIG`, strictly validates an
-explicit bounded schema-1 or schema-2 config before SDL startup, fixes the
-isolated user root, suppresses ambient preference reads and all preference
-writes, selects and locks the configured presentation, and installs the
-deterministic replay RNG. Schema 1 remains the immutable movement-only contract.
+explicit bounded schema-1, schema-2, or schema-3 config before SDL startup,
+fixes the isolated user root, suppresses ambient preference reads and all
+preference writes, selects and locks the configured presentation, and installs
+the deterministic replay RNG. Schema 1 remains the immutable movement-only
+contract.
 Schema 2 preserves that vocabulary and adds a bounded `select_party_member`
 record whose only argument is a zero-based roster integer from 0 through 5.
+Schema 3 preserves both earlier vocabularies and adds an actor-bound
+`switch_weapon_set` record whose only argument is a party combatant integer
+from 0 through 5.
 After action preflight, the child explicitly loads the isolated input slot,
 enters normal loaded gameplay, captures canonical initial and post-action
 snapshots, and delivers each action through the selected Classic or guarded
@@ -339,8 +344,12 @@ those movements and adds changed and idempotent party selection. Movement keeps
 its exact key-event receipt. Selection uses a typed receipt only after late
 validation and adapter application, never synthesizes a portrait click, and
 additionally requires the next captured state to name the requested member.
-Those linked tests establish delivery mapping and next-poll settlement, not
-Tutorial traversal. The runner deliberately does not
+Schema-3 tests preserve both inherited vocabularies, exercise the exact Classic
+`w` event through the independent and guarded semantic delivery routes, reject
+an ineligible or non-state-changing combatant, and require the requested
+member's canonical alternate-weapon-set state to flip before settlement.
+Those tests establish delivery mapping and next-poll settlement behavior, not
+real-fixture combat or Tutorial traversal. The runner deliberately does not
 compare child-reported state and save hashes. The repository deliberately
 contains no selected live Tutorial fixture. A standalone runner invocation
 therefore emits
@@ -352,11 +361,12 @@ can establish engine and save equivalence for an externally reviewed fixture.
 layer. Its closed schema-1 request explicitly pins the exact reviewed manifest
 and fixture-tree digests, manifest and source paths, physical executable,
 output slot, native-v1 movement action plan, timeout, and RNG seed and stream.
-Parallel schema-2 inspection and envelope contracts carry the new version end
-to end. The runner request and child config remain generic structural transport,
-while the equivalence boundary and native decoder close the schema-2 vocabulary
-to movement plus bounded party selection. Schema 2 uses distinct action-digest,
-engine-identity, and comparison-contract versions; unknown, mixed, or
+Parallel schema-2 and schema-3 inspection and envelope contracts carry each
+version end to end. The runner request and child config remain generic
+structural transport, while the equivalence boundary and native decoder close
+schema 2 to movement plus bounded party selection and schema 3 to those records
+plus actor-bound weapon switching. Each version uses distinct action-digest,
+engine-identity, and comparison-contract identities; unknown, mixed, or
 downgraded records fail closed. Invalid native actions and digest mismatches
 fail before private staging. The gate creates its own private
 Classic and semantic
@@ -416,6 +426,9 @@ separate trace of every value drawn. The schema-2 selection contract has
 synthetic and linked-native coverage plus the narrowly scoped private receipt
 below. That receipt does not broaden selection equivalence beyond its exact
 fixture, action plan, executable, and deterministic inputs.
+The schema-3 weapon-switch contract has synthetic and linked-native coverage
+only; it has no accepted real-engine envelope or receipt and requires a
+separately reviewed, state-changing combat fixture before one can be produced.
 
 #### Private outdoor replay receipt (2026-08-21)
 

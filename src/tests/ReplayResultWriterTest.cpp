@@ -148,9 +148,13 @@ private:
       "\"rng_seed\":\"0123456789abcdef\","
       "\"rng_stream\":\"fedcba9876543210\""
       "}";
-  return schema_version == 2U
-      ? parse_child_config_v2(json)
-      : parse_child_config_v1(json);
+  if (schema_version == 1U) {
+    return parse_child_config_v1(json);
+  }
+  if (schema_version == 2U) {
+    return parse_child_config_v2(json);
+  }
+  return parse_child_config_v3(json);
 }
 
 [[nodiscard]] ReplayCompletedResult make_result() {
@@ -214,12 +218,14 @@ void test_exact_encoding() {
   CHECK(encoded.ends_with("}\n"));
 }
 
-void test_v2_exact_encoding_and_version_binding() {
+void test_versioned_exact_encoding_and_version_binding() {
   TemporaryDirectory temporary;
   const ReplayChildConfig v1 =
       make_config(temporary.path() / "v1-result.json");
   const ReplayChildConfig v2 =
       make_config(temporary.path() / "v2-result.json", 1U, 2U);
+  const ReplayChildConfig v3 =
+      make_config(temporary.path() / "v3-result.json", 1U, 3U);
 
   ReplayCompletedResult v1_result = make_result();
   v1_result.engine_identity = "Realmz-8.1.0-native-replay-v1";
@@ -253,11 +259,32 @@ void test_v2_exact_encoding_and_version_binding() {
       "\"rng_stream\":\"fedcba9876543210\"}\n";
   CHECK(v2_encoded == expected_v2);
 
+  ReplayCompletedResult v3_result = make_result();
+  v3_result.engine_identity = "Realmz-8.1.0-native-replay-v3";
+  const std::string v3_encoded =
+      encode_replay_child_result_v3(v3, v3_result);
+  std::string expected_v3 = expected_v2;
+  expected_v3.replace(
+      expected_v3.find("\"schema_version\":2"),
+      std::string_view("\"schema_version\":2").size(),
+      "\"schema_version\":3");
+  expected_v3.replace(
+      expected_v3.find("Realmz-8.1.0-native-replay-v2"),
+      std::string_view("Realmz-8.1.0-native-replay-v2").size(),
+      "Realmz-8.1.0-native-replay-v3");
+  CHECK(v3_encoded == expected_v3);
+
   check_result_error([&] {
     static_cast<void>(encode_replay_child_result_v1(v2, v2_result));
   });
   check_result_error([&] {
     static_cast<void>(encode_replay_child_result_v2(v1, v1_result));
+  });
+  check_result_error([&] {
+    static_cast<void>(encode_replay_child_result_v3(v2, v2_result));
+  });
+  check_result_error([&] {
+    static_cast<void>(encode_replay_child_result_v2(v3, v3_result));
   });
 }
 
@@ -357,6 +384,23 @@ void test_private_exclusive_write() {
   CHECK(read_file(result_path) == expected);
 }
 
+void test_v3_private_exclusive_write() {
+  TemporaryDirectory temporary;
+  const fs::path result_path = temporary.path() / "result-v3.json";
+  const ReplayChildConfig config = make_config(result_path, 1U, 3U);
+  ReplayCompletedResult result = make_result();
+  result.engine_identity = "Realmz-8.1.0-native-replay-v3";
+  const std::string expected = encode_replay_child_result_v3(config, result);
+
+  write_replay_child_result_v3(config, result);
+  CHECK(read_file(result_path) == expected);
+  CHECK(fs::is_regular_file(result_path));
+  check_result_error([&] {
+    write_replay_child_result_v3(config, result);
+  });
+  CHECK(read_file(result_path) == expected);
+}
+
 void test_existing_special_leaves_are_not_followed() {
   {
     TemporaryDirectory temporary;
@@ -411,9 +455,10 @@ void test_failed_creation_does_not_invent_a_leaf() {
 int main() {
   try {
     test_exact_encoding();
-    test_v2_exact_encoding_and_version_binding();
+    test_versioned_exact_encoding_and_version_binding();
     test_validation();
     test_private_exclusive_write();
+    test_v3_private_exclusive_write();
     test_existing_special_leaves_are_not_followed();
     test_failed_creation_does_not_invent_a_leaf();
     std::cout << "ReplayResultWriterTest passed (" << checks_run

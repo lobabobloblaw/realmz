@@ -45,6 +45,15 @@ std::size_t checks_run = 0;
   };
 }
 
+[[nodiscard]] UIAction switch_weapon(
+    ActionSequence sequence,
+    CombatantId combatant) {
+  return UIAction{
+      .sequence = sequence,
+      .payload = SwitchWeaponSetAction{combatant},
+  };
+}
+
 [[nodiscard]] ReplayObservedEvent key_down(std::uint32_t message) {
   return ReplayObservedEvent{
       .kind = ReplayObservedEventKind::key_down,
@@ -207,6 +216,24 @@ void test_plan_validation_is_strict_and_fail_closed() {
       {selection(1, 255)}, ReplayActionVocabulary::native_v2);
   require_failed(
       invalid_v2_selection, ReplayDriverFailure::invalid_party_member);
+
+  ReplayDriver v2_switch(
+      {switch_weapon(1, 2)}, ReplayActionVocabulary::native_v2);
+  require_failed(v2_switch, ReplayDriverFailure::unsupported_action);
+
+  ReplayDriver v3_plan(
+      {selection(1, 2), switch_weapon(2, 2)},
+      ReplayActionVocabulary::native_v3);
+  CHECK(v3_plan.phase() == ReplayDriverPhase::awaiting_gameplay_poll);
+  CHECK(v3_plan.failure() == ReplayDriverFailure::none);
+
+  ReplayDriver invalid_v3_switch(
+      {switch_weapon(1, 6)}, ReplayActionVocabulary::native_v3);
+  require_failed(invalid_v3_switch, ReplayDriverFailure::invalid_combatant);
+
+  ReplayDriver unknown_vocabulary(
+      {}, static_cast<ReplayActionVocabulary>(255));
+  require_failed(unknown_vocabulary, ReplayDriverFailure::unsupported_action);
 }
 
 void test_v2_party_selection_delivery_and_settlement() {
@@ -316,6 +343,98 @@ void test_v2_party_selection_acknowledgement_fails_closed() {
   require_failed(
       without_poll,
       ReplayDriverFailure::acknowledgement_without_pending_delivery);
+}
+
+void test_v3_weapon_switch_delivery_is_actor_bound_and_exact() {
+  ReplayDriver driver(
+      {switch_weapon(1, 4)}, ReplayActionVocabulary::native_v3);
+  CHECK(driver.switch_weapon_combatant_for_action(0U) == 4);
+  CHECK(!driver.switch_weapon_combatant_for_action(1U));
+  CHECK(!driver.selected_member_for_action(0U));
+
+  const auto directive = driver.on_gameplay_poll();
+  require_initial_checkpoint(directive);
+  CHECK(directive.action != nullptr);
+  CHECK(driver.acknowledge_switch_weapon_delivery(
+      directive.action->sequence,
+      4,
+      kReplaySwitchWeaponKeyMessage,
+      key_down(kReplaySwitchWeaponKeyMessage)));
+  CHECK(driver.acknowledged_action_count() == 1U);
+
+  const auto settled = driver.on_gameplay_poll();
+  require_settled_checkpoint(settled, 0U);
+  CHECK(settled.finalize);
+}
+
+void test_v3_weapon_switch_acknowledgement_fails_closed() {
+  ReplayDriver movement_as_switch(
+      {movement(1, MovementCommand::north)},
+      ReplayActionVocabulary::native_v3);
+  CHECK(movement_as_switch.on_gameplay_poll().action != nullptr);
+  CHECK(!movement_as_switch.acknowledge_switch_weapon_delivery(
+      1, 0, kReplaySwitchWeaponKeyMessage,
+      key_down(kReplaySwitchWeaponKeyMessage)));
+  require_failed(
+      movement_as_switch, ReplayDriverFailure::delivered_action_kind_mismatch);
+
+  ReplayDriver switch_as_movement(
+      {switch_weapon(1, 0)}, ReplayActionVocabulary::native_v3);
+  CHECK(switch_as_movement.on_gameplay_poll().action != nullptr);
+  CHECK(!switch_as_movement.acknowledge_delivery(
+      1, kReplaySwitchWeaponKeyMessage,
+      key_down(kReplaySwitchWeaponKeyMessage)));
+  require_failed(
+      switch_as_movement, ReplayDriverFailure::delivered_action_kind_mismatch);
+
+  ReplayDriver wrong_sequence(
+      {switch_weapon(1, 0)}, ReplayActionVocabulary::native_v3);
+  CHECK(wrong_sequence.on_gameplay_poll().action != nullptr);
+  CHECK(!wrong_sequence.acknowledge_switch_weapon_delivery(
+      2, 0, kReplaySwitchWeaponKeyMessage,
+      key_down(kReplaySwitchWeaponKeyMessage)));
+  require_failed(
+      wrong_sequence,
+      ReplayDriverFailure::delivered_action_sequence_mismatch);
+
+  ReplayDriver wrong_combatant(
+      {switch_weapon(1, 0)}, ReplayActionVocabulary::native_v3);
+  CHECK(wrong_combatant.on_gameplay_poll().action != nullptr);
+  CHECK(!wrong_combatant.acknowledge_switch_weapon_delivery(
+      1, 1, kReplaySwitchWeaponKeyMessage,
+      key_down(kReplaySwitchWeaponKeyMessage)));
+  require_failed(
+      wrong_combatant, ReplayDriverFailure::delivered_combatant_mismatch);
+
+  ReplayDriver wrong_expected_message(
+      {switch_weapon(1, 0)}, ReplayActionVocabulary::native_v3);
+  CHECK(wrong_expected_message.on_gameplay_poll().action != nullptr);
+  CHECK(!wrong_expected_message.acknowledge_switch_weapon_delivery(
+      1, 0, 0x00000D67U, key_down(0x00000D67U)));
+  require_failed(
+      wrong_expected_message,
+      ReplayDriverFailure::expected_key_down_message_invalid);
+
+  ReplayDriver wrong_event_kind(
+      {switch_weapon(1, 0)}, ReplayActionVocabulary::native_v3);
+  CHECK(wrong_event_kind.on_gameplay_poll().action != nullptr);
+  CHECK(!wrong_event_kind.acknowledge_switch_weapon_delivery(
+      1,
+      0,
+      kReplaySwitchWeaponKeyMessage,
+      {.kind = ReplayObservedEventKind::other,
+       .message = kReplaySwitchWeaponKeyMessage}));
+  require_failed(
+      wrong_event_kind, ReplayDriverFailure::delivered_event_not_key_down);
+
+  ReplayDriver wrong_observed_message(
+      {switch_weapon(1, 0)}, ReplayActionVocabulary::native_v3);
+  CHECK(wrong_observed_message.on_gameplay_poll().action != nullptr);
+  CHECK(!wrong_observed_message.acknowledge_switch_weapon_delivery(
+      1, 0, kReplaySwitchWeaponKeyMessage, key_down(0x00000D67U)));
+  require_failed(
+      wrong_observed_message,
+      ReplayDriverFailure::delivered_event_message_mismatch);
 }
 
 void test_plan_action_limit_boundary() {
@@ -465,6 +584,8 @@ int main() {
     test_plan_validation_is_strict_and_fail_closed();
     test_v2_party_selection_delivery_and_settlement();
     test_v2_party_selection_acknowledgement_fails_closed();
+    test_v3_weapon_switch_delivery_is_actor_bound_and_exact();
+    test_v3_weapon_switch_acknowledgement_fails_closed();
     test_plan_action_limit_boundary();
     test_poll_before_acknowledgement_fails_sticky();
     test_delivery_requires_pending_exact_sequence_and_event();

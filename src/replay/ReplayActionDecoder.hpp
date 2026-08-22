@@ -36,4 +36,13 @@ public:
 [[nodiscard]] std::vector<presentation::UIAction> decode_replay_actions_v2(
     const std::vector<ReplayAction>& actions);
 
+// V3 preserves the complete v2 vocabulary and adds one combat-only relative
+// weapon-set toggle. Combatant IDs are validated in the protocol integer
+// domain before conversion to CombatantId.
+[[nodiscard]] presentation::UIAction decode_replay_action_v3(
+    const ReplayAction& action);
+
+[[nodiscard]] std::vector<presentation::UIAction> decode_replay_actions_v3(
+    const std::vector<ReplayAction>& actions);
+
 } // namespace realmz::replay

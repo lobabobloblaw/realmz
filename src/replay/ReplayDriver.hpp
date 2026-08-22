@@ -37,7 +37,13 @@ enum class ReplayCheckpointKind {
 enum class ReplayActionVocabulary {
   native_v1,
   native_v2,
+  native_v3,
 };
+
+// Exact Classic keyDown message for the relative weapon-set toggle. The
+// driver checks this independently of the route mapper so a different combat
+// command can never satisfy the typed v3 delivery receipt.
+inline constexpr std::uint32_t kReplaySwitchWeaponKeyMessage = 0x00000D77U;
 
 enum class ReplayPartySelectionDeliveryOutcome {
   changed,
@@ -87,6 +93,8 @@ enum class ReplayDriverFailure {
   delivered_event_message_mismatch,
   delivered_party_member_mismatch,
   party_selection_rejected,
+  invalid_combatant,
+  delivered_combatant_mismatch,
 };
 
 [[nodiscard]] std::string_view replay_driver_failure_name(
@@ -132,12 +140,23 @@ public:
       presentation::PartyMemberId delivered_member,
       ReplayPartySelectionDeliveryOutcome outcome) noexcept;
 
+  // Weapon switching remains a Classic keyDown handoff, but v3 carries an
+  // actor-bound receipt in addition to the exact lowercase "w" message.
+  [[nodiscard]] bool acknowledge_switch_weapon_delivery(
+      presentation::ActionSequence action_sequence,
+      presentation::CombatantId delivered_combatant,
+      std::uint32_t expected_key_down_message,
+      ReplayObservedEvent observed) noexcept;
+
   [[nodiscard]] ReplayDriverPhase phase() const noexcept;
   [[nodiscard]] ReplayDriverFailure failure() const noexcept;
   [[nodiscard]] std::size_t action_count() const noexcept;
   [[nodiscard]] std::size_t acknowledged_action_count() const noexcept;
   [[nodiscard]] std::optional<presentation::PartyMemberId>
   selected_member_for_action(std::uint32_t action_index) const noexcept;
+  [[nodiscard]] std::optional<presentation::CombatantId>
+  switch_weapon_combatant_for_action(
+      std::uint32_t action_index) const noexcept;
 
 private:
   void fail(ReplayDriverFailure failure) noexcept;

@@ -25,10 +25,14 @@ access-time metadata) and produces unreviewed mechanical fixture evidence. Its
 request pins both the reviewed manifest bytes and fixture tree, and
 `--inspect-profile` validates the exact versioned native action digest without
 staging or launching children. Schema 1 remains movement-only and byte-stable;
-schema 2 preserves those records and adds bounded party selection. A configured
-build preserves all 12 native movement commands under schema 1 and repeats them
-in schema-2 plans that also cover changed and idempotent party selection through
-both linked production routes.
+schema 2 preserves those records and adds bounded party selection; schema 3
+preserves both earlier vocabularies and adds actor-bound weapon-set switching.
+A configured build preserves all 12 native movement commands under schema 1,
+repeats them in schema-2 plans that also cover changed and idempotent party
+selection, and exercises the schema-3 switch through both linked production
+routes. Native state tests additionally require an eligible, state-changing
+combatant and the requested member's alternate-weapon-set state to flip before
+settlement.
 No private Tutorial fixture is selected in the repository, so no current CI
 result establishes real-engine equivalence. Separately reviewed private outdoor
 and first-person dungeon profiles have completed the real gate; their narrowly
@@ -42,6 +46,9 @@ remain separate acceptance work. A separate
 [schema-2 party-selection receipt](CONTENT_PROVENANCE.md#private-schema-v2-party-selection-replay-receipt-2026-08-21)
 covers changed and idempotent selection of one member on one exact private
 dungeon fixture; it establishes no movement or broader selection equivalence.
+Schema 3 has no accepted real-engine receipt; it still requires a separately
+reviewed combat fixture whose requested weapon switch can change canonical
+state.
 Follow
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md) for each private
 gate and archive its canonical envelope outside the repository.

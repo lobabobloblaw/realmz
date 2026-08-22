@@ -1,0 +1,199 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/semantic-replay-equivalence-request-v3.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "action": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "additionalProperties": false,
+              "properties": {
+                "command": {
+                  "enum": [
+                    "step_forward",
+                    "step_backward",
+                    "turn_left",
+                    "turn_right",
+                    "north",
+                    "northeast",
+                    "east",
+                    "southeast",
+                    "south",
+                    "southwest",
+                    "west",
+                    "northwest"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ],
+              "type": "object"
+            },
+            "kind": {
+              "const": "move_party"
+            },
+            "ordinal": {
+              "maximum": 4095,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "ordinal",
+            "kind",
+            "arguments"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "maximum": 5,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "member"
+              ],
+              "type": "object"
+            },
+            "kind": {
+              "const": "select_party_member"
+            },
+            "ordinal": {
+              "maximum": 4095,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "ordinal",
+            "kind",
+            "arguments"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "additionalProperties": false,
+              "properties": {
+                "combatant": {
+                  "maximum": 5,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "combatant"
+              ],
+              "type": "object"
+            },
+            "kind": {
+              "const": "switch_weapon_set"
+            },
+            "ordinal": {
+              "maximum": 4095,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "ordinal",
+            "kind",
+            "arguments"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "description": "A provenance-pinned request to stage one fixture twice, run both replay routes in isolated processes, post-attest the fixture trees, and evaluate exact semantic equivalence.",
+  "properties": {
+    "actions": {
+      "description": "Ordered native-v3 move_party, select_party_member, or switch_weapon_set actions. Every action has exactly the arguments admitted for its kind; the gate enforces zero-based contiguous ordinals and hashes the canonical array into the completed replay profile.",
+      "items": {
+        "$ref": "#/$defs/action"
+      },
+      "maxItems": 4096,
+      "type": "array"
+    },
+    "executable": {
+      "description": "Absolute, physical, normalized executable path used for both children.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "fixture_manifest_sha256": {
+      "description": "Caller-pinned SHA-256 digest of the exact reviewed manifest bytes. The gate matches it before staging and against the continuously held manifest lease before either child runs.",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    },
+    "fixture_tree_sha256": {
+      "description": "Caller-pinned canonical fixture-tree digest. The gate must match it against the continuously pinned manifest and source before staging.",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "type": "string"
+    },
+    "manifest": {
+      "description": "Absolute, physical, normalized path to an existing regular replay-fixture manifest v1 file.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "output_slot": {
+      "description": "Destination save slot. The gate enforces that it differs from the manifest's input slot.",
+      "pattern": "^[A-J](?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_seed": {
+      "description": "Deterministic 64-bit RNG seed shared by both children.",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_stream": {
+      "description": "Deterministic 64-bit RNG stream selector shared by both children.",
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 3
+    },
+    "source_root": {
+      "description": "Absolute, physical, normalized existing source tree governed by the manifest.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "timeout_seconds": {
+      "maximum": 300,
+      "minimum": 0.05,
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema_version",
+    "manifest",
+    "source_root",
+    "fixture_manifest_sha256",
+    "fixture_tree_sha256",
+    "executable",
+    "output_slot",
+    "actions",
+    "timeout_seconds",
+    "rng_seed",
+    "rng_stream"
+  ],
+  "title": "Realmz semantic replay equivalence request v3",
+  "type": "object"
+}

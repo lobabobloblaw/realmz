@@ -1,0 +1,176 @@
+{
+  "$id": "https://realmz-castle.github.io/schemas/semantic-replay-child-config-v3.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "action": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "maxLength": 1024,
+                "pattern": "^[ -~]*(?![\\s\\S])",
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "maxProperties": 32,
+          "propertyNames": {
+            "maxLength": 64,
+            "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "kind": {
+          "maxLength": 64,
+          "pattern": "^[a-z](?:[a-z0-9]|_(?=[a-z0-9]))*(?![\\s\\S])",
+          "type": "string"
+        },
+        "ordinal": {
+          "maximum": 4095,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ordinal",
+        "kind",
+        "arguments"
+      ],
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "replay_route": {
+            "const": "classic"
+          }
+        },
+        "required": [
+          "replay_route"
+        ]
+      },
+      "then": {
+        "properties": {
+          "presentation_mode": {
+            "const": "classic"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "presentation_mode": {
+            "const": "remastered"
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "description": "Private config passed to one external --semantic-replay-child process.",
+  "properties": {
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/action"
+      },
+      "maxItems": 4096,
+      "type": "array"
+    },
+    "child_nonce": {
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])",
+      "type": "string"
+    },
+    "input_slot": {
+      "pattern": "^[A-J](?![\\s\\S])",
+      "type": "string"
+    },
+    "input_slot_policy": {
+      "const": "user_data_root_only_no_bundled_fallback"
+    },
+    "output_slot": {
+      "pattern": "^[A-J](?![\\s\\S])",
+      "type": "string"
+    },
+    "output_slot_policy": {
+      "const": "fresh_nonexistent"
+    },
+    "preferences_write_policy": {
+      "const": "disabled"
+    },
+    "presentation_mode": {
+      "enum": [
+        "classic",
+        "remastered"
+      ]
+    },
+    "replay_route": {
+      "enum": [
+        "classic",
+        "semantic"
+      ]
+    },
+    "result_path": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "run_id": {
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_seed": {
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "rng_stream": {
+      "pattern": "^[0-9a-f]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 3
+    },
+    "settlement_barrier": {
+      "const": "next_semantic_gameplay_poll"
+    },
+    "user_data_root": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "user_data_root_policy": {
+      "const": "set_once_before_toolbox_init"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "child_nonce",
+    "replay_route",
+    "presentation_mode",
+    "user_data_root",
+    "user_data_root_policy",
+    "preferences_write_policy",
+    "input_slot",
+    "input_slot_policy",
+    "output_slot",
+    "output_slot_policy",
+    "actions",
+    "settlement_barrier",
+    "result_path",
+    "rng_seed",
+    "rng_stream"
+  ],
+  "title": "Realmz semantic replay child config v3",
+  "type": "object"
+}

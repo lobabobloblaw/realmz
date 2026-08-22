@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run two process-isolated semantic replay children under a strict v1/v2 protocol.
+"""Run two process-isolated semantic replay children under a strict v1/v2/v3 protocol.
 
 This is parent-orchestration infrastructure only.  Realmz recognizes
 ``--semantic-replay-child``, installs its bounded startup policies, drives the
@@ -53,7 +53,10 @@ from typing import Any, NoReturn, Sequence
 
 SCHEMA_VERSION = 1
 SCHEMA_VERSION_V2 = 2
-SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION, SCHEMA_VERSION_V2})
+SCHEMA_VERSION_V3 = 3
+SUPPORTED_SCHEMA_VERSIONS = frozenset(
+    {SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3}
+)
 CHILD_ARGUMENT = "--semantic-replay-child"
 RUNNER_SCOPE = "process_isolation_only"
 SEMANTIC_EQUIVALENCE = "not_evaluated"
@@ -334,7 +337,7 @@ def _attach_schema_version(error: BaseException, schema_version: int) -> None:
 
 def _validate_schema_version(value: object, error: Any) -> int:
     if not _is_supported_schema_version(value):
-        error("schema_version must be 1 or 2")
+        error("schema_version must be 1, 2, or 3")
     return value
 
 
@@ -1269,7 +1272,7 @@ def _parse_child_result_impl(
     request_rng_stream: str,
 ) -> dict[str, object]:
     if not _is_supported_schema_version(schema_version):
-        _result_error("child result schema_version expectation must be 1 or 2")
+        _result_error("child result schema_version expectation must be 1, 2, or 3")
     if not isinstance(value, dict):
         _result_error(f"{route} child result must be a JSON object")
     _require_fields(value, RESULT_FIELDS, f"{route} child result", _result_error)
@@ -1784,7 +1787,7 @@ def _argument_parser() -> argparse.ArgumentParser:
         "--request",
         required=True,
         type=Path,
-        help="v1 or v2 semantic replay run request JSON",
+        help="v1, v2, or v3 semantic replay run request JSON",
     )
     return parser
 

@@ -770,6 +770,8 @@ if(REALMZ_BUILD_CORE_TESTS)
         COMMAND SemanticReplayChildBootstrapTest)
     add_test(NAME SemanticReplayChildBootstrapV2Test
         COMMAND SemanticReplayChildBootstrapTest "v2")
+    add_test(NAME SemanticReplayChildBootstrapV3Test
+        COMMAND SemanticReplayChildBootstrapTest "v3")
     add_test(NAME SemanticReplayChildBootstrapUnknownVersionTest
         COMMAND SemanticReplayChildBootstrapTest "unknown-version")
 
@@ -815,6 +817,17 @@ if(REALMZ_BUILD_CORE_TESTS)
                     "${REPLAY_SURFACE_ARGUMENT}")
         endforeach()
     endforeach()
+
+    add_executable(SemanticReplaySwitchWeaponRouteIntegrationTest
+        src/tests/SemanticReplaySwitchWeaponRouteIntegrationTest.cpp)
+    target_link_libraries(SemanticReplaySwitchWeaponRouteIntegrationTest
+        PRIVATE realmz_event_test_legacy_globals)
+    realmz_configure_core_target(
+        SemanticReplaySwitchWeaponRouteIntegrationTest)
+    add_test(NAME SemanticReplayV3ClassicSwitchWeaponRouteIntegrationTest
+        COMMAND SemanticReplaySwitchWeaponRouteIntegrationTest "classic")
+    add_test(NAME SemanticReplayV3SemanticSwitchWeaponRouteIntegrationTest
+        COMMAND SemanticReplaySwitchWeaponRouteIntegrationTest "semantic")
 endif()
 
 add_executable(Realmz
@@ -858,6 +871,12 @@ if(NOT WIN32 AND REALMZ_ENABLE_APP_SANITIZERS AND
             PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(SemanticReplayRouteIntegrationTest PRIVATE
             -fsanitize=address,undefined)
+    endif()
+    if(TARGET SemanticReplaySwitchWeaponRouteIntegrationTest)
+        target_compile_options(SemanticReplaySwitchWeaponRouteIntegrationTest
+            PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(SemanticReplaySwitchWeaponRouteIntegrationTest
+            PRIVATE -fsanitize=address,undefined)
     endif()
 endif()
 

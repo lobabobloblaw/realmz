@@ -36,6 +36,12 @@ V2_SCHEMA_NAMES = (
     "semantic-replay-child-result-v2.schema.json",
     "semantic-replay-run-envelope-v2.schema.json",
 )
+V3_SCHEMA_NAMES = (
+    "semantic-replay-run-request-v3.schema.json",
+    "semantic-replay-child-config-v3.schema.json",
+    "semantic-replay-child-result-v3.schema.json",
+    "semantic-replay-run-envelope-v3.schema.json",
+)
 
 SPEC = importlib.util.spec_from_file_location("semantic_replay_runner", SCRIPT_PATH)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import guard
@@ -494,6 +500,33 @@ class ProcessIsolationTests(ReplayRunnerTestCase):
             invocations[0]["config"]["actions"], self.request["actions"]
         )
 
+    def test_v3_schema_propagates_through_config_result_and_envelope(self) -> None:
+        self.request["schema_version"] = 3
+        self.request["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "switch_weapon_set",
+                "arguments": {"combatant": 5},
+            }
+        ]
+        self.write_request()
+
+        envelope = self.run_parent()
+        invocations = self.invocations()
+
+        self.assertEqual(envelope["schema_version"], 3)
+        self.assertEqual(
+            [entry["config"]["schema_version"] for entry in invocations],
+            [3, 3],
+        )
+        self.assertEqual(
+            [result["schema_version"] for result in envelope["child_results"]],
+            [3, 3],
+        )
+        self.assertEqual(
+            invocations[0]["config"]["actions"], self.request["actions"]
+        )
+
     def test_children_may_create_root_level_working_directories(self) -> None:
         with mock.patch.dict(
             os.environ,
@@ -650,7 +683,7 @@ class ProcessIsolationTests(ReplayRunnerTestCase):
 
 class ChildFailureTests(ReplayRunnerTestCase):
     def test_child_result_schema_version_must_match_request_both_ways(self) -> None:
-        for request_version in (1, 2):
+        for request_version in (1, 2, 3):
             with self.subTest(request_version=request_version):
                 self.request["schema_version"] = request_version
                 self.write_request()
@@ -1065,30 +1098,40 @@ class RequestValidationTests(ReplayRunnerTestCase):
         )
         self.assert_request_error("duplicate JSON key: schema_version")
 
-    def test_recognized_v2_errors_are_v2_and_unknown_versions_do_not_downgrade(
+    def test_recognized_errors_keep_their_version_and_unknowns_do_not_downgrade(
         self,
     ) -> None:
-        invalid_v2 = copy.deepcopy(self.request)
-        invalid_v2["schema_version"] = 2
-        invalid_v2["actions"][0]["ordinal"] = 1
-        self.write_request(invalid_v2)
-        with self.assertRaises(runner.ReplayRunnerError) as raised_v2:
-            runner.load_request(self.request_path)
-        self.assertEqual(raised_v2.exception.schema_version, 2)
-        self.assertEqual(
-            runner._error_envelope(raised_v2.exception)["schema_version"], 2
-        )
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with mock.patch.object(sys, "stdout", stdout), mock.patch.object(
-            sys, "stderr", stderr
-        ):
-            exit_code = runner.main(["--request", str(self.request_path)])
-        self.assertEqual(exit_code, runner.EXIT_REQUEST)
-        self.assertEqual(stdout.getvalue(), "")
-        self.assertEqual(json.loads(stderr.getvalue())["schema_version"], 2)
+        for recognized_version in (2, 3):
+            with self.subTest(recognized_version=recognized_version):
+                invalid = copy.deepcopy(self.request)
+                invalid["schema_version"] = recognized_version
+                invalid["actions"][0]["ordinal"] = 1
+                self.write_request(invalid)
+                with self.assertRaises(runner.ReplayRunnerError) as raised:
+                    runner.load_request(self.request_path)
+                self.assertEqual(
+                    raised.exception.schema_version, recognized_version
+                )
+                self.assertEqual(
+                    runner._error_envelope(raised.exception)["schema_version"],
+                    recognized_version,
+                )
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+                    sys, "stderr", stderr
+                ):
+                    exit_code = runner.main(
+                        ["--request", str(self.request_path)]
+                    )
+                self.assertEqual(exit_code, runner.EXIT_REQUEST)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertEqual(
+                    json.loads(stderr.getvalue())["schema_version"],
+                    recognized_version,
+                )
 
-        for unknown_version in (True, 0, 3):
+        for unknown_version in (True, 0, 3.0, 4):
             with self.subTest(unknown_version=unknown_version):
                 unknown = copy.deepcopy(self.request)
                 unknown["schema_version"] = unknown_version
@@ -1096,7 +1139,7 @@ class RequestValidationTests(ReplayRunnerTestCase):
                 with self.assertRaises(runner.ReplayRunnerError) as raised_unknown:
                     runner.load_request(self.request_path)
                 self.assertIn(
-                    "schema_version must be 1 or 2",
+                    "schema_version must be 1, 2, or 3",
                     raised_unknown.exception.message,
                 )
                 self.assertEqual(raised_unknown.exception.schema_version, 1)
@@ -1402,12 +1445,37 @@ class SchemaContractTests(ReplayRunnerTestCase):
             result_schema["$id"],
         )
 
+    def test_all_v3_protocol_schemas_are_closed_and_cross_reference_v3(self) -> None:
+        schemas = {
+            name: json.loads((Path(__file__).with_name(name)).read_text(encoding="utf-8"))
+            for name in V3_SCHEMA_NAMES
+        }
+        for name, schema in schemas.items():
+            with self.subTest(name=name):
+                self.assertEqual(schema["properties"]["schema_version"]["const"], 3)
+                self.assertIs(schema["additionalProperties"], False)
+
+        request_schema = schemas["semantic-replay-run-request-v3.schema.json"]
+        config_schema = schemas["semantic-replay-child-config-v3.schema.json"]
+        result_schema = schemas["semantic-replay-child-result-v3.schema.json"]
+        envelope_schema = schemas["semantic-replay-run-envelope-v3.schema.json"]
+        self.assertEqual(set(request_schema["required"]), runner.REQUEST_FIELDS)
+        self.assertEqual(set(config_schema["required"]), runner.CONFIG_FIELDS)
+        self.assertEqual(set(result_schema["required"]), runner.RESULT_FIELDS)
+        self.assertEqual(set(envelope_schema["required"]), runner.ENVELOPE_FIELDS)
+        self.assertEqual(
+            envelope_schema["properties"]["child_results"]["items"]["$ref"],
+            result_schema["$id"],
+        )
+
     def test_action_schemas_match_the_runtime_action_fields(self) -> None:
         for name in (
             "semantic-replay-run-request.schema.json",
             "semantic-replay-child-config.schema.json",
             "semantic-replay-run-request-v2.schema.json",
             "semantic-replay-child-config-v2.schema.json",
+            "semantic-replay-run-request-v3.schema.json",
+            "semantic-replay-child-config-v3.schema.json",
         ):
             schema = json.loads(
                 (Path(__file__).with_name(name)).read_text(encoding="utf-8")

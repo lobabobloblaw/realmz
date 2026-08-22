@@ -65,6 +65,18 @@ void check_decode_error(Function&& function, std::string_view message) {
   };
 }
 
+[[nodiscard]] ReplayAction switch_weapon_action(
+    std::uint16_t ordinal,
+    ReplayArgumentValue combatant,
+    std::map<std::string, ReplayArgumentValue> extra = {}) {
+  extra.emplace("combatant", std::move(combatant));
+  return ReplayAction{
+      .ordinal = ordinal,
+      .kind = "switch_weapon_set",
+      .arguments = std::move(extra),
+  };
+}
+
 void test_all_movement_values() {
   constexpr std::array<std::pair<std::string_view, MovementCommand>, 12>
       cases = {{
@@ -276,6 +288,103 @@ void test_v2_selection_validation_is_exact() {
       "contiguous zero-based ordinals");
 }
 
+void test_v3_preserves_v2_and_adds_weapon_switching() {
+  const auto movement = movement_action(0, std::string("north"));
+  const auto selection = selection_action(0, std::int64_t{3});
+  CHECK(decode_replay_action_v3(movement) ==
+      decode_replay_action_v2(movement));
+  CHECK(decode_replay_action_v3(selection) ==
+      decode_replay_action_v2(selection));
+
+  for (const std::int64_t combatant : {0, 5}) {
+    const auto decoded = decode_replay_action_v3(
+        switch_weapon_action(0, combatant));
+    CHECK(decoded.sequence == 1U);
+    const auto* switch_weapon =
+        std::get_if<SwitchWeaponSetAction>(&decoded.payload);
+    CHECK(switch_weapon != nullptr);
+    CHECK(switch_weapon->combatant == combatant);
+  }
+
+  const auto mixed = decode_replay_actions_v3({
+      movement_action(0, std::string("east")),
+      selection_action(1, std::int64_t{2}),
+      switch_weapon_action(2, std::int64_t{2}),
+  });
+  CHECK(mixed.size() == 3U);
+  CHECK(std::holds_alternative<MovePartyAction>(mixed[0].payload));
+  CHECK(std::holds_alternative<SelectPartyMemberAction>(mixed[1].payload));
+  CHECK(std::holds_alternative<SwitchWeaponSetAction>(mixed[2].payload));
+
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v2(
+            switch_weapon_action(0, std::int64_t{0})));
+      },
+      "unsupported v2 action kind");
+}
+
+void test_v3_weapon_switch_validation_is_exact() {
+  for (const std::int64_t combatant : {-1, 6, 256}) {
+    check_decode_error(
+        [combatant] {
+          static_cast<void>(decode_replay_action_v3(
+              switch_weapon_action(0, combatant)));
+        },
+        "range 0..5");
+  }
+  for (const ReplayArgumentValue& combatant : {
+           ReplayArgumentValue{true},
+           ReplayArgumentValue{std::string("2")},
+       }) {
+    check_decode_error(
+        [&combatant] {
+          static_cast<void>(decode_replay_action_v3(
+              switch_weapon_action(0, combatant)));
+        },
+        "must be an integer");
+  }
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v3(ReplayAction{
+            .ordinal = 0,
+            .kind = "switch_weapon_set",
+            .arguments = {},
+        }));
+      },
+      "exactly the combatant argument");
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v3(switch_weapon_action(
+            0, std::int64_t{2}, {{"extra", false}})));
+      },
+      "exactly the combatant argument");
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v3(ReplayAction{
+            .ordinal = 0,
+            .kind = "guard_combatant",
+            .arguments = {{"combatant", std::int64_t{2}}},
+        }));
+      },
+      "unsupported v3 action kind");
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_actions_v3({
+            switch_weapon_action(1, std::int64_t{2}),
+        }));
+      },
+      "contiguous zero-based ordinals");
+  CHECK(decode_replay_action_v3(
+            switch_weapon_action(4095, std::int64_t{2})).sequence == 4096U);
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v3(
+            switch_weapon_action(4096, std::int64_t{2})));
+      },
+      "v3 4095 maximum");
+}
+
 } // namespace
 
 int main() {
@@ -285,6 +394,8 @@ int main() {
     test_complete_sequence_validation();
     test_v2_preserves_movement_and_adds_selection();
     test_v2_selection_validation_is_exact();
+    test_v3_preserves_v2_and_adds_weapon_switching();
+    test_v3_weapon_switch_validation_is_exact();
     std::cout << "ReplayActionDecoderTest passed (" << checks_run
               << " checks)\n";
     return 0;

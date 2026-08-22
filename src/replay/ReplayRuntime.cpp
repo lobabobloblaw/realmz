@@ -156,6 +156,8 @@ void ReplayRuntime::start_action_plan(
     vocabulary = ReplayActionVocabulary::native_v1;
   } else if (config_.schema_version() == 2U) {
     vocabulary = ReplayActionVocabulary::native_v2;
+  } else if (config_.schema_version() == 3U) {
+    vocabulary = ReplayActionVocabulary::native_v3;
   } else {
     throw ReplayRuntimeError("unsupported replay action vocabulary version");
   }
@@ -191,6 +193,95 @@ void ReplayRuntime::record_checkpoint(
     const ReplayCheckpoint& checkpoint,
     const ReplayStateSnapshot& snapshot) {
   ReplayStateTraceHasher& state_trace = require_state_trace();
+  ReplayDriver& driver = require_driver();
+
+  if (config_.schema_version() == 3U) {
+    std::uint32_t next_action_index = 0;
+    if (checkpoint.kind == ReplayCheckpointKind::initial) {
+      if (checkpoint.action_index) {
+        throw ReplayRuntimeError(
+            "initial replay checkpoint unexpectedly has an action index");
+      }
+    } else {
+      if (!checkpoint.action_index) {
+        throw ReplayRuntimeError(
+            "settled replay checkpoint is missing its action index");
+      }
+
+      const auto expected_member =
+          driver.selected_member_for_action(*checkpoint.action_index);
+      if (expected_member &&
+          snapshot.party.selected_member !=
+              static_cast<std::int32_t>(*expected_member)) {
+        throw ReplayRuntimeError(
+            "settled v3 party selection does not match the requested member");
+      }
+
+      const auto settled_switch =
+          driver.switch_weapon_combatant_for_action(
+              *checkpoint.action_index);
+      if (settled_switch) {
+        if (!switch_weapon_settlement_expectation_ ||
+            switch_weapon_settlement_expectation_->action_index !=
+                *checkpoint.action_index ||
+            switch_weapon_settlement_expectation_->combatant !=
+                *settled_switch) {
+          throw ReplayRuntimeError(
+              "settled v3 weapon switch has no matching precondition");
+        }
+        const auto member_index = static_cast<std::size_t>(*settled_switch);
+        if (snapshot.party.members[member_index].alternate_weapon_set !=
+            switch_weapon_settlement_expectation_
+                ->expected_alternate_weapon_set) {
+          throw ReplayRuntimeError(
+              "settled v3 weapon switch did not flip the requested member's "
+              "alternate weapon set");
+        }
+      } else if (switch_weapon_settlement_expectation_) {
+        throw ReplayRuntimeError(
+            "v3 weapon-switch settlement expectation is out of sequence");
+      }
+      next_action_index = *checkpoint.action_index + 1U;
+    }
+
+    std::optional<SwitchWeaponSettlementExpectation> next_expectation;
+    if (const auto combatant =
+            driver.switch_weapon_combatant_for_action(next_action_index)) {
+      if (*combatant < 0 ||
+          static_cast<std::size_t>(*combatant) >= kReplayPartyMemberCount) {
+        throw ReplayRuntimeError(
+            "v3 weapon switch combatant is outside the party range");
+      }
+      const auto member_index = static_cast<std::size_t>(*combatant);
+      const auto& member = snapshot.party.members[member_index];
+      if (!snapshot.combat.active || snapshot.combat.monster_turn ||
+          snapshot.combat.active_party_member != *combatant ||
+          !member.occupied || member.stamina <= 0) {
+        throw ReplayRuntimeError(
+            "v3 weapon switch requires the requested active party combatant");
+      }
+      if (!member.alternate_weapon_set && member.equipment[15] == 0) {
+        throw ReplayRuntimeError(
+            "v3 weapon switch requires a state-changing alternate weapon "
+            "set");
+      }
+      next_expectation = SwitchWeaponSettlementExpectation{
+          .action_index = next_action_index,
+          .combatant = *combatant,
+          .expected_alternate_weapon_set =
+              !member.alternate_weapon_set,
+      };
+    }
+
+    if (checkpoint.kind == ReplayCheckpointKind::initial) {
+      state_trace.append_initial(snapshot);
+    } else {
+      state_trace.append_post_action(*checkpoint.action_index, snapshot);
+    }
+    switch_weapon_settlement_expectation_ = next_expectation;
+    return;
+  }
+
   if (checkpoint.kind == ReplayCheckpointKind::initial) {
     if (checkpoint.action_index) {
       throw ReplayRuntimeError(
@@ -205,7 +296,7 @@ void ReplayRuntime::record_checkpoint(
   }
   if (config_.schema_version() == 2U) {
     const auto expected_member =
-        require_driver().selected_member_for_action(
+        driver.selected_member_for_action(
             *checkpoint.action_index);
     if (expected_member &&
         snapshot.party.selected_member !=
@@ -239,6 +330,23 @@ void ReplayRuntime::acknowledge_party_selection_delivery(
           action_sequence, delivered_member, outcome)) {
     throw ReplayRuntimeError(
         "replay party-selection delivery failed: " +
+        std::string(replay_driver_failure_name(driver.failure())));
+  }
+}
+
+void ReplayRuntime::acknowledge_switch_weapon_delivery(
+    presentation::ActionSequence action_sequence,
+    presentation::CombatantId delivered_combatant,
+    std::uint32_t expected_key_down_message,
+    ReplayObservedEvent observed) {
+  ReplayDriver& driver = require_driver();
+  if (!driver.acknowledge_switch_weapon_delivery(
+          action_sequence,
+          delivered_combatant,
+          expected_key_down_message,
+          observed)) {
+    throw ReplayRuntimeError(
+        "replay weapon-switch delivery failed: " +
         std::string(replay_driver_failure_name(driver.failure())));
   }
 }

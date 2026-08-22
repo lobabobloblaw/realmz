@@ -1083,15 +1083,15 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must separate its Classic and scoped polls");
   require(count_identifier(semantic_wrapper, "app1Evt") == 22,
       "semantic gameplay wrapper must recognize all twenty-two tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 21 &&
+  require(count_identifier(semantic_wrapper, "keyDown") == 22 &&
           count_text(compact_semantic, "ret->what=keyDown;") == 20 &&
-          compact_semantic.contains(
-              ".kind=(ret->what==keyDown)"),
+          count_text(
+              compact_semantic, ".kind=(ret->what==keyDown)") == 2,
       "only guarded Classic replay injection or late movement, inventory, "
       "spellbook, guard, finish, delay, center, switch-weapon, cycle-focus, "
       "combat-items, Auto, Range, Bandage, Undo, combat-spellbook, "
       "combat-targeting, Escape, scroll-case, or center-cursor validation may "
-      "produce keyDown, followed by one replay delivery observation");
+      "produce keyDown, followed by typed replay delivery observations");
   require(count_identifier(semantic_wrapper, "mouseDown") == 2,
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&

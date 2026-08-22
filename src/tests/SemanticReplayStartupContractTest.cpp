@@ -117,24 +117,29 @@ void verify_early_child_dispatch(const fs::path& root) {
       run_body.find("decode_replay_actions_v1");
   const std::size_t decode_v2 =
       run_body.find("decode_replay_actions_v2");
+  const std::size_t decode_v3 =
+      run_body.find("decode_replay_actions_v3");
   const std::size_t start = run_body.find("start_action_plan");
   const std::size_t load = run_body.find("RealmzReplayLoadSlot");
   const std::size_t enter = run_body.find("RealmzReplayEnterLoadedGame");
   require(decode_v1 != std::string_view::npos &&
           decode_v2 != std::string_view::npos &&
+          decode_v3 != std::string_view::npos &&
           start != std::string_view::npos &&
           load != std::string_view::npos &&
           enter != std::string_view::npos &&
-          decode_v1 < start && decode_v2 < start &&
+          decode_v1 < start && decode_v2 < start && decode_v3 < start &&
           start < load && load < enter,
       "action preflight must precede explicit load and loaded-game entry");
   require(run_body.find("schema_version() == 1U") !=
               std::string_view::npos &&
           run_body.find("schema_version() == 2U") !=
               std::string_view::npos &&
+          run_body.find("schema_version() == 3U") !=
+              std::string_view::npos &&
           run_body.find("ReplayActionDecodeError") !=
               std::string_view::npos,
-      "native action startup must bind v1/v2 explicitly and reject unknown versions");
+      "native action startup must bind v1/v2/v3 explicitly and reject unknown versions");
   require(run_body.find("REALMZ_SEMANTIC_REPLAY_ACTION_ERROR_EXIT") !=
               std::string_view::npos &&
           run_body.find("REALMZ_SEMANTIC_REPLAY_EXECUTION_ERROR_EXIT") !=
@@ -153,14 +158,17 @@ void verify_early_child_dispatch(const fs::path& root) {
       completion_body.find("write_replay_child_result_v1(config, result)");
   const std::size_t publish_v2 =
       completion_body.find("write_replay_child_result_v2(config, result)");
+  const std::size_t publish_v3 =
+      completion_body.find("write_replay_child_result_v3(config, result)");
   require(completion_body.find("complete_replay") != std::string_view::npos &&
           recheck != std::string_view::npos &&
           save != std::string_view::npos &&
           verify != std::string_view::npos &&
           publish_v1 != std::string_view::npos &&
           publish_v2 != std::string_view::npos &&
+          publish_v3 != std::string_view::npos &&
           recheck < save && save < verify &&
-          verify < publish_v1 && verify < publish_v2,
+          verify < publish_v1 && verify < publish_v2 && verify < publish_v3,
       "completion must recheck freshness, save, verify, and publish in order");
 
   const std::string_view identity_body = function_body(
@@ -169,13 +177,17 @@ void verify_early_child_dispatch(const fs::path& root) {
               std::string_view::npos &&
           identity_body.find("schema_version == 2U") !=
               std::string_view::npos &&
+          identity_body.find("schema_version == 3U") !=
+              std::string_view::npos &&
           identity_body.find("ReplayConfigError") !=
               std::string_view::npos &&
           child_source.find("Realmz-8.1.0-native-replay-v1") !=
               std::string::npos &&
           child_source.find("Realmz-8.1.0-native-replay-v2") !=
+              std::string::npos &&
+          child_source.find("Realmz-8.1.0-native-replay-v3") !=
               std::string::npos,
-      "engine identity must remain exact for v1, use v2 explicitly, and reject unknown versions");
+      "engine identity must remain exact for v1/v2, use v3 explicitly, and reject unknown versions");
 }
 
 void verify_isolated_file_policy(const fs::path& root) {

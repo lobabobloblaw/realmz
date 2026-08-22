@@ -1082,8 +1082,8 @@ ReplayChildConfig parse_child_config(std::string_view json) {
 
   const std::int64_t schema_version = as_integer(
       field(object, "schema_version", "child config"), "schema_version");
-  if (schema_version != 1 && schema_version != 2) {
-    config_error("schema_version must be 1 or 2");
+  if (schema_version != 1 && schema_version != 2 && schema_version != 3) {
+    config_error("schema_version must be 1, 2, or 3");
   }
 
   auto storage = std::make_shared<ReplayChildConfig::Storage>();
@@ -1145,12 +1145,24 @@ ReplayChildConfig parse_child_config_v2(std::string_view json) {
   return config;
 }
 
+ReplayChildConfig parse_child_config_v3(std::string_view json) {
+  ReplayChildConfig config = parse_child_config(json);
+  if (config.schema_version() != 3U) {
+    config_error("schema_version must be 3");
+  }
+  return config;
+}
+
 ReplayChildConfig load_child_config_v1(const std::filesystem::path& path) {
   return parse_child_config_v1(read_config_file(path));
 }
 
 ReplayChildConfig load_child_config_v2(const std::filesystem::path& path) {
   return parse_child_config_v2(read_config_file(path));
+}
+
+ReplayChildConfig load_child_config_v3(const std::filesystem::path& path) {
+  return parse_child_config_v3(read_config_file(path));
 }
 
 ReplayChildConfig load_child_config(const std::filesystem::path& path) {
