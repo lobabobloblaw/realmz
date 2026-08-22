@@ -43,6 +43,13 @@ uint8_t RealmzIsSemanticOpenCharacterSheetTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenCharacterSheetTagSurface(
     uint32_t tagged_message);
 
+// Selected-item drilldown tags carry only the exact selected member and the
+// originating world surface. The preserved outer loop owns the real Show Item
+// control and every subsequent Classic item interaction.
+uint8_t RealmzIsSemanticSelectedItemDrilldownTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticSelectedItemDrilldownTagSurface(
+    uint32_t tagged_message);
+
 // Open-inventory tags carry the selected member explicitly. This keeps a
 // queued action from silently retargeting if selection changes before the
 // guarded top-level loop receives it.
@@ -252,6 +259,14 @@ uint8_t RealmzConsumeSemanticPartySelectionEvent(
 // semantic scope ends, then returns that stable member ID. EventManager stages
 // it for a one-shot take by the preserved world loop; no modal runs here.
 uint8_t RealmzConsumeSemanticOpenCharacterSheetEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint8_t* party_member);
+
+// Revalidates the exact adaptive world presentation and selected member after
+// the semantic scope ends, then returns that member for a neutral one-shot
+// app1Evt handoff to Classic's existing Show Item buttonchoice path.
+uint8_t RealmzConsumeSemanticSelectedItemDrilldownEvent(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tagged_message,
     uint8_t* party_member);
@@ -485,6 +500,10 @@ struct ContextualOverviewAction;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_open_character_sheet_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_selected_item_drilldown_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept;
 

@@ -502,15 +502,15 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 45
-`semantic_complete`, and 44 `missing` roles. Cropping remains disabled. The
+The 95-row inventory currently contains six `retained_in_crop`, 47
+`semantic_complete`, and 42 `missing` roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Heal, context-sensitive Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
-| Dungeon | The corresponding dungeon Heal, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Outdoor | Heal, context-sensitive Shop/Temple/seamless-encounter entry, Trade, Money/Swap, selected-member condition drilldown, and per-member Auto. Character Sheet and the distinct quick Equipment popup are covered interaction rows, not evidence for any broader inspection role. |
+| Dungeon | The corresponding dungeon Heal, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, condition drilldown, and per-member Auto, including dungeon-specific availability and input semantics. Character Sheet and quick Equipment remain distinct covered rows. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -697,6 +697,7 @@ Automated checks do not replace these release decisions:
   rather than a partial crop. Archive the inventory, captures, failure evidence,
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
+  Equipment,
   Spells, non-combat Use Scroll, Character, Save, Load, Rest, Camp/Break Camp,
   Search/Stop Search, Torch, Area Search/Make Scroll,
   Guard, Finish, Delay, Center,
@@ -715,6 +716,21 @@ Automated checks do not replace these release decisions:
   Load actions after leaving their gameplay surface; verify Character is inert
   after selection, member, or surface changes and otherwise reaches only the
   existing Classic character-sheet path through the neutral one-shot handoff;
+  close the private manual-QA gap for EQUIPMENT on disposable outdoor and
+  dungeon fixtures, including dungeon map and first-person presentations.
+  Confirm it is adjacent to and distinct from full ITEMS, binds the selected
+  member in `OpenSelectedItemDrilldownAction`, and accepts only strict
+  `0x5349SSMM` tags with outdoor `SS=0x01` or dungeon `SS=0x02` and
+  `MM=0x00..0x05`. Queue actions made stale by scope, surface, adaptive
+  eligibility, presentation, selection, or member changes and confirm they are
+  inert. For each accepted pointer and keyboard activation, verify exactly one
+  neutral `app1Evt` with zero modifiers stages the same member without forged
+  key or pointer input and without a held-mouse gate. Confirm the matching
+  outer loop selects the real `showitembut` and the preserved `buttonchoice` /
+  `showcondition` popup alone owns browsing and every `wear` or `removeitem`
+  mutation. Confirm replay schemas and decoders expose no Equipment vocabulary,
+  keep all fixture data and resulting evidence private, and do not redistribute
+  them;
   verify Rest is unavailable outside camp; becomes inert after its semantic
   scope, surface, adaptive eligibility, presentation, or fresh camp state
   changes; yields the exact Classic `r` message only after every late gate;

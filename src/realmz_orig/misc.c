@@ -2101,6 +2101,7 @@ over:
 
         case (app1Evt): {
           uint8_t semantic_character_member = 0;
+          uint8_t semantic_selected_item_member = 0;
           uint8_t semantic_desired_searching = 0;
           uint8_t semantic_torch_member = 0;
           uint8_t semantic_torch_slot = 0;
@@ -2114,6 +2115,16 @@ over:
               (charmainbut != NIL)) {
             point.v = 51 * (short)semantic_character_member;
             theControl = charmainbut;
+            reply = 0;
+            goto goback2;
+          }
+          if (TakeSemanticSelectedItemDrilldownMember(
+                  &semantic_selected_item_member) &&
+              (maximum_member >= 0) && (maximum_member <= 5) &&
+              ((int)semantic_selected_item_member <= maximum_member) &&
+              ((int)charselectnew == (int)semantic_selected_item_member) &&
+              (showitembut != NIL)) {
+            theControl = showitembut;
             reply = 0;
             goto goback2;
           }

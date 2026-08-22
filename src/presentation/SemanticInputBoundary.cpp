@@ -22,6 +22,12 @@ constexpr uint32_t kSemanticOpenCharacterSheetSignature = 0x43530000U;
 constexpr uint32_t kSemanticOpenCharacterSheetMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenCharacterSheetSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenCharacterSheetMemberMask = 0x000000FFU;
+constexpr uint32_t kSemanticSelectedItemDrilldownSignature = 0x53490000U;
+constexpr uint32_t kSemanticSelectedItemDrilldownMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticSelectedItemDrilldownSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticSelectedItemDrilldownMemberMask = 0x000000FFU;
+constexpr realmz::presentation::PartyMemberId
+    kMaximumSelectedItemDrilldownMember = 5;
 constexpr uint32_t kSemanticOpenInventorySignature = 0x52490000U;
 constexpr uint32_t kSemanticOpenInventoryMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenInventorySurfaceMask = 0x0000FF00U;
@@ -154,6 +160,11 @@ struct DecodedPartySelection {
 };
 
 struct DecodedOpenCharacterSheet {
+  realmz::presentation::PartyMemberId member;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedSelectedItemDrilldown {
   realmz::presentation::PartyMemberId member;
   RealmzSemanticInputSurface surface;
 };
@@ -355,6 +366,26 @@ std::optional<DecodedOpenCharacterSheet> decode_open_character_sheet(
   return DecodedOpenCharacterSheet{
       .member = static_cast<realmz::presentation::PartyMemberId>(
           tagged_message & kSemanticOpenCharacterSheetMemberMask),
+      .surface = surface_value,
+  };
+}
+
+std::optional<DecodedSelectedItemDrilldown> decode_selected_item_drilldown(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticSelectedItemDrilldownMask) !=
+      kSemanticSelectedItemDrilldownSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticSelectedItemDrilldownSurfaceMask) >> 8U;
+  const auto member = static_cast<realmz::presentation::PartyMemberId>(
+      tagged_message & kSemanticSelectedItemDrilldownMemberMask);
+  if (!is_world_gameplay_surface(surface_value) ||
+      (member > kMaximumSelectedItemDrilldownMember)) {
+    return std::nullopt;
+  }
+  return DecodedSelectedItemDrilldown{
+      .member = member,
       .surface = surface_value,
   };
 }
@@ -890,6 +921,20 @@ realmz::presentation::ScreenContext screen_for_surface(
   }
 }
 
+bool world_presentation_matches_surface(
+    RealmzSemanticInputSurface surface,
+    realmz::presentation::WorldPresentation presentation) noexcept {
+  using realmz::presentation::WorldPresentation;
+  if (surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) {
+    return presentation == WorldPresentation::outdoor;
+  }
+  if (surface == REALMZ_SEMANTIC_INPUT_DUNGEON) {
+    return (presentation == WorldPresentation::dungeon_map) ||
+        (presentation == WorldPresentation::dungeon_first_person);
+  }
+  return false;
+}
+
 using CombatantSnapshotValidator = bool (*)(
     const realmz::presentation::GameSnapshot&,
     realmz::presentation::CombatantId) noexcept;
@@ -1068,6 +1113,18 @@ uint32_t semantic_open_character_sheet_tag(
     return 0;
   }
   return kSemanticOpenCharacterSheetSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(member);
+}
+
+uint32_t semantic_selected_item_drilldown_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_world_gameplay_surface(surface) ||
+      (member > kMaximumSelectedItemDrilldownMember)) {
+    return 0;
+  }
+  return kSemanticSelectedItemDrilldownSignature |
       (static_cast<uint32_t>(surface) << 8U) |
       static_cast<uint32_t>(member);
 }
@@ -1489,6 +1546,17 @@ RealmzSemanticOpenCharacterSheetTagSurface(uint32_t tagged_message) {
       : kNoSemanticInputSurface;
 }
 
+extern "C" uint8_t RealmzIsSemanticSelectedItemDrilldownTag(
+    uint32_t tagged_message) {
+  return decode_selected_item_drilldown(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticSelectedItemDrilldownTagSurface(uint32_t tagged_message) {
+  const auto drilldown = decode_selected_item_drilldown(tagged_message);
+  return drilldown ? drilldown->surface : kNoSemanticInputSurface;
+}
+
 extern "C" uint8_t RealmzIsSemanticOpenInventoryTag(
     uint32_t tagged_message) {
   return decode_open_inventory(tagged_message).has_value() ? 1 : 0;
@@ -1822,6 +1890,7 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
   return (decode_movement(tagged_message) ||
           decode_party_selection(tagged_message) ||
           decode_open_character_sheet(tagged_message) ||
+          decode_selected_item_drilldown(tagged_message) ||
           decode_open_inventory(tagged_message) ||
           decode_open_spellbook(tagged_message) ||
           decode_open_scroll_case(tagged_message) ||
@@ -1863,6 +1932,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   if (const auto character_sheet =
           decode_open_character_sheet(tagged_message)) {
     return character_sheet->surface;
+  }
+  if (const auto drilldown = decode_selected_item_drilldown(tagged_message)) {
+    return drilldown->surface;
   }
   if (const auto inventory = decode_open_inventory(tagged_message)) {
     return inventory->surface;
@@ -2063,6 +2135,44 @@ extern "C" uint8_t RealmzConsumeSemanticOpenCharacterSheetEvent(
       return 0;
     }
     *party_member = character_sheet->member;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticSelectedItemDrilldownEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint8_t* party_member) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!party_member || !authorized) {
+    return 0;
+  }
+  const auto drilldown = decode_selected_item_drilldown(tagged_message);
+  if (!drilldown || (drilldown->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    const auto* member = snapshot.party.member(drilldown->member);
+    if ((snapshot.screen != screen) ||
+        !world_presentation_matches_surface(
+            expected_surface, snapshot.world.presentation) ||
+        !member || !member->selected ||
+        (snapshot.party.selected_member != drilldown->member)) {
+      return 0;
+    }
+    *party_member = drilldown->member;
     return 1;
   } catch (...) {
     return 0;

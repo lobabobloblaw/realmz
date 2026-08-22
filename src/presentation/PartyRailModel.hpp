@@ -140,6 +140,7 @@ enum class ActionIntent {
   set_search_state,
   use_torch,
   contextual_overview,
+  selected_item_drilldown,
 };
 
 // "deferred_to_engine" means that the snapshot satisfies the prerequisites

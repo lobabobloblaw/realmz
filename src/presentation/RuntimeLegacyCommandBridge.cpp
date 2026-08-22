@@ -911,6 +911,39 @@ LegacyActionHandlers make_handlers(
     }
     return DispatchResult::handled();
   };
+  handlers.open_selected_item_drilldown = [
+      context_provider,
+      open_selected_item_drilldown_sink =
+          std::move(world_action_sinks.open_selected_item_drilldown)](
+          const OpenSelectedItemDrilldownAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!open_selected_item_drilldown_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy selected-item-drilldown sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic selected-item "
+          "drilldown");
+    }
+    if ((action.member > kMaximumPartyMemberId) ||
+        !runtime_legacy_context_supports_selected_item_drilldown(context)) {
+      return DispatchResult::rejected(
+          "Opening the selected-item drilldown is not supported for this "
+          "party member in the current legacy context");
+    }
+    if (!open_selected_item_drilldown_sink(action.member, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic selected-item-drilldown "
+          "action");
+    }
+    return DispatchResult::handled();
+  };
   handlers.contextual_overview = [
       context_provider = std::move(context_provider),
       contextual_overview_sink =
@@ -1287,6 +1320,21 @@ std::optional<uint32_t> legacy_key_message_for_open_scroll_case(
 }
 
 bool runtime_legacy_context_supports_open_character_sheet(
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible) {
+    return false;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return true;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  return (context.screen == ScreenContext::dungeon) && dungeon_presentation;
+}
+
+bool runtime_legacy_context_supports_selected_item_drilldown(
     const RuntimeLegacyCommandContext& context) noexcept {
   if (!context.adaptive_eligible) {
     return false;

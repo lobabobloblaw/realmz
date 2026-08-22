@@ -23,9 +23,9 @@ cards dispatch typed, idempotent
 selecting the active member never emulates the Classic second click that opens
 the character modal. World commands are organized into persistent, directly
 selectable **Travel**, **Party**, and **Game** pages so every target keeps the
-44-point minimum at the 1024×768 floor. Party contains Items, Spells, Scroll,
-and Character; Game contains Save, Load, and Rest. Selecting the current page
-is an idempotent presentation action.
+44-point minimum at the 1024×768 floor. Party contains Items, Equipment,
+Spells, Scroll, and Character; Game contains Save, Load, and Rest. Selecting
+the current page is an idempotent presentation action.
 A code-native Items control carries the selected member in
 a typed `OpenInventoryAction`. A neighboring Spells control is available only
 for a conscious selected member with spell points and carries that member in a
@@ -52,6 +52,20 @@ revalidates both Classic selection variables and enters the existing
 `charmainbut`/`buttonchoice` path. No mouse click, dungeon key shortcut, or
 synchronous modal call is forged. Classic remains authoritative for the sheet,
 all browsing, and every nested modal.
+The adjacent EQUIPMENT control carries the same selected member in a distinct
+`OpenSelectedItemDrilldownAction`. It opens Classic's quick equip/unequip popup;
+it is not the full ITEMS inventory flow. Its strict one-shot `0x5349SSMM` tag
+uses `SS=0x01` for outdoor or `SS=0x02` for dungeon and bounds `MM` to member
+`0x00..0x05`. After the semantic scope completes, fresh adaptive screen,
+outdoor or dungeon map/first-person presentation, and exact selected-member
+checks must still pass. EventManager then retains a neutral `app1Evt`, zeroes
+its message, pointer fields, and modifiers, and stages that member once. No key
+or pointer is forged and no held-mouse gate applies. The matching outdoor or
+dungeon loop alone selects the real `showitembut` before entering preserved
+`buttonchoice`; Classic `showcondition` owns popup browsing and every
+`wear`/`removeitem` mutation. The route adds no replay vocabulary. Automated
+tests do not replace private, no-redistribution manual QA on disposable outdoor
+and dungeon fixtures.
 The member-free `RestPartyAction` is available only while the party is already
 in camp. Its single-use tag is late-validated against the completed semantic
 scope and freshly captured Legacy and snapshot state: adaptive eligibility,
@@ -279,12 +293,13 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 45 are `semantic_complete`, and 44 remain `missing`, so
+`retained_in_crop`, 47 are `semantic_complete`, and 42 remain `missing`, so
 cropping stays disabled. Known missing outdoor and dungeon roles include Heal,
 context-sensitive Shop/Temple/seamless-encounter entry,
-Trade, Money/Swap, active-member inspection, item and
-condition drilldowns, and the per-member Auto controls. Known missing combat
-roles include conditional Turn Undead, per-member Auto, and the distinct
+Trade, Money/Swap, selected-member condition drilldowns, and the per-member
+Auto controls. Character Sheet and the distinct quick Equipment popup are
+covered interaction rows; neither implies a broader inspection role. Known
+missing combat roles include conditional Turn Undead, per-member Auto, and the distinct
 focused-combatant inspection controls for character or monster details, items,
 conditions, and monster attacks. Information gaps include ordered capture and
 retention of Classic messages for Event Log; pooled money and fatigue;

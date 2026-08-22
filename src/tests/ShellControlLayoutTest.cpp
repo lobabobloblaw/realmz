@@ -308,6 +308,117 @@ void test_open_inventory_control() {
   }).empty());
 }
 
+void test_selected_item_drilldown_control_is_typed_and_fail_closed() {
+  const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
+  for (const auto& request : {
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .selected_item_drilldown_member = PartyMemberId{2},
+               .selected_item_drilldown_available = true,
+           },
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .selected_item_drilldown_member = PartyMemberId{2},
+               .selected_item_drilldown_available = true,
+           },
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::dungeon_first_person,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .selected_item_drilldown_member = PartyMemberId{2},
+               .selected_item_drilldown_available = true,
+           },
+       }) {
+    const auto controls = compute_shell_control_layout(request);
+    CHECK(controls.size() == 4U);
+    verify_world_tabs(controls, panel, WorldActionPage::party);
+    const auto& drilldown = controls.back();
+    CHECK(drilldown.region.value == 1128U);
+    CHECK(drilldown.kind == ShellControlKind::selected_item_drilldown);
+    CHECK(drilldown.label == "EQUIPMENT");
+    CHECK(drilldown.accessibility_label ==
+        "Open selected party member equipment menu");
+    CHECK(drilldown.focus_identifier == "focus.action.items.quick");
+    CHECK(drilldown.tab_order == 1101);
+    CHECK(drilldown.enabled);
+    CHECK(action_name(drilldown.payload) ==
+        "open_selected_item_drilldown");
+    CHECK(std::holds_alternative<OpenSelectedItemDrilldownAction>(
+        drilldown.payload));
+    CHECK(std::get<OpenSelectedItemDrilldownAction>(
+        drilldown.payload).member == 2);
+    CHECK(panel.contains(drilldown.bounds));
+    CHECK(drilldown.bounds.width >= 44.0);
+    CHECK(drilldown.bounds.height >= 44.0);
+  }
+
+  const auto disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .selected_item_drilldown_member = PartyMemberId{4},
+      .selected_item_drilldown_available = false,
+  });
+  CHECK(disabled.size() == 4U);
+  CHECK(disabled.back().kind == ShellControlKind::selected_item_drilldown);
+  CHECK(!disabled.back().enabled);
+  CHECK(std::get<OpenSelectedItemDrilldownAction>(
+      disabled.back().payload).member == 4);
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .selected_item_drilldown_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .selected_item_drilldown_member = PartyMemberId{6},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = false,
+      .selected_item_drilldown_member = PartyMemberId{2},
+      .selected_item_drilldown_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .inventory_member = PartyMemberId{2},
+      .selected_item_drilldown_member = PartyMemberId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .selected_item_drilldown_member = PartyMemberId{2},
+  }).empty());
+}
+
 void test_open_scroll_case_control_is_distinct_and_visible_when_disabled() {
   const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
   for (const auto& request : {
@@ -514,6 +625,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .contextual_overview_available = true,
                  .contextual_overview_mode =
                      ContextualOverviewMode::area_search,
+                 .selected_item_drilldown_member = PartyMemberId{2},
+                 .selected_item_drilldown_available = true,
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -547,6 +660,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .contextual_overview_available = true,
                  .contextual_overview_mode =
                      ContextualOverviewMode::area_search,
+                 .selected_item_drilldown_member = PartyMemberId{2},
+                 .selected_item_drilldown_available = true,
              },
          }) {
       std::array<std::vector<ShellControlPlacement>, 3> layouts;
@@ -555,7 +670,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
         layouts[page_index] = compute_shell_control_layout(request);
         const size_t action_count = page_index == 0U
             ? (request.screen == ScreenContext::exploration ? 8U : 4U)
-            : (page_index == 1U ? 4U : 7U);
+            : (page_index == 1U ? 5U : 7U);
         CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
         verify_world_tabs(
             layouts[page_index], panel, kWorldPages[page_index]);
@@ -579,9 +694,10 @@ void test_world_action_controls_at_combined_minimum_layout() {
 
       const auto& party = layouts[1];
       const auto& inventory = party[3];
-      const auto& spellbook = party[4];
-      const auto& scroll = party[5];
-      const auto& character = party[6];
+      const auto& drilldown = party[4];
+      const auto& spellbook = party[5];
+      const auto& scroll = party[6];
+      const auto& character = party[7];
       CHECK(inventory.region.value == 1100U);
       CHECK(inventory.kind == ShellControlKind::open_inventory);
       CHECK(inventory.label == "ITEMS");
@@ -590,12 +706,22 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(inventory.tab_order == 1100);
       CHECK(inventory.enabled);
       CHECK(inventory.payload == UIActionPayload{OpenInventoryAction{2}});
+      CHECK(drilldown.region.value == 1128U);
+      CHECK(drilldown.kind == ShellControlKind::selected_item_drilldown);
+      CHECK(drilldown.label == "EQUIPMENT");
+      CHECK(drilldown.accessibility_label ==
+          "Open selected party member equipment menu");
+      CHECK(drilldown.focus_identifier == "focus.action.items.quick");
+      CHECK(drilldown.tab_order == 1101);
+      CHECK(drilldown.enabled);
+      CHECK(drilldown.payload ==
+          UIActionPayload{OpenSelectedItemDrilldownAction{2}});
       CHECK(spellbook.region.value == 1101U);
       CHECK(spellbook.kind == ShellControlKind::open_spellbook);
       CHECK(spellbook.label == "SPELLS");
       CHECK(spellbook.accessibility_label == "Cast spell");
       CHECK(spellbook.focus_identifier == "focus.action.spellbook.open");
-      CHECK(spellbook.tab_order == 1101);
+      CHECK(spellbook.tab_order == 1102);
       CHECK(spellbook.enabled);
       CHECK(spellbook.payload == UIActionPayload{OpenSpellbookAction{2}});
       CHECK(scroll.region.value == 1108U);
@@ -2012,6 +2138,7 @@ int main() {
     test_canonical_sizes();
     test_payload_order_and_disabled_state();
     test_open_inventory_control();
+    test_selected_item_drilldown_control_is_typed_and_fail_closed();
     test_open_scroll_case_control_is_distinct_and_visible_when_disabled();
     test_open_character_sheet_control_is_the_fourth_party_action();
     test_world_action_controls_at_combined_minimum_layout();

@@ -1668,6 +1668,28 @@ void WindowManager::create_sdl_window() {
                         semantic_contextual_overview_tag(action, surface);
                     return tag && PushSemanticContextualOverviewEvent(tag);
                   },
+              .open_selected_item_drilldown =
+                  [](realmz::presentation::PartyMemberId member,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    if (!matching_surface || !realmz::presentation::
+                            runtime_legacy_context_supports_selected_item_drilldown(
+                                context)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_selected_item_drilldown_tag(member, surface);
+                    return tag &&
+                        PushSemanticSelectedItemDrilldownEvent(tag);
+                  },
           },
           realmz::presentation::RuntimeLegacyCombatActionSinks{
               .guard_combatant =
@@ -2946,6 +2968,12 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::open_inventory;
         });
+    const bool has_semantic_selected_item_drilldown = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind == realmz::presentation::ShellControlKind::
+              selected_item_drilldown;
+        });
     const bool has_semantic_spellbook = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -3133,6 +3161,9 @@ void draw_shell_panel_contents(
       if (has_semantic_inventory) {
         action_summary += " · ITEMS";
       }
+      if (has_semantic_selected_item_drilldown) {
+        action_summary += " · EQUIPMENT";
+      }
       if (has_semantic_spellbook) {
         action_summary += " · SPELLS";
       }
@@ -3234,6 +3265,8 @@ void draw_shell_panel_contents(
                 realmz::presentation::ShellControlKind::movement) &&
             (control.kind !=
                 realmz::presentation::ShellControlKind::open_inventory) &&
+            (control.kind != realmz::presentation::ShellControlKind::
+                    selected_item_drilldown) &&
             (control.kind != realmz::presentation::ShellControlKind::
                     open_character_sheet) &&
             (control.kind !=
@@ -3899,6 +3932,39 @@ void WindowManager::present_remastered_frame() {
           (inventory_action != shell_model->actions.end()) &&
           inventory_action->can_invoke() && snapshot_context_matches &&
           legacy_context.adaptive_eligible != 0;
+      const auto selected_item_drilldown_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent == realmz::presentation::
+                ActionIntent::selected_item_drilldown;
+          });
+      const std::optional<realmz::presentation::PartyMemberId>
+          selected_item_drilldown_member =
+              (world_action_surface &&
+                  (selected_item_drilldown_action !=
+                      shell_model->actions.end()))
+              ? selected_item_drilldown_action->party_member
+              : std::nullopt;
+      const auto* selected_item_drilldown_member_view =
+          selected_item_drilldown_member
+          ? snapshot.party.member(*selected_item_drilldown_member)
+          : nullptr;
+      const bool selected_item_drilldown_available =
+          selected_item_drilldown_member &&
+          *selected_item_drilldown_member <= 5U &&
+          selected_item_drilldown_member_view &&
+          selected_item_drilldown_member_view->selected &&
+          snapshot.party.selected_member ==
+              *selected_item_drilldown_member &&
+          selected_item_drilldown_action != shell_model->actions.end() &&
+          selected_item_drilldown_action->can_invoke() &&
+          snapshot_context_matches && realmz::presentation::
+              runtime_legacy_context_supports_selected_item_drilldown({
+                  .screen = screen,
+                  .world_presentation = snapshot.world.presentation,
+                  .adaptive_eligible =
+                      legacy_context.adaptive_eligible != 0,
+              });
       const auto spellbook_action = std::ranges::find_if(
           shell_model->actions,
           [](const auto& action) {
@@ -4668,6 +4734,10 @@ void WindowManager::present_remastered_frame() {
                   contextual_overview_payload.mode,
               .contextual_overview_member =
                   contextual_overview_payload.member,
+              .selected_item_drilldown_member =
+                  selected_item_drilldown_member,
+              .selected_item_drilldown_available =
+                  selected_item_drilldown_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -4863,6 +4933,35 @@ void WindowManager::present_remastered_frame() {
                     realmz::presentation::
                         legacy_key_message_for_open_inventory(context)
                         .has_value();
+              }
+              if (const auto* selected_item_drilldown =
+                      std::get_if<realmz::presentation::
+                          OpenSelectedItemDrilldownAction>(
+                          &control.payload)) {
+                const auto* member = snapshot.party.member(
+                    selected_item_drilldown->member);
+                const auto modeled_action = std::ranges::find_if(
+                    shell_model->actions,
+                    [](const auto& action) {
+                      return action.intent == realmz::presentation::
+                          ActionIntent::selected_item_drilldown;
+                    });
+                return control.kind == realmz::presentation::
+                        ShellControlKind::selected_item_drilldown &&
+                    current_world_action_page == realmz::presentation::
+                        WorldActionPage::party &&
+                    action_panel.contains(control.bounds) &&
+                    selected_item_drilldown->member <= 5U && member &&
+                    member->selected &&
+                    snapshot.party.selected_member ==
+                        selected_item_drilldown->member &&
+                    snapshot.screen == context.screen &&
+                    modeled_action != shell_model->actions.end() &&
+                    modeled_action->party_member ==
+                        selected_item_drilldown->member &&
+                    modeled_action->can_invoke() && realmz::presentation::
+                        runtime_legacy_context_supports_selected_item_drilldown(
+                            context);
               }
               if (const auto* spellbook =
                       std::get_if<
@@ -6211,6 +6310,40 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       }
       continue;
     }
+    if (const auto* selected_item_drilldown =
+            std::get_if<realmz::presentation::
+                OpenSelectedItemDrilldownAction>(&control.payload)) {
+      if (!surface_matches_context ||
+          control.kind != realmz::presentation::ShellControlKind::
+              selected_item_drilldown ||
+          this->remastered_world_action_page !=
+              realmz::presentation::WorldActionPage::party ||
+          !this->adaptive_shell_plan->adaptive_layout->action_bar.contains(
+              control.bounds) ||
+          selected_item_drilldown->member > 5U || !realmz::presentation::
+              runtime_legacy_context_supports_selected_item_drilldown(
+                  context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      const auto* member = snapshot->party.member(
+          selected_item_drilldown->member);
+      if ((snapshot->screen != context.screen) ||
+          (snapshot->world.presentation != context.world_presentation) ||
+          !member || !member->selected ||
+          snapshot->party.selected_member !=
+              selected_item_drilldown->member) {
+        return false;
+      }
+      continue;
+    }
     if (const auto* spellbook =
             std::get_if<realmz::presentation::OpenSpellbookAction>(
                 &control.payload)) {
@@ -7330,6 +7463,9 @@ void WindowManager::dispatch_remastered_shell_control(
   const auto* open_character_sheet =
       std::get_if<realmz::presentation::OpenCharacterSheetAction>(
           &control.payload);
+  const auto* open_selected_item_drilldown =
+      std::get_if<realmz::presentation::OpenSelectedItemDrilldownAction>(
+          &control.payload);
   const auto* rest_party =
       std::get_if<realmz::presentation::RestPartyAction>(&control.payload);
   const auto* set_camp_state =
@@ -7486,6 +7622,20 @@ void WindowManager::dispatch_remastered_shell_control(
                         ScreenContext::exploration) &&
                     (this->adaptive_shell_plan->screen != realmz::presentation::
                         ScreenContext::dungeon)) ||
+                !this->adaptive_shell_plan->adaptive_layout->action_bar
+                     .contains(control.bounds))) ||
+        (open_selected_item_drilldown &&
+            (open_selected_item_drilldown->member > 5U ||
+                control.kind != realmz::presentation::ShellControlKind::
+                    selected_item_drilldown ||
+                this->remastered_world_action_page !=
+                    realmz::presentation::WorldActionPage::party ||
+                !this->adaptive_shell_plan ||
+                !this->adaptive_shell_plan->adaptive_layout ||
+                ((this->adaptive_shell_plan->screen != realmz::presentation::
+                        ScreenContext::exploration) &&
+                    (this->adaptive_shell_plan->screen !=
+                        realmz::presentation::ScreenContext::dungeon)) ||
                 !this->adaptive_shell_plan->adaptive_layout->action_bar
                      .contains(control.bounds))) ||
         (rest_party &&

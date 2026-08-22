@@ -104,6 +104,12 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
           this->handlers_.contextual_overview,
           payload,
           "contextual_overview");
+    } else if constexpr (
+        std::is_same_v<Action, OpenSelectedItemDrilldownAction>) {
+      return invoke_handler(
+          this->handlers_.open_selected_item_drilldown,
+          payload,
+          "open_selected_item_drilldown");
     } else if constexpr (std::is_same_v<Action, GuardCombatantAction>) {
       return invoke_handler(
           this->handlers_.guard_combatant, payload, "guard_combatant");

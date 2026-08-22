@@ -97,6 +97,18 @@ static void stage_semantic_open_character_sheet_member(
   pending_semantic_open_character_sheet_member = party_member;
 }
 
+static std::optional<uint8_t>
+    pending_semantic_selected_item_drilldown_member;
+
+static void clear_pending_semantic_selected_item_drilldown_member() noexcept {
+  pending_semantic_selected_item_drilldown_member.reset();
+}
+
+static void stage_semantic_selected_item_drilldown_member(
+    uint8_t party_member) noexcept {
+  pending_semantic_selected_item_drilldown_member = party_member;
+}
+
 static std::optional<bool> pending_semantic_set_search_state_desired;
 
 static void clear_pending_semantic_set_search_state_desired() noexcept {
@@ -561,6 +573,27 @@ public:
         "modifiers=0x{:04X})",
         name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
         ev.where.v, ev.modifiers);
+    return true;
+  }
+
+  bool push_semantic_selected_item_drilldown_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticSelectedItemDrilldownTag(tagged_message)) {
+      return false;
+    }
+    // Keep member and surface encoded until the guarded world loop can reject
+    // stale selection. The eventual handoff uses Classic's real Show Item
+    // control; no key or pointer event is forged.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = {};
+    ev.modifiers = 0;
+    ev.window_port = nullptr;
+    em_log.debug_f(
+        "Enqueued tagged semantic selected-item drilldown (what={}, "
+        "message=0x{:08X}, when=0x{:08X})",
+        name_for_event_type(ev.what), ev.message, ev.when);
     return true;
   }
 
@@ -1555,6 +1588,7 @@ void FlushEvents(int16_t which_mask, uint16_t stop_mask) {
 
   em_log.debug_f("FlushEvents(0x{:04X}, 0x{:04X})", which_mask, stop_mask);
   clear_pending_semantic_open_character_sheet_member();
+  clear_pending_semantic_selected_item_drilldown_member();
   clear_pending_semantic_center_combat_cursor_cell();
   clear_pending_semantic_set_search_state_desired();
   clear_pending_semantic_use_torch_source();
@@ -1569,6 +1603,7 @@ Boolean GetNextEvent(int16_t which_mask, EventRecord* ret) {
   }
 
   clear_pending_semantic_open_character_sheet_member();
+  clear_pending_semantic_selected_item_drilldown_member();
   clear_pending_semantic_center_combat_cursor_cell();
   clear_pending_semantic_set_search_state_desired();
   clear_pending_semantic_use_torch_source();
@@ -1596,6 +1631,7 @@ Boolean GetNextSemanticGameplayEvent(
   }
 
   clear_pending_semantic_open_character_sheet_member();
+  clear_pending_semantic_selected_item_drilldown_member();
   clear_pending_semantic_center_combat_cursor_cell();
   clear_pending_semantic_set_search_state_desired();
   clear_pending_semantic_use_torch_source();
@@ -1830,6 +1866,24 @@ Boolean GetNextSemanticGameplayEvent(
       ret->window_port = nullptr;
     } else {
       // A stale member, selection, or surface is inert before Classic input.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticSelectedItemDrilldownTag(ret->message)) {
+    uint8_t party_member = 0;
+    if (still_remastered &&
+        RealmzConsumeSemanticSelectedItemDrilldownEvent(
+            surface, ret->message, &party_member)) {
+      // Keep app1Evt neutral while staging the exact late-validated member.
+      // Classic owns the real Show Item control and its existing buttonchoice
+      // path, including all modal item behavior after this handoff.
+      stage_semantic_selected_item_drilldown_member(party_member);
+      ret->message = 0;
+      ret->where = {};
+      ret->modifiers = 0;
+      ret->window_port = nullptr;
+    } else {
       ret->what = nullEvent;
       ret->message = 0;
     }
@@ -2276,6 +2330,7 @@ Boolean WaitNextEvent(int16_t which_mask, EventRecord* ret, uint32_t sleep, RgnH
   }
 
   clear_pending_semantic_open_character_sheet_member();
+  clear_pending_semantic_selected_item_drilldown_member();
   clear_pending_semantic_center_combat_cursor_cell();
   clear_pending_semantic_set_search_state_desired();
   clear_pending_semantic_use_torch_source();
@@ -2342,6 +2397,10 @@ Boolean PushSemanticPartySelectionEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticOpenCharacterSheetEvent(uint32_t tagged_message) {
   return em.push_semantic_open_character_sheet_event(tagged_message);
+}
+
+Boolean PushSemanticSelectedItemDrilldownEvent(uint32_t tagged_message) {
+  return em.push_semantic_selected_item_drilldown_event(tagged_message);
 }
 
 Boolean PushSemanticOpenInventoryEvent(uint32_t tagged_message) {
@@ -2458,6 +2517,16 @@ Boolean TakeSemanticOpenCharacterSheetMember(uint8_t* party_member) {
   return 1;
 }
 
+Boolean TakeSemanticSelectedItemDrilldownMember(uint8_t* party_member) {
+  const auto pending = pending_semantic_selected_item_drilldown_member;
+  clear_pending_semantic_selected_item_drilldown_member();
+  if (!pending || !party_member) {
+    return 0;
+  }
+  *party_member = *pending;
+  return 1;
+}
+
 Boolean TakeSemanticSetSearchStateDesired(uint8_t* desired_searching) {
   const auto pending = pending_semantic_set_search_state_desired;
   clear_pending_semantic_set_search_state_desired();
@@ -2494,6 +2563,7 @@ Boolean TakeSemanticCenterCombatCursorCell(
 
 void CancelSemanticGameplayInput(void) {
   clear_pending_semantic_open_character_sheet_member();
+  clear_pending_semantic_selected_item_drilldown_member();
   clear_pending_semantic_center_combat_cursor_cell();
   clear_pending_semantic_set_search_state_desired();
   clear_pending_semantic_use_torch_source();

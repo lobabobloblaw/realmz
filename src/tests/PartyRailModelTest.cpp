@@ -193,6 +193,16 @@ void test_action_availability_is_conservative() {
   const auto& inventory = action_with(model, ActionIntent::open_inventory);
   CHECK(inventory.can_invoke());
   CHECK(inventory.party_member == 2);
+  const auto& selected_item_drilldown =
+      action_with(model, ActionIntent::selected_item_drilldown);
+  CHECK(selected_item_drilldown.can_invoke());
+  CHECK(selected_item_drilldown.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(selected_item_drilldown.party_member == 2);
+  CHECK(selected_item_drilldown.command == "action.items.quick");
+  CHECK(selected_item_drilldown.label == "Equipment");
+  CHECK(selected_item_drilldown.availability_reason->label ==
+      "Game rules apply");
   const auto& casting = action_with(model, ActionIntent::cast_spell);
   CHECK(!casting.can_invoke());
   CHECK(casting.availability_reason->label ==
@@ -313,6 +323,7 @@ void test_action_availability_is_conservative() {
           ContextualOverviewMode::make_scroll});
   CHECK(make_scroll.party_member == 2);
   CHECK(make_scroll.tab_order == torch_while_camped.tab_order + 1);
+  CHECK(action_with(model, ActionIntent::selected_item_drilldown).can_invoke());
 
   snapshot.party.members[1].use_scroll_available = false;
   model = build_presentation_shell_model(snapshot);
@@ -333,6 +344,7 @@ void test_action_availability_is_conservative() {
   CHECK(stop_search.desired_searching == false);
   CHECK(action_with(model, ActionIntent::use_torch).can_invoke());
   CHECK(action_with(model, ActionIntent::contextual_overview).can_invoke());
+  CHECK(action_with(model, ActionIntent::selected_item_drilldown).can_invoke());
 
   snapshot.screen = ScreenContext::dungeon;
   snapshot.world.searching = false;
@@ -344,6 +356,7 @@ void test_action_availability_is_conservative() {
   CHECK(action_with(model, ActionIntent::rest).can_invoke());
   CHECK(action_with(model, ActionIntent::use_torch).can_invoke());
   CHECK(action_with(model, ActionIntent::contextual_overview).can_invoke());
+  CHECK(action_with(model, ActionIntent::selected_item_drilldown).can_invoke());
   snapshot.screen = ScreenContext::exploration;
   snapshot.world.in_camp = false;
   snapshot.world.searching = false;
@@ -359,12 +372,28 @@ void test_action_availability_is_conservative() {
   CHECK(available_scroll.availability_reason->label == "Game rules apply");
   snapshot.party.members[1].use_scroll_available = false;
 
+  snapshot.screen = ScreenContext::title;
+  model = build_presentation_shell_model(snapshot);
+  const auto& selected_item_drilldown_outside_world =
+      action_with(model, ActionIntent::selected_item_drilldown);
+  CHECK(!selected_item_drilldown_outside_world.can_invoke());
+  CHECK(selected_item_drilldown_outside_world.party_member == 2);
+  CHECK(selected_item_drilldown_outside_world.availability_reason->label ==
+      "Equipment is unavailable now");
+  snapshot.screen = ScreenContext::exploration;
+
   snapshot.party.selected_member.reset();
   for (auto& member : snapshot.party.members) {
     member.selected = false;
   }
   model = build_presentation_shell_model(snapshot);
   CHECK(!action_with(model, ActionIntent::open_inventory).can_invoke());
+  const auto& selected_item_drilldown_without_selection =
+      action_with(model, ActionIntent::selected_item_drilldown);
+  CHECK(!selected_item_drilldown_without_selection.can_invoke());
+  CHECK(!selected_item_drilldown_without_selection.party_member);
+  CHECK(selected_item_drilldown_without_selection.availability_reason->label ==
+      "Select a party member first");
   CHECK(!action_with(model, ActionIntent::cast_spell).can_invoke());
   const auto& scroll_without_selection =
       action_with(model, ActionIntent::open_scroll_case);
@@ -446,13 +475,13 @@ void test_action_availability_is_conservative() {
           ContextualOverviewMode::area_search});
   CHECK(overview_in_encounter.availability_reason->label ==
       "Area search is unavailable now");
-  CHECK(model.actions.size() == 15);
-  CHECK(model.actions[12].command == "encounter.choice.11");
-  CHECK(model.actions[12].can_invoke());
-  CHECK(model.actions[13].command == "encounter.choice.12");
-  CHECK(!model.actions[13].can_invoke());
-  CHECK(model.actions[14].intent == ActionIntent::cancel);
-  CHECK(model.actions[14].can_invoke());
+  CHECK(model.actions.size() == 16);
+  CHECK(model.actions[13].command == "encounter.choice.11");
+  CHECK(model.actions[13].can_invoke());
+  CHECK(model.actions[14].command == "encounter.choice.12");
+  CHECK(!model.actions[14].can_invoke());
+  CHECK(model.actions[15].intent == ActionIntent::cancel);
+  CHECK(model.actions[15].can_invoke());
 }
 
 void test_world_action_page_preferences_are_normalized() {
@@ -535,7 +564,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 29U);
+  CHECK(model.actions.size() == 30U);
   const auto& camp_in_combat =
       action_with(model, ActionIntent::set_camp_state);
   CHECK(!camp_in_combat.can_invoke());
@@ -1169,7 +1198,9 @@ void test_typography_keyboard_order_and_remappable_ids() {
   CHECK(model.drawers.tabs.empty());
   CHECK(model.keyboard_tab_order.back().command ==
       "action.character_sheet.open");
-  CHECK(!model.keyboard_tab_order[4].enabled);
+  CHECK(model.keyboard_tab_order[4].command == "action.items.quick");
+  CHECK(model.keyboard_tab_order[4].enabled);
+  CHECK(!model.keyboard_tab_order[5].enabled);
 }
 
 void test_determinism_and_no_input_mutation() {

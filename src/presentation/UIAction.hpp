@@ -49,6 +49,15 @@ struct OpenInventoryAction {
   bool operator==(const OpenInventoryAction&) const = default;
 };
 
+// Opens the preserved Classic quick equipment popup for the explicitly
+// selected member. The popup and its wear/remove rules remain authoritative in
+// the compatibility flow and are distinct from the full inventory window.
+struct OpenSelectedItemDrilldownAction {
+  PartyMemberId member = 0;
+
+  bool operator==(const OpenSelectedItemDrilldownAction&) const = default;
+};
+
 // Opens the preserved Classic spell-selection flow for the explicitly
 // selected caster. Choosing a spell and target remains a separate
 // CastSpellAction concern.
@@ -532,7 +541,8 @@ using UIActionPayload = std::variant<
     SetCampStateAction,
     SetSearchStateAction,
     UseTorchAction,
-    ContextualOverviewAction>;
+    ContextualOverviewAction,
+    OpenSelectedItemDrilldownAction>;
 
 struct UIAction {
   ActionSequence sequence = 0;
@@ -624,6 +634,9 @@ struct UIAction {
       return "use_torch";
     } else if constexpr (std::is_same_v<Action, ContextualOverviewAction>) {
       return "contextual_overview";
+    } else if constexpr (
+        std::is_same_v<Action, OpenSelectedItemDrilldownAction>) {
+      return "open_selected_item_drilldown";
     } else {
       return "set_presentation_mode";
     }

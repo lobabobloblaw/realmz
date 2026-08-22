@@ -40,6 +40,7 @@ constexpr uint32_t kSetCampStateRegion = 1124U;
 constexpr uint32_t kSetSearchStateRegion = 1125U;
 constexpr uint32_t kUseTorchRegion = 1126U;
 constexpr uint32_t kContextualOverviewRegion = 1127U;
+constexpr uint32_t kSelectedItemDrilldownRegion = 1128U;
 constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
@@ -240,6 +241,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.center_combat_cursor->cell.y <= 89U;
   const bool valid_character_sheet = request.character_sheet_member &&
       (*request.character_sheet_member < 6U);
+  const bool valid_selected_item_drilldown =
+      request.selected_item_drilldown_member &&
+      (*request.selected_item_drilldown_member < 6U);
   const bool valid_torch_source = !request.torch_source ||
       ((request.torch_source->member < 6U) &&
           (request.torch_source->slot < 30U));
@@ -263,6 +267,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.scroll_case_member,
       request.character_sheet_member,
       request.contextual_overview_member,
+      request.selected_item_drilldown_member,
   };
   std::optional<PartyMemberId> common_party_member;
   bool mismatched_party_members = false;
@@ -336,6 +341,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const size_t travel_world_control_count = descriptors.size();
   const size_t party_world_control_count =
       (request.inventory_member ? 1U : 0U) +
+      (request.selected_item_drilldown_member ? 1U : 0U) +
       (request.spellbook_member ? 1U : 0U) +
       (request.scroll_case_member ? 1U : 0U) +
       (request.character_sheet_member ? 1U : 0U);
@@ -370,9 +376,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       combat_page_control_count,
       maximum_combat_control_count);
   constexpr size_t world_page_control_count = kWorldPages.size();
-  // Keep room for all four PARTY commands even when the current snapshot has
+  // Keep room for all five PARTY commands even when the current snapshot has
   // no selected member and therefore omits one or more disabled controls.
-  constexpr size_t kPartyActionCapacity = 4U;
+  constexpr size_t kPartyActionCapacity = 5U;
   // The GAME page always presents Torch and the contextual Overview action,
   // including disabled controls when their source or selected member is absent.
   // Reserve all seven positions even for partial test requests so a later fully
@@ -418,6 +424,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (combat_controls &&
           ((request.world_action_page != WorldActionPage::travel) ||
               request.navigation_available || request.inventory_member ||
+              request.selected_item_drilldown_member ||
               request.spellbook_member || request.scroll_case_member ||
               request.character_sheet_member ||
               request.save_control_visible || request.load_control_visible ||
@@ -427,6 +434,11 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.torch_control_visible ||
               request.contextual_overview_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
+      (request.selected_item_drilldown_member &&
+          !valid_selected_item_drilldown) ||
+      (request.selected_item_drilldown_available &&
+          (!valid_selected_item_drilldown ||
+              !request.navigation_available)) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.scroll_case_available && !request.scroll_case_member) ||
       (request.character_sheet_member && !valid_character_sheet) ||
@@ -613,6 +625,22 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         });
         x += button_width + gap;
       }
+      if (request.selected_item_drilldown_member) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kSelectedItemDrilldownRegion},
+            .kind = ShellControlKind::selected_item_drilldown,
+            .bounds = {x, y, button_width, button_height},
+            .label = "EQUIPMENT",
+            .accessibility_label =
+                "Open selected party member equipment menu",
+            .focus_identifier = "focus.action.items.quick",
+            .tab_order = 1101,
+            .enabled = request.selected_item_drilldown_available,
+            .payload = OpenSelectedItemDrilldownAction{
+                *request.selected_item_drilldown_member},
+        });
+        x += button_width + gap;
+      }
       if (request.spellbook_member) {
         result.emplace_back(ShellControlPlacement{
             .region = ShellRegionId{kSpellbookRegion},
@@ -621,7 +649,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             .label = "SPELLS",
             .accessibility_label = "Cast spell",
             .focus_identifier = "focus.action.spellbook.open",
-            .tab_order = 1101,
+            .tab_order = 1102,
             .enabled = request.spellbook_available,
             .payload = OpenSpellbookAction{*request.spellbook_member},
         });

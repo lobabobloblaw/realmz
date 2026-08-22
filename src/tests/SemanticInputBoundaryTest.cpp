@@ -113,6 +113,14 @@ bool consume_character_sheet(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_selected_item_drilldown(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint8_t& output) {
+  return RealmzConsumeSemanticSelectedItemDrilldownEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 bool consume_inventory(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tag,
@@ -1567,6 +1575,113 @@ void test_open_character_sheet_tag_encoding_and_collisions() {
     CHECK(!character_sheet_tags.contains(other_tag));
     CHECK(RealmzIsSemanticOpenCharacterSheetTag(other_tag) == 0);
     CHECK(RealmzSemanticOpenCharacterSheetTagSurface(other_tag) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+}
+
+void test_selected_item_drilldown_tag_encoding_and_strict_validation() {
+  constexpr std::array surfaces{
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+  };
+  constexpr std::array<PartyMemberId, 6> members{0, 1, 2, 3, 4, 5};
+  std::set<uint32_t> drilldown_tags;
+  for (const auto surface : surfaces) {
+    for (const PartyMemberId member : members) {
+      const uint32_t tag =
+          semantic_selected_item_drilldown_tag(member, surface);
+      CHECK(tag == (0x53490000U |
+          (static_cast<uint32_t>(surface) << 8U) |
+          static_cast<uint32_t>(member)));
+      CHECK((tag & 0xFFFF0000U) == 0x53490000U);
+      CHECK(((tag >> 8U) & 0xFFU) == static_cast<uint32_t>(surface));
+      CHECK((tag & 0xFFU) == static_cast<uint32_t>(member));
+      CHECK(RealmzIsSemanticSelectedItemDrilldownTag(tag) != 0);
+      CHECK(RealmzSemanticSelectedItemDrilldownTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+      CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+      CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenCharacterSheetTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenScrollCaseTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenCombatItemsTag(tag) == 0);
+      CHECK(drilldown_tags.emplace(tag).second);
+    }
+  }
+  CHECK(drilldown_tags.size() == 12);
+  CHECK(semantic_selected_item_drilldown_tag(
+            0, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x53490100U);
+  CHECK(semantic_selected_item_drilldown_tag(
+            5, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0x53490205U);
+
+  for (const auto surface : surfaces) {
+    for (const PartyMemberId member :
+         std::array<PartyMemberId, 3>{6, 7, 0xFF}) {
+      CHECK(semantic_selected_item_drilldown_tag(member, surface) == 0);
+      const uint32_t malformed = 0x53490000U |
+          (static_cast<uint32_t>(surface) << 8U) |
+          static_cast<uint32_t>(member);
+      CHECK(RealmzIsSemanticSelectedItemDrilldownTag(malformed) == 0);
+      CHECK(RealmzSemanticSelectedItemDrilldownTagSurface(malformed) ==
+          REALMZ_SEMANTIC_INPUT_NONE);
+      CHECK(RealmzIsSemanticGameplayTag(malformed) == 0);
+      CHECK(RealmzSemanticGameplayTagSurface(malformed) ==
+          REALMZ_SEMANTIC_INPUT_NONE);
+    }
+  }
+
+  for (const auto invalid_surface :
+       std::array<RealmzSemanticInputSurface, 3>{
+           REALMZ_SEMANTIC_INPUT_NONE,
+           REALMZ_SEMANTIC_INPUT_COMBAT,
+           0xFF,
+       }) {
+    CHECK(semantic_selected_item_drilldown_tag(0, invalid_surface) == 0);
+    const uint32_t malformed = 0x53490000U |
+        (static_cast<uint32_t>(invalid_surface) << 8U);
+    CHECK(RealmzIsSemanticSelectedItemDrilldownTag(malformed) == 0);
+    CHECK(RealmzSemanticSelectedItemDrilldownTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+    CHECK(RealmzIsSemanticGameplayTag(malformed) == 0);
+    CHECK(RealmzSemanticGameplayTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  for (const uint32_t malformed : {
+           0U,
+           0x53480000U,
+           0x534A0100U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticSelectedItemDrilldownTag(malformed) == 0);
+    CHECK(RealmzSemanticSelectedItemDrilldownTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  const std::array other_tags{
+      semantic_movement_tag(
+          MovementCommand::north, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_party_selection_tag(0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_open_character_sheet_tag(
+          0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_open_inventory_tag(0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_open_spellbook_tag(0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_open_scroll_case_tag(0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_open_save_game_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_open_load_game_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      semantic_guard_combatant_tag(0, REALMZ_SEMANTIC_INPUT_COMBAT),
+      semantic_open_combat_items_tag(
+          0, 0, REALMZ_SEMANTIC_INPUT_COMBAT),
+  };
+  for (const uint32_t other_tag : other_tags) {
+    CHECK(other_tag != 0);
+    CHECK(!drilldown_tags.contains(other_tag));
+    CHECK(RealmzIsSemanticSelectedItemDrilldownTag(other_tag) == 0);
+    CHECK(RealmzSemanticSelectedItemDrilldownTagSurface(other_tag) ==
         REALMZ_SEMANTIC_INPUT_NONE);
   }
 }
@@ -3249,6 +3364,261 @@ void test_open_character_sheet_late_validation_and_single_use() {
     CHECK(legacy_capture_calls == 1);
     CHECK(snapshot_capture_calls == 1);
   }
+}
+
+void test_selected_item_drilldown_late_validation_and_single_use() {
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  const uint32_t outdoor_arin = semantic_selected_item_drilldown_tag(
+      0, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  uint8_t member = 0xA5;
+
+  // Delivery requires a fully completed top-level scope. An active scope is
+  // not authorization, but becomes eligible once it ends normally.
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+  RealmzBeginSemanticInputSurface(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+  RealmzEndSemanticInputSurface();
+  CHECK(consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // A successful consume is one-shot.
+  member = 0xA5;
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // Null output, wrong surface, wrong action, malformed member, and explicit
+  // invalidation all fail closed and burn or remove the authorization before
+  // any mutable live-state capture.
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticSelectedItemDrilldownEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            outdoor_arin,
+            nullptr) == 0);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+
+  const uint32_t dungeon_arin = semantic_selected_item_drilldown_tag(
+      0, REALMZ_SEMANTIC_INPUT_DUNGEON);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, dungeon_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      semantic_open_character_sheet_tag(
+          0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  constexpr uint32_t malformed_member_six = 0x53490106U;
+  CHECK(RealmzIsSemanticSelectedItemDrilldownTag(malformed_member_six) == 0);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, malformed_member_six, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  RealmzInvalidateSemanticInputBoundary();
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // Adaptive eligibility and the exact current live screen are checked before
+  // snapshot capture.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::dungeon_map);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 0);
+
+  // Snapshot screen and exact world presentation are captured fresh. Neither
+  // a broad screen match nor the tag's originating surface is trusted alone.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::dungeon,
+      WorldPresentation::outdoor);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  for (const auto invalid_outdoor_presentation : {
+           WorldPresentation::none,
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        invalid_outdoor_presentation);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    CHECK(!consume_selected_item_drilldown(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+    CHECK(member == 0xA5);
+    CHECK(legacy_capture_calls == 1);
+    CHECK(snapshot_capture_calls == 1);
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::outdoor);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // The dungeon surface intentionally survives a map/first-person transition
+  // while queued; either fresh dungeon presentation remains valid.
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    member = 0xA5;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    CHECK(consume_selected_item_drilldown(
+        REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_arin, member));
+    CHECK(member == 0);
+    CHECK(legacy_capture_calls == 1);
+    CHECK(snapshot_capture_calls == 1);
+  }
+
+  // Both selected-member representations must still identify the encoded
+  // member exactly, and the member must still exist in the fresh party.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.selected_member = 1;
+  member = 0xA5;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.members[0].selected = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.members.erase(captured_snapshot.party.members.begin());
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.selected_member.reset();
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+
+  // Every bounded wire member can be delivered when the fresh detached party
+  // contains and selects that exact stable ID.
+  for (PartyMemberId selected = 0; selected <= 5; ++selected) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        WorldPresentation::outdoor);
+    captured_snapshot.party.members.clear();
+    for (PartyMemberId candidate = 0; candidate <= 5; ++candidate) {
+      captured_snapshot.party.members.push_back(PartyMemberView{
+          .id = candidate,
+          .name = "Member " + std::to_string(candidate),
+          .selected = candidate == selected,
+      });
+    }
+    captured_snapshot.party.selected_member = selected;
+    const uint32_t tag = semantic_selected_item_drilldown_tag(
+        selected, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    member = 0xA5;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    CHECK(consume_selected_item_drilldown(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member));
+    CHECK(member == selected);
+  }
+
+  // Snapshot failure is contained and never alters the staged destination.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  snapshot_capture_throws = true;
+  member = 0xA5;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_selected_item_drilldown(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_arin, member));
+  CHECK(member == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
 }
 
 void test_open_inventory_late_validation_and_exact_translation() {
@@ -6188,6 +6558,7 @@ int main() {
   try {
     test_tag_encoding_and_validation();
     test_open_character_sheet_tag_encoding_and_collisions();
+    test_selected_item_drilldown_tag_encoding_and_strict_validation();
     test_rest_party_tag_encoding_and_collisions();
     test_set_camp_state_tag_encoding_and_collisions();
     test_set_search_state_tag_encoding_and_collisions();
@@ -6207,6 +6578,7 @@ int main() {
     test_exact_dungeon_translation();
     test_party_selection_late_validation_and_single_use();
     test_open_character_sheet_late_validation_and_single_use();
+    test_selected_item_drilldown_late_validation_and_single_use();
     test_open_inventory_late_validation_and_exact_translation();
     test_open_spellbook_late_validation_and_exact_translation();
     test_open_scroll_case_late_validation_and_surface_translation();

@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -323,6 +324,10 @@ void require_no_semantic_scope_or_consumer(
               body, "RealmzConsumeSemanticOpenCharacterSheetEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic Character Sheet input");
+  require(count_identifier(
+              body, "RealmzConsumeSemanticSelectedItemDrilldownEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic selected-item input");
   require(count_identifier(
               body, "RealmzConsumeSemanticOpenInventoryEvent") == 0,
       std::string(function_name) +
@@ -1344,8 +1349,8 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 29,
-      "semantic gameplay wrapper must recognize all twenty-nine tagged paths");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 30,
+      "semantic gameplay wrapper must recognize all thirty tagged paths");
   require(count_identifier(semantic_wrapper, "keyDown") == 26 &&
           count_text(compact_semantic, "ret->what=keyDown;") == 24 &&
           count_text(
@@ -1380,6 +1385,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenCharacterSheetEvent") == 1,
       "EventManager may consume Character Sheet input only inside its gameplay "
+      "wrapper");
+  require(count_identifier(source,
+              "RealmzConsumeSemanticSelectedItemDrilldownEvent") == 1,
+      "EventManager may consume selected-item input only inside its gameplay "
       "wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenInventoryEvent") == 1,
@@ -1569,9 +1578,22 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", character_sheet_window);
   const std::size_t character_sheet_rejected_message = compact_semantic.find(
       "ret->message=0", character_sheet_rejected_null);
+  const std::size_t selected_item_branch = compact_semantic.find(
+      "RealmzIsSemanticSelectedItemDrilldownTag(ret->message)",
+      character_sheet_rejected_message);
+  const std::size_t selected_item_consume = compact_semantic.find(
+      "RealmzConsumeSemanticSelectedItemDrilldownEvent(",
+      selected_item_branch);
+  const std::size_t selected_item_stage = compact_semantic.find(
+      "stage_semantic_selected_item_drilldown_member(party_member);",
+      selected_item_consume);
+  const std::size_t selected_item_rejected_null = compact_semantic.find(
+      "ret->what=nullEvent", selected_item_stage);
+  const std::size_t selected_item_rejected_message = compact_semantic.find(
+      "ret->message=0", selected_item_rejected_null);
   const std::size_t inventory_branch = compact_semantic.find(
       "RealmzIsSemanticOpenInventoryTag(ret->message)",
-      character_sheet_rejected_message);
+      selected_item_rejected_message);
   const std::size_t inventory_consume = compact_semantic.find(
       "RealmzConsumeSemanticOpenInventoryEvent(", inventory_branch);
   const std::size_t inventory_keydown = compact_semantic.find(
@@ -1581,19 +1603,22 @@ void verify_event_manager(const fs::path& repository_root) {
   const std::size_t inventory_message = compact_semantic.find(
       "ret->message=0", inventory_null);
   require(character_sheet_branch != std::string::npos &&
+          selected_item_branch != std::string::npos &&
           inventory_branch != std::string::npos &&
-          character_sheet_branch < inventory_branch,
-      "Character Sheet must remain a distinct late route before inventory");
+          character_sheet_branch < selected_item_branch &&
+          selected_item_branch < inventory_branch,
+      "Character Sheet, selected-item, and full Inventory must remain distinct "
+      "ordered late routes");
   const std::size_t character_sheet_route_start = compact_semantic.rfind(
       "ret->what==app1Evt", character_sheet_branch);
   const std::size_t character_sheet_route_end = compact_semantic.rfind(
-      "ret->what==app1Evt", inventory_branch);
+      "ret->what==app1Evt", selected_item_branch);
   require(character_sheet_route_start != std::string::npos &&
           character_sheet_route_end != std::string::npos &&
           character_sheet_route_start < character_sheet_branch &&
           character_sheet_branch < character_sheet_route_end,
       "Character Sheet structural route must include its own app1Evt guard "
-      "and exclude the following inventory guard");
+      "and exclude the following selected-item guard");
   const std::string character_sheet_route = compact_semantic.substr(
       character_sheet_route_start,
       character_sheet_route_end - character_sheet_route_start);
@@ -5652,10 +5677,12 @@ void verify_rest_party_window_manager_contract(
               "LegacyActionHandler<SetSearchStateAction>set_search_state;"
               "LegacyActionHandler<UseTorchAction>use_torch;"
               "LegacyActionHandler<ContextualOverviewAction>"
-              "contextual_overview;}"),
+              "contextual_overview;"
+              "LegacyActionHandler<OpenSelectedItemDrilldownAction>"
+              "open_selected_item_drilldown;}"),
       "LegacyActionHandlers must retain Rest and Camp followed by append-only "
-      "Search, Torch, and contextual Overview so positional aggregate clients "
-      "keep their prior member order");
+      "Search, Torch, contextual Overview, and selected-item drilldown so "
+      "positional aggregate clients keep their prior member order");
 
   const std::string runtime_source = code_only(read_file(
       repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
@@ -7766,6 +7793,613 @@ void verify_contextual_overview_window_manager_contract(
   }
 }
 
+void verify_selected_item_drilldown_window_manager_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string ui_header = code_only(read_file(
+      repository_root / "src/presentation/UIAction.hpp"));
+  const std::string action_type = type_body(
+      ui_header, "OpenSelectedItemDrilldownAction");
+  require(count_identifier(action_type, "member") == 1 &&
+          count_identifier(action_type, "PartyMemberId") == 1 &&
+          count_identifier(action_type, "item") == 0 &&
+          count_identifier(action_type, "slot") == 0 &&
+          count_identifier(ui_header, "OpenSelectedItemDrilldownAction") >= 4 &&
+          count_identifier(ui_header, "OpenInventoryAction") >= 4,
+      "Equipment must remain a member-only typed action distinct from full "
+      "Inventory");
+
+  const std::string raw_model_source = read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp");
+  const std::string model_source = code_only(raw_model_source);
+  const std::string build_actions = function_body(model_source, "build_actions");
+  const std::string compact_actions = without_whitespace(build_actions);
+  const std::size_t equipment_availability = compact_actions.find(
+      "selected_item_drilldown_available=navigation_context&&selected;");
+  const std::size_t equipment_intent = compact_actions.find(
+      "ActionIntent::selected_item_drilldown", equipment_availability);
+  const std::size_t equipment_member = compact_actions.find(
+      "result.back().party_member=selected_member;", equipment_intent);
+  require(equipment_availability != std::string::npos &&
+          equipment_intent != std::string::npos &&
+          equipment_member != std::string::npos &&
+          equipment_availability < equipment_intent &&
+          equipment_intent < equipment_member &&
+          raw_model_source.find("\"action.items.quick\"") !=
+              std::string::npos &&
+          raw_model_source.find("\"Equipment\"") != std::string::npos,
+      "the party model must bind Equipment availability and payload identity "
+      "to the selected member in navigation context");
+
+  const std::string raw_layout_source = read_file(
+      repository_root / "src/presentation/ShellControlLayout.cpp");
+  const std::string layout_source = code_only(raw_layout_source);
+  const std::string compact_layout_source = without_whitespace(layout_source);
+  const std::string compact_raw_layout_source =
+      without_whitespace(raw_layout_source);
+  require(compact_layout_source.contains(
+              "kSelectedItemDrilldownRegion=1128U;") &&
+          compact_layout_source.contains(
+              ".kind=ShellControlKind::selected_item_drilldown,") &&
+          compact_layout_source.contains(".tab_order=1101,") &&
+          compact_layout_source.contains(
+              ".payload=OpenSelectedItemDrilldownAction{"
+              "*request.selected_item_drilldown_member},") &&
+          compact_raw_layout_source.contains(".label=\"EQUIPMENT\",") &&
+          compact_raw_layout_source.contains(
+              ".accessibility_label="
+              "\"Openselectedpartymemberequipmentmenu\",") &&
+          compact_raw_layout_source.contains(
+              ".focus_identifier=\"focus.action.items.quick\","),
+      "the PARTY layout must expose one typed EQUIPMENT target in stable "
+      "region 1128 and physical tab position 1101");
+  const std::size_t items_control = compact_raw_layout_source.find(
+      ".label=\"ITEMS\",");
+  const std::size_t equipment_control = compact_raw_layout_source.find(
+      ".label=\"EQUIPMENT\",", items_control);
+  const std::size_t spells_control = compact_raw_layout_source.find(
+      ".label=\"SPELLS\",", equipment_control);
+  require(items_control != std::string::npos &&
+          equipment_control != std::string::npos &&
+          spells_control != std::string::npos &&
+          items_control < equipment_control && equipment_control < spells_control,
+      "Equipment must remain physically distinct from full Items and ordered "
+      "between Items and Spells");
+
+  const std::string bridge_header = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.hpp"));
+  const std::string bridge_handlers = type_body(
+      bridge_header, "LegacyActionHandlers");
+  require(count_identifier(
+              bridge_handlers, "OpenSelectedItemDrilldownAction") == 1 &&
+          count_identifier(
+              bridge_handlers, "open_selected_item_drilldown") == 1,
+      "the injected bridge must expose one named selected-item handler");
+  const std::string bridge_source = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.cpp"));
+  const std::string injected_dispatch = function_body(bridge_source, "dispatch");
+  require(count_identifier(
+              injected_dispatch, "OpenSelectedItemDrilldownAction") == 1 &&
+          count_identifier(
+              injected_dispatch, "open_selected_item_drilldown") == 1,
+      "the injected bridge must dispatch Equipment only to its typed named "
+      "handler");
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string world_sinks_type = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  require(count_identifier(runtime_header,
+              "RuntimeLegacyOpenSelectedItemDrilldownSink") == 2 &&
+          count_identifier(world_sinks_type,
+              "open_selected_item_drilldown") == 1 &&
+          count_identifier(runtime_header,
+              "runtime_legacy_context_supports_selected_item_drilldown") == 1 &&
+          count_identifier(runtime_header,
+              "legacy_key_message_for_selected_item_drilldown") == 0,
+      "the runtime bridge must carry member and context through one named sink "
+      "without introducing a Classic key mapper");
+  const std::string runtime_source = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string runtime_predicate = function_body(
+      runtime_source, "runtime_legacy_context_supports_selected_item_drilldown");
+  const std::string compact_predicate = without_whitespace(runtime_predicate);
+  for (const auto needle : {
+           "if(!context.adaptive_eligible){returnfalse;}",
+           "context.screen==ScreenContext::exploration",
+           "context.world_presentation==WorldPresentation::outdoor",
+           "context.screen==ScreenContext::dungeon",
+           "WorldPresentation::dungeon_map",
+           "WorldPresentation::dungeon_first_person",
+       }) {
+    require(compact_predicate.contains(needle),
+        std::string("selected-item context guard must retain ") + needle);
+  }
+  require(count_identifier(runtime_predicate, "keyDown") == 0 &&
+          count_identifier(runtime_predicate, "mouseDown") == 0,
+      "selected-item context eligibility must remain presentation-only");
+  const std::string compact_runtime = without_whitespace(runtime_source);
+  const std::size_t runtime_handler = compact_runtime.find(
+      "handlers.open_selected_item_drilldown=[");
+  const std::size_t runtime_handler_end = compact_runtime.find(
+      "handlers.contextual_overview=[", runtime_handler);
+  require(runtime_handler != std::string::npos &&
+          runtime_handler_end != std::string::npos &&
+          runtime_handler < runtime_handler_end,
+      "runtime selected-item handler is missing");
+  const std::string handler = compact_runtime.substr(
+      runtime_handler, runtime_handler_end - runtime_handler);
+  for (const auto needle : {
+           "if(!context_provider)",
+           "if(!open_selected_item_drilldown_sink)",
+           "if(!context.adaptive_eligible)",
+           "action.member>kMaximumPartyMemberId",
+           "runtime_legacy_context_supports_selected_item_drilldown(context)",
+           "open_selected_item_drilldown_sink(action.member,context)",
+           "returnDispatchResult::handled();",
+       }) {
+    require(handler.contains(needle),
+        std::string("runtime selected-item handler must retain ") + needle);
+  }
+  require(count_identifier(handler, "keyDown") == 0 &&
+          count_identifier(handler, "mouseDown") == 0,
+      "runtime selected-item dispatch must not synthesize a key or pointer");
+
+  const std::string boundary_header = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.h"));
+  for (const auto identifier : {
+           "RealmzIsSemanticSelectedItemDrilldownTag",
+           "RealmzSemanticSelectedItemDrilldownTagSurface",
+           "RealmzConsumeSemanticSelectedItemDrilldownEvent",
+           "semantic_selected_item_drilldown_tag",
+       }) {
+    require(count_identifier(boundary_header, identifier) == 1,
+        std::string("selected-item boundary must expose one ") + identifier);
+  }
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary = without_whitespace(boundary_source);
+  for (const auto constant : {
+           "kSemanticSelectedItemDrilldownSignature=0x53490000U;",
+           "kSemanticSelectedItemDrilldownMask=0xFFFF0000U;",
+           "kSemanticSelectedItemDrilldownSurfaceMask=0x0000FF00U;",
+           "kSemanticSelectedItemDrilldownMemberMask=0x000000FFU;",
+           "kMaximumSelectedItemDrilldownMember=5;",
+       }) {
+    require(compact_boundary.contains(constant),
+        std::string("strict 0x5349SSMM tag must retain ") + constant);
+  }
+  const std::string decode = function_body(
+      boundary_source, "decode_selected_item_drilldown");
+  const std::string compact_decode = without_whitespace(decode);
+  require(compact_decode.contains(
+              "(tagged_message&kSemanticSelectedItemDrilldownMask)!="
+              "kSemanticSelectedItemDrilldownSignature") &&
+          compact_decode.contains(
+              "(tagged_message&kSemanticSelectedItemDrilldownSurfaceMask)>>8U") &&
+          compact_decode.contains(
+              "tagged_message&kSemanticSelectedItemDrilldownMemberMask") &&
+          compact_decode.contains("!is_world_gameplay_surface(surface_value)") &&
+          compact_decode.contains(
+              "member>kMaximumSelectedItemDrilldownMember"),
+      "selected-item decoding must accept only strict world-surface and "
+      "bounded-member tag fields");
+  const std::string make_tag = function_body(
+      boundary_source, "semantic_selected_item_drilldown_tag");
+  const std::string compact_make_tag = without_whitespace(make_tag);
+  require(compact_make_tag.contains("!is_world_gameplay_surface(surface)") &&
+          compact_make_tag.contains(
+              "member>kMaximumSelectedItemDrilldownMember") &&
+          compact_make_tag.contains(
+              "kSemanticSelectedItemDrilldownSignature|"
+              "(static_cast<uint32_t>(surface)<<8U)|"
+              "static_cast<uint32_t>(member)"),
+      "selected-item tag creation must preserve exact 0x5349SSMM shape");
+  const std::string consume = function_body(
+      boundary_source, "RealmzConsumeSemanticSelectedItemDrilldownEvent");
+  const std::string compact_consume = without_whitespace(consume);
+  const std::size_t consume_authorize = compact_consume.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t consume_decode = compact_consume.find(
+      "decode_selected_item_drilldown(tagged_message)", consume_authorize);
+  const std::size_t consume_surface = compact_consume.find(
+      "drilldown->surface!=expected_surface", consume_decode);
+  const std::size_t consume_context = compact_consume.find(
+      "RealmzCaptureLegacyPresentationContext()", consume_surface);
+  const std::size_t consume_snapshot = compact_consume.find(
+      "LegacyGameSnapshotSource().capture()", consume_context);
+  const std::size_t consume_presentation = compact_consume.find(
+      "world_presentation_matches_surface(", consume_snapshot);
+  const std::size_t consume_member = compact_consume.find(
+      "snapshot.party.member(drilldown->member)", consume_snapshot);
+  const std::size_t consume_selected = compact_consume.find(
+      "!member->selected", consume_member);
+  const std::size_t consume_exact = compact_consume.find(
+      "snapshot.party.selected_member!=drilldown->member", consume_selected);
+  const std::size_t consume_output = compact_consume.find(
+      "*party_member=drilldown->member", consume_exact);
+  require(consume_authorize != std::string::npos &&
+          consume_decode != std::string::npos &&
+          consume_surface != std::string::npos &&
+          consume_context != std::string::npos &&
+          consume_snapshot != std::string::npos &&
+          consume_presentation != std::string::npos &&
+          consume_member != std::string::npos &&
+          consume_selected != std::string::npos &&
+          consume_exact != std::string::npos &&
+          consume_output != std::string::npos &&
+          consume_authorize < consume_decode && consume_decode < consume_surface &&
+          consume_surface < consume_context && consume_context < consume_snapshot &&
+          consume_snapshot < consume_member && consume_member < consume_selected &&
+          consume_selected < consume_exact && consume_exact < consume_output,
+      "late selected-item consumption must burn one completed scope and "
+      "freshly revalidate surface, presentation, and exact selected member");
+  require(count_identifier(consume, "keyDown") == 0 &&
+          count_identifier(consume, "mouseDown") == 0 &&
+          count_identifier(consume, "showitembut") == 0 &&
+          count_identifier(consume, "buttonchoice") == 0 &&
+          count_identifier(consume, "showcondition") == 0 &&
+          count_identifier(consume, "wear") == 0 &&
+          count_identifier(consume, "removeitem") == 0,
+      "the boundary must return only the member and execute no Classic item "
+      "behavior");
+
+  const std::string event_source = code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  const std::string push = function_body(
+      event_source, "push_semantic_selected_item_drilldown_event");
+  const std::string compact_push = without_whitespace(push);
+  require(count_identifier(
+              push, "RealmzIsSemanticSelectedItemDrilldownTag") == 1 &&
+          count_identifier(push, "app1Evt") == 1 &&
+          count_identifier(push, "keyDown") == 0 &&
+          count_identifier(push, "mouseDown") == 0 &&
+          count_identifier(push, "mouse_loc") == 0 &&
+          count_identifier(push, "FrontWindow") == 0 &&
+          compact_push.contains("ev.what=app1Evt;") &&
+          compact_push.contains("ev.message=tagged_message;") &&
+          compact_push.contains("ev.where={};") &&
+          compact_push.contains("ev.modifiers=0;") &&
+          compact_push.contains("ev.window_port=nullptr;"),
+      "EventManager must enqueue one neutral zero-modifier selected-item "
+      "app1Evt without key or pointer forgery");
+  const std::string semantic_delivery = function_body(
+      event_source, "GetNextSemanticGameplayEvent");
+  const std::string compact_delivery = without_whitespace(semantic_delivery);
+  const std::size_t delivery_start = compact_delivery.find(
+      "RealmzIsSemanticSelectedItemDrilldownTag(ret->message)");
+  const std::size_t delivery_end = compact_delivery.find(
+      "RealmzIsSemanticOpenInventoryTag(ret->message)", delivery_start);
+  require(delivery_start != std::string::npos &&
+          delivery_end != std::string::npos && delivery_start < delivery_end,
+      "EventManager selected-item delivery branch is missing");
+  const std::string delivery = compact_delivery.substr(
+      delivery_start, delivery_end - delivery_start);
+  for (const auto needle : {
+           "RealmzConsumeSemanticSelectedItemDrilldownEvent(",
+           "stage_semantic_selected_item_drilldown_member(party_member);",
+           "ret->message=0;",
+           "ret->where={};",
+           "ret->modifiers=0;",
+           "ret->window_port=nullptr;",
+           "ret->what=nullEvent;",
+       }) {
+    require(delivery.contains(needle),
+        std::string("neutral selected-item delivery must retain ") + needle);
+  }
+  require(count_identifier(delivery,
+              "is_mouse_button_down_without_event_pump") == 0 &&
+          count_identifier(delivery, "Button") == 0 &&
+          count_identifier(delivery, "keyDown") == 0 &&
+          count_identifier(delivery, "mouseDown") == 0,
+      "selected-item delivery must have no held-mouse gate or synthesized "
+      "input");
+  const std::string take = function_body(
+      event_source, "TakeSemanticSelectedItemDrilldownMember");
+  const std::string compact_take = without_whitespace(take);
+  const std::size_t take_copy = compact_take.find(
+      "constautopending=pending_semantic_selected_item_drilldown_member;");
+  const std::size_t take_clear = compact_take.find(
+      "clear_pending_semantic_selected_item_drilldown_member();", take_copy);
+  const std::size_t take_validate = compact_take.find(
+      "if(!pending||!party_member)", take_clear);
+  const std::size_t take_output = compact_take.find(
+      "*party_member=*pending;", take_validate);
+  require(take_copy != std::string::npos && take_clear != std::string::npos &&
+          take_validate != std::string::npos && take_output != std::string::npos &&
+          take_copy < take_clear && take_clear < take_validate &&
+          take_validate < take_output,
+      "the staged selected member must be one-shot and clear before output "
+      "validation");
+  for (const auto function_name : {
+           "FlushEvents", "GetNextEvent", "GetNextSemanticGameplayEvent",
+           "WaitNextEvent", "CancelSemanticGameplayInput",
+       }) {
+    const std::string body = function_body(event_source, function_name);
+    require(count_identifier(body,
+                "clear_pending_semantic_selected_item_drilldown_member") >= 1,
+        std::string("selected-item staging must clear in ") + function_name);
+  }
+
+  const std::string window_raw = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string window_source = code_only(window_raw);
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t world_sinks_name = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t world_sinks_open = skip_whitespace(
+      create_window, world_sinks_name +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(world_sinks_name != std::string::npos &&
+          world_sinks_open < create_window.size() &&
+          create_window[world_sinks_open] == '{',
+      "WindowManager named selected-item sink bundle is missing");
+  const std::size_t world_sinks_close = matching_delimiter(
+      create_window, world_sinks_open, '{', '}');
+  const std::string world_sinks = create_window.substr(
+      world_sinks_open, world_sinks_close - world_sinks_open + 1U);
+  const std::string sink = designated_lambda_body(
+      world_sinks, "open_selected_item_drilldown");
+  const std::string compact_sink = without_whitespace(sink);
+  const std::size_t sink_surface = compact_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_match = compact_sink.find(
+      "constboolmatching_surface=", sink_surface);
+  const std::size_t sink_context = compact_sink.find(
+      "runtime_legacy_context_supports_selected_item_drilldown(context)",
+      sink_match);
+  const std::size_t sink_tag = compact_sink.find(
+      "semantic_selected_item_drilldown_tag(member,surface)", sink_context);
+  const std::size_t sink_push = compact_sink.find(
+      "PushSemanticSelectedItemDrilldownEvent(tag)", sink_tag);
+  require(sink_surface != std::string::npos && sink_match != std::string::npos &&
+          sink_context != std::string::npos && sink_tag != std::string::npos &&
+          sink_push != std::string::npos && sink_surface < sink_match &&
+          sink_match < sink_context && sink_context < sink_tag &&
+          sink_tag < sink_push && count_identifier(sink, "keyDown") == 0 &&
+          count_identifier(sink, "mouseDown") == 0,
+      "WindowManager must bind the active world surface and member, then "
+      "encode and enqueue exactly one selected-item tag");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  for (const auto needle : {
+           "ActionIntent::selected_item_drilldown",
+           "selected_item_drilldown_member_view->selected",
+           "snapshot.party.selected_member==*selected_item_drilldown_member",
+           "selected_item_drilldown_action->can_invoke()",
+           "runtime_legacy_context_supports_selected_item_drilldown({",
+           ".selected_item_drilldown_member=selected_item_drilldown_member",
+           ".selected_item_drilldown_available=selected_item_drilldown_available",
+       }) {
+    require(compact_present.contains(needle),
+        std::string("selected-item composition must retain ") + needle);
+  }
+  const std::size_t live_start = compact_present.find(
+      "if(constauto*selected_item_drilldown=std::get_if<"
+      "realmz::presentation::OpenSelectedItemDrilldownAction>");
+  const std::size_t live_end = compact_present.find(
+      "if(constauto*spellbook=", live_start);
+  require(live_start != std::string::npos && live_end != std::string::npos &&
+          live_start < live_end,
+      "composition-time selected-item liveness branch is missing");
+  const std::string live_branch = compact_present.substr(
+      live_start, live_end - live_start);
+  for (const auto needle : {
+           "ShellControlKind::selected_item_drilldown",
+           "WorldActionPage::party",
+           "action_panel.contains(control.bounds)",
+           "selected_item_drilldown->member<=5U",
+           "member->selected",
+           "snapshot.party.selected_member==selected_item_drilldown->member",
+           "modeled_action->party_member==selected_item_drilldown->member",
+           "modeled_action->can_invoke()",
+           "runtime_legacy_context_supports_selected_item_drilldown(context)",
+       }) {
+    require(live_branch.contains(needle),
+        std::string("composition-time selected-item liveness must retain ") +
+            needle);
+  }
+
+  const std::string keyboard = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_start = compact_keyboard.find(
+      "if(constauto*selected_item_drilldown=std::get_if<"
+      "realmz::presentation::OpenSelectedItemDrilldownAction>");
+  const std::size_t keyboard_end = compact_keyboard.find(
+      "if(constauto*spellbook=", keyboard_start);
+  require(keyboard_start != std::string::npos &&
+          keyboard_end != std::string::npos && keyboard_start < keyboard_end,
+      "keyboard selected-item liveness branch is missing");
+  const std::string keyboard_branch = compact_keyboard.substr(
+      keyboard_start, keyboard_end - keyboard_start);
+  for (const auto needle : {
+           "!surface_matches_context",
+           "ShellControlKind::selected_item_drilldown",
+           "WorldActionPage::party",
+           "action_bar.contains(control.bounds)",
+           "runtime_legacy_context_supports_selected_item_drilldown(context)",
+           "LegacyGameSnapshotSource().capture()",
+           "snapshot->world.presentation!=context.world_presentation",
+           "!member->selected",
+           "snapshot->party.selected_member!=selected_item_drilldown->member",
+       }) {
+    require(keyboard_branch.contains(needle),
+        std::string("keyboard selected-item liveness must retain ") + needle);
+  }
+  require(count_identifier(keyboard_branch,
+              "is_mouse_button_down_without_event_pump") == 0 &&
+          count_identifier(keyboard_branch, "SDL_PollEvent") == 0 &&
+          count_identifier(keyboard_branch, "Button") == 0,
+      "WindowManager selected-item liveness must be read-only, non-pumping, "
+      "and free of a held-mouse gate");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::OpenSelectedItemDrilldownAction>("
+      "&control.payload)");
+  const std::size_t dispatch_live = compact_dispatch.find(
+      "this->remastered_shell_keyboard_route_is_eligible()", dispatch_payload);
+  const std::size_t dispatch_guard = compact_dispatch.find(
+      "(open_selected_item_drilldown&&", dispatch_live);
+  const std::size_t dispatch_kind = compact_dispatch.find(
+      "ShellControlKind::selected_item_drilldown", dispatch_guard);
+  const std::size_t dispatch_page = compact_dispatch.find(
+      "WorldActionPage::party", dispatch_kind);
+  const std::size_t dispatch_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_page);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "runtime_legacy_command_bridge->dispatch(action)", dispatch_panel);
+  require(dispatch_payload != std::string::npos &&
+          dispatch_live != std::string::npos &&
+          dispatch_guard != std::string::npos &&
+          dispatch_kind != std::string::npos &&
+          dispatch_page != std::string::npos &&
+          dispatch_panel != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_payload < dispatch_live && dispatch_live < dispatch_guard &&
+          dispatch_guard < dispatch_kind && dispatch_kind < dispatch_page &&
+          dispatch_page < dispatch_panel && dispatch_panel < dispatch_bridge,
+      "shell dispatch must require a live selected-member EQUIPMENT control "
+      "on the PARTY action bar before typed bridge dispatch");
+  const std::string renderer = function_body(
+      window_source, "draw_shell_panel_contents");
+  require(count_identifier(renderer,
+              "has_semantic_selected_item_drilldown") >= 2 &&
+          count_identifier(renderer, "selected_item_drilldown") >= 2 &&
+          count_text(window_raw, "action_summary += \" · EQUIPMENT\"") == 1,
+      "action chrome must admit EQUIPMENT and retain its fallback summary");
+
+  const std::string outdoor = code_only(read_file(
+      repository_root / "src/realmz_orig/misc.c"));
+  const std::string dungeon = code_only(read_file(
+      repository_root / "src/realmz_orig/threed.c"));
+  for (const auto& [name, loop_source, exit_label] : std::array{
+           std::tuple{"outdoor", outdoor, "gotogoback2;"},
+           std::tuple{"dungeon", dungeon, "gotogoback;"},
+       }) {
+    const std::string compact_loop = without_whitespace(loop_source);
+    const std::size_t branch_start = compact_loop.find(
+        "if(TakeSemanticSelectedItemDrilldownMember(");
+    const std::size_t branch_end = compact_loop.find(
+        "if(TakeSemanticSetSearchStateDesired(", branch_start);
+    require(branch_start != std::string::npos &&
+            branch_end != std::string::npos && branch_start < branch_end,
+        std::string("Classic ") + name +
+            " selected-item app1Evt branch is missing");
+    const std::string branch = compact_loop.substr(
+        branch_start, branch_end - branch_start);
+    for (const auto needle : {
+             "maximum_member>=0",
+             "maximum_member<=5",
+             "semantic_selected_item_member<=maximum_member",
+             "charselectnew==(int)semantic_selected_item_member",
+             "showitembut!=NIL",
+             "theControl=showitembut;",
+             "reply=0;",
+             exit_label,
+         }) {
+      require(branch.contains(needle),
+          std::string("Classic ") + name +
+              " selected-item handoff must retain " + needle);
+    }
+    require(count_identifier(branch, "Button") == 0 &&
+            count_identifier(branch, "keyDown") == 0 &&
+            count_identifier(branch, "mouseDown") == 0 &&
+            count_identifier(branch, "FindControl") == 0,
+        std::string("Classic ") + name +
+            " selected-item handoff must use the real control without a held "
+            "mouse, key, or pointer route");
+    require(compact_loop.contains("constintmaximum_member=(int)charnum;"),
+        std::string("Classic ") + name +
+            " selected-item handoff must derive its bounded live party limit");
+  }
+  require(without_whitespace(outdoor).contains(
+              "showitembut=GetNewControl(168,screen);") &&
+          without_whitespace(outdoor).contains(
+              "GetControlBounds(showitembut,&r);"),
+      "Classic must retain creation of the real Show Item control");
+
+  const std::string buttonchoice = function_body(
+      code_only(read_file(
+          repository_root / "src/realmz_orig/buttonchoice.c")),
+      "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t show_item = compact_buttonchoice.find(
+      "if(theControl==showitembut){");
+  const std::size_t show_condition = compact_buttonchoice.find(
+      "if(theControl==showconditionbut){", show_item);
+  require(show_item != std::string::npos &&
+          show_condition != std::string::npos && show_item < show_condition,
+      "Classic buttonchoice Show Item branch is missing");
+  const std::string show_item_branch = compact_buttonchoice.substr(
+      show_item, show_condition - show_item);
+  require(show_item_branch.contains("GetControlBounds(showitembut,&buttonrect);") &&
+          show_item_branch.contains("downbutton(TRUE);") &&
+          show_item_branch.contains(
+              "showcondition(charselectnew,charselectnew,1,0,charselectnew);") &&
+          show_item_branch.contains("upbutton(TRUE);") &&
+          count_identifier(show_item_branch,
+              "TakeSemanticSelectedItemDrilldownMember") == 0,
+      "Classic buttonchoice alone must press the real control and enter its "
+      "item-mode showcondition popup");
+  const std::string classic_showcondition = function_body(
+      code_only(read_file(
+          repository_root / "src/realmz_orig/showcondition.c")),
+      "showcondition");
+  const std::string compact_classic_showcondition =
+      without_whitespace(classic_showcondition);
+  const std::size_t popup = compact_classic_showcondition.find(
+      "PopUpMenuSelect(popup,50,400,startvalue)");
+  const std::size_t item_mode = compact_classic_showcondition.find(
+      "if((type==1)&&(itemHit>1)&&(canequip)&&!(showonly))", popup);
+  const std::size_t remove = compact_classic_showcondition.find(
+      "removeitem(start,itemHit-2,TRUE,FALSE)", item_mode);
+  const std::size_t wear = compact_classic_showcondition.find(
+      "wear(start,itemHit-2,TRUE)", remove);
+  require(popup != std::string::npos && item_mode != std::string::npos &&
+          remove != std::string::npos && wear != std::string::npos &&
+          popup < item_mode && item_mode < remove && remove < wear,
+      "Classic showcondition must retain authoritative popup browsing and "
+      "remove/wear mutation ownership");
+
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string replay_source = code_only(read_file(entry.path()));
+    for (const auto forbidden : {
+             "OpenSelectedItemDrilldownAction",
+             "selected_item_drilldown",
+             "semantic_selected_item_drilldown_tag",
+             "PushSemanticSelectedItemDrilldownEvent",
+             "RealmzConsumeSemanticSelectedItemDrilldownEvent",
+             "TakeSemanticSelectedItemDrilldownMember",
+         }) {
+      require(count_identifier(replay_source, forbidden) == 0,
+          std::string("selected-item Equipment must add no replay vocabulary: ") +
+              forbidden);
+    }
+  }
+}
+
 void verify_selected_party_details_renderer_contract(
     const fs::path& repository_root) {
   const std::string model_header = code_only(read_file(
@@ -8152,7 +8786,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x4829FE3EF98CB4D3ULL") !=
+          coverage_header.find("0xDFEE5ADA03BB8C1CULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -8242,7 +8876,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x4829FE3EF98CB4D3ULL") !=
+          coverage_test.find("0xDFEE5ADA03BB8C1CULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -11490,6 +12124,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_consumer_count = 0;
   std::size_t global_selection_consumer_count = 0;
   std::size_t global_character_sheet_consumer_count = 0;
+  std::size_t global_selected_item_consumer_count = 0;
   std::size_t global_inventory_consumer_count = 0;
   std::size_t global_spellbook_consumer_count = 0;
   std::size_t global_save_consumer_count = 0;
@@ -11515,9 +12150,11 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_center_cursor_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::size_t global_character_sheet_take_count = 0;
+  std::size_t global_selected_item_take_count = 0;
   std::size_t global_search_take_count = 0;
   std::size_t global_torch_take_count = 0;
   std::vector<fs::path> character_sheet_take_callers;
+  std::vector<fs::path> selected_item_take_callers;
   std::vector<fs::path> search_take_callers;
   std::vector<fs::path> torch_take_callers;
   std::vector<fs::path> c_sources;
@@ -11541,6 +12178,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticPartySelectionEvent");
     global_character_sheet_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenCharacterSheetEvent");
+    global_selected_item_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticSelectedItemDrilldownEvent");
     global_inventory_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenInventoryEvent");
     global_spellbook_consumer_count += count_identifier(
@@ -11596,6 +12235,13 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       character_sheet_take_callers.emplace_back(
           fs::relative(path, legacy_root));
     }
+    const std::size_t selected_item_takes = count_identifier(
+        source, "TakeSemanticSelectedItemDrilldownMember");
+    global_selected_item_take_count += selected_item_takes;
+    if (selected_item_takes != 0) {
+      selected_item_take_callers.emplace_back(
+          fs::relative(path, legacy_root));
+    }
     const std::size_t search_takes = count_identifier(
         source, "TakeSemanticSetSearchStateDesired");
     global_search_take_count += search_takes;
@@ -11622,6 +12268,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic selection directly");
   require(global_character_sheet_consumer_count == 0,
       "legacy loops must not consume Character Sheet tags directly");
+  require(global_selected_item_consumer_count == 0,
+      "legacy loops must not consume selected-item tags directly");
   require(global_inventory_consumer_count == 0,
       "legacy loops must not consume tagged semantic inventory directly");
   require(global_spellbook_consumer_count == 0,
@@ -11683,6 +12331,12 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
               fs::path("misc.c"), fs::path("threed.c")},
       "only misc.c mainscreen and threed.c may take the staged Character "
       "Sheet member");
+  std::ranges::sort(selected_item_take_callers);
+  require(global_selected_item_take_count == 2 &&
+          selected_item_take_callers == std::vector<fs::path>{
+              fs::path("misc.c"), fs::path("threed.c")},
+      "only misc.c mainscreen and threed.c may take the staged selected-item "
+      "member");
   std::ranges::sort(search_take_callers);
   require(global_search_take_count == 2 &&
           search_take_callers == std::vector<fs::path>{
@@ -11725,6 +12379,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t consume_calls = 0;
   std::size_t selection_consume_calls = 0;
   std::size_t character_sheet_consume_calls = 0;
+  std::size_t selected_item_consume_calls = 0;
   std::size_t inventory_consume_calls = 0;
   std::size_t spellbook_consume_calls = 0;
   std::size_t world_scroll_case_consume_calls = 0;
@@ -11752,10 +12407,12 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t scroll_case_consume_calls = 0;
   std::size_t center_cursor_consume_calls = 0;
   std::size_t character_sheet_take_calls = 0;
+  std::size_t selected_item_take_calls = 0;
   std::size_t search_take_calls = 0;
   std::size_t torch_take_calls = 0;
   std::vector<fs::path> wrapper_callers;
   std::vector<fs::path> character_sheet_take_callers;
+  std::vector<fs::path> selected_item_take_callers;
   std::vector<fs::path> search_take_callers;
   std::vector<fs::path> torch_take_callers;
 
@@ -11790,6 +12447,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticPartySelectionEvent");
     character_sheet_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenCharacterSheetEvent");
+    selected_item_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticSelectedItemDrilldownEvent");
     inventory_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenInventoryEvent");
     spellbook_consume_calls += count_identifier(
@@ -11848,6 +12507,12 @@ void verify_production_call_ownership(const fs::path& repository_root) {
     if (file_character_sheet_takes != 0) {
       character_sheet_take_callers.emplace_back(relative);
     }
+    const std::size_t file_selected_item_takes = count_identifier(
+        source, "TakeSemanticSelectedItemDrilldownMember");
+    selected_item_take_calls += file_selected_item_takes;
+    if (file_selected_item_takes != 0) {
+      selected_item_take_callers.emplace_back(relative);
+    }
     const std::size_t file_search_takes = count_identifier(
         source, "TakeSemanticSetSearchStateDesired");
     search_take_calls += file_search_takes;
@@ -11887,6 +12552,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   require(character_sheet_consume_calls == 0,
       "only EventManager may call "
       "RealmzConsumeSemanticOpenCharacterSheetEvent");
+  require(selected_item_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticSelectedItemDrilldownEvent");
   require(inventory_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticOpenInventoryEvent");
   require(spellbook_consume_calls == 0,
@@ -11957,6 +12625,13 @@ void verify_production_call_ownership(const fs::path& repository_root) {
               fs::path("realmz_orig/threed.c")},
       "only the outdoor and dungeon top-level loops may take a staged "
       "Character Sheet member");
+  std::ranges::sort(selected_item_take_callers);
+  require(selected_item_take_calls == 2 &&
+          selected_item_take_callers == std::vector<fs::path>{
+              fs::path("realmz_orig/misc.c"),
+              fs::path("realmz_orig/threed.c")},
+      "only the outdoor and dungeon top-level loops may take a staged "
+      "selected-item member");
   std::ranges::sort(search_take_callers);
   require(search_take_calls == 2 &&
           search_take_callers == std::vector<fs::path>{
@@ -11998,6 +12673,7 @@ int main(int argc, char** argv) {
     verify_set_search_state_window_manager_contract(repository_root);
     verify_use_torch_window_manager_contract(repository_root);
     verify_contextual_overview_window_manager_contract(repository_root);
+    verify_selected_item_drilldown_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

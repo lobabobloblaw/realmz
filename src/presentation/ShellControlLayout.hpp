@@ -42,6 +42,7 @@ enum class ShellControlKind {
   set_search_state,
   use_torch,
   contextual_overview,
+  selected_item_drilldown,
 };
 
 struct ShellControlPlacement {
@@ -130,6 +131,8 @@ struct ShellControlLayoutRequest {
   ContextualOverviewMode contextual_overview_mode =
       ContextualOverviewMode::area_search;
   std::optional<PartyMemberId> contextual_overview_member;
+  std::optional<PartyMemberId> selected_item_drilldown_member;
+  bool selected_item_drilldown_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

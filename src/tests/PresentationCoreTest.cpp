@@ -156,6 +156,15 @@ void test_actions_and_events() {
   CHECK(action_name(open_inventory.payload) == "open_inventory");
   CHECK(std::get<OpenInventoryAction>(open_inventory.payload).member == 2);
 
+  UIAction open_selected_item_drilldown{
+      .sequence = 9,
+      .payload = OpenSelectedItemDrilldownAction{2},
+  };
+  CHECK(action_name(open_selected_item_drilldown.payload) ==
+      "open_selected_item_drilldown");
+  CHECK(std::get<OpenSelectedItemDrilldownAction>(
+      open_selected_item_drilldown.payload).member == 2);
+
   UIAction open_spellbook{
       .sequence = 10,
       .payload = OpenSpellbookAction{2},
@@ -509,6 +518,7 @@ void test_command_bridge() {
   CombatantId open_combat_scroll_case = -1;
   PartyMemberId open_scroll_case_member = 0;
   PartyMemberId open_character_sheet_member = 0;
+  PartyMemberId open_selected_item_drilldown_member = 0;
   CombatantId center_combat_cursor = -1;
   CombatFieldCell center_combat_cursor_cell{};
   LegacyActionHandlers handlers;
@@ -588,6 +598,12 @@ void test_command_bridge() {
   handlers.open_character_sheet =
       [&open_character_sheet_member](const OpenCharacterSheetAction& action) {
         open_character_sheet_member = action.member;
+        return DispatchResult::handled();
+      };
+  handlers.open_selected_item_drilldown =
+      [&open_selected_item_drilldown_member](
+          const OpenSelectedItemDrilldownAction& action) {
+        open_selected_item_drilldown_member = action.member;
         return DispatchResult::handled();
       };
   handlers.center_combat_cursor =
@@ -679,6 +695,13 @@ void test_command_bridge() {
   });
   CHECK(open_character_sheet_handled.was_handled());
   CHECK(open_character_sheet_member == 3);
+
+  const auto open_selected_item_drilldown_handled = bridge.dispatch(UIAction{
+      .sequence = 7,
+      .payload = OpenSelectedItemDrilldownAction{5},
+  });
+  CHECK(open_selected_item_drilldown_handled.was_handled());
+  CHECK(open_selected_item_drilldown_member == 5);
 
   const auto save_chooser_unsupported = bridge.dispatch(UIAction{
       .sequence = 8,

@@ -18,7 +18,7 @@ using GameplayChromeInventoryRevision = uint64_t;
 // digest. A cited Classic UI/control-map behavior change must update its
 // evidence or anchor, which necessarily produces a new reviewed revision.
 inline constexpr GameplayChromeInventoryRevision
-    kGameplayChromeInventoryRevision = 0x4829FE3EF98CB4D3ULL;
+    kGameplayChromeInventoryRevision = 0xDFEE5ADA03BB8C1CULL;
 
 // The three Classic gameplay surfaces whose 480x416 viewport can eventually
 // be isolated from the surrounding 800x600 chrome.

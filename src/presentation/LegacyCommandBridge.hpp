@@ -99,6 +99,8 @@ struct LegacyActionHandlers {
   LegacyActionHandler<SetSearchStateAction> set_search_state;
   LegacyActionHandler<UseTorchAction> use_torch;
   LegacyActionHandler<ContextualOverviewAction> contextual_overview;
+  LegacyActionHandler<OpenSelectedItemDrilldownAction>
+      open_selected_item_drilldown;
 };
 
 class InjectedLegacyCommandBridge final : public LegacyCommandBridge {

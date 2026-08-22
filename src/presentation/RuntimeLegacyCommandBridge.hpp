@@ -77,6 +77,9 @@ using RuntimeLegacyContextualOverviewSink = std::function<bool(
     const ContextualOverviewAction&,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenSelectedItemDrilldownSink = std::function<bool(
+    PartyMemberId,
+    const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
@@ -161,6 +164,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacySetSearchStateSink set_search_state;
   RuntimeLegacyUseTorchSink use_torch;
   RuntimeLegacyContextualOverviewSink contextual_overview;
+  RuntimeLegacyOpenSelectedItemDrilldownSink open_selected_item_drilldown;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -230,6 +234,12 @@ struct RuntimeLegacyCombatActionSinks {
 // world-context checks; the bridge range-checks the party slot, and the
 // original loop still revalidates the exact live member before opening it.
 [[nodiscard]] bool runtime_legacy_context_supports_open_character_sheet(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// The selected-item drilldown has no Classic keyboard route. This predicate
+// accepts only the guarded top-level world presentations so the named runtime
+// sink can carry the member and surface without forging a key or pointer event.
+[[nodiscard]] bool runtime_legacy_context_supports_selected_item_drilldown(
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Classic lowercase "r" key record used by both preserved

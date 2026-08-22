@@ -302,6 +302,23 @@ std::vector<ActionControlModel> build_actions(
                 unavailable_token("Select a party member first")}));
   result.back().party_member = selected_member;
 
+  const bool selected_item_drilldown_available =
+      navigation_context && selected;
+  result.emplace_back(action(
+      ActionIntent::selected_item_drilldown,
+      "action.items.quick",
+      "Equipment",
+      selected_item_drilldown_available
+          ? ActionAvailability::deferred_to_engine
+          : ActionAvailability::unavailable,
+      tab_order++,
+      selected_item_drilldown_available
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{unavailable_token(
+                selected ? "Equipment is unavailable now"
+                         : "Select a party member first")}));
+  result.back().party_member = selected_member;
+
   ActionAvailability cast_availability = ActionAvailability::deferred_to_engine;
   std::optional<StateTokenModel> cast_reason = engine_rules_token();
   if (!selected) {
