@@ -90,6 +90,9 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
     } else if constexpr (std::is_same_v<Action, RestPartyAction>) {
       return invoke_handler(
           this->handlers_.rest_party, payload, "rest_party");
+    } else if constexpr (std::is_same_v<Action, SetCampStateAction>) {
+      return invoke_handler(
+          this->handlers_.set_camp_state, payload, "set_camp_state");
     } else if constexpr (std::is_same_v<Action, GuardCombatantAction>) {
       return invoke_handler(
           this->handlers_.guard_combatant, payload, "guard_combatant");

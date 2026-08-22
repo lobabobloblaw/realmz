@@ -83,6 +83,15 @@ uint8_t RealmzIsSemanticRestPartyTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticRestPartyTagSurface(
     uint32_t tagged_message);
 
+// Set-camp-state tags retain both their originating world surface and the
+// absolute desired state. A strict boolean payload prevents malformed values
+// from entering Classic's relative lowercase-c route.
+uint8_t RealmzIsSemanticSetCampStateTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticSetCampStateTagSurface(
+    uint32_t tagged_message);
+uint8_t RealmzSemanticSetCampStateTagDesiredInCamp(
+    uint32_t tagged_message);
+
 // Guard tags carry the acting combatant explicitly and are valid only on the
 // combat surface. This prevents a queued command from applying to a later turn.
 uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
@@ -266,6 +275,15 @@ uint8_t RealmzConsumeSemanticRestPartyEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the originating world surface, exact presentation, fresh camp
+// state, and absolute desired-state mismatch before returning Classic's
+// lowercase "c" record. Classic remains authoritative for whether camping is
+// permitted and for all feedback, music, time, and state mutations.
+uint8_t RealmzConsumeSemanticSetCampStateEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 // Revalidates the live acting party combatant, then returns the preserved
 // Classic "g" key record to the top-level combat loop.
 uint8_t RealmzConsumeSemanticGuardCombatantEvent(
@@ -436,6 +454,10 @@ struct CombatFieldCell;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_rest_party_tag(
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_set_camp_state_tag(
+    bool desired_in_camp,
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_guard_combatant_tag(

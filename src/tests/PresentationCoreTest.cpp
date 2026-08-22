@@ -196,6 +196,16 @@ void test_actions_and_events() {
   CHECK(action_name(rest_party.payload) == "rest_party");
   CHECK(std::holds_alternative<RestPartyAction>(rest_party.payload));
 
+  UIAction set_camp_state{
+      .sequence = 14,
+      .payload = SetCampStateAction{.desired_in_camp = true},
+  };
+  CHECK(action_name(set_camp_state.payload) == "set_camp_state");
+  CHECK(std::get<SetCampStateAction>(
+            set_camp_state.payload).desired_in_camp);
+  CHECK(set_camp_state.payload !=
+      UIActionPayload{SetCampStateAction{.desired_in_camp = false}});
+
   UIAction guard{
       .sequence = 13,
       .payload = GuardCombatantAction{2},

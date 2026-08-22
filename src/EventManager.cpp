@@ -671,6 +671,29 @@ public:
     return true;
   }
 
+  bool push_semantic_set_camp_state_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticSetCampStateTag(tagged_message)) {
+      return false;
+    }
+    // Preserve the absolute desired state until delivery. Classic still
+    // receives only its lowercase-c record, after the guarded world consumer
+    // proves that the fresh current state differs from that desired state.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic set camp state (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   bool push_semantic_guard_combatant_event(uint32_t tagged_message) {
     if (!RealmzIsSemanticGuardCombatantTag(tagged_message)) {
       return false;
@@ -1804,6 +1827,23 @@ Boolean GetNextSemanticGameplayEvent(
       ret->message = 0;
     }
   } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticSetCampStateTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticSetCampStateEvent(
+            surface, ret->message, &classic_key_message)) {
+      // The tag carries an absolute desired state, but Classic receives its
+      // original relative lowercase-c record only after a fresh mismatch
+      // check. The preserved c/buttonchoice/campbut flow owns permission,
+      // feedback, music, time, and the actual state transition.
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      // A stale desired state, surface, or presentation is inert before the
+      // unmodified Classic switch and cannot be mistaken for combat Center.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
+  } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticGuardCombatantTag(ret->message)) {
     uint32_t classic_key_message = 0;
     if (still_remastered && RealmzConsumeSemanticGuardCombatantEvent(
@@ -2164,6 +2204,10 @@ Boolean PushSemanticOpenLoadGameEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticRestPartyEvent(uint32_t tagged_message) {
   return em.push_semantic_rest_party_event(tagged_message);
+}
+
+Boolean PushSemanticSetCampStateEvent(uint32_t tagged_message) {
+  return em.push_semantic_set_camp_state_event(tagged_message);
 }
 
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message) {

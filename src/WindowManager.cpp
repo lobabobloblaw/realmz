@@ -1574,6 +1574,30 @@ void WindowManager::create_sdl_window() {
                         realmz::presentation::semantic_rest_party_tag(surface);
                     return tag && PushSemanticRestPartyEvent(tag);
                   },
+              .set_camp_state =
+                  [](bool desired_in_camp, uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_set_camp_state(
+                            desired_in_camp, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_set_camp_state_tag(
+                            desired_in_camp, surface);
+                    return tag && PushSemanticSetCampStateEvent(tag);
+                  },
           },
           realmz::presentation::RuntimeLegacyCombatActionSinks{
               .guard_combatant =
@@ -2882,6 +2906,12 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::rest_party;
         });
+    const bool has_semantic_camp = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::set_camp_state;
+        });
     const bool has_semantic_guard = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -3018,6 +3048,9 @@ void draw_shell_panel_contents(
       if (has_semantic_rest) {
         action_summary += " · REST";
       }
+      if (has_semantic_camp) {
+        action_summary += " · CAMP";
+      }
       action_summary += " · MORE IN GAME VIEW";
     } else if (has_semantic_guard || has_semantic_finish ||
         has_semantic_delay || has_semantic_center ||
@@ -3030,8 +3063,10 @@ void draw_shell_panel_contents(
         has_semantic_open_combat_scroll_case ||
         has_semantic_center_combat_cursor) {
       action_summary = "COMBAT";
-    } else if (has_semantic_rest) {
-      action_summary = "REST";
+    } else if (has_semantic_rest || has_semantic_camp) {
+      action_summary = has_semantic_rest && has_semantic_camp
+          ? "REST · CAMP"
+          : (has_semantic_rest ? "REST" : "CAMP");
     }
     double action_summary_width = width;
     for (const auto& control : controls) {
@@ -3078,6 +3113,8 @@ void draw_shell_panel_contents(
                 realmz::presentation::ShellControlKind::open_load_game) &&
             (control.kind !=
                 realmz::presentation::ShellControlKind::rest_party) &&
+            (control.kind != realmz::presentation::ShellControlKind::
+                    set_camp_state) &&
             (control.kind !=
                 realmz::presentation::ShellControlKind::guard_combatant) &&
             (control.kind !=
@@ -3809,6 +3846,30 @@ void WindowManager::present_remastered_frame() {
                       legacy_context.adaptive_eligible != 0,
                   .in_camp = snapshot.world.in_camp,
               }).has_value();
+      const auto camp_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent == realmz::presentation::
+                ActionIntent::set_camp_state;
+          });
+      const std::optional<bool> camp_desired_in_camp =
+          (world_action_surface &&
+              (camp_action != shell_model->actions.end()))
+          ? camp_action->desired_in_camp
+          : std::nullopt;
+      const bool camp_control_visible = camp_desired_in_camp.has_value();
+      const bool camp_available = camp_control_visible &&
+          camp_action->can_invoke() && snapshot_context_matches &&
+          realmz::presentation::legacy_key_message_for_set_camp_state(
+              *camp_desired_in_camp,
+              {
+                  .screen = screen,
+                  .world_presentation = snapshot.world.presentation,
+                  .adaptive_eligible =
+                      legacy_context.adaptive_eligible != 0,
+                  .in_camp = snapshot.world.in_camp,
+              })
+              .has_value();
       const auto guard_action = std::ranges::find_if(
           shell_model->actions,
           [](const auto& action) {
@@ -4338,6 +4399,10 @@ void WindowManager::present_remastered_frame() {
               .center_combat_cursor = center_combat_cursor,
               .center_combat_cursor_available =
                   center_combat_cursor_available,
+              .camp_control_visible = camp_control_visible,
+              .camp_available = camp_available,
+              .camp_desired_in_camp =
+                  camp_desired_in_camp.value_or(false),
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -4601,6 +4666,32 @@ void WindowManager::present_remastered_frame() {
                     modeled_action != shell_model->actions.end() &&
                     modeled_action->can_invoke() && realmz::presentation::
                         legacy_key_message_for_rest_party(context).has_value();
+              }
+              if (const auto* camp = std::get_if<
+                      realmz::presentation::SetCampStateAction>(
+                      &control.payload)) {
+                const auto modeled_action = std::ranges::find_if(
+                    shell_model->actions,
+                    [](const auto& action) {
+                      return action.intent == realmz::presentation::
+                          ActionIntent::set_camp_state;
+                    });
+                return control.kind == realmz::presentation::
+                        ShellControlKind::set_camp_state &&
+                    current_world_action_page == realmz::presentation::
+                        WorldActionPage::game &&
+                    action_panel.contains(control.bounds) &&
+                    snapshot.screen == context.screen &&
+                    snapshot.world.in_camp == context.in_camp &&
+                    snapshot.world.in_camp != camp->desired_in_camp &&
+                    modeled_action != shell_model->actions.end() &&
+                    modeled_action->can_invoke() &&
+                    modeled_action->desired_in_camp ==
+                        std::optional<bool>{camp->desired_in_camp} &&
+                    realmz::presentation::
+                        legacy_key_message_for_set_camp_state(
+                            camp->desired_in_camp, context)
+                        .has_value();
               }
               if (const auto* guard =
                       std::get_if<
@@ -5846,6 +5937,36 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       }
       continue;
     }
+    if (const auto* camp =
+            std::get_if<realmz::presentation::SetCampStateAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind != realmz::presentation::ShellControlKind::
+              set_camp_state ||
+          this->remastered_world_action_page !=
+              realmz::presentation::WorldActionPage::game ||
+          !this->adaptive_shell_plan->adaptive_layout->action_bar.contains(
+              control.bounds) ||
+          !realmz::presentation::legacy_key_message_for_set_camp_state(
+              camp->desired_in_camp, context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) ||
+          (snapshot->world.presentation != context.world_presentation) ||
+          (snapshot->world.in_camp != context.in_camp) ||
+          (snapshot->world.in_camp == camp->desired_in_camp)) {
+        return false;
+      }
+      continue;
+    }
     if (const auto* guard =
             std::get_if<realmz::presentation::GuardCombatantAction>(
                 &control.payload)) {
@@ -6720,6 +6841,9 @@ void WindowManager::dispatch_remastered_shell_control(
           &control.payload);
   const auto* rest_party =
       std::get_if<realmz::presentation::RestPartyAction>(&control.payload);
+  const auto* set_camp_state =
+      std::get_if<realmz::presentation::SetCampStateAction>(
+          &control.payload);
   const auto* switch_weapon =
       std::get_if<realmz::presentation::SwitchWeaponSetAction>(
           &control.payload);
@@ -6854,6 +6978,19 @@ void WindowManager::dispatch_remastered_shell_control(
         (rest_party &&
             (control.kind !=
                     realmz::presentation::ShellControlKind::rest_party ||
+                this->remastered_world_action_page !=
+                    realmz::presentation::WorldActionPage::game ||
+                !this->adaptive_shell_plan ||
+                !this->adaptive_shell_plan->adaptive_layout ||
+                ((this->adaptive_shell_plan->screen != realmz::presentation::
+                        ScreenContext::exploration) &&
+                    (this->adaptive_shell_plan->screen !=
+                        realmz::presentation::ScreenContext::dungeon)) ||
+                !this->adaptive_shell_plan->adaptive_layout->action_bar
+                     .contains(control.bounds))) ||
+        (set_camp_state &&
+            (control.kind != realmz::presentation::ShellControlKind::
+                    set_camp_state ||
                 this->remastered_world_action_page !=
                     realmz::presentation::WorldActionPage::game ||
                 !this->adaptive_shell_plan ||

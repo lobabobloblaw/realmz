@@ -77,6 +77,15 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyWorldActionSinks::rest_party),
     RuntimeLegacyRestPartySink>);
+static_assert(std::is_same_v<
+    RuntimeLegacySetCampStateSink,
+    std::function<bool(
+        bool,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::set_camp_state),
+    RuntimeLegacySetCampStateSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -1233,6 +1242,195 @@ void test_rest_party_context_and_named_sink_dispatch() {
   CHECK(movement_only.dispatch(UIAction{
       .sequence = sequence,
       .payload = RestPartyAction{},
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_set_camp_state_context_and_named_sink_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .in_camp = false,
+  };
+  int camp_state_calls = 0;
+  bool accept_camp_state = true;
+  bool received_desired_in_camp = false;
+  RuntimeLegacyCommandBridge bridge(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .set_camp_state = [
+              &camp_state_calls,
+              &accept_camp_state,
+              &received_desired_in_camp,
+              &context](
+              bool desired_in_camp,
+              uint32_t message,
+              const RuntimeLegacyCommandContext& captured_context) {
+            ++camp_state_calls;
+            received_desired_in_camp = desired_in_camp;
+            CHECK(message == 0x00000863U);
+            CHECK(captured_context == context);
+            return accept_camp_state;
+          },
+      });
+
+  ActionSequence sequence = 108;
+  CHECK(legacy_key_message_for_set_camp_state(true, context) ==
+      0x00000863U);
+  CHECK(!legacy_key_message_for_set_camp_state(false, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetCampStateAction{.desired_in_camp = true},
+  }).status == DispatchStatus::handled);
+  CHECK(camp_state_calls == 1);
+  CHECK(received_desired_in_camp);
+
+  // The absolute desired state supports leaving camp through the same
+  // preserved relative key only while the fresh current state differs.
+  context.in_camp = true;
+  CHECK(legacy_key_message_for_set_camp_state(false, context) ==
+      0x00000863U);
+  CHECK(!legacy_key_message_for_set_camp_state(true, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetCampStateAction{.desired_in_camp = false},
+  }).status == DispatchStatus::handled);
+  CHECK(camp_state_calls == 2);
+  CHECK(!received_desired_in_camp);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    context.in_camp = false;
+    CHECK(legacy_key_message_for_set_camp_state(true, context) ==
+        0x00000863U);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = SetCampStateAction{.desired_in_camp = true},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(camp_state_calls == 4);
+
+  // Combat Center intentionally shares Classic's lowercase-c record but can
+  // never use the world Camp action, desired-state payload, or named sink.
+  CHECK(legacy_key_message_for_center_active_combatant(
+      1,
+      RuntimeLegacyCommandContext{
+          .screen = ScreenContext::combat,
+          .world_presentation = WorldPresentation::none,
+          .adaptive_eligible = true,
+      }) == 0x00000863U);
+  CHECK(!legacy_key_message_for_set_camp_state(
+      true,
+      RuntimeLegacyCommandContext{
+          .screen = ScreenContext::combat,
+          .world_presentation = WorldPresentation::none,
+          .adaptive_eligible = true,
+          .in_camp = false,
+      }));
+
+  for (const auto& invalid : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = false,
+               .in_camp = false,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+               .in_camp = false,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .in_camp = false,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+               .in_camp = false,
+           },
+       }) {
+    context = invalid;
+    CHECK(!legacy_key_message_for_set_camp_state(true, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = SetCampStateAction{.desired_in_camp = true},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(camp_state_calls == 4);
+
+  // Idempotent delivery is rejected before the sink, preventing a stale
+  // relative toggle from reversing an already-satisfied transition.
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .in_camp = true,
+  };
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetCampStateAction{.desired_in_camp = true},
+  }).status == DispatchStatus::rejected);
+  CHECK(camp_state_calls == 4);
+
+  context.in_camp = false;
+  accept_camp_state = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetCampStateAction{.desired_in_camp = true},
+  }).status == DispatchStatus::failed);
+  CHECK(camp_state_calls == 5);
+
+  RuntimeLegacyCommandBridge missing_provider(
+      kRuntimeLegacyNamedActionSinks,
+      {},
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .set_camp_state = [](
+              bool,
+              uint32_t,
+              const RuntimeLegacyCommandContext&) { return true; },
+      });
+  CHECK(missing_provider.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetCampStateAction{.desired_in_camp = true},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge empty_named_sink(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{});
+  CHECK(empty_named_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetCampStateAction{.desired_in_camp = true},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = SetCampStateAction{.desired_in_camp = true},
   }).status == DispatchStatus::unsupported);
 }
 
@@ -6085,6 +6283,7 @@ int main() {
     test_open_scroll_case_mapping_and_named_sink_dispatch();
     test_open_character_sheet_context_and_named_sink_dispatch();
     test_rest_party_context_and_named_sink_dispatch();
+    test_set_camp_state_context_and_named_sink_dispatch();
     test_empty_brace_world_sink_compatibility_is_unambiguous();
     test_open_save_game_mapping_and_dispatch();
     test_open_load_game_mapping_and_dispatch();

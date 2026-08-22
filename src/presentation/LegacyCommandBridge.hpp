@@ -95,6 +95,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<CancelAction> cancel;
   LegacyActionHandler<SetPresentationModeAction> set_presentation_mode;
   LegacyActionHandler<RestPartyAction> rest_party;
+  LegacyActionHandler<SetCampStateAction> set_camp_state;
 };
 
 class InjectedLegacyCommandBridge final : public LegacyCommandBridge {

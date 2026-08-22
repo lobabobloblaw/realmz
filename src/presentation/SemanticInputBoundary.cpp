@@ -46,6 +46,10 @@ constexpr uint32_t kSemanticRestPartySignature = 0x57520000U;
 constexpr uint32_t kSemanticRestPartyMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticRestPartySurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticRestPartyReservedMask = 0x000000FFU;
+constexpr uint32_t kSemanticSetCampStateSignature = 0x57430000U;
+constexpr uint32_t kSemanticSetCampStateMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticSetCampStateSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticSetCampStateDesiredMask = 0x000000FFU;
 constexpr uint32_t kSemanticDelayCombatantSignature = 0x52440000U;
 constexpr uint32_t kSemanticDelayCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticDelayCombatantSurfaceMask = 0x0000FF00U;
@@ -159,6 +163,11 @@ struct DecodedOpenLoadGame {
 };
 
 struct DecodedRestParty {
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedSetCampState {
+  bool desired_in_camp;
   RealmzSemanticInputSurface surface;
 };
 
@@ -418,6 +427,25 @@ std::optional<DecodedRestParty> decode_rest_party(
     return std::nullopt;
   }
   return DecodedRestParty{.surface = surface_value};
+}
+
+std::optional<DecodedSetCampState> decode_set_camp_state(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticSetCampStateMask) !=
+      kSemanticSetCampStateSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticSetCampStateSurfaceMask) >> 8U;
+  const uint32_t desired_value =
+      tagged_message & kSemanticSetCampStateDesiredMask;
+  if (!is_world_gameplay_surface(surface_value) || desired_value > 1U) {
+    return std::nullopt;
+  }
+  return DecodedSetCampState{
+      .desired_in_camp = desired_value != 0,
+      .surface = surface_value,
+  };
 }
 
 std::optional<DecodedGuardCombatant> decode_guard_combatant(
@@ -990,6 +1018,17 @@ uint32_t semantic_rest_party_tag(
       (static_cast<uint32_t>(surface) << 8U);
 }
 
+uint32_t semantic_set_camp_state_tag(
+    bool desired_in_camp,
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_world_gameplay_surface(surface)) {
+    return 0;
+  }
+  return kSemanticSetCampStateSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(desired_in_camp);
+}
+
 uint32_t semantic_guard_combatant_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept {
@@ -1348,6 +1387,23 @@ RealmzSemanticRestPartyTagSurface(uint32_t tagged_message) {
   return rest_party ? rest_party->surface : kNoSemanticInputSurface;
 }
 
+extern "C" uint8_t RealmzIsSemanticSetCampStateTag(
+    uint32_t tagged_message) {
+  return decode_set_camp_state(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticSetCampStateTagSurface(uint32_t tagged_message) {
+  const auto camp_state = decode_set_camp_state(tagged_message);
+  return camp_state ? camp_state->surface : kNoSemanticInputSurface;
+}
+
+extern "C" uint8_t RealmzSemanticSetCampStateTagDesiredInCamp(
+    uint32_t tagged_message) {
+  const auto camp_state = decode_set_camp_state(tagged_message);
+  return camp_state && camp_state->desired_in_camp ? 1 : 0;
+}
+
 extern "C" uint8_t RealmzIsSemanticGuardCombatantTag(
     uint32_t tagged_message) {
   return decode_guard_combatant(tagged_message).has_value() ? 1 : 0;
@@ -1543,6 +1599,7 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_open_save_game(tagged_message) ||
           decode_open_load_game(tagged_message) ||
           decode_rest_party(tagged_message) ||
+          decode_set_camp_state(tagged_message) ||
           decode_guard_combatant(tagged_message) ||
           decode_finish_combatant(tagged_message) ||
           decode_delay_combatant(tagged_message) ||
@@ -1592,6 +1649,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto rest_party = decode_rest_party(tagged_message)) {
     return rest_party->surface;
+  }
+  if (const auto camp_state = decode_set_camp_state(tagged_message)) {
+    return camp_state->surface;
   }
   if (const auto guard = decode_guard_combatant(tagged_message)) {
     return guard->surface;
@@ -2024,6 +2084,52 @@ extern "C" uint8_t RealmzConsumeSemanticRestPartyEvent(
     }
     const auto message =
         realmz::presentation::legacy_key_message_for_rest_party(context);
+    if (!message) {
+      return 0;
+    }
+    *classic_key_message = *message;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticSetCampStateEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!classic_key_message || !authorized) {
+    return 0;
+  }
+  const auto camp_state = decode_set_camp_state(tagged_message);
+  if (!camp_state || (camp_state->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    const realmz::presentation::RuntimeLegacyCommandContext context{
+        .screen = screen,
+        .world_presentation = snapshot.world.presentation,
+        .adaptive_eligible = legacy.adaptive_eligible != 0,
+        .in_camp = snapshot.world.in_camp,
+    };
+    if ((snapshot.screen != screen) ||
+        (snapshot.world.in_camp == camp_state->desired_in_camp)) {
+      return 0;
+    }
+    const auto message =
+        realmz::presentation::legacy_key_message_for_set_camp_state(
+            camp_state->desired_in_camp, context);
     if (!message) {
       return 0;
     }

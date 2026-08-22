@@ -209,11 +209,28 @@ cancelled on release, and EventManager rejects either activation when its
 non-pumping cached SDL/Classic state reports a held mouse button. An accepted
 activation therefore begins with one mandatory iteration of Classic's
 preserved `do`/`while (StillDown())` Rest path; a distinct physical press after
-delivery remains ordinary Classic input. Classic remains authoritative for sound,
-tick/delay behavior, `updatefat(FALSE, -2, FALSE)`, both `timeclick` calls and
-any resulting encounters, and the preserved `revertgame` return. The semantic
-route does not synthesize a Rest hold, predict an encounter, or reproduce those
-mutations.
+delivery remains ordinary Classic input. Classic remains authoritative for
+sound, tick/delay behavior, `updatefat(FALSE, -2, FALSE)`, both `timeclick`
+calls and any resulting encounters, and the preserved `revertgame` return. The
+semantic route does not synthesize a Rest hold, predict an encounter, or
+reproduce those mutations.
+The adjacent member-free Camp control carries an explicit desired state in
+`SetCampStateAction`: Camp requests `true`, and Break Camp requests `false`.
+It is deferred only in ordinary outdoor or dungeon navigation with no active
+encounter. The single-use tag records that desired state and originating world
+surface. Late consumption freshly requires adaptive eligibility; the exact
+exploration or dungeon screen; matching outdoor or dungeon-map/first-person
+presentation; and a live camp state still opposite to the request. Only then
+does EventManager return one Classic lowercase `c` keyDown with message
+`0x00000863`. The desired-state mismatch gate prevents a stale Camp activation
+from breaking a newly made camp and a stale Break Camp activation from
+re-entering one. The semantic mapper intentionally does not duplicate
+Classic's historically inverted `cancamp` permission check—`false` permits
+entry and `true` produces denial feedback. Classic's existing `campbut` path
+remains authoritative for that
+permission and feedback, music and sound, `incamp` and related state changes,
+`moveparty(0)`, time advancement, `updatecontrols()`, and every preserved
+`revertgame` return. No Camp action or delivery vocabulary is added to replay.
 Combat exposes seventeen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
@@ -419,13 +436,15 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The known incomplete roles include at least the following; the source-derived
+The 95-row inventory currently contains six `retained_in_crop`, 39
+`semantic_complete`, and 50 `missing` roles. Cropping remains disabled. The
+known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Search, use/consume Torch, Heal, Camp, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
-| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Camp, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Outdoor | Search, use/consume Torch, Heal, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
+| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -610,7 +629,8 @@ Automated checks do not replace these release decisions:
   rather than a partial crop. Archive the inventory, captures, failure evidence,
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, non-combat Use Scroll, Character, Save, Load, Rest, Guard, Finish, Delay, Center,
+  Spells, non-combat Use Scroll, Character, Save, Load, Rest, Camp/Break Camp,
+  Guard, Finish, Delay, Center,
   Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
   Combat Cast, Combat Target, Combat Escape, Use Scroll, and Center Cursor
   controls at compact and wide layouts,
@@ -633,6 +653,16 @@ Automated checks do not replace these release decisions:
   with one mandatory Classic rest quantum per accepted pointer-release or
   keyboard activation, absent a distinct later physical press, while Classic
   alone owns sound, fatigue, time, encounters, and revert handling;
+  verify Camp carries an explicit desired state; is unavailable outside normal
+  world navigation or during an encounter; becomes inert after its semantic
+  scope, surface, adaptive eligibility, presentation, or live camp state
+  changes; and yields exactly one Classic `c` keyDown only while the live state
+  remains opposite to the request. Queue Camp, enter camp by another path, and
+  confirm the stale action cannot break camp; repeat symmetrically for Break
+  Camp. Exercise both values of Classic's inverted `cancamp` permission and
+  confirm Classic alone owns denial feedback, music, sound, state and movement
+  updates, time, control refresh, and revert handling. Confirm replay schemas
+  and decoders expose no Camp vocabulary;
   and inert stale Guard,
   Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting

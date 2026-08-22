@@ -36,6 +36,7 @@ constexpr uint32_t kOpenCombatTargetingRegion = 1120U;
 constexpr uint32_t kEscapeCombatRegion = 1121U;
 constexpr uint32_t kOpenCombatScrollCaseRegion = 1122U;
 constexpr uint32_t kCenterCombatCursorRegion = 1123U;
+constexpr uint32_t kSetCampStateRegion = 1124U;
 constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
@@ -320,7 +321,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const size_t game_world_control_count =
       (request.save_control_visible ? 1U : 0U) +
       (request.load_control_visible ? 1U : 0U) +
-      (request.rest_control_visible ? 1U : 0U);
+      (request.rest_control_visible ? 1U : 0U) +
+      (request.camp_control_visible ? 1U : 0U);
   const size_t world_control_count = travel_world_page
       ? travel_world_control_count
       : (party_world_page ? party_world_control_count
@@ -389,7 +391,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.spellbook_member || request.scroll_case_member ||
               request.character_sheet_member ||
               request.save_control_visible || request.load_control_visible ||
-              request.rest_control_visible)) ||
+              request.rest_control_visible ||
+              request.camp_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.scroll_case_available && !request.scroll_case_member) ||
@@ -398,6 +401,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
       (request.rest_available && !request.rest_control_visible) ||
+      (request.camp_available &&
+          (!request.camp_control_visible ||
+              !request.navigation_available)) ||
       (request.guard_available && !valid_guard) ||
       (request.finish_available && !valid_finish) ||
       (request.delay_available && !valid_delay) ||
@@ -642,6 +648,23 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             .tab_order = 1118,
             .enabled = request.rest_available,
             .payload = RestPartyAction{},
+        });
+        x += button_width + gap;
+      }
+      if (request.camp_control_visible) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kSetCampStateRegion},
+            .kind = ShellControlKind::set_camp_state,
+            .bounds = {x, y, button_width, button_height},
+            .label = request.camp_desired_in_camp ? "CAMP" : "BREAK CAMP",
+            .accessibility_label = request.camp_desired_in_camp
+                ? "Make camp"
+                : "Break camp",
+            .focus_identifier = "focus.action.party.camp",
+            .tab_order = 1124,
+            .enabled = request.camp_available &&
+                request.navigation_available,
+            .payload = SetCampStateAction{request.camp_desired_in_camp},
         });
         x += button_width + gap;
       }

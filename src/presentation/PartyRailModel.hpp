@@ -136,6 +136,7 @@ enum class ActionIntent {
   center_combat_cursor,
   cancel,
   encounter_choice,
+  set_camp_state,
 };
 
 // "deferred_to_engine" means that the snapshot satisfies the prerequisites
@@ -157,6 +158,9 @@ struct ActionControlModel {
   std::optional<int32_t> encounter_choice;
   FocusIdentifier focus_identifier;
   int32_t tab_order = 0;
+  // Only set for state-setting commands whose queued payload must preserve an
+  // explicit camp destination rather than recompute a relative toggle.
+  std::optional<bool> desired_in_camp;
 
   bool operator==(const ActionControlModel&) const = default;
 

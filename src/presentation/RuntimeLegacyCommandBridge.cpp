@@ -20,6 +20,7 @@ constexpr uint32_t kOpenSpellbookMessage = 0x00000173U;
 constexpr uint32_t kOpenOutdoorScrollCaseMessage = 0x0000256CU;
 constexpr uint32_t kOpenDungeonScrollCaseMessage = 0x00002370U;
 constexpr uint32_t kRestPartyMessage = 0x00000F72U;
+constexpr uint32_t kSetCampStateMessage = 0x00000863U;
 constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
@@ -783,7 +784,7 @@ LegacyActionHandlers make_handlers(
     return DispatchResult::handled();
   };
   handlers.rest_party = [
-      context_provider = std::move(context_provider),
+      context_provider,
       rest_party_sink = std::move(world_action_sinks.rest_party)](
           const RestPartyAction&) {
     if (!context_provider) {
@@ -808,6 +809,39 @@ LegacyActionHandlers make_handlers(
     if (!rest_party_sink(*message, context)) {
       return DispatchResult::failed(
           "Legacy event queue rejected semantic rest-party action");
+    }
+    return DispatchResult::handled();
+  };
+  handlers.set_camp_state = [
+      context_provider = std::move(context_provider),
+      set_camp_state_sink =
+          std::move(world_action_sinks.set_camp_state)](
+          const SetCampStateAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!set_camp_state_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy set-camp-state sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic camp state");
+    }
+    const auto message = legacy_key_message_for_set_camp_state(
+        action.desired_in_camp, context);
+    if (!message) {
+      return DispatchResult::rejected(
+          "Camp state is already satisfied or is not supported in the "
+          "current legacy context");
+    }
+    if (!set_camp_state_sink(
+            action.desired_in_camp, *message, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic set-camp-state action");
     }
     return DispatchResult::handled();
   };
@@ -1182,6 +1216,26 @@ std::optional<uint32_t> legacy_key_message_for_rest_party(
       (context.world_presentation == WorldPresentation::dungeon_first_person);
   if ((context.screen == ScreenContext::dungeon) && dungeon_presentation) {
     return kRestPartyMessage;
+  }
+  return std::nullopt;
+}
+
+std::optional<uint32_t> legacy_key_message_for_set_camp_state(
+    bool desired_in_camp,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible ||
+      (context.in_camp == desired_in_camp)) {
+    return std::nullopt;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return kSetCampStateMessage;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  if ((context.screen == ScreenContext::dungeon) && dungeon_presentation) {
+    return kSetCampStateMessage;
   }
   return std::nullopt;
 }

@@ -501,6 +501,9 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .load_available = true,
                  .rest_control_visible = true,
                  .rest_available = true,
+                 .camp_control_visible = true,
+                 .camp_available = true,
+                 .camp_desired_in_camp = true,
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -521,6 +524,9 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .load_available = true,
                  .rest_control_visible = true,
                  .rest_available = true,
+                 .camp_control_visible = true,
+                 .camp_available = true,
+                 .camp_desired_in_camp = true,
              },
          }) {
       std::array<std::vector<ShellControlPlacement>, 3> layouts;
@@ -529,7 +535,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
         layouts[page_index] = compute_shell_control_layout(request);
         const size_t action_count = page_index == 0U
             ? (request.screen == ScreenContext::exploration ? 8U : 4U)
-            : (page_index == 1U ? 4U : 3U);
+            : 4U;
         CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
         verify_world_tabs(
             layouts[page_index], panel, kWorldPages[page_index]);
@@ -595,6 +601,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       const auto& save = game[3];
       const auto& load = game[4];
       const auto& rest = game[5];
+      const auto& camp = game[6];
       CHECK(save.region.value == 1102U);
       CHECK(save.kind == ShellControlKind::open_save_game);
       CHECK(save.label == "SAVE");
@@ -619,6 +626,14 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(rest.tab_order == 1118);
       CHECK(rest.enabled);
       CHECK(rest.payload == UIActionPayload{RestPartyAction{}});
+      CHECK(camp.region.value == 1124U);
+      CHECK(camp.kind == ShellControlKind::set_camp_state);
+      CHECK(camp.label == "CAMP");
+      CHECK(camp.accessibility_label == "Make camp");
+      CHECK(camp.focus_identifier == "focus.action.party.camp");
+      CHECK(camp.tab_order == 1124);
+      CHECK(camp.enabled);
+      CHECK(camp.payload == UIActionPayload{SetCampStateAction{true}});
 
       // Every tab payload is a direct destination, including selecting the
       // already-active page. Recompose each target from every origin.
@@ -742,6 +757,66 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .rest_available = true,
   }).empty());
 
+  const auto camp_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .camp_control_visible = true,
+      .camp_available = false,
+      .camp_desired_in_camp = true,
+  });
+  CHECK(camp_disabled.size() == 4U);
+  verify_world_tabs(camp_disabled, panel, WorldActionPage::game);
+  CHECK(camp_disabled.back().region.value == 1124U);
+  CHECK(camp_disabled.back().kind == ShellControlKind::set_camp_state);
+  CHECK(camp_disabled.back().label == "CAMP");
+  CHECK(camp_disabled.back().accessibility_label == "Make camp");
+  CHECK(camp_disabled.back().focus_identifier == "focus.action.party.camp");
+  CHECK(camp_disabled.back().tab_order == 1124);
+  CHECK(!camp_disabled.back().enabled);
+  CHECK(camp_disabled.back().payload ==
+      UIActionPayload{SetCampStateAction{true}});
+
+  const auto break_camp = compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_first_person,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .camp_control_visible = true,
+      .camp_available = true,
+      .camp_desired_in_camp = false,
+  });
+  CHECK(break_camp.size() == 4U);
+  verify_world_tabs(break_camp, panel, WorldActionPage::game);
+  CHECK(break_camp.back().label == "BREAK CAMP");
+  CHECK(break_camp.back().accessibility_label == "Break camp");
+  CHECK(break_camp.back().enabled);
+  CHECK(break_camp.back().payload ==
+      UIActionPayload{SetCampStateAction{false}});
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .camp_available = true,
+      .camp_desired_in_camp = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .camp_control_visible = true,
+      .camp_available = true,
+      .camp_desired_in_camp = true,
+  }).empty());
+
   // Dungeon Travel and the reserved four-slot Party page are both reachable
   // at this exact 44-point floor. One point less in either dimension fails
   // the whole persistent deck closed on every page.
@@ -767,6 +842,9 @@ void test_world_action_controls_at_combined_minimum_layout() {
         .load_available = true,
         .rest_control_visible = true,
         .rest_available = true,
+        .camp_control_visible = true,
+        .camp_available = true,
+        .camp_desired_in_camp = true,
     };
     const auto exact = compute_shell_control_layout(exact_request);
     CHECK(!exact.empty());

@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "presentation/GameplayChromeCoverage.hpp"
@@ -77,7 +78,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.action.rest", Surface::exploration,
         Kind::interaction, Status::semantic_complete},
     {"exploration.action.camp", Surface::exploration,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"exploration.action.search_toggle", Surface::exploration,
         Kind::interaction, Status::missing},
     {"exploration.action.use_torch", Surface::exploration,
@@ -140,7 +141,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.action.rest", Surface::dungeon,
         Kind::interaction, Status::semantic_complete},
     {"dungeon.action.camp", Surface::dungeon,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"dungeon.action.search_toggle", Surface::dungeon,
         Kind::interaction, Status::missing},
     {"dungeon.action.use_torch", Surface::dungeon,
@@ -429,6 +430,28 @@ void test_manifest_matches_independent_oracle() {
       Surface::dungeon, Kind::essential_information, Status::missing);
   expect_manifest_entry(manifest, "combat.info.party_vitals",
       Surface::combat, Kind::essential_information, Status::missing);
+
+  for (const auto& [stable_id, surface] : std::array{
+           std::pair{"exploration.action.camp", Surface::exploration},
+           std::pair{"dungeon.action.camp", Surface::dungeon},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::interaction, Status::semantic_complete);
+    const auto* camp = find_manifest_entry(manifest, stable_id);
+    CHECK(camp != nullptr);
+    CHECK(camp->evidence.find("explicit desired-state") !=
+        std::string_view::npos);
+    CHECK(camp->evidence.find("stale activations cannot reverse") !=
+        std::string_view::npos);
+    CHECK(camp->evidence.find("exact c keyDown") !=
+        std::string_view::npos);
+    CHECK(camp->evidence.find("0x00000863") != std::string_view::npos);
+    CHECK(camp->evidence.find("inverted cancamp") !=
+        std::string_view::npos);
+    CHECK(camp->source_anchor ==
+        "src/presentation/SemanticInputBoundary.cpp::"
+        "semantic_set_camp_state_tag/RealmzConsumeSemanticSetCampStateEvent");
+  }
 }
 
 void test_manifest_source_anchors_resolve(
@@ -495,7 +518,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x1FB74F42D95EB551ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0xB8F5AC1781FE2B3CULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -584,7 +607,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x1FB74F42D95EB551ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0xB8F5AC1781FE2B3CULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -634,8 +657,8 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 37U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 52U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 39U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 50U);
 }
 
 void expect_issue(

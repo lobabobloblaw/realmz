@@ -219,6 +219,14 @@ void test_action_availability_is_conservative() {
   CHECK(rest.command == "action.party.rest");
   CHECK(rest.label == "Rest");
   CHECK(rest.availability_reason->label == "Camp first");
+  const auto& make_camp =
+      action_with(model, ActionIntent::set_camp_state);
+  CHECK(make_camp.can_invoke());
+  CHECK(make_camp.availability == ActionAvailability::deferred_to_engine);
+  CHECK(make_camp.command == "action.party.camp");
+  CHECK(make_camp.label == "Camp");
+  CHECK(make_camp.desired_in_camp == true);
+  CHECK(make_camp.availability_reason->label == "Game rules apply");
 
   snapshot.world.in_camp = true;
   model = build_presentation_shell_model(snapshot);
@@ -227,6 +235,14 @@ void test_action_availability_is_conservative() {
   CHECK(available_rest.availability ==
       ActionAvailability::deferred_to_engine);
   CHECK(available_rest.availability_reason->label == "Game rules apply");
+  const auto& break_camp =
+      action_with(model, ActionIntent::set_camp_state);
+  CHECK(break_camp.can_invoke());
+  CHECK(break_camp.availability == ActionAvailability::deferred_to_engine);
+  CHECK(break_camp.command == "action.party.camp");
+  CHECK(break_camp.label == "Break camp");
+  CHECK(break_camp.desired_in_camp == false);
+  CHECK(break_camp.tab_order == available_rest.tab_order + 1);
   snapshot.world.in_camp = false;
 
   snapshot.party.members[1].use_scroll_available = true;
@@ -280,13 +296,19 @@ void test_action_availability_is_conservative() {
       "Select a party member first");
   CHECK(action_with(model, ActionIntent::rest)
             .availability_reason->label == "Camp first");
-  CHECK(model.actions.size() == 11);
-  CHECK(model.actions[8].command == "encounter.choice.11");
-  CHECK(model.actions[8].can_invoke());
-  CHECK(model.actions[9].command == "encounter.choice.12");
-  CHECK(!model.actions[9].can_invoke());
-  CHECK(model.actions[10].intent == ActionIntent::cancel);
-  CHECK(model.actions[10].can_invoke());
+  const auto& camp_in_encounter =
+      action_with(model, ActionIntent::set_camp_state);
+  CHECK(!camp_in_encounter.can_invoke());
+  CHECK(camp_in_encounter.desired_in_camp == true);
+  CHECK(camp_in_encounter.availability_reason->label ==
+      "Camp is unavailable now");
+  CHECK(model.actions.size() == 12);
+  CHECK(model.actions[9].command == "encounter.choice.11");
+  CHECK(model.actions[9].can_invoke());
+  CHECK(model.actions[10].command == "encounter.choice.12");
+  CHECK(!model.actions[10].can_invoke());
+  CHECK(model.actions[11].intent == ActionIntent::cancel);
+  CHECK(model.actions[11].can_invoke());
 }
 
 void test_world_action_page_preferences_are_normalized() {
@@ -369,7 +391,13 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 25U);
+  CHECK(model.actions.size() == 26U);
+  const auto& camp_in_combat =
+      action_with(model, ActionIntent::set_camp_state);
+  CHECK(!camp_in_combat.can_invoke());
+  CHECK(camp_in_combat.desired_in_camp == true);
+  CHECK(camp_in_combat.availability_reason->label ==
+      "Camp is unavailable now");
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());

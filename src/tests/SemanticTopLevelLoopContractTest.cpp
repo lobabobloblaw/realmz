@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "presentation/UIAction.hpp"
@@ -347,6 +348,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic Rest input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticSetCampStateEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic Camp input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic guard input");
@@ -683,6 +688,32 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(rest_wrapper, "keyDown") == 0 &&
           count_identifier(rest_wrapper, "mouseDown") == 0,
       "public semantic Rest enqueue must not synthesize Classic input");
+
+  const std::string push_camp = function_body(
+      source, "push_semantic_set_camp_state_event");
+  const std::string compact_push_camp = without_whitespace(push_camp);
+  require(count_identifier(
+              push_camp, "RealmzIsSemanticSetCampStateTag") == 1,
+      "semantic Camp enqueue must validate exactly one Camp tag");
+  require(count_identifier(push_camp, "app1Evt") == 1,
+      "semantic Camp enqueue must use app1Evt exactly once");
+  require(count_identifier(push_camp, "keyDown") == 0 &&
+          count_identifier(push_camp, "mouseDown") == 0 &&
+          count_identifier(push_camp, "CenterActiveCombatantAction") == 0,
+      "semantic Camp enqueue must retain its absolute world tag without "
+      "synthesizing Classic input or sharing combat Center");
+  require(compact_push_camp.contains("ev.what=app1Evt;") &&
+          compact_push_camp.contains("ev.message=tagged_message;"),
+      "semantic Camp must retain its tagged app1Evt payload");
+
+  const std::string camp_wrapper = function_body(
+      source, "PushSemanticSetCampStateEvent");
+  require(without_whitespace(camp_wrapper).contains(
+              "returnem.push_semantic_set_camp_state_event(tagged_message);"),
+      "public semantic Camp enqueue must delegate to its tagged queue");
+  require(count_identifier(camp_wrapper, "keyDown") == 0 &&
+          count_identifier(camp_wrapper, "mouseDown") == 0,
+      "public semantic Camp enqueue must not synthesize Classic input");
 
   const std::string push_guard = function_body(
       source, "push_semantic_guard_combatant_event");
@@ -1175,6 +1206,10 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must have one late Rest consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticSetCampStateEvent") == 1,
+      "semantic gameplay wrapper must have one late Camp consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late guard consumer");
   require(count_identifier(
@@ -1244,14 +1279,15 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 25,
-      "semantic gameplay wrapper must recognize all twenty-five tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 24 &&
-          count_text(compact_semantic, "ret->what=keyDown;") == 22 &&
+  require(count_identifier(semantic_wrapper, "app1Evt") == 26,
+      "semantic gameplay wrapper must recognize all twenty-six tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 25 &&
+          count_text(compact_semantic, "ret->what=keyDown;") == 23 &&
           count_text(
               compact_semantic, ".kind=(ret->what==keyDown)") == 2,
       "only guarded Classic replay injection or late movement, inventory, "
-      "spellbook, non-combat scroll-case, Rest, guard, finish, delay, center, "
+      "spellbook, non-combat scroll-case, Rest, Camp, guard, finish, delay, "
+      "center, "
       "switch-weapon, cycle-focus, "
       "combat-items, Auto, Range, Bandage, Undo, combat-spellbook, "
       "combat-targeting, Escape, scroll-case, or center-cursor validation may "
@@ -1298,6 +1334,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticRestPartyEvent") == 1,
       "EventManager may consume semantic Rest input only inside its gameplay "
+      "wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticSetCampStateEvent") == 1,
+      "EventManager may consume semantic Camp input only inside its gameplay "
       "wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
@@ -1568,9 +1608,20 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", rest_invalidate);
   const std::size_t rest_rejected_message = compact_semantic.find(
       "ret->message=0", rest_null);
+  const std::size_t camp_branch = compact_semantic.find(
+      "RealmzIsSemanticSetCampStateTag(ret->message)",
+      rest_rejected_message);
+  const std::size_t camp_consume = compact_semantic.find(
+      "RealmzConsumeSemanticSetCampStateEvent(", camp_branch);
+  const std::size_t camp_keydown = compact_semantic.find(
+      "ret->what=keyDown", camp_consume);
+  const std::size_t camp_null = compact_semantic.find(
+      "ret->what=nullEvent", camp_keydown);
+  const std::size_t camp_rejected_message = compact_semantic.find(
+      "ret->message=0", camp_null);
   const std::size_t guard_branch = compact_semantic.find(
       "RealmzIsSemanticGuardCombatantTag(ret->message)",
-      rest_rejected_message);
+      camp_rejected_message);
   const std::size_t guard_consume = compact_semantic.find(
       "RealmzConsumeSemanticGuardCombatantEvent(", guard_branch);
   const std::size_t guard_keydown = compact_semantic.find(
@@ -1817,6 +1868,11 @@ void verify_event_manager(const fs::path& repository_root) {
           rest_invalidate != std::string::npos &&
           rest_null != std::string::npos &&
           rest_rejected_message != std::string::npos &&
+          camp_branch != std::string::npos &&
+          camp_consume != std::string::npos &&
+          camp_keydown != std::string::npos &&
+          camp_null != std::string::npos &&
+          camp_rejected_message != std::string::npos &&
           guard_branch != std::string::npos &&
           guard_consume != std::string::npos &&
           guard_keydown != std::string::npos &&
@@ -1960,7 +2016,12 @@ void verify_event_manager(const fs::path& repository_root) {
           rest_keydown < rest_invalidate &&
           rest_invalidate < rest_null &&
           rest_null < rest_rejected_message &&
-          rest_rejected_message < guard_branch &&
+          rest_rejected_message < camp_branch &&
+          camp_branch < camp_consume &&
+          camp_consume < camp_keydown &&
+          camp_keydown < camp_null &&
+          camp_null < camp_rejected_message &&
+          camp_rejected_message < guard_branch &&
           guard_branch < guard_consume &&
           guard_consume < guard_keydown &&
           guard_keydown < guard_null &&
@@ -2047,9 +2108,16 @@ void verify_event_manager(const fs::path& repository_root) {
           rest_mouse_check < rest_mouse_gate &&
           rest_mouse_gate < rest_consume &&
           rest_consume < rest_keydown && rest_keydown < rest_invalidate &&
-          rest_invalidate < guard_branch,
+          rest_invalidate < camp_branch,
       "Rest must leave semantic gameplay scope, reject a cached held mouse "
       "without pumping, then consume once before its lowercase-r handoff");
+  require(scope_block_close < camp_branch &&
+          camp_branch < camp_consume &&
+          camp_consume < camp_keydown && camp_keydown < camp_null &&
+          camp_null < guard_branch,
+      "Camp must leave semantic gameplay scope, revalidate its absolute "
+      "desired state once, then produce only its lowercase-c handoff or an "
+      "inert rejection before combat Center routes");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
       "Range must leave semantic gameplay scope before its late Classic key "
@@ -5335,9 +5403,10 @@ void verify_rest_party_window_manager_contract(
   const std::string legacy_handlers = type_body(
       legacy_bridge_header, "LegacyActionHandlers");
   require(without_whitespace(legacy_handlers).ends_with(
-              "LegacyActionHandler<RestPartyAction>rest_party;}"),
-      "LegacyActionHandlers must append Rest so positional aggregate clients "
-      "retain the pre-Rest member order");
+              "LegacyActionHandler<RestPartyAction>rest_party;"
+              "LegacyActionHandler<SetCampStateAction>set_camp_state;}"),
+      "LegacyActionHandlers must retain Rest followed by append-only Camp so "
+      "positional aggregate clients keep the pre-slice member order");
 
   const std::string runtime_source = code_only(read_file(
       repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
@@ -5823,6 +5892,474 @@ void verify_rest_party_window_manager_contract(
   }
 }
 
+void verify_set_camp_state_window_manager_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string world_sinks_type = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  require(count_identifier(
+              runtime_header, "RuntimeLegacySetCampStateSink") == 2 &&
+          count_identifier(world_sinks_type, "set_camp_state") == 1,
+      "runtime bridge must append exactly one named absolute Camp-state sink");
+
+  const std::string runtime_source = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string compact_runtime_source =
+      without_whitespace(runtime_source);
+  require(compact_runtime_source.contains(
+              "kSetCampStateMessage=0x00000863U;") &&
+          compact_runtime_source.contains(
+              "kCenterActiveCombatantMessage=0x00000863U;"),
+      "world Camp and combat Center must preserve the same exact Classic c "
+      "record behind distinct typed routes");
+  const std::string camp_mapper = function_body(
+      runtime_source, "legacy_key_message_for_set_camp_state");
+  const std::string compact_camp_mapper = without_whitespace(camp_mapper);
+  require(compact_camp_mapper.contains(
+              "if(!context.adaptive_eligible||"
+              "(context.in_camp==desired_in_camp)){") &&
+          compact_camp_mapper.contains(
+              "context.screen==ScreenContext::exploration") &&
+          compact_camp_mapper.contains(
+              "context.world_presentation==WorldPresentation::outdoor") &&
+          compact_camp_mapper.contains(
+              "context.screen==ScreenContext::dungeon") &&
+          compact_camp_mapper.contains(
+              "WorldPresentation::dungeon_map") &&
+          compact_camp_mapper.contains(
+              "WorldPresentation::dungeon_first_person") &&
+          count_identifier(camp_mapper, "kSetCampStateMessage") == 2 &&
+          count_identifier(camp_mapper, "cancamp") == 0 &&
+          count_identifier(camp_mapper, "CenterActiveCombatantAction") == 0,
+      "Camp key mapping must require an absolute state mismatch plus an exact "
+      "adaptive world presentation, without projecting Classic cancamp");
+
+  const std::size_t runtime_world_sinks = find_identifier(
+      runtime_source, "RuntimeLegacyWorldActionSinks");
+  const std::size_t runtime_world_body_open = runtime_source.find(
+      '{', runtime_world_sinks +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(runtime_world_sinks != std::string::npos &&
+          runtime_world_body_open != std::string::npos,
+      "runtime named world-action handler body is missing");
+  const std::size_t runtime_world_body_close = matching_delimiter(
+      runtime_source, runtime_world_body_open, '{', '}');
+  const std::string runtime_world_handlers = runtime_source.substr(
+      runtime_world_body_open,
+      runtime_world_body_close - runtime_world_body_open + 1U);
+  const std::string compact_runtime_world_handlers =
+      without_whitespace(runtime_world_handlers);
+  require(compact_runtime_world_handlers.contains(
+              "handlers.set_camp_state=[") &&
+          compact_runtime_world_handlers.contains(
+              "constSetCampStateAction&action") &&
+          compact_runtime_world_handlers.contains(
+              "legacy_key_message_for_set_camp_state("
+              "action.desired_in_camp,context)") &&
+          compact_runtime_world_handlers.contains(
+              "set_camp_state_sink("
+              "action.desired_in_camp,*message,context)"),
+      "runtime world handler must preserve the typed desired Camp state "
+      "through only its named sink");
+
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary_source =
+      without_whitespace(boundary_source);
+  require(compact_boundary_source.contains(
+              "kSemanticSetCampStateSignature=0x57430000U;") &&
+          compact_boundary_source.contains(
+              "kSemanticCenterActiveCombatantSignature=0x52430000U;"),
+      "world Camp and combat Center must retain distinct wire signatures");
+  const std::string decode_camp = function_body(
+      boundary_source, "decode_set_camp_state");
+  const std::string compact_decode_camp = without_whitespace(decode_camp);
+  require(count_identifier(decode_camp, "is_world_gameplay_surface") == 1 &&
+          count_identifier(
+              decode_camp, "kSemanticSetCampStateDesiredMask") == 1 &&
+          compact_decode_camp.contains("desired_value>1U"),
+      "Camp tag decoding must reject non-world surfaces and every low-byte "
+      "payload other than strict false or true");
+  const std::string camp_tag = function_body(
+      boundary_source, "semantic_set_camp_state_tag");
+  const std::string compact_camp_tag = without_whitespace(camp_tag);
+  require(compact_camp_tag.contains(
+              "if(!is_world_gameplay_surface(surface)){return0;}") &&
+          compact_camp_tag.contains("kSemanticSetCampStateSignature|") &&
+          compact_camp_tag.contains(
+              "static_cast<uint32_t>(desired_in_camp)"),
+      "Camp tag production must encode only a world surface and strict typed "
+      "desired-state bit");
+
+  const std::string consume_camp = function_body(
+      boundary_source, "RealmzConsumeSemanticSetCampStateEvent");
+  const std::string compact_consume_camp =
+      without_whitespace(consume_camp);
+  const std::size_t consume_authorize = compact_consume_camp.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t consume_decode = compact_consume_camp.find(
+      "decode_set_camp_state(tagged_message)", consume_authorize);
+  const std::size_t consume_origin = compact_consume_camp.find(
+      "camp_state->surface!=expected_surface", consume_decode);
+  const std::size_t consume_legacy = compact_consume_camp.find(
+      "RealmzCaptureLegacyPresentationContext()", consume_origin);
+  const std::size_t consume_adaptive = compact_consume_camp.find(
+      "!legacy.adaptive_eligible", consume_legacy);
+  const std::size_t consume_screen = compact_consume_camp.find(
+      "screen!=screen_for_surface(expected_surface)", consume_adaptive);
+  const std::size_t consume_snapshot = compact_consume_camp.find(
+      "LegacyGameSnapshotSource().capture()", consume_screen);
+  const std::size_t consume_camp_snapshot = compact_consume_camp.find(
+      ".in_camp=snapshot.world.in_camp", consume_snapshot);
+  const std::size_t consume_snapshot_screen = compact_consume_camp.find(
+      "snapshot.screen!=screen", consume_camp_snapshot);
+  const std::size_t consume_desired_mismatch = compact_consume_camp.find(
+      "snapshot.world.in_camp==camp_state->desired_in_camp",
+      consume_snapshot_screen);
+  const std::size_t consume_mapper = compact_consume_camp.find(
+      "legacy_key_message_for_set_camp_state("
+      "camp_state->desired_in_camp,context)",
+      consume_desired_mismatch);
+  const std::size_t consume_output = compact_consume_camp.find(
+      "*classic_key_message=*message", consume_mapper);
+  require(consume_authorize != std::string::npos &&
+          consume_decode != std::string::npos &&
+          consume_origin != std::string::npos &&
+          consume_legacy != std::string::npos &&
+          consume_adaptive != std::string::npos &&
+          consume_screen != std::string::npos &&
+          consume_snapshot != std::string::npos &&
+          consume_camp_snapshot != std::string::npos &&
+          consume_snapshot_screen != std::string::npos &&
+          consume_desired_mismatch != std::string::npos &&
+          consume_mapper != std::string::npos &&
+          consume_output != std::string::npos &&
+          consume_authorize < consume_decode &&
+          consume_decode < consume_origin && consume_origin < consume_legacy &&
+          consume_legacy < consume_adaptive && consume_adaptive < consume_screen &&
+          consume_screen < consume_snapshot &&
+          consume_snapshot < consume_camp_snapshot &&
+          consume_camp_snapshot < consume_snapshot_screen &&
+          consume_snapshot_screen < consume_desired_mismatch &&
+          consume_desired_mismatch < consume_mapper &&
+          consume_mapper < consume_output,
+      "late Camp consumption must recheck one-shot origin, fresh adaptive "
+      "screen/presentation, and desired-state mismatch before returning c");
+  require(count_identifier(consume_camp, "cancamp") == 0 &&
+          count_identifier(consume_camp, "keyDown") == 0 &&
+          count_identifier(consume_camp, "buttonchoice") == 0 &&
+          count_identifier(consume_camp, "music") == 0 &&
+          count_identifier(consume_camp, "timeclick") == 0,
+      "semantic Camp boundary must validate and return only a key record, "
+      "never decide permission or execute Classic mutations");
+
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t world_sinks_name = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t world_sinks_open = skip_whitespace(
+      create_window,
+      world_sinks_name +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(world_sinks_name != std::string::npos &&
+          world_sinks_open < create_window.size() &&
+          create_window[world_sinks_open] == '{',
+      "WindowManager named world-action sink bundle is missing");
+  const std::size_t world_sinks_close = matching_delimiter(
+      create_window, world_sinks_open, '{', '}');
+  const std::string world_sinks = create_window.substr(
+      world_sinks_open, world_sinks_close - world_sinks_open + 1U);
+  const std::string production_camp_sink = designated_lambda_body(
+      world_sinks, "set_camp_state");
+  const std::string compact_production_camp_sink =
+      without_whitespace(production_camp_sink);
+  const std::size_t sink_surface = compact_production_camp_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_match = compact_production_camp_sink.find(
+      "constboolmatching_surface=", sink_surface);
+  const std::size_t sink_mapper = compact_production_camp_sink.find(
+      "legacy_key_message_for_set_camp_state(desired_in_camp,context)",
+      sink_match);
+  const std::size_t sink_message = compact_production_camp_sink.find(
+      "message!=*expected", sink_mapper);
+  const std::size_t sink_tag = compact_production_camp_sink.find(
+      "semantic_set_camp_state_tag(desired_in_camp,surface)", sink_message);
+  const std::size_t sink_push = compact_production_camp_sink.find(
+      "returntag&&PushSemanticSetCampStateEvent(tag);", sink_tag);
+  require(sink_surface != std::string::npos &&
+          sink_match != std::string::npos && sink_mapper != std::string::npos &&
+          sink_message != std::string::npos && sink_tag != std::string::npos &&
+          sink_push != std::string::npos && sink_surface < sink_match &&
+          sink_match < sink_mapper && sink_mapper < sink_message &&
+          sink_message < sink_tag && sink_tag < sink_push,
+      "production Camp sink must bind the active world surface, preserve the "
+      "desired state, validate c, and enqueue exactly once");
+  require(count_identifier(production_camp_sink, "cancamp") == 0 &&
+          count_identifier(
+              production_camp_sink, "CenterActiveCombatantAction") == 0 &&
+          count_identifier(production_camp_sink, "mouseDown") == 0 &&
+          count_identifier(production_camp_sink, "keyDown") == 0,
+      "production Camp sink must not preempt Classic permission, share combat "
+      "Center, or synthesize input");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  const std::size_t camp_action = compact_present.find(
+      "ActionIntent::set_camp_state");
+  const std::size_t camp_desired = compact_present.find(
+      "conststd::optional<bool>camp_desired_in_camp=", camp_action);
+  const std::size_t camp_visible = compact_present.find(
+      "constboolcamp_control_visible=", camp_desired);
+  const std::size_t camp_available = compact_present.find(
+      "constboolcamp_available=", camp_visible);
+  const std::size_t camp_can_invoke = compact_present.find(
+      "camp_action->can_invoke()", camp_available);
+  const std::size_t camp_context_match = compact_present.find(
+      "snapshot_context_matches", camp_can_invoke);
+  const std::size_t camp_mapper_position = compact_present.find(
+      "legacy_key_message_for_set_camp_state(", camp_context_match);
+  const std::size_t request_visible = compact_present.find(
+      ".camp_control_visible=camp_control_visible", camp_mapper_position);
+  const std::size_t request_available = compact_present.find(
+      ".camp_available=camp_available", request_visible);
+  const std::size_t request_desired = compact_present.find(
+      ".camp_desired_in_camp=camp_desired_in_camp.value_or(false)",
+      request_available);
+  require(camp_action != std::string::npos &&
+          camp_desired != std::string::npos &&
+          camp_visible != std::string::npos &&
+          camp_available != std::string::npos &&
+          camp_can_invoke != std::string::npos &&
+          camp_context_match != std::string::npos &&
+          camp_mapper_position != std::string::npos &&
+          request_visible != std::string::npos &&
+          request_available != std::string::npos &&
+          request_desired != std::string::npos &&
+          camp_action < camp_desired && camp_desired < camp_visible &&
+          camp_visible < camp_available && camp_available < camp_can_invoke &&
+          camp_can_invoke < camp_context_match &&
+          camp_context_match < camp_mapper_position &&
+          camp_mapper_position < request_visible &&
+          request_visible < request_available &&
+          request_available < request_desired,
+      "Camp composition must carry its modeled absolute desired state through "
+      "fresh availability and into the GAME layout request");
+
+  const std::size_t live_camp = compact_present.find(
+      "std::get_if<realmz::presentation::SetCampStateAction>",
+      request_desired);
+  const std::size_t live_camp_end = compact_present.find(
+      "std::get_if<realmz::presentation::GuardCombatantAction>", live_camp);
+  require(live_camp != std::string::npos &&
+          live_camp_end != std::string::npos && live_camp < live_camp_end,
+      "composition-time Camp liveness branch is missing");
+  const std::string live_camp_branch = compact_present.substr(
+      live_camp, live_camp_end - live_camp);
+  for (const auto needle : {
+           "ShellControlKind::set_camp_state",
+           "WorldActionPage::game",
+           "action_panel.contains(control.bounds)",
+           "snapshot.screen==context.screen",
+           "snapshot.world.in_camp==context.in_camp",
+           "snapshot.world.in_camp!=camp->desired_in_camp",
+           "ActionIntent::set_camp_state",
+           "modeled_action->can_invoke()",
+           "modeled_action->desired_in_camp=="
+               "std::optional<bool>{camp->desired_in_camp}",
+           "legacy_key_message_for_set_camp_state("
+               "camp->desired_in_camp,context)",
+       }) {
+    require(live_camp_branch.contains(needle),
+        std::string("composition-time Camp liveness must retain ") + needle);
+  }
+
+  const std::string keyboard = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_camp = compact_keyboard.find(
+      "std::get_if<realmz::presentation::SetCampStateAction>");
+  const std::size_t keyboard_camp_end = compact_keyboard.find(
+      "std::get_if<realmz::presentation::GuardCombatantAction>",
+      keyboard_camp);
+  require(keyboard_camp != std::string::npos &&
+          keyboard_camp_end != std::string::npos &&
+          keyboard_camp < keyboard_camp_end,
+      "keyboard Camp liveness branch is missing");
+  const std::string keyboard_camp_branch = compact_keyboard.substr(
+      keyboard_camp, keyboard_camp_end - keyboard_camp);
+  for (const auto needle : {
+           "!surface_matches_context",
+           "ShellControlKind::set_camp_state",
+           "WorldActionPage::game",
+           "action_bar.contains(control.bounds)",
+           "legacy_key_message_for_set_camp_state("
+               "camp->desired_in_camp,context)",
+           "LegacyGameSnapshotSource().capture()",
+           "snapshot->screen!=context.screen",
+           "snapshot->world.presentation!=context.world_presentation",
+           "snapshot->world.in_camp!=context.in_camp",
+           "snapshot->world.in_camp==camp->desired_in_camp",
+       }) {
+    require(keyboard_camp_branch.contains(needle),
+        std::string("keyboard Camp liveness must retain ") + needle);
+  }
+  require(count_identifier(keyboard_camp_branch, "cancamp") == 0 &&
+          count_identifier(keyboard_camp_branch, "Button") == 0 &&
+          count_identifier(keyboard_camp_branch, "StillDown") == 0 &&
+          count_identifier(keyboard_camp_branch, "SDL_PollEvent") == 0,
+      "WindowManager Camp liveness must neither decide Classic permission nor "
+      "pump or recursively dispatch input");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::SetCampStateAction>("
+      "&control.payload)");
+  const std::size_t dispatch_guard = compact_dispatch.find(
+      "set_camp_state&&", dispatch_payload);
+  const std::size_t dispatch_kind = compact_dispatch.find(
+      "ShellControlKind::set_camp_state", dispatch_guard);
+  const std::size_t dispatch_page = compact_dispatch.find(
+      "WorldActionPage::game", dispatch_kind);
+  const std::size_t dispatch_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_page);
+  const std::size_t dispatch_action = compact_dispatch.find(
+      "constrealmz::presentation::UIActionaction{", dispatch_panel);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "runtime_legacy_command_bridge->dispatch(action)", dispatch_action);
+  require(dispatch_payload != std::string::npos &&
+          dispatch_guard != std::string::npos &&
+          dispatch_kind != std::string::npos &&
+          dispatch_page != std::string::npos &&
+          dispatch_panel != std::string::npos &&
+          dispatch_action != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_payload < dispatch_guard && dispatch_guard < dispatch_kind &&
+          dispatch_kind < dispatch_page && dispatch_page < dispatch_panel &&
+          dispatch_panel < dispatch_action && dispatch_action < dispatch_bridge,
+      "Camp dispatch must validate the live typed descriptor, GAME page, and "
+      "world action bar before bridging it");
+
+  const std::string event_source = code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  const std::string semantic_delivery = function_body(
+      event_source, "GetNextSemanticGameplayEvent");
+  const std::string compact_semantic_delivery =
+      without_whitespace(semantic_delivery);
+  const std::size_t delivery_camp = compact_semantic_delivery.find(
+      "RealmzIsSemanticSetCampStateTag(ret->message)");
+  const std::size_t delivery_consume = compact_semantic_delivery.find(
+      "RealmzConsumeSemanticSetCampStateEvent(", delivery_camp);
+  const std::size_t delivery_key = compact_semantic_delivery.find(
+      "ret->what=keyDown", delivery_consume);
+  const std::size_t delivery_null = compact_semantic_delivery.find(
+      "ret->what=nullEvent", delivery_key);
+  const std::size_t delivery_guard = compact_semantic_delivery.find(
+      "RealmzIsSemanticGuardCombatantTag(ret->message)", delivery_null);
+  require(delivery_camp != std::string::npos &&
+          delivery_consume != std::string::npos &&
+          delivery_key != std::string::npos &&
+          delivery_null != std::string::npos &&
+          delivery_guard != std::string::npos &&
+          delivery_camp < delivery_consume &&
+          delivery_consume < delivery_key && delivery_key < delivery_null &&
+          delivery_null < delivery_guard,
+      "EventManager Camp delivery must produce one guarded keyDown or an "
+      "inert rejection before any combat Center path");
+  const std::string delivery_route = compact_semantic_delivery.substr(
+      delivery_camp, delivery_guard - delivery_camp);
+  require(count_identifier(delivery_route, "keyDown") == 1 &&
+          count_identifier(delivery_route, "nullEvent") == 1 &&
+          count_identifier(delivery_route, "mouseDown") == 0 &&
+          count_identifier(delivery_route, "buttonchoice") == 0 &&
+          count_identifier(delivery_route, "cancamp") == 0,
+      "Camp delivery must only translate the validated tag and never run or "
+      "prejudge Classic camp behavior");
+
+  for (const auto& [name, source_path] : std::array{
+           std::pair{"outdoor", repository_root /
+               "src/realmz_orig/checkkeypad.c"},
+           std::pair{"dungeon", repository_root /
+               "src/realmz_orig/threed.c"},
+       }) {
+    const std::string classic_source = read_file(source_path);
+    const std::size_t camp_case = classic_source.find("case 'c':");
+    const std::size_t next_case = classic_source.find("case 'i':", camp_case);
+    require(camp_case != std::string::npos &&
+            next_case != std::string::npos && camp_case < next_case,
+        std::string("Classic ") + name + " lowercase-c branch is missing");
+    const std::string camp_case_body = without_whitespace(code_only(
+        classic_source.substr(camp_case, next_case - camp_case)));
+    require(camp_case_body.contains("theControl=campbut;break;"),
+        std::string("Classic ") + name +
+            " c must still select only the Camp control");
+  }
+
+  const std::string buttonchoice_source = code_only(read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c"));
+  const std::string buttonchoice = function_body(
+      buttonchoice_source, "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t classic_camp = compact_buttonchoice.find(
+      "if(theControl==campbut){");
+  const std::size_t classic_next = compact_buttonchoice.find(
+      "if(theControl==overviewbut)", classic_camp);
+  require(classic_camp != std::string::npos &&
+          classic_next != std::string::npos && classic_camp < classic_next,
+      "Classic buttonchoice Camp branch is missing");
+  const std::string classic_camp_branch = compact_buttonchoice.substr(
+      classic_camp, classic_next - classic_camp);
+  for (const auto needle : {
+           "if(!incamp)",
+           "if(!cancamp)",
+           "sound(10001)",
+           "music(9)",
+           "incamp=TRUE",
+           "moveparty(0)",
+           "timeclick(3,FALSE)",
+           "timeclick(2,TRUE)",
+           "flashmessage(",
+           "sound(141)",
+           "incamp=FALSE",
+           "timeclick(2,FALSE)",
+           "updatecontrols()",
+       }) {
+    require(classic_camp_branch.contains(needle),
+        std::string("Classic Camp branch must retain ") + needle);
+  }
+
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string replay_source = code_only(read_file(entry.path()));
+    require(count_identifier(replay_source, "SetCampStateAction") == 0 &&
+            count_identifier(
+                replay_source, "semantic_set_camp_state_tag") == 0 &&
+            count_identifier(
+                replay_source, "PushSemanticSetCampStateEvent") == 0,
+        "Camp slice must not add replay actions, tags, or enqueue vocabulary");
+  }
+}
+
 void verify_selected_party_details_renderer_contract(
     const fs::path& repository_root) {
   const std::string model_header = code_only(read_file(
@@ -6207,7 +6744,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x1FB74F42D95EB551ULL") !=
+          coverage_header.find("0xB8F5AC1781FE2B3CULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -6297,7 +6834,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x1FB74F42D95EB551ULL") !=
+          coverage_test.find("0xB8F5AC1781FE2B3CULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -9516,6 +10053,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t save_consume_calls = 0;
   std::size_t load_consume_calls = 0;
   std::size_t rest_consume_calls = 0;
+  std::size_t camp_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
   std::size_t finish_consume_calls = 0;
   std::size_t delay_consume_calls = 0;
@@ -9579,6 +10117,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenLoadGameEvent");
     rest_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticRestPartyEvent");
+    camp_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticSetCampStateEvent");
     guard_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     finish_consume_calls += count_identifier(
@@ -9656,6 +10196,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticOpenLoadGameEvent");
   require(rest_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticRestPartyEvent");
+  require(camp_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticSetCampStateEvent");
   require(guard_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
   require(finish_consume_calls == 0,
@@ -9728,6 +10270,7 @@ int main(int argc, char** argv) {
     verify_window_manager_shell_dispatch_freshness(repository_root);
     verify_character_sheet_window_manager_contract(repository_root);
     verify_rest_party_window_manager_contract(repository_root);
+    verify_set_camp_state_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

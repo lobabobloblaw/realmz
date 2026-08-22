@@ -350,6 +350,18 @@ std::vector<ActionControlModel> build_actions(
           : std::optional<StateTokenModel>{unavailable_token(
                 snapshot.world.in_camp ? "Rest is unavailable now"
                                        : "Camp first")}));
+  result.emplace_back(action(
+      ActionIntent::set_camp_state,
+      "action.party.camp",
+      snapshot.world.in_camp ? "Break camp" : "Camp",
+      navigation_context ? ActionAvailability::deferred_to_engine
+                         : ActionAvailability::unavailable,
+      tab_order++,
+      navigation_context
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{
+                unavailable_token("Camp is unavailable now")}));
+  result.back().desired_in_camp = !snapshot.world.in_camp;
 
   ActionAvailability scroll_availability =
       ActionAvailability::deferred_to_engine;

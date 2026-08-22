@@ -61,6 +61,10 @@ using RuntimeLegacyOpenLoadGameSink = std::function<bool(
 using RuntimeLegacyRestPartySink = std::function<bool(
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacySetCampStateSink = std::function<bool(
+    bool,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
@@ -141,6 +145,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacyOpenLoadGameSink open_load_game;
   RuntimeLegacyOpenCharacterSheetSink open_character_sheet;
   RuntimeLegacyRestPartySink rest_party;
+  RuntimeLegacySetCampStateSink set_camp_state;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -216,6 +221,15 @@ struct RuntimeLegacyCombatActionSinks {
 // world loops. Rest is exposed only while the fresh value-only snapshot says
 // the party remains in camp; Classic owns the complete rest quantum.
 [[nodiscard]] std::optional<uint32_t> legacy_key_message_for_rest_party(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic lowercase "c" key record used by both preserved
+// world loops. The desired state makes shell intent absolute while the
+// Classic route remains a relative toggle: a command is available only when
+// the fresh current camp state differs from the requested state. Classic
+// retains the authoritative can-camp check and all feedback and mutations.
+[[nodiscard]] std::optional<uint32_t> legacy_key_message_for_set_camp_state(
+    bool desired_in_camp,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Game > Save Current Game menu selection consumed by the

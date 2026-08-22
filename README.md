@@ -62,9 +62,23 @@ is dispatched after release; keyboard and pointer delivery are both rejected
 when EventManager's non-pumping cached SDL/Classic state reports a held mouse
 button. An accepted activation therefore begins with one mandatory iteration
 of Classic's preserved Rest loop rather than synthesizing a hold. A distinct
-physical press after delivery remains ordinary Classic input. Classic remains authoritative
-for the rest sound, fatigue update, elapsed time and resulting encounters, and
-the preserved `revertgame` exit.
+physical press after delivery remains ordinary Classic input. Classic remains
+authoritative for the rest sound, fatigue update, elapsed time and resulting
+encounters, and the preserved `revertgame` exit.
+The adjacent member-free Camp control carries an explicit desired state in
+`SetCampStateAction`: Camp requests `true`, while Break Camp requests `false`.
+It is deferred only during ordinary outdoor or dungeon navigation with no
+active encounter. Its single-use world tag is late-validated against a fresh
+adaptive screen, the exact outdoor or dungeon map/first-person presentation,
+and a current camp state still opposite to the requested state. Only then does
+it become Classic's exact lowercase `c` message `0x00000863`. Encoding the
+desired state prevents a stale Camp activation from breaking a newly made camp
+or a stale Break Camp activation from re-entering one. The remastered route
+does not pre-evaluate Classic's historically inverted `cancamp` permission
+(`false` permits entry and `true` denies it) or add replay vocabulary. Classic
+remains authoritative for denial feedback,
+music and sound, camp and movement state, time advancement, control refresh,
+and the preserved `revertgame` exits.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
 Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, Escape, Use Scroll,
 and Center Cursor controls carry the stable active-party combatant ID in typed
@@ -205,8 +219,10 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 800×600 frame. Production continues to hardcode
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
-The current inventory is deliberately incomplete. Known missing outdoor and
-dungeon roles include Search, use/consume Torch, Heal and Camp, Make
+The current 95-row inventory remains deliberately incomplete: six roles are
+`retained_in_crop`, 39 are `semantic_complete`, and 50 remain `missing`, so
+cropping stays disabled. Known missing outdoor and dungeon roles include
+Search, use/consume Torch, Heal, Make
 Scroll/Area Search, context-sensitive Shop/Temple/seamless-encounter entry,
 Trade, Money/Swap, active-member inspection, item and
 condition drilldowns, and the per-member Auto controls. Known missing combat
