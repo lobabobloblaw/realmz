@@ -210,6 +210,31 @@ void test_valid_config_and_immutable_accessors() {
   CHECK(copy.run_id() == config.run_id());
 }
 
+void test_explicit_schema_version_dispatch() {
+  const std::string v1_json = object_json(valid_fields());
+  CHECK(parse_child_config(v1_json).schema_version() == 1U);
+  CHECK(parse_child_config_v1(v1_json).schema_version() == 1U);
+  check_config_error([&] {
+    static_cast<void>(parse_child_config_v2(v1_json));
+  });
+
+  Fields v2_fields = valid_fields();
+  set_field(v2_fields, "schema_version", "2");
+  const std::string v2_json = object_json(v2_fields);
+  CHECK(parse_child_config(v2_json).schema_version() == 2U);
+  CHECK(parse_child_config_v2(v2_json).schema_version() == 2U);
+  check_config_error([&] {
+    static_cast<void>(parse_child_config_v1(v2_json));
+  });
+
+  for (const std::string version : {"0", "3", "-1", "true", "\"2\""}) {
+    check_config_error([&] {
+      static_cast<void>(parse_child_config(
+          config_with("schema_version", version)));
+    });
+  }
+}
+
 void test_strict_json_and_exact_fields() {
   for (const std::string invalid : {
            "",
@@ -460,6 +485,7 @@ void test_file_loading_and_byte_bound() {
     output << object_json(valid_fields());
   }
   CHECK(load_child_config_v1(valid_path).schema_version() == 1);
+  CHECK(load_child_config(valid_path).schema_version() == 1);
   check_config_error([&] {
     static_cast<void>(load_child_config_v1(directory / "missing.json"));
   });
@@ -550,6 +576,7 @@ void test_file_loading_and_byte_bound() {
 int main() {
   try {
     test_valid_config_and_immutable_accessors();
+    test_explicit_schema_version_dispatch();
     test_strict_json_and_exact_fields();
     test_scalar_and_policy_validation();
     test_path_validation();

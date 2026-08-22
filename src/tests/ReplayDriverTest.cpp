@@ -36,6 +36,15 @@ std::size_t checks_run = 0;
   };
 }
 
+[[nodiscard]] UIAction selection(
+    ActionSequence sequence,
+    PartyMemberId member) {
+  return UIAction{
+      .sequence = sequence,
+      .payload = SelectPartyMemberAction{member},
+  };
+}
+
 [[nodiscard]] ReplayObservedEvent key_down(std::uint32_t message) {
   return ReplayObservedEvent{
       .kind = ReplayObservedEventKind::key_down,
@@ -185,6 +194,128 @@ void test_plan_validation_is_strict_and_fail_closed() {
       .payload = ConfirmAction{},
   }});
   require_failed(unsupported, ReplayDriverFailure::unsupported_action);
+
+  ReplayDriver v1_selection({selection(1, 2)});
+  require_failed(v1_selection, ReplayDriverFailure::unsupported_action);
+
+  ReplayDriver v2_selection(
+      {selection(1, 2)}, ReplayActionVocabulary::native_v2);
+  CHECK(v2_selection.phase() == ReplayDriverPhase::awaiting_gameplay_poll);
+  CHECK(v2_selection.failure() == ReplayDriverFailure::none);
+
+  ReplayDriver invalid_v2_selection(
+      {selection(1, 255)}, ReplayActionVocabulary::native_v2);
+  require_failed(
+      invalid_v2_selection, ReplayDriverFailure::invalid_party_member);
+}
+
+void test_v2_party_selection_delivery_and_settlement() {
+  ReplayDriver driver(
+      {
+          selection(1, 2),
+          movement(2, MovementCommand::east),
+          selection(3, 2),
+      },
+      ReplayActionVocabulary::native_v2);
+  CHECK(driver.selected_member_for_action(0U) == 2U);
+  CHECK(!driver.selected_member_for_action(1U));
+  CHECK(driver.selected_member_for_action(2U) == 2U);
+  CHECK(!driver.selected_member_for_action(3U));
+
+  auto directive = driver.on_gameplay_poll();
+  require_initial_checkpoint(directive);
+  CHECK(directive.action != nullptr);
+  CHECK(driver.acknowledge_party_selection_delivery(
+      directive.action->sequence,
+      2,
+      ReplayPartySelectionDeliveryOutcome::changed));
+  CHECK(driver.acknowledged_action_count() == 1U);
+
+  directive = driver.on_gameplay_poll();
+  require_settled_checkpoint(directive, 0U);
+  CHECK(directive.action != nullptr);
+  constexpr std::uint32_t east_message = 0x00007C1DU;
+  CHECK(driver.acknowledge_delivery(
+      directive.action->sequence,
+      east_message,
+      key_down(east_message)));
+
+  directive = driver.on_gameplay_poll();
+  require_settled_checkpoint(directive, 1U);
+  CHECK(directive.action != nullptr);
+  CHECK(driver.acknowledge_party_selection_delivery(
+      directive.action->sequence,
+      2,
+      ReplayPartySelectionDeliveryOutcome::unchanged));
+  CHECK(driver.acknowledged_action_count() == 3U);
+
+  directive = driver.on_gameplay_poll();
+  require_settled_checkpoint(directive, 2U);
+  CHECK(directive.finalize);
+}
+
+void test_v2_party_selection_acknowledgement_fails_closed() {
+  ReplayDriver movement_as_selection(
+      {movement(1, MovementCommand::north)},
+      ReplayActionVocabulary::native_v2);
+  CHECK(movement_as_selection.on_gameplay_poll().action != nullptr);
+  CHECK(!movement_as_selection.acknowledge_party_selection_delivery(
+      1, 0, ReplayPartySelectionDeliveryOutcome::changed));
+  require_failed(
+      movement_as_selection,
+      ReplayDriverFailure::delivered_action_kind_mismatch);
+
+  ReplayDriver selection_as_movement(
+      {selection(1, 2)}, ReplayActionVocabulary::native_v2);
+  CHECK(selection_as_movement.on_gameplay_poll().action != nullptr);
+  CHECK(!selection_as_movement.acknowledge_delivery(
+      1, 0x00007E1EU, key_down(0x00007E1EU)));
+  require_failed(
+      selection_as_movement,
+      ReplayDriverFailure::delivered_action_kind_mismatch);
+
+  ReplayDriver wrong_sequence(
+      {selection(1, 2)}, ReplayActionVocabulary::native_v2);
+  CHECK(wrong_sequence.on_gameplay_poll().action != nullptr);
+  CHECK(!wrong_sequence.acknowledge_party_selection_delivery(
+      2, 2, ReplayPartySelectionDeliveryOutcome::changed));
+  require_failed(
+      wrong_sequence,
+      ReplayDriverFailure::delivered_action_sequence_mismatch);
+
+  ReplayDriver wrong_member(
+      {selection(1, 2)}, ReplayActionVocabulary::native_v2);
+  CHECK(wrong_member.on_gameplay_poll().action != nullptr);
+  CHECK(!wrong_member.acknowledge_party_selection_delivery(
+      1, 1, ReplayPartySelectionDeliveryOutcome::changed));
+  require_failed(
+      wrong_member,
+      ReplayDriverFailure::delivered_party_member_mismatch);
+
+  ReplayDriver rejected(
+      {selection(1, 2)}, ReplayActionVocabulary::native_v2);
+  CHECK(rejected.on_gameplay_poll().action != nullptr);
+  CHECK(!rejected.acknowledge_party_selection_delivery(
+      1, 2, ReplayPartySelectionDeliveryOutcome::rejected));
+  require_failed(rejected, ReplayDriverFailure::party_selection_rejected);
+
+  ReplayDriver invalid_outcome(
+      {selection(1, 2)}, ReplayActionVocabulary::native_v2);
+  CHECK(invalid_outcome.on_gameplay_poll().action != nullptr);
+  CHECK(!invalid_outcome.acknowledge_party_selection_delivery(
+      1,
+      2,
+      static_cast<ReplayPartySelectionDeliveryOutcome>(255)));
+  require_failed(
+      invalid_outcome, ReplayDriverFailure::party_selection_rejected);
+
+  ReplayDriver without_poll(
+      {selection(1, 2)}, ReplayActionVocabulary::native_v2);
+  CHECK(!without_poll.acknowledge_party_selection_delivery(
+      1, 2, ReplayPartySelectionDeliveryOutcome::changed));
+  require_failed(
+      without_poll,
+      ReplayDriverFailure::acknowledgement_without_pending_delivery);
 }
 
 void test_plan_action_limit_boundary() {
@@ -332,6 +463,8 @@ int main() {
     test_one_action_settles_on_following_poll();
     test_each_poll_delivers_at_most_one_action();
     test_plan_validation_is_strict_and_fail_closed();
+    test_v2_party_selection_delivery_and_settlement();
+    test_v2_party_selection_acknowledgement_fails_closed();
     test_plan_action_limit_boundary();
     test_poll_before_acknowledgement_fails_sticky();
     test_delivery_requires_pending_exact_sequence_and_event();

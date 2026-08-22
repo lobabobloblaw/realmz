@@ -42,7 +42,10 @@ import semantic_replay_runner as replay_runner  # noqa: E402
 
 
 SCHEMA_VERSION = 1
+SCHEMA_VERSION_V2 = 2
+SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION, SCHEMA_VERSION_V2})
 COMPARISON_CONTRACT = "realmz.semantic-replay.exact.v1"
+COMPARISON_CONTRACT_V2 = "realmz.semantic-replay.exact.v2"
 SETTLEMENT_BARRIER = replay_runner.SETTLEMENT_BARRIER
 SEMANTIC_NOT_EVALUATED = "not_evaluated"
 SEMANTIC_EQUIVALENT = "equivalent"
@@ -54,6 +57,8 @@ SHA256_HEX_LENGTH = 64
 MAX_ERROR_MESSAGE_LENGTH = 4096
 NATIVE_V1_ACTION_KIND = "move_party"
 NATIVE_V1_ACTION_ARGUMENT = "command"
+NATIVE_V2_SELECT_ACTION_KIND = "select_party_member"
+NATIVE_V2_SELECT_ACTION_ARGUMENT = "member"
 NATIVE_V1_MOVEMENT_COMMANDS = (
     "step_forward",
     "step_backward",
@@ -138,11 +143,19 @@ PROFILE_INSPECTION_FIELDS = frozenset(
 class EquivalenceGateError(Exception):
     """A stable, user-facing live-gate failure."""
 
-    def __init__(self, code: str, message: str, exit_code: int) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        exit_code: int,
+        *,
+        schema_version: int = SCHEMA_VERSION,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.exit_code = exit_code
+        self.schema_version = schema_version
         self.fixture_workspace_retention: dict[str, object] | None = None
         self.runner_workspace_retention: dict[str, object] | None = None
         self.secondary_error: dict[str, str] | None = None
@@ -154,6 +167,7 @@ class _DuplicateJsonKey(ValueError):
 
 @dataclass(frozen=True)
 class EquivalenceRequest:
+    schema_version: int
     manifest: Path
     source_root: Path
     fixture_manifest_sha256: str
@@ -185,6 +199,45 @@ def _reject_json_constant(value: str) -> NoReturn:
 
 def _is_plain_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_supported_schema_version(value: object) -> bool:
+    return _is_plain_int(value) and value in SUPPORTED_SCHEMA_VERSIONS
+
+
+def _schema_version_hint(value: object) -> int:
+    if isinstance(value, dict):
+        candidate = value.get("schema_version")
+        if _is_supported_schema_version(candidate):
+            return candidate
+    if isinstance(value, EquivalenceRequest):
+        candidate = value.schema_version
+        if _is_supported_schema_version(candidate):
+            return candidate
+    return SCHEMA_VERSION
+
+
+def _attach_schema_version(error: BaseException, schema_version: int) -> None:
+    try:
+        setattr(error, "schema_version", schema_version)
+    except BaseException:  # pragma: no cover - defensive exception annotation
+        pass
+
+
+def _validate_schema_version(value: object) -> int:
+    if not _is_supported_schema_version(value):
+        _request_error("schema_version must be 1 or 2")
+    return value
+
+
+def _comparison_contract(schema_version: int) -> str:
+    if not _is_supported_schema_version(schema_version):
+        _request_error("schema_version must be 1 or 2")
+    if schema_version == SCHEMA_VERSION:
+        return COMPARISON_CONTRACT
+    if schema_version == SCHEMA_VERSION_V2:
+        return COMPARISON_CONTRACT_V2
+    _request_error("schema_version must be 1 or 2")
 
 
 def _contains_control(value: str) -> bool:
@@ -383,11 +436,82 @@ def _validate_native_v1_actions(
     return tuple(validated)
 
 
+def _validate_native_v2_actions(
+    actions: Sequence[replay_runner.Action],
+) -> tuple[replay_runner.Action, ...]:
+    """Enforce the closed native v2 movement-and-selection vocabulary."""
+
+    if len(actions) > replay_runner.MAX_ACTIONS:
+        _request_error(
+            f"actions exceeds the {replay_runner.MAX_ACTIONS}-action limit"
+        )
+    validated: list[replay_runner.Action] = []
+    for index, action in enumerate(actions):
+        context = f"actions[{index}]"
+        if not isinstance(action, replay_runner.Action):
+            _request_error(f"{context} is not a normalized replay action")
+        if not replay_runner._is_plain_int(action.ordinal) or action.ordinal != index:
+            _request_error(f"{context}.ordinal must equal its zero-based array index")
+        if not isinstance(action.kind, str):
+            _request_error(
+                f"{context}.kind must be move_party or select_party_member for native v2"
+            )
+        if action.kind == NATIVE_V1_ACTION_KIND:
+            if not isinstance(action.arguments, dict) or set(action.arguments) != {
+                NATIVE_V1_ACTION_ARGUMENT
+            }:
+                _request_error(
+                    f"{context}.arguments must contain exactly the "
+                    f"{NATIVE_V1_ACTION_ARGUMENT} field for native v2 move_party"
+                )
+            command = action.arguments[NATIVE_V1_ACTION_ARGUMENT]
+            if not isinstance(command, str):
+                _request_error(f"{context}.arguments.command must be a string")
+            if command not in _NATIVE_V1_MOVEMENT_COMMAND_SET:
+                _request_error(
+                    f"{context}.arguments.command is not a supported native v2 "
+                    "movement command"
+                )
+        elif action.kind == NATIVE_V2_SELECT_ACTION_KIND:
+            if not isinstance(action.arguments, dict) or set(action.arguments) != {
+                NATIVE_V2_SELECT_ACTION_ARGUMENT
+            }:
+                _request_error(
+                    f"{context}.arguments must contain exactly the "
+                    f"{NATIVE_V2_SELECT_ACTION_ARGUMENT} field for native v2 "
+                    "select_party_member"
+                )
+            member = action.arguments[NATIVE_V2_SELECT_ACTION_ARGUMENT]
+            if not replay_runner._is_plain_int(member) or not 0 <= member <= 5:
+                _request_error(
+                    f"{context}.arguments.member must be a plain integer from 0 through 5"
+                )
+        else:
+            _request_error(
+                f"{context}.kind must be move_party or select_party_member for native v2"
+            )
+        validated.append(action)
+    return tuple(validated)
+
+
+def _validate_native_actions(
+    actions: Sequence[replay_runner.Action], schema_version: int
+) -> tuple[replay_runner.Action, ...]:
+    if not _is_supported_schema_version(schema_version):
+        _request_error("schema_version must be 1 or 2")
+    if schema_version == SCHEMA_VERSION:
+        return _validate_native_v1_actions(actions)
+    if schema_version == SCHEMA_VERSION_V2:
+        return _validate_native_v2_actions(actions)
+    _request_error("schema_version must be 1 or 2")
+
+
 def _validate_normalized_request(request: EquivalenceRequest) -> None:
     """Revalidate every field on the public normalized request value type."""
 
     if not isinstance(request, EquivalenceRequest):
         _request_error("request must be a normalized EquivalenceRequest")
+    schema_version = _validate_schema_version(request.schema_version)
     for value, context, directory, executable in (
         (request.manifest, "manifest", False, False),
         (request.source_root, "source_root", True, False),
@@ -409,7 +533,7 @@ def _validate_normalized_request(request: EquivalenceRequest) -> None:
     _validate_slot(request.output_slot, "output_slot")
     if not isinstance(request.actions, tuple):
         _request_error("actions must be a normalized tuple")
-    _validate_native_v1_actions(request.actions)
+    _validate_native_actions(request.actions, schema_version)
     _validate_timeout(request.timeout_seconds)
     replay_runner._validate_rng_hex(request.rng_seed, "rng_seed", _request_error)
     replay_runner._validate_rng_hex(
@@ -419,15 +543,13 @@ def _validate_normalized_request(request: EquivalenceRequest) -> None:
     )
 
 
-def parse_request(value: object) -> EquivalenceRequest:
+def _parse_request_impl(value: object) -> EquivalenceRequest:
     """Strictly validate all non-fixture-mutation inputs."""
 
     if not isinstance(value, dict):
         _request_error("equivalence request must be a JSON object")
     _require_fields(value, REQUEST_FIELDS, "equivalence request")
-    version = value["schema_version"]
-    if not _is_plain_int(version) or version != SCHEMA_VERSION:
-        _request_error(f"schema_version must be {SCHEMA_VERSION}")
+    version = _validate_schema_version(value["schema_version"])
     manifest = _validate_canonical_path(
         value["manifest"], "manifest", directory=False
     )
@@ -444,8 +566,9 @@ def parse_request(value: object) -> EquivalenceRequest:
         value["executable"], "executable", directory=False, executable=True
     )
     output_slot = _validate_slot(value["output_slot"], "output_slot")
-    actions = _validate_native_v1_actions(
-        replay_runner._validate_actions(value["actions"], _request_error)
+    actions = _validate_native_actions(
+        replay_runner._validate_actions(value["actions"], _request_error),
+        version,
     )
     timeout_seconds = _validate_timeout(value["timeout_seconds"])
     rng_seed = replay_runner._validate_rng_hex(
@@ -455,6 +578,7 @@ def parse_request(value: object) -> EquivalenceRequest:
         value["rng_stream"], "rng_stream", _request_error
     )
     return EquivalenceRequest(
+        schema_version=version,
         manifest=manifest,
         source_root=source_root,
         fixture_manifest_sha256=fixture_manifest_sha256,
@@ -468,8 +592,17 @@ def parse_request(value: object) -> EquivalenceRequest:
     )
 
 
+def parse_request(value: object) -> EquivalenceRequest:
+    schema_version = _schema_version_hint(value)
+    try:
+        return _parse_request_impl(value)
+    except BaseException as error:
+        _attach_schema_version(error, schema_version)
+        raise
+
+
 def load_request(path: Path) -> EquivalenceRequest:
-    """Read and strictly validate a v1 equivalence request."""
+    """Read and strictly validate a supported equivalence request."""
 
     return parse_request(_read_json(path))
 
@@ -666,12 +799,16 @@ def _runner_error(error: replay_runner.ReplayRunnerError) -> EquivalenceGateErro
         error.code,
         _public_runner_message(error.code),
         error.exit_code,
+        schema_version=getattr(error, "schema_version", SCHEMA_VERSION),
     )
     wrapped.runner_workspace_retention = _runner_retention(error)
     return wrapped
 
 
-def _actions_sha256(actions: Sequence[replay_runner.Action]) -> str:
+def _actions_sha256(
+    actions: Sequence[replay_runner.Action],
+    schema_version: int = SCHEMA_VERSION,
+) -> str:
     # Action values are limited to exact JSON integers, booleans, and printable
     # ASCII strings.  Sorted keys and the compact separators therefore produce
     # the RFC 8785 representation for the complete admitted action vocabulary.
@@ -682,7 +819,14 @@ def _actions_sha256(actions: Sequence[replay_runner.Action]) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     digest = hashlib.sha256()
-    digest.update(b"realmz-semantic-replay-actions-v1\n")
+    if not _is_supported_schema_version(schema_version):
+        _request_error("schema_version must be 1 or 2")
+    if schema_version == SCHEMA_VERSION:
+        digest.update(b"realmz-semantic-replay-actions-v1\n")
+    elif schema_version == SCHEMA_VERSION_V2:
+        digest.update(b"realmz-semantic-replay-actions-v2\n")
+    else:
+        _request_error("schema_version must be 1 or 2")
     digest.update(encoded)
     return digest.hexdigest()
 
@@ -695,7 +839,7 @@ def _generated_runner_request(
     input_slot: str,
 ) -> replay_runner.RunRequest:
     value: dict[str, object] = {
-        "schema_version": replay_runner.SCHEMA_VERSION,
+        "schema_version": request.schema_version,
         "executable": str(request.executable),
         "classic_user_data_root": str(classic_root),
         "semantic_user_data_root": str(semantic_root),
@@ -714,30 +858,47 @@ def _generated_runner_request(
 
 def compare_child_results(
     child_results: object,
+    schema_version: int = SCHEMA_VERSION,
 ) -> tuple[dict[str, object], tuple[str, ...]]:
-    """Compare only the four v1 equivalence observables in canonical order."""
+    """Compare only the four versioned equivalence observables in canonical order."""
+
+    error_schema_version = (
+        schema_version
+        if _is_supported_schema_version(schema_version)
+        else SCHEMA_VERSION
+    )
+
+    def invalid(message: str) -> NoReturn:
+        raise EquivalenceGateError(
+            "runner.envelope_invalid",
+            message,
+            EXIT_RUNNER,
+            schema_version=error_schema_version,
+        )
+
+    if not _is_supported_schema_version(schema_version):
+        invalid("comparison schema_version must be 1 or 2")
 
     if not isinstance(child_results, list) or len(child_results) != 2:
-        raise EquivalenceGateError(
-            "runner.envelope_invalid",
-            "runner envelope did not contain exactly two child results",
-            EXIT_RUNNER,
-        )
+        invalid("runner envelope did not contain exactly two child results")
     classic, semantic = child_results
     if not isinstance(classic, dict) or not isinstance(semantic, dict):
-        raise EquivalenceGateError(
-            "runner.envelope_invalid",
-            "runner child results must be objects",
-            EXIT_RUNNER,
-        )
-    comparison: dict[str, object] = {"contract": COMPARISON_CONTRACT}
+        invalid("runner child results must be objects")
+    for route, result in (("classic", classic), ("semantic", semantic)):
+        result_schema_version = result.get("schema_version")
+        if (
+            not _is_plain_int(result_schema_version)
+            or result_schema_version != schema_version
+        ):
+            invalid(
+                f"runner {route} child result schema_version must be {schema_version}"
+            )
+    comparison: dict[str, object] = {
+        "contract": _comparison_contract(schema_version)
+    }
     for field in COMPARED_FIELDS:
         if field not in classic or field not in semantic:
-            raise EquivalenceGateError(
-                "runner.envelope_invalid",
-                f"runner child result is missing comparison field: {field}",
-                EXIT_RUNNER,
-            )
+            invalid(f"runner child result is missing comparison field: {field}")
         comparison[field] = {
             "classic": classic[field],
             "semantic": semantic[field],
@@ -745,11 +906,7 @@ def compare_child_results(
     settled = comparison["settled_action_count"]
     assert isinstance(settled, dict)
     if settled["classic"] != settled["semantic"]:
-        raise EquivalenceGateError(
-            "runner.envelope_invalid",
-            "runner returned inconsistent settled_action_count values",
-            EXIT_RUNNER,
-        )
+        invalid("runner returned inconsistent settled_action_count values")
     mismatched = [
         field
         for field in MISMATCHABLE_FIELDS
@@ -952,16 +1109,18 @@ def _verify_request_fixture(
     return verified
 
 
-def inspect_profile(request: EquivalenceRequest) -> dict[str, object]:
+def _inspect_profile_impl(request: EquivalenceRequest) -> dict[str, object]:
     """Return a privacy-safe, non-executing record of one validated profile."""
 
     verified = _verify_request_fixture(request)
     profile: dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": request.schema_version,
         "status": "profile_inspected",
         "fixture_manifest_sha256": verified.manifest_sha256,
         "fixture_tree_sha256": verified.manifest.tree_sha256,
-        "actions_sha256": _actions_sha256(request.actions),
+        "actions_sha256": _actions_sha256(
+            request.actions, request.schema_version
+        ),
         "action_count": len(request.actions),
         "input_slot": verified.manifest.slot,
         "output_slot": request.output_slot,
@@ -970,8 +1129,21 @@ def inspect_profile(request: EquivalenceRequest) -> dict[str, object]:
         "rng_stream": request.rng_stream,
     }
     if frozenset(profile) != PROFILE_INSPECTION_FIELDS:  # pragma: no cover
-        raise AssertionError("profile inspection fields drifted from v1")
+        raise AssertionError(
+            f"profile inspection fields drifted from v{request.schema_version}"
+        )
     return profile
+
+
+def inspect_profile(request: EquivalenceRequest) -> dict[str, object]:
+    """Validate and inspect one supported replay profile."""
+
+    schema_version = _schema_version_hint(request)
+    try:
+        return _inspect_profile_impl(request)
+    except BaseException as error:
+        _attach_schema_version(error, schema_version)
+        raise
 
 
 def inspect_profile_file(path: Path) -> dict[str, object]:
@@ -980,7 +1152,7 @@ def inspect_profile_file(path: Path) -> dict[str, object]:
     return inspect_profile(load_request(path))
 
 
-def run_request(
+def _run_request_impl(
     request: EquivalenceRequest,
     *,
     retention_out: dict[str, object] | None = None,
@@ -1017,6 +1189,20 @@ def run_request(
             expected_total_file_bytes=sum(record.size for record in manifest.files),
             retention_out=retention_out,
         )
+        runner_schema_version = (
+            runner_envelope.get("schema_version")
+            if isinstance(runner_envelope, dict)
+            else None
+        )
+        if (
+            not _is_plain_int(runner_schema_version)
+            or runner_schema_version != request.schema_version
+        ):
+            raise EquivalenceGateError(
+                "runner.envelope_invalid",
+                "runner envelope schema_version must match the equivalence request",
+                EXIT_RUNNER,
+            )
         if (
             evidence.manifest_sha256 != request.fixture_manifest_sha256
             or evidence.tree_sha256 != request.fixture_tree_sha256
@@ -1032,7 +1218,8 @@ def run_request(
             )
 
         comparison, mismatched = compare_child_results(
-            runner_envelope.get("child_results")
+            runner_envelope.get("child_results"),
+            request.schema_version,
         )
         semantic_equivalence = (
             SEMANTIC_EQUIVALENT if not mismatched else SEMANTIC_NOT_EQUIVALENT
@@ -1040,7 +1227,7 @@ def run_request(
         retention = _workspace_retention_record(workspace, workspace_identity)
         _register_fixture_retention(retention_out, retention)
         envelope: dict[str, object] = {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": request.schema_version,
             "status": "completed",
             "semantic_equivalence": semantic_equivalence,
             "comparison": comparison,
@@ -1067,7 +1254,9 @@ def run_request(
                 },
             },
             "replay_profile": {
-                "actions_sha256": _actions_sha256(request.actions),
+                "actions_sha256": _actions_sha256(
+                    request.actions, request.schema_version
+                ),
                 "action_count": len(request.actions),
                 "input_slot": evidence.slot,
                 "output_slot": request.output_slot,
@@ -1079,11 +1268,14 @@ def run_request(
             "fixture_workspace_retention": retention,
         }
         if frozenset(envelope) != COMPLETED_ENVELOPE_FIELDS:  # pragma: no cover
-            raise AssertionError("equivalence envelope fields drifted from v1")
+            raise AssertionError(
+                "equivalence envelope fields drifted from "
+                f"v{request.schema_version}"
+            )
         return envelope
     except BaseException as error:
         if (
-            runner_envelope is not None
+            isinstance(runner_envelope, dict)
             and getattr(error, "runner_workspace_retention", None) is None
         ):
             candidate = runner_envelope.get("workspace_retention")
@@ -1099,6 +1291,21 @@ def run_request(
         raise
 
 
+def run_request(
+    request: EquivalenceRequest,
+    *,
+    retention_out: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Validate and run a supported provenance-bound equivalence request."""
+
+    schema_version = _schema_version_hint(request)
+    try:
+        return _run_request_impl(request, retention_out=retention_out)
+    except BaseException as error:
+        _attach_schema_version(error, schema_version)
+        raise
+
+
 def run_request_file(
     path: Path,
     *,
@@ -1110,8 +1317,11 @@ def run_request_file(
 
 
 def _error_envelope(error: EquivalenceGateError) -> dict[str, object]:
+    schema_version = getattr(error, "schema_version", SCHEMA_VERSION)
+    if not _is_supported_schema_version(schema_version):
+        schema_version = SCHEMA_VERSION
     envelope: dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "status": "error",
         "semantic_equivalence": SEMANTIC_NOT_EVALUATED,
         "error": _error_record(error.code, error.message),
@@ -1173,7 +1383,7 @@ class _JsonArgumentParser(argparse.ArgumentParser):
 def _argument_parser() -> argparse.ArgumentParser:
     parser = _JsonArgumentParser(
         description=(
-            "Inspect one provenance-declared native-v1 profile, or stage its fixture, "
+            "Inspect one provenance-declared native replay profile, or stage its fixture, "
             "run isolated Classic and semantic children, and compare their exact "
             "replay observables. Private run workspaces are retained and reported."
         )
@@ -1182,13 +1392,13 @@ def _argument_parser() -> argparse.ArgumentParser:
         "--request",
         required=True,
         type=Path,
-        help="v1 semantic replay equivalence request JSON",
+        help="v1 or v2 semantic replay equivalence request JSON",
     )
     parser.add_argument(
         "--inspect-profile",
         action="store_true",
         help=(
-            "validate the request, exact manifest, source tree, and native-v1 "
+            "validate the request, exact manifest, source tree, and versioned native "
             "action profile without staging or launching children"
         ),
     )
@@ -1220,10 +1430,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit_json(_error_envelope(error), sys.stderr)
         return error.exit_code
     except KeyboardInterrupt as error:
+        schema_version = getattr(error, "schema_version", None)
+        if (
+            not _is_supported_schema_version(schema_version)
+            and isinstance(envelope, dict)
+        ):
+            schema_version = envelope.get("schema_version")
+        if not _is_supported_schema_version(schema_version):
+            schema_version = SCHEMA_VERSION
         wrapped = EquivalenceGateError(
             "gate.interrupted",
             "semantic replay equivalence run was interrupted",
             EXIT_INTERRUPTED,
+            schema_version=schema_version,
         )
         _attach_registered_retentions(wrapped, retention_out)
         fixture_retention = getattr(error, "fixture_workspace_retention", None)
@@ -1236,10 +1455,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit_json(_error_envelope(wrapped), sys.stderr)
         return EXIT_INTERRUPTED
     except Exception as error:
+        schema_version = getattr(error, "schema_version", None)
+        if (
+            not _is_supported_schema_version(schema_version)
+            and isinstance(envelope, dict)
+        ):
+            schema_version = envelope.get("schema_version")
+        if not _is_supported_schema_version(schema_version):
+            schema_version = SCHEMA_VERSION
         wrapped = EquivalenceGateError(
             "gate.unexpected_error",
             f"unexpected {type(error).__name__}",
             EXIT_INTERNAL,
+            schema_version=schema_version,
         )
         _attach_registered_retentions(wrapped, retention_out)
         fixture_retention = getattr(error, "fixture_workspace_retention", None)

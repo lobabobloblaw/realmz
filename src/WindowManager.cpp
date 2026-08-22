@@ -5804,6 +5804,39 @@ std::optional<std::uint32_t> WindowManager::replay_movement_key_message(
       movement->command, context);
 }
 
+std::optional<realmz::presentation::PartyMemberId>
+WindowManager::replay_party_selection_member(
+    const realmz::presentation::UIAction& action,
+    std::uint32_t semantic_surface) const noexcept {
+  const auto* selection =
+      std::get_if<realmz::presentation::SelectPartyMemberAction>(
+          &action.payload);
+  if (!selection) {
+    return std::nullopt;
+  }
+  const auto context = capture_runtime_legacy_command_context();
+  const bool matching_surface =
+      ((semantic_surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+          (context.screen ==
+              realmz::presentation::ScreenContext::exploration)) ||
+      ((semantic_surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+          (context.screen == realmz::presentation::ScreenContext::dungeon));
+  if (!matching_surface || !context.adaptive_eligible) {
+    return std::nullopt;
+  }
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if (snapshot.screen != context.screen ||
+        !snapshot.party.member(selection->member)) {
+      return std::nullopt;
+    }
+    return selection->member;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
 realmz::presentation::DispatchResult
 WindowManager::dispatch_replay_semantic_action(
     const realmz::presentation::UIAction& action) {

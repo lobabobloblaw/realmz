@@ -47,4 +47,14 @@ void write_replay_child_result_v1(
     const ReplayChildConfig& config,
     const ReplayCompletedResult& result);
 
+// V2 retains the closed field order and publication guarantees while binding
+// the result to a schema-v2 child config.
+[[nodiscard]] std::string encode_replay_child_result_v2(
+    const ReplayChildConfig& config,
+    const ReplayCompletedResult& result);
+
+void write_replay_child_result_v2(
+    const ReplayChildConfig& config,
+    const ReplayCompletedResult& result);
+
 } // namespace realmz::replay

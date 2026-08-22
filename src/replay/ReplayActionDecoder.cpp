@@ -101,4 +101,67 @@ std::vector<presentation::UIAction> decode_replay_actions_v1(
   return decoded;
 }
 
+presentation::UIAction decode_replay_action_v2(
+    const ReplayAction& action) {
+  if (action.kind == "move_party") {
+    // Delegation pins every v2 movement value to the exact v1 decoding.
+    return decode_replay_action_v1(action);
+  }
+  if (action.ordinal >= kMaximumReplayActions) {
+    throw ReplayActionDecodeError(
+        "replay action ordinal exceeds the v2 4095 maximum");
+  }
+  if (action.kind != "select_party_member") {
+    throw ReplayActionDecodeError(
+        action_prefix(action) + "unsupported v2 action kind: " +
+        action.kind);
+  }
+  if (action.arguments.size() != 1 ||
+      !action.arguments.contains("member")) {
+    throw ReplayActionDecodeError(
+        action_prefix(action) +
+        "select_party_member requires exactly the member argument");
+  }
+  const auto* member =
+      std::get_if<std::int64_t>(&action.arguments.at("member"));
+  if (!member) {
+    throw ReplayActionDecodeError(
+        action_prefix(action) +
+        "select_party_member member must be an integer");
+  }
+  if (*member < 0 || *member > 5) {
+    throw ReplayActionDecodeError(
+        action_prefix(action) +
+        "select_party_member member must be in the range 0..5");
+  }
+
+  const auto sequence =
+      static_cast<presentation::ActionSequence>(action.ordinal) + 1U;
+  return presentation::UIAction{
+      .sequence = sequence,
+      .payload = presentation::SelectPartyMemberAction{
+          static_cast<presentation::PartyMemberId>(*member),
+      },
+  };
+}
+
+std::vector<presentation::UIAction> decode_replay_actions_v2(
+    const std::vector<ReplayAction>& actions) {
+  if (actions.size() > kMaximumReplayActions) {
+    throw ReplayActionDecodeError(
+        "replay action list exceeds the v2 4096-action limit");
+  }
+
+  std::vector<presentation::UIAction> decoded;
+  decoded.reserve(actions.size());
+  for (std::size_t index = 0; index < actions.size(); ++index) {
+    if (actions[index].ordinal != index) {
+      throw ReplayActionDecodeError(
+          "replay actions must have contiguous zero-based ordinals");
+    }
+    decoded.emplace_back(decode_replay_action_v2(actions[index]));
+  }
+  return decoded;
+}
+
 } // namespace realmz::replay

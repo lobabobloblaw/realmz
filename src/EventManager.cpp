@@ -9,6 +9,7 @@
 #include <limits>
 #include <optional>
 #include <phosg/Strings.hh>
+#include <variant>
 
 #include "Types.hpp"
 #include "WindowManager.hpp"
@@ -22,6 +23,20 @@ static phosg::PrefixedLogger em_log("[EventManager] ", DEFAULT_LOG_LEVEL);
 [[nodiscard]] static realmz::replay::ReplayRuntime*
 active_replay_runtime() noexcept {
   return realmz::replay::installed_replay_runtime();
+}
+
+[[nodiscard]] static realmz::replay::ReplayPartySelectionDeliveryOutcome
+replay_party_selection_outcome(
+    RealmzPartySelectionApplyResult result) noexcept {
+  switch (result) {
+    case REALMZ_PARTY_SELECTION_CHANGED:
+      return realmz::replay::ReplayPartySelectionDeliveryOutcome::changed;
+    case REALMZ_PARTY_SELECTION_UNCHANGED:
+      return realmz::replay::ReplayPartySelectionDeliveryOutcome::unchanged;
+    case REALMZ_PARTY_SELECTION_REJECTED:
+      return realmz::replay::ReplayPartySelectionDeliveryOutcome::rejected;
+  }
+  return realmz::replay::ReplayPartySelectionDeliveryOutcome::rejected;
 }
 
 // Prevent any C++ exception raised by replay-only dispatch, queueing, late
@@ -1354,6 +1369,12 @@ Boolean GetNextSemanticGameplayEvent(
 
   const realmz::presentation::UIAction* replay_semantic_action = nullptr;
   std::uint32_t replay_expected_key_message = 0;
+  std::optional<realmz::presentation::PartyMemberId>
+      replay_expected_party_member;
+  std::optional<realmz::presentation::PartyMemberId>
+      replay_delivered_party_member;
+  std::optional<realmz::replay::ReplayPartySelectionDeliveryOutcome>
+      replay_party_selection_delivery;
   if (replay && replay->action_plan_started()) {
     try {
       const auto directive = replay->next_gameplay_poll();
@@ -1368,28 +1389,64 @@ Boolean GetNextSemanticGameplayEvent(
         throw realmz::replay::ReplayRuntimeError(
             "replay poll produced neither an action nor finalization");
       }
-      const auto expected =
-          WindowManager::instance().replay_movement_key_message(
-              *directive.action, surface);
-      if (!expected) {
+      const bool movement =
+          std::holds_alternative<realmz::presentation::MovePartyAction>(
+              directive.action->payload);
+      const bool selection =
+          std::holds_alternative<
+              realmz::presentation::SelectPartyMemberAction>(
+              directive.action->payload);
+      if (movement) {
+        const auto expected =
+            WindowManager::instance().replay_movement_key_message(
+                *directive.action, surface);
+        if (!expected) {
+          throw realmz::replay::ReplayRuntimeError(
+              "replay movement is invalid for the current gameplay surface");
+        }
+        replay_expected_key_message = *expected;
+      } else if (selection) {
+        replay_expected_party_member =
+            WindowManager::instance().replay_party_selection_member(
+                *directive.action, surface);
+        if (!replay_expected_party_member) {
+          throw realmz::replay::ReplayRuntimeError(
+              "replay party selection is invalid for the current gameplay "
+              "surface or party");
+        }
+      } else {
         throw realmz::replay::ReplayRuntimeError(
-            "replay movement is invalid for the current gameplay surface");
+            "replay action is outside the configured native vocabulary");
       }
-      replay_expected_key_message = *expected;
 
       if (replay->replay_route() == realmz::replay::ReplayRoute::classic) {
         *ret = {};
-        ret->what = keyDown;
-        ret->message = replay_expected_key_message;
         ret->when = TickCount();
-        replay->acknowledge_action_delivery(
+        if (movement) {
+          ret->what = keyDown;
+          ret->message = replay_expected_key_message;
+          replay->acknowledge_action_delivery(
+              directive.action->sequence,
+              replay_expected_key_message,
+              {
+                  .kind = realmz::replay::ReplayObservedEventKind::key_down,
+                  .message = ret->message,
+              });
+          return true;
+        }
+
+        const auto applied = RealmzApplyPartyMemberSelection(
+            *replay_expected_party_member);
+        replay->acknowledge_party_selection_delivery(
             directive.action->sequence,
-            replay_expected_key_message,
-            {
-                .kind = realmz::replay::ReplayObservedEventKind::key_down,
-                .message = ret->message,
-            });
-        return true;
+            *replay_expected_party_member,
+            replay_party_selection_outcome(applied));
+        // SelectPartyMemberAction is the idempotent first-click semantic
+        // behavior, not a synthetic portrait mouse event. It is already
+        // applied and intentionally returns nullEvent.
+        ret->what = nullEvent;
+        ret->message = 0;
+        return false;
       }
       if (replay->replay_route() !=
           realmz::replay::ReplayRoute::semantic) {
@@ -1478,6 +1535,14 @@ Boolean GetNextSemanticGameplayEvent(
           "Late-validated semantic party member {} was rejected by the "
           "legacy selection adapter",
           party_member);
+    }
+    if (replay_expected_party_member) {
+      replay_delivered_party_member = validated
+          ? std::optional<realmz::presentation::PartyMemberId>(party_member)
+          : replay_expected_party_member;
+      replay_party_selection_delivery = validated
+          ? replay_party_selection_outcome(applied)
+          : realmz::replay::ReplayPartySelectionDeliveryOutcome::rejected;
     }
     // Selection is applied by the narrow adapter, not exposed to the preserved
     // legacy switch as a repeated portrait click or application-defined event.
@@ -1761,15 +1826,24 @@ Boolean GetNextSemanticGameplayEvent(
   }
   if (replay_semantic_action) {
     try {
-      replay->acknowledge_action_delivery(
-          replay_semantic_action->sequence,
-          replay_expected_key_message,
-          {
-              .kind = (ret->what == keyDown)
-                  ? realmz::replay::ReplayObservedEventKind::key_down
-                  : realmz::replay::ReplayObservedEventKind::other,
-              .message = ret->message,
-          });
+      if (replay_expected_party_member) {
+        replay->acknowledge_party_selection_delivery(
+            replay_semantic_action->sequence,
+            replay_delivered_party_member.value_or(
+                *replay_expected_party_member),
+            replay_party_selection_delivery.value_or(
+                realmz::replay::ReplayPartySelectionDeliveryOutcome::rejected));
+      } else {
+        replay->acknowledge_action_delivery(
+            replay_semantic_action->sequence,
+            replay_expected_key_message,
+            {
+                .kind = (ret->what == keyDown)
+                    ? realmz::replay::ReplayObservedEventKind::key_down
+                    : realmz::replay::ReplayObservedEventKind::other,
+                .message = ret->message,
+            });
+      }
     } catch (const std::exception& error) {
       realmz::replay::fail_semantic_replay_child(error.what());
     } catch (...) {

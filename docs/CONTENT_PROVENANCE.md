@@ -270,9 +270,13 @@ Successful verification and staging emit machine-readable JSON containing
 establish mechanical identity and isolation only.
 
 `scripts/semantic_replay_runner.py` adds the process-isolation layer. Its
-version-1 request, child-config, child-result, and run-envelope contracts are
-the four `tests/semantic/semantic-replay-*.schema.json` files. Invoke it only
-with an explicit request:
+immutable version-1 request, child-config, child-result, and run-envelope
+contracts are the unversioned `semantic-replay-run-request.schema.json`,
+`semantic-replay-child-config.schema.json`,
+`semantic-replay-child-result.schema.json`, and
+`semantic-replay-run-envelope.schema.json` files under `tests/semantic`.
+Parallel version-2 contracts use the corresponding `-v2.schema.json` names.
+Invoke it only with an explicit request:
 
 ```sh
 python3 scripts/semantic_replay_runner.py \
@@ -314,34 +318,48 @@ location; inspect the parent namespace deliberately rather than deleting the
 candidate automatically. These workspaces contain protocol configs and results,
 not staged fixture bytes.
 
-Realmz now recognizes `--semantic-replay-child CONFIG`, strictly validates the
-bounded v1 config before SDL startup, fixes the isolated user root, suppresses
-ambient preference reads and all preference writes, selects and locks the
-configured presentation, and installs the deterministic replay RNG. After
-action preflight, the child explicitly loads the isolated input slot, enters
-normal loaded gameplay, captures canonical initial and post-action snapshots,
-and delivers movement through the selected Classic or guarded semantic route.
-After every action settles, it explicitly saves to a rechecked fresh slot,
-verifies the output tree, and exclusively publishes its state, save, action,
-and RNG measurements before exiting successfully.
+Realmz now recognizes `--semantic-replay-child CONFIG`, strictly validates an
+explicit bounded schema-1 or schema-2 config before SDL startup, fixes the
+isolated user root, suppresses ambient preference reads and all preference
+writes, selects and locks the configured presentation, and installs the
+deterministic replay RNG. Schema 1 remains the immutable movement-only contract.
+Schema 2 preserves that vocabulary and adds a bounded `select_party_member`
+record whose only argument is a zero-based roster integer from 0 through 5.
+After action preflight, the child explicitly loads the isolated input slot,
+enters normal loaded gameplay, captures canonical initial and post-action
+snapshots, and delivers each action through the selected Classic or guarded
+semantic route. After every action settles, it explicitly saves to a rechecked
+fresh slot, verifies the output tree, and exclusively publishes its versioned
+state, save, action, and RNG measurements before exiting successfully.
 
-Synthetic tests pin the parent protocol, and linked native tests exercise both
-delivery routes against controlled engine globals for all eight outdoor and
-four first-person dungeon movement commands. Those linked tests establish
-delivery mapping and next-poll settlement, not Tutorial traversal. The runner
-deliberately does not compare child-reported state and save hashes. The
-repository deliberately contains no selected live Tutorial fixture. A
-standalone runner invocation therefore emits
+Synthetic tests pin the parent protocol, and linked native tests preserve the
+schema-1 matrix across both delivery routes for all eight outdoor and four
+first-person dungeon movement commands. A parallel schema-2 matrix repeats
+those movements and adds changed and idempotent party selection. Movement keeps
+its exact key-event receipt. Selection uses a typed receipt only after late
+validation and adapter application, never synthesizes a portrait click, and
+additionally requires the next captured state to name the requested member.
+Those linked tests establish delivery mapping and next-poll settlement, not
+Tutorial traversal. The runner deliberately does not
+compare child-reported state and save hashes. The repository deliberately
+contains no selected live Tutorial fixture. A standalone runner invocation
+therefore emits
 `"runner_scope":"process_isolation_only"` and
 `"semantic_equivalence":"not_evaluated"`; only the separate comparison gate
 can establish engine and save equivalence for an externally reviewed fixture.
 
 `scripts/semantic_replay_equivalence.py` is the separate opt-in comparison
-layer. Its closed v1 request explicitly pins the exact reviewed manifest and
-fixture-tree digests, manifest and source paths, physical executable, output
-slot, native-v1 movement action plan, timeout, and RNG seed and stream. Invalid
-native actions and digest mismatches fail before private staging. The gate
-creates its own private Classic and semantic
+layer. Its closed schema-1 request explicitly pins the exact reviewed manifest
+and fixture-tree digests, manifest and source paths, physical executable,
+output slot, native-v1 movement action plan, timeout, and RNG seed and stream.
+Parallel schema-2 inspection and envelope contracts carry the new version end
+to end. The runner request and child config remain generic structural transport,
+while the equivalence boundary and native decoder close the schema-2 vocabulary
+to movement plus bounded party selection. Schema 2 uses distinct action-digest,
+engine-identity, and comparison-contract versions; unknown, mixed, or
+downgraded records fail closed. Invalid native actions and digest mismatches
+fail before private staging. The gate creates its own private
+Classic and semantic
 user roots, stages the fixture twice, and holds one descriptor-backed lease over
 the exact manifest, source tree, and both staged inputs throughout the two
 process runs. It finalizes that lease on runner success, failure, or
@@ -392,9 +410,11 @@ The harness is implemented and synthetically tested. The repository still
 contains no private fixture, request, raw envelope, or absolute private path,
 but it can carry a digest-only receipt for an externally reviewed run. Every
 verdict remains scoped to its exact fixture tree, action plan, executable, and
-deterministic inputs; a zero-action or narrow movement profile must not be
-presented as broader release coverage. V1 also compares RNG draw counts rather
-than a separate trace of every value drawn.
+deterministic inputs; a zero-action or narrow profile must not be presented as
+broader release coverage. Schema 1 also compares RNG draw counts rather than a
+separate trace of every value drawn. The schema-2 selection contract currently
+has synthetic and linked-native coverage only. It has no accepted real-engine
+envelope or receipt; producing one requires a newly reviewed private profile.
 
 #### Private outdoor replay receipt (2026-08-21)
 

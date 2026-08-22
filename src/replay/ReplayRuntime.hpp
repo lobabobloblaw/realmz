@@ -63,10 +63,11 @@ public:
   // host scheduler.
   [[nodiscard]] std::uint32_t next_event_tick() noexcept;
 
-  // Installs the already-decoded, movement-only action plan exactly once.
-  // Construction validates the plan again before either the driver or its
-  // state trace becomes observable. A configured runtime without a started
-  // plan retains the existing input-isolation behavior used during startup.
+  // Installs the already-decoded action plan exactly once. Construction
+  // validates it against the child config's schema-selected native vocabulary
+  // before either the driver or its state trace becomes observable. A
+  // configured runtime without a started plan retains the existing
+  // input-isolation behavior used during startup.
   void start_action_plan(std::vector<presentation::UIAction> actions);
   [[nodiscard]] bool action_plan_started() const noexcept;
 
@@ -81,6 +82,10 @@ public:
       presentation::ActionSequence action_sequence,
       std::uint32_t expected_key_down_message,
       ReplayObservedEvent observed);
+  void acknowledge_party_selection_delivery(
+      presentation::ActionSequence action_sequence,
+      presentation::PartyMemberId delivered_member,
+      ReplayPartySelectionDeliveryOutcome outcome);
   [[nodiscard]] Sha256Digest finalize_state_trace() const;
   [[nodiscard]] std::size_t planned_action_count() const noexcept;
   // Counts post-action checkpoints, not merely delivered/acknowledged events.

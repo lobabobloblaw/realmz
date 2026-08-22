@@ -151,7 +151,16 @@ void ReplayRuntime::start_action_plan(
     throw std::logic_error("replay action plan is already started");
   }
 
-  auto driver = std::make_unique<ReplayDriver>(std::move(actions));
+  ReplayActionVocabulary vocabulary;
+  if (config_.schema_version() == 1U) {
+    vocabulary = ReplayActionVocabulary::native_v1;
+  } else if (config_.schema_version() == 2U) {
+    vocabulary = ReplayActionVocabulary::native_v2;
+  } else {
+    throw ReplayRuntimeError("unsupported replay action vocabulary version");
+  }
+  auto driver =
+      std::make_unique<ReplayDriver>(std::move(actions), vocabulary);
   if (driver->phase() == ReplayDriverPhase::failed) {
     throw ReplayRuntimeError(
         "replay action plan rejected by driver: " +
@@ -194,6 +203,17 @@ void ReplayRuntime::record_checkpoint(
     throw ReplayRuntimeError(
         "settled replay checkpoint is missing its action index");
   }
+  if (config_.schema_version() == 2U) {
+    const auto expected_member =
+        require_driver().selected_member_for_action(
+            *checkpoint.action_index);
+    if (expected_member &&
+        snapshot.party.selected_member !=
+            static_cast<std::int32_t>(*expected_member)) {
+      throw ReplayRuntimeError(
+          "settled v2 party selection does not match the requested member");
+    }
+  }
   state_trace.append_post_action(*checkpoint.action_index, snapshot);
 }
 
@@ -206,6 +226,19 @@ void ReplayRuntime::acknowledge_action_delivery(
           action_sequence, expected_key_down_message, observed)) {
     throw ReplayRuntimeError(
         "replay action delivery failed: " +
+        std::string(replay_driver_failure_name(driver.failure())));
+  }
+}
+
+void ReplayRuntime::acknowledge_party_selection_delivery(
+    presentation::ActionSequence action_sequence,
+    presentation::PartyMemberId delivered_member,
+    ReplayPartySelectionDeliveryOutcome outcome) {
+  ReplayDriver& driver = require_driver();
+  if (!driver.acknowledge_party_selection_delivery(
+          action_sequence, delivered_member, outcome)) {
+    throw ReplayRuntimeError(
+        "replay party-selection delivery failed: " +
         std::string(replay_driver_failure_name(driver.failure())));
   }
 }

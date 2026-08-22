@@ -1051,7 +1051,7 @@ const std::string& ReplayChildConfig::rng_stream_token() const noexcept {
   return storage_->rng_stream_token;
 }
 
-ReplayChildConfig parse_child_config_v1(std::string_view json) {
+ReplayChildConfig parse_child_config(std::string_view json) {
   if (json.size() > kMaximumChildConfigBytes) {
     config_error("child config exceeds 4194304 bytes");
   }
@@ -1082,11 +1082,12 @@ ReplayChildConfig parse_child_config_v1(std::string_view json) {
 
   const std::int64_t schema_version = as_integer(
       field(object, "schema_version", "child config"), "schema_version");
-  if (schema_version != 1) {
-    config_error("schema_version must be 1");
+  if (schema_version != 1 && schema_version != 2) {
+    config_error("schema_version must be 1 or 2");
   }
 
   auto storage = std::make_shared<ReplayChildConfig::Storage>();
+  storage->schema_version = static_cast<std::uint32_t>(schema_version);
   storage->run_id = require_token(object, "run_id", kTokenLength);
   storage->child_nonce = require_token(object, "child_nonce", kTokenLength);
   storage->replay_route = require_route(object);
@@ -1128,8 +1129,32 @@ ReplayChildConfig parse_child_config_v1(std::string_view json) {
   return ReplayChildConfig(std::move(storage));
 }
 
+ReplayChildConfig parse_child_config_v1(std::string_view json) {
+  ReplayChildConfig config = parse_child_config(json);
+  if (config.schema_version() != 1U) {
+    config_error("schema_version must be 1");
+  }
+  return config;
+}
+
+ReplayChildConfig parse_child_config_v2(std::string_view json) {
+  ReplayChildConfig config = parse_child_config(json);
+  if (config.schema_version() != 2U) {
+    config_error("schema_version must be 2");
+  }
+  return config;
+}
+
 ReplayChildConfig load_child_config_v1(const std::filesystem::path& path) {
   return parse_child_config_v1(read_config_file(path));
+}
+
+ReplayChildConfig load_child_config_v2(const std::filesystem::path& path) {
+  return parse_child_config_v2(read_config_file(path));
+}
+
+ReplayChildConfig load_child_config(const std::filesystem::path& path) {
+  return parse_child_config(read_config_file(path));
 }
 
 std::string canonical_hex64(std::uint64_t value) {

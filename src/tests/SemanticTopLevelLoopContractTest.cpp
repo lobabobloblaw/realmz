@@ -1075,8 +1075,9 @@ void verify_event_manager(const fs::path& repository_root) {
               "RealmzConsumeSemanticCenterCombatCursorEvent") == 1,
       "semantic gameplay wrapper must have one late center-cursor consumer");
   require(count_identifier(
-              semantic_wrapper, "RealmzApplyPartyMemberSelection") == 1,
-      "semantic gameplay wrapper must use one narrow selection adapter");
+              semantic_wrapper, "RealmzApplyPartyMemberSelection") == 2,
+      "semantic gameplay wrapper must use one narrow selection adapter in "
+      "each replay route");
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
@@ -1181,8 +1182,34 @@ void verify_event_manager(const fs::path& repository_root) {
               source, "RealmzConsumeSemanticCenterCombatCursorEvent") == 1,
       "EventManager may consume semantic center-cursor input only inside its "
       "gameplay wrapper");
-  require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 1,
-      "EventManager may apply semantic selection only inside its gameplay wrapper");
+  require(count_identifier(source, "RealmzApplyPartyMemberSelection") == 2,
+      "EventManager may apply replay selection only inside its gameplay wrapper");
+
+  const std::size_t replay_classic_route = compact_semantic.find(
+      "replay->replay_route()==realmz::replay::ReplayRoute::classic");
+  const std::size_t classic_selection_apply = compact_semantic.find(
+      "RealmzApplyPartyMemberSelection(*replay_expected_party_member)",
+      replay_classic_route);
+  const std::size_t classic_selection_ack = compact_semantic.find(
+      "replay->acknowledge_party_selection_delivery(",
+      classic_selection_apply);
+  const std::size_t classic_selection_null = compact_semantic.find(
+      "ret->what=nullEvent", classic_selection_ack);
+  const std::size_t classic_selection_return = compact_semantic.find(
+      "returnfalse;", classic_selection_null);
+  require(replay_classic_route != std::string::npos &&
+          classic_selection_apply != std::string::npos &&
+          classic_selection_ack != std::string::npos &&
+          classic_selection_null != std::string::npos &&
+          classic_selection_return != std::string::npos,
+      "Classic replay selection is missing adapter, acknowledgement, or "
+      "nullEvent delivery");
+  require(replay_classic_route < classic_selection_apply &&
+          classic_selection_apply < classic_selection_ack &&
+          classic_selection_ack < classic_selection_null &&
+          classic_selection_null < classic_selection_return,
+      "Classic replay selection must apply before acknowledgement and return "
+      "only nullEvent");
 
   const std::size_t classic_branch = compact_semantic.find("if(!remastered)");
   const std::size_t first_poll = compact_semantic.find(
@@ -1219,6 +1246,13 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", selection_apply);
   const std::size_t selection_message = compact_semantic.find(
       "ret->message=0", selection_null);
+  const std::size_t semantic_selection_ack = compact_semantic.find(
+      "replay->acknowledge_party_selection_delivery(",
+      classic_selection_ack + 1U);
+  require(semantic_selection_ack != std::string::npos &&
+          selection_apply < semantic_selection_ack,
+      "semantic replay selection must acknowledge only after late consume "
+      "and adapter application");
   const std::size_t inventory_branch = compact_semantic.find(
       "RealmzIsSemanticOpenInventoryTag(ret->message)", selection_message);
   const std::size_t inventory_consume = compact_semantic.find(

@@ -114,7 +114,8 @@ private:
 
 [[nodiscard]] ReplayChildConfig make_config(
     const fs::path& result_path,
-    std::size_t action_count = 1U) {
+    std::size_t action_count = 1U,
+    std::uint32_t schema_version = 1U) {
   const fs::path user_root = result_path.parent_path() / "user root";
   std::string actions = "[";
   for (std::size_t index = 0; index < action_count; ++index) {
@@ -128,7 +129,7 @@ private:
   actions.push_back(']');
   const std::string json =
       "{"
-      "\"schema_version\":1,"
+      "\"schema_version\":" + std::to_string(schema_version) + ","
       "\"run_id\":\"0123456789abcdef0123456789abcdef\","
       "\"child_nonce\":\"fedcba9876543210fedcba9876543210\","
       "\"replay_route\":\"semantic\","
@@ -147,7 +148,9 @@ private:
       "\"rng_seed\":\"0123456789abcdef\","
       "\"rng_stream\":\"fedcba9876543210\""
       "}";
-  return parse_child_config_v1(json);
+  return schema_version == 2U
+      ? parse_child_config_v2(json)
+      : parse_child_config_v1(json);
 }
 
 [[nodiscard]] ReplayCompletedResult make_result() {
@@ -209,6 +212,53 @@ void test_exact_encoding() {
         "expected: " + expected);
   }
   CHECK(encoded.ends_with("}\n"));
+}
+
+void test_v2_exact_encoding_and_version_binding() {
+  TemporaryDirectory temporary;
+  const ReplayChildConfig v1 =
+      make_config(temporary.path() / "v1-result.json");
+  const ReplayChildConfig v2 =
+      make_config(temporary.path() / "v2-result.json", 1U, 2U);
+
+  ReplayCompletedResult v1_result = make_result();
+  v1_result.engine_identity = "Realmz-8.1.0-native-replay-v1";
+  const std::string v1_encoded =
+      encode_replay_child_result_v1(v1, v1_result);
+  CHECK(v1_encoded.starts_with("{\"schema_version\":1,"));
+  CHECK(v1_encoded.find(
+      "\"engine_identity\":\"Realmz-8.1.0-native-replay-v1\"") !=
+      std::string::npos);
+
+  ReplayCompletedResult v2_result = make_result();
+  v2_result.engine_identity = "Realmz-8.1.0-native-replay-v2";
+  const std::string v2_encoded =
+      encode_replay_child_result_v2(v2, v2_result);
+  const std::string expected_v2 =
+      "{\"schema_version\":2,"
+      "\"run_id\":\"0123456789abcdef0123456789abcdef\","
+      "\"child_nonce\":\"fedcba9876543210fedcba9876543210\","
+      "\"replay_route\":\"semantic\","
+      "\"presentation_mode\":\"remastered\","
+      "\"process_id\":" + std::to_string(v2_result.process_id) + ","
+      "\"status\":\"completed\","
+      "\"engine_identity\":\"Realmz-8.1.0-native-replay-v2\","
+      "\"settled_action_count\":1,"
+      "\"state_sha256\":\"4ba69735ca53765ed6a709edb56c6ea2"
+      "36b7193a3b29a6b390c346f0f4340e4e\","
+      "\"save_tree_sha256\":\"157dca92e4250458339d4b835250d44c"
+      "238f3355e1b7986195188ee434e9baff\","
+      "\"rng_draw_count\":7,"
+      "\"rng_seed\":\"0123456789abcdef\","
+      "\"rng_stream\":\"fedcba9876543210\"}\n";
+  CHECK(v2_encoded == expected_v2);
+
+  check_result_error([&] {
+    static_cast<void>(encode_replay_child_result_v1(v2, v2_result));
+  });
+  check_result_error([&] {
+    static_cast<void>(encode_replay_child_result_v2(v1, v1_result));
+  });
 }
 
 void test_validation() {
@@ -361,6 +411,7 @@ void test_failed_creation_does_not_invent_a_leaf() {
 int main() {
   try {
     test_exact_encoding();
+    test_v2_exact_encoding_and_version_binding();
     test_validation();
     test_private_exclusive_write();
     test_existing_special_leaves_are_not_followed();

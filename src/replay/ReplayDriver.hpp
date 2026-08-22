@@ -31,6 +31,20 @@ enum class ReplayCheckpointKind {
   action_settled,
 };
 
+// The schema-selected native action vocabulary is kept separate from the
+// decoded UIAction variant. This prevents a schema-v1 child from silently
+// accepting actions added by a later replay contract.
+enum class ReplayActionVocabulary {
+  native_v1,
+  native_v2,
+};
+
+enum class ReplayPartySelectionDeliveryOutcome {
+  changed,
+  unchanged,
+  rejected,
+};
+
 struct ReplayCheckpoint final {
   ReplayCheckpointKind kind = ReplayCheckpointKind::initial;
   // Initial state has no action index. A settled checkpoint carries the exact
@@ -62,22 +76,26 @@ enum class ReplayDriverFailure {
   action_limit_exceeded,
   invalid_action_sequence,
   unsupported_action,
+  invalid_party_member,
   gameplay_poll_while_delivery_pending,
   gameplay_poll_after_finalization,
   acknowledgement_without_pending_delivery,
   delivered_action_sequence_mismatch,
+  delivered_action_kind_mismatch,
   expected_key_down_message_invalid,
   delivered_event_not_key_down,
   delivered_event_message_mismatch,
+  delivered_party_member_mismatch,
+  party_selection_rejected,
 };
 
 [[nodiscard]] std::string_view replay_driver_failure_name(
     ReplayDriverFailure failure) noexcept;
 
-// Deterministic movement-only replay protocol:
+// Deterministic version-bound replay protocol:
 //
 //   first poll:       initial checkpoint + action 1 (or finalization)
-//   exact delivery:   acknowledge action 1's expected keyDown message
+//   exact delivery:   acknowledge action 1's typed delivery
 //   following poll:   settled checkpoint 1 + action 2 (or finalization)
 //
 // Every invalid plan or transition enters a sticky failed state. This makes a
@@ -86,6 +104,9 @@ enum class ReplayDriverFailure {
 class ReplayDriver final {
 public:
   explicit ReplayDriver(std::vector<presentation::UIAction> actions) noexcept;
+  ReplayDriver(
+      std::vector<presentation::UIAction> actions,
+      ReplayActionVocabulary vocabulary) noexcept;
 
   ReplayDriver(const ReplayDriver&) = delete;
   ReplayDriver(ReplayDriver&&) = delete;
@@ -102,16 +123,31 @@ public:
       std::uint32_t expected_key_down_message,
       ReplayObservedEvent observed) noexcept;
 
+  // Party selection is applied by its narrow legacy adapter and
+  // intentionally produces nullEvent rather than a synthetic keyDown. A
+  // changed or idempotently unchanged exact selection is delivered; adapter
+  // rejection is a terminal protocol failure.
+  [[nodiscard]] bool acknowledge_party_selection_delivery(
+      presentation::ActionSequence action_sequence,
+      presentation::PartyMemberId delivered_member,
+      ReplayPartySelectionDeliveryOutcome outcome) noexcept;
+
   [[nodiscard]] ReplayDriverPhase phase() const noexcept;
   [[nodiscard]] ReplayDriverFailure failure() const noexcept;
   [[nodiscard]] std::size_t action_count() const noexcept;
   [[nodiscard]] std::size_t acknowledged_action_count() const noexcept;
+  [[nodiscard]] std::optional<presentation::PartyMemberId>
+  selected_member_for_action(std::uint32_t action_index) const noexcept;
 
 private:
   void fail(ReplayDriverFailure failure) noexcept;
   void validate_plan() noexcept;
+  [[nodiscard]] bool validate_pending_acknowledgement(
+      presentation::ActionSequence action_sequence) noexcept;
+  void accept_pending_delivery() noexcept;
 
   std::vector<presentation::UIAction> actions_;
+  ReplayActionVocabulary vocabulary_ = ReplayActionVocabulary::native_v1;
   ReplayDriverPhase phase_ = ReplayDriverPhase::awaiting_gameplay_poll;
   ReplayDriverFailure failure_ = ReplayDriverFailure::none;
   std::size_t next_action_index_ = 0;

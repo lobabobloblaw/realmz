@@ -61,7 +61,7 @@ public:
   using std::runtime_error::runtime_error;
 };
 
-// An immutable, validated representation of the private v1 child protocol.
+// An immutable, validated representation of the private child protocol.
 // Instances can only be produced by the strict parser below.
 class ReplayChildConfig final {
 public:
@@ -98,18 +98,30 @@ private:
 
   std::shared_ptr<const Storage> storage_;
 
-  friend ReplayChildConfig parse_child_config_v1(std::string_view json);
+  friend ReplayChildConfig parse_child_config(std::string_view json);
 };
 
 // Parses one complete UTF-8 JSON document. The parser rejects duplicate keys,
-// unknown or missing fields, non-v1 policy values, malformed UTF-8, excessive
-// nesting, and all schema/type/range violations. Printable ASCII is required
-// for action string arguments so the native and parent validators have a
-// dependency-free canonical text intersection.
+// unknown or missing fields, unsupported policy values, malformed UTF-8,
+// excessive nesting, and all schema/type/range violations. Printable ASCII is
+// required for action string arguments so the native and parent validators
+// have a dependency-free canonical text intersection.
 [[nodiscard]] ReplayChildConfig parse_child_config_v1(std::string_view json);
+
+// V2 retains the complete structural protocol and policies while selecting
+// the native v2 action vocabulary and result contract.
+[[nodiscard]] ReplayChildConfig parse_child_config_v2(std::string_view json);
+
+// Startup dispatcher accepting exactly the supported schema versions. It
+// never infers a vocabulary from action contents.
+[[nodiscard]] ReplayChildConfig parse_child_config(std::string_view json);
 
 // Loads at most kMaximumChildConfigBytes and then applies the same parser.
 [[nodiscard]] ReplayChildConfig load_child_config_v1(
+    const std::filesystem::path& path);
+[[nodiscard]] ReplayChildConfig load_child_config_v2(
+    const std::filesystem::path& path);
+[[nodiscard]] ReplayChildConfig load_child_config(
     const std::filesystem::path& path);
 
 [[nodiscard]] std::string canonical_hex64(std::uint64_t value);

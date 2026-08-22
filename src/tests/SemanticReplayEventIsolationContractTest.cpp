@@ -234,6 +234,24 @@ void verify_replay_gameplay_controller(
           classic < classic_ack && classic_ack < classic_return,
       "Classic replay must acknowledge the exact injected key event before return");
 
+  const std::size_t classic_selection_apply =
+      semantic.find("RealmzApplyPartyMemberSelection", classic);
+  const std::size_t classic_selection_ack =
+      semantic.find(
+          "acknowledge_party_selection_delivery", classic_selection_apply);
+  const std::size_t classic_selection_null =
+      semantic.find("ret->what = nullEvent", classic_selection_ack);
+  const std::size_t classic_selection_return =
+      semantic.find("return false", classic_selection_null);
+  require(classic_selection_apply != std::string_view::npos &&
+          classic_selection_ack != std::string_view::npos &&
+          classic_selection_null != std::string_view::npos &&
+          classic_selection_return != std::string_view::npos &&
+          classic_selection_apply < classic_selection_ack &&
+          classic_selection_ack < classic_selection_null &&
+          classic_selection_null < classic_selection_return,
+      "Classic selection must acknowledge only after adapter application and return nullEvent");
+
   require(ordered(
               semantic, "SemanticInputScope semantic_scope(surface)",
               "dispatch_replay_semantic_action") &&
@@ -249,6 +267,18 @@ void verify_replay_gameplay_controller(
           semantic_ack != std::string_view::npos &&
           movement_consume < semantic_ack,
       "semantic replay acknowledgement must observe late-translated output");
+  const std::size_t selection_consume =
+      semantic.find("RealmzConsumeSemanticPartySelectionEvent");
+  const std::size_t selection_apply =
+      semantic.find("RealmzApplyPartyMemberSelection", selection_consume);
+  const std::size_t semantic_selection_ack =
+      semantic.rfind("acknowledge_party_selection_delivery");
+  require(selection_consume != std::string_view::npos &&
+          selection_apply != std::string_view::npos &&
+          semantic_selection_ack != std::string_view::npos &&
+          selection_consume < selection_apply &&
+          selection_apply < semantic_selection_ack,
+      "semantic selection acknowledgement must follow late validation and adapter application");
 
   const std::string_view mapper = function_body(
       window_source, "WindowManager::replay_movement_key_message(");
@@ -259,6 +289,18 @@ void verify_replay_gameplay_controller(
           mapper.find("context.adaptive_eligible") !=
               std::string_view::npos,
       "both replay routes must use the production live-context movement mapper");
+
+  const std::string_view selection_mapper = function_body(
+      window_source, "WindowManager::replay_party_selection_member(");
+  require(selection_mapper.find("capture_runtime_legacy_command_context") !=
+              std::string_view::npos &&
+          selection_mapper.find("LegacyGameSnapshotSource") !=
+              std::string_view::npos &&
+          selection_mapper.find("snapshot.party.member") !=
+              std::string_view::npos &&
+          selection_mapper.find("context.adaptive_eligible") !=
+              std::string_view::npos,
+      "both replay selection routes must validate live surface and roster context");
 
   const std::string_view dispatch = function_body(
       window_source, "WindowManager::dispatch_replay_semantic_action(");

@@ -311,13 +311,17 @@ and require deliberate caller cleanup after the parent namespace and reported
 names have been reviewed.
 
 Step 2 process isolation is available in `scripts/semantic_replay_runner.py`.
-The four `semantic-replay-*.schema.json` files close its version-1 request,
-child-config, child-result, and run-envelope contracts. A request explicitly
-names one physical executable, the two distinct user-data roots, existing input
-and fresh output slots, normalized actions, a timeout, and fixed 64-bit RNG seed
-and stream values. Action identifiers and keys use normalized lowercase ASCII;
-string argument values use printable ASCII so both protocol implementations
-apply the same dependency-free validation. Run it with:
+The unversioned `semantic-replay-run-request.schema.json`,
+`semantic-replay-child-config.schema.json`,
+`semantic-replay-child-result.schema.json`, and
+`semantic-replay-run-envelope.schema.json` files close its immutable version-1
+contracts. Parallel version-2 contracts use the corresponding
+`-v2.schema.json` names. A request explicitly names one physical executable,
+the two distinct user-data roots, existing input and fresh output slots,
+normalized actions, a timeout, and fixed 64-bit RNG seed and stream values.
+Action identifiers and keys use normalized lowercase ASCII; string argument
+values use printable ASCII so both protocol implementations apply the same
+dependency-free validation. Run it with:
 
 ```sh
 python3 scripts/semantic_replay_runner.py \
@@ -348,14 +352,17 @@ remains under an unknown renamed path. Protocol workspaces contain configs and
 results, not staged fixture bytes.
 
 The Realmz binary now recognizes `--semantic-replay-child CONFIG`. Its bounded
-native bootstrap validates and installs the v1 policy before `ToolBoxInit`,
-selects the isolated root and presentation, disables preference persistence and
-bundled fallback for the staged input subtree, and supplies deterministic RNG
-draws. Before the explicit input-slot load or any resulting mutation, its child
-entry point also validates the complete action plan against the deliberately
-movement-only v1 engine vocabulary. Unsupported kinds, malformed arguments,
-invalid movement commands, and noncontiguous ordinals fail closed during this
-preflight.
+native bootstrap validates and installs an explicit schema-1 or schema-2 policy
+before `ToolBoxInit`, selects the isolated root and presentation, disables
+preference persistence and bundled fallback for the staged input subtree, and
+supplies deterministic RNG draws. Schema 1 remains the immutable,
+movement-only vocabulary used by the existing private receipts. Schema 2 is a
+strict superset that adds `select_party_member` with exactly one plain integer
+`member` argument from 0 through 5. Before the explicit input-slot load or any
+resulting mutation, the child validates the complete action plan against its
+declared version. Unknown or cross-version plans, unsupported kinds, malformed
+arguments, invalid movement commands, and noncontiguous ordinals fail closed
+during this preflight.
 
 The native foundations now also include deterministic replay event isolation,
 explicit replay-only `A`-through-`J` load and save entry points that bypass the
@@ -368,33 +375,48 @@ links and detectable replacement or mutation, and produces a domain-separated
 tree digest.
 
 The native connection layer now joins those foundations. After preflight, the
-child starts the movement-only poll controller, explicitly loads the configured
-input slot, and enters the normal post-load gameplay path. Each top-level
-gameplay poll captures the requested legacy-global snapshot, delivers at most
-one action through either direct Classic injection or the guarded production
-semantic bridge, and settles that action at the following poll. The canonical
-state oracle encodes every declared field in fixed-width big-endian form and
-hashes the initial-plus-post-action trace with explicit checkpoint indexes.
+child starts the version-selected poll controller, explicitly loads the
+configured input slot, and enters the normal post-load gameplay path. Each
+top-level gameplay poll captures the requested legacy-global snapshot, delivers
+at most one action through either the independent Classic route or the guarded
+production semantic bridge, and settles that action at the following poll.
+Movement delivery retains its exact `keyDown` receipt. Schema-2 party selection
+uses a typed receipt only after the requested member is late-validated and the
+narrow legacy adapter reports changed or unchanged; a rejected application is
+terminal. Reselecting the active member is an intentional, delivered no-op and
+never emulates the Classic second portrait click that opens a modal. Its
+post-action checkpoint must still report the requested member selected. The
+canonical state oracle encodes every declared field in fixed-width big-endian
+form and hashes the initial-plus-post-action trace with explicit checkpoint
+indexes.
 
 After the final checkpoint, the child synchronously finalizes the state trace,
 rechecks that the output slot is still fresh, invokes the explicit legacy save,
-verifies the ten-file output tree, and exclusively publishes the strict v1
-result before terminating. Linked sanitizer tests exercise both native action
-routes against controlled engine globals for all eight outdoor compass commands
-and all four first-person dungeon commands. Those are delivery/settlement
-mapping tests, not Tutorial traversal evidence. Dependency-free tests cover
-live state capture, controller ordering, completion ordering, and result
-contents.
+verifies the ten-file output tree, and exclusively publishes a result carrying
+the same schema version as its request and child config. Linked sanitizer tests
+preserve the schema-1 matrix across both native routes for all eight outdoor
+compass commands and all four first-person dungeon commands. A parallel
+schema-2 matrix repeats those movements and adds changed and idempotent party
+selection. Those are delivery/settlement mapping tests, not Tutorial traversal
+evidence.
+Dependency-free tests cover live state capture, controller ordering, completion
+ordering, version isolation, and result contents.
 
 The opt-in live comparison layer is
-`scripts/semantic_replay_equivalence.py`. Its separate v1 request and envelope
-schemas are `semantic-replay-equivalence-request.schema.json` and
-`semantic-replay-equivalence-envelope.schema.json`; the non-executing inspection
-record uses `semantic-replay-equivalence-profile.schema.json`. A request names
-the physical executable, manifest and source paths, the expected exact manifest
-and fixture-tree digests, a fresh output slot, native-v1 movement actions,
-timeout, and deterministic RNG seed and stream. The manifest supplies the input
-slot. Inspect the bound profile without staging or child launch:
+`scripts/semantic_replay_equivalence.py`. The immutable schema-1 request,
+profile, and envelope remain
+`semantic-replay-equivalence-request.schema.json`,
+`semantic-replay-equivalence-profile.schema.json`, and
+`semantic-replay-equivalence-envelope.schema.json`. Their parallel schema-2
+contracts use the corresponding `-v2.schema.json` names. A request names the
+physical executable, manifest and source paths, the expected exact manifest and
+fixture-tree digests, a fresh output slot, versioned native actions, timeout,
+and deterministic RNG seed and stream. Schema 1 admits only movement; schema 2
+admits the same movement records plus the closed party-selection record. The
+versions use distinct action-digest domains and comparison contracts, and the
+selected version propagates through the runner request, both child configs and
+results, and both completed envelopes. The manifest supplies the input slot.
+Inspect the bound profile without staging or child launch:
 
 ```sh
 python3 scripts/semantic_replay_equivalence.py \
@@ -455,7 +477,8 @@ digest-only receipts. Together they cover all 12 native-v1 movement command
 names, but each verdict remains bound to its own exact fixture and executable.
 The repository still contains no private fixture or raw envelope. The v1
 profile also compares RNG draw counts, not a separate trace of every drawn
-value.
+value. No schema-2 real-engine result or receipt exists yet; its current
+selection coverage is synthetic and linked-native only.
 
 The dependency-free native checks are included in the core test runner:
 
@@ -491,10 +514,13 @@ runner result and owns the only evaluated verdict.
 
 The outdoor and first-person dungeon portions of the native-v1 movement
 milestone now have separate completed local envelopes and the digest-only
-receipts linked above. The remaining roadmap work is to:
+receipts linked above. The first vocabulary-expansion vertical is implemented
+under schema 2 for bounded party selection, without changing those v1 records.
+The remaining roadmap work is to:
 
-1. expand the native replay action vocabulary beyond movement;
-2. repeat the gate with separately reviewed broader Tutorial and City profiles,
+1. review and run a private schema-2 Tutorial party-selection profile;
+2. continue expanding the versioned vocabulary and repeat the gate with
+   separately reviewed broader Tutorial and City profiles,
    including any combat-specific fixture and modal coverage those actions need;
    and
 3. run the intended release-candidate executable before treating replay

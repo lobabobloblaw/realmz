@@ -27,4 +27,13 @@ public:
 [[nodiscard]] std::vector<presentation::UIAction> decode_replay_actions_v1(
     const std::vector<ReplayAction>& actions);
 
+// V2 preserves the complete v1 movement vocabulary and adds the idempotent
+// first-click party-selection semantic action. Member IDs are validated in
+// the protocol integer domain before conversion to PartyMemberId.
+[[nodiscard]] presentation::UIAction decode_replay_action_v2(
+    const ReplayAction& action);
+
+[[nodiscard]] std::vector<presentation::UIAction> decode_replay_actions_v2(
+    const std::vector<ReplayAction>& actions);
+
 } // namespace realmz::replay

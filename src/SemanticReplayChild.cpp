@@ -1,6 +1,7 @@
 #include "SemanticReplayChild.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <cstdio>
 #include <exception>
@@ -9,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "UserDataPaths.hpp"
 #include "replay/ReplayActionDecoder.hpp"
@@ -33,8 +35,22 @@
 namespace {
 
 constexpr std::size_t kMaximumDiagnosticBytes = 512;
-constexpr std::string_view kReplayEngineIdentity =
+constexpr std::string_view kReplayEngineIdentityV1 =
     "Realmz-8.1.0-native-replay-v1";
+constexpr std::string_view kReplayEngineIdentityV2 =
+    "Realmz-8.1.0-native-replay-v2";
+
+[[nodiscard]] std::string_view replay_engine_identity(
+    std::uint32_t schema_version) {
+  if (schema_version == 1U) {
+    return kReplayEngineIdentityV1;
+  }
+  if (schema_version == 2U) {
+    return kReplayEngineIdentityV2;
+  }
+  throw realmz::replay::ReplayConfigError(
+      "native replay schema version is unsupported");
+}
 
 void write_bounded_diagnostic(
     std::string_view prefix, std::string_view detail) noexcept {
@@ -111,7 +127,8 @@ void record_live_replay_checkpoint(
     ReplayRuntime& runtime) noexcept {
   try {
     static_cast<void>(complete_replay(runtime, {
-        .engine_identity = std::string(kReplayEngineIdentity),
+        .engine_identity = std::string(
+            replay_engine_identity(runtime.config().schema_version())),
         .process_id = replay_process_id(),
         .save_slot = [&runtime](char slot) {
           // The runner creates a private workspace, but the output pathname
@@ -125,7 +142,14 @@ void record_live_replay_checkpoint(
         },
         .publish_result = [](const ReplayChildConfig& config,
                                  const ReplayCompletedResult& result) {
-          write_replay_child_result_v1(config, result);
+          if (config.schema_version() == 1U) {
+            write_replay_child_result_v1(config, result);
+          } else if (config.schema_version() == 2U) {
+            write_replay_child_result_v2(config, result);
+          } else {
+            throw ReplayResultError(
+                "native replay result schema version is unsupported");
+          }
         },
     }));
     std::_Exit(0);
@@ -148,7 +172,7 @@ extern "C" int RealmzConfigureSemanticReplayChild(
   }
 
   try {
-    auto config = realmz::replay::load_child_config_v1(config_path);
+    auto config = realmz::replay::load_child_config(config_path);
     require_fresh_output_slot(config);
     if (!realmz::app::set_semantic_replay_user_data_root(
             config.user_data_root())) {
@@ -196,8 +220,17 @@ extern "C" int RealmzRunSemanticReplayChild(void) {
   try {
     // Close and start the engine-specific action vocabulary before any save
     // can be loaded or mutated.
-    auto actions = realmz::replay::decode_replay_actions_v1(
-        runtime->config().actions());
+    std::vector<realmz::presentation::UIAction> actions;
+    if (runtime->config().schema_version() == 1U) {
+      actions = realmz::replay::decode_replay_actions_v1(
+          runtime->config().actions());
+    } else if (runtime->config().schema_version() == 2U) {
+      actions = realmz::replay::decode_replay_actions_v2(
+          runtime->config().actions());
+    } else {
+      throw realmz::replay::ReplayActionDecodeError(
+          "native replay action schema version is unsupported");
+    }
     runtime->start_action_plan(std::move(actions));
   } catch (const realmz::replay::ReplayActionDecodeError& error) {
     write_bounded_diagnostic(

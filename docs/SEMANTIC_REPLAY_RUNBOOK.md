@@ -1,8 +1,8 @@
 # Private semantic replay review runbook
 
-This runbook turns one private Tutorial save and one reviewed movement plan into
-a narrowly scoped Classic-versus-semantic equivalence result. It does not make
-the save redistributable, establish that a route is well chosen, or broaden one
+This runbook turns one private Tutorial save and one reviewed action plan into a
+narrowly scoped Classic-versus-semantic equivalence result. It does not make the
+save redistributable, establish that a route is well chosen, or broaden one
 successful profile into a release-wide claim.
 
 The repository does not currently contain a Tutorial save, manifest instance,
@@ -44,7 +44,7 @@ must load the copy in a compatible build and record, outside the manifest:
 - that the scenario is Tutorial;
 - the starting land/dungeon location and facing;
 - that no combat, modal, text-entry, or unresolved encounter is active;
-- why the state is suitable for the intended movement route; and
+- why the state is suitable for the intended action route; and
 - who owns or supplied the bytes and what use was authorized.
 
 Repository presence alone is not provenance review. In particular, the five
@@ -106,10 +106,12 @@ whitespace or authorization text changes the manifest digest and requires a
 new review. Continue only when `verification_status` is zero and stderr is
 empty.
 
-## 3. Review the movement profile
+## 3. Review the action profile
 
-Native v1 accepts only `move_party` records with contiguous zero-based
-ordinals and exactly one `arguments.command` string. Outdoor movement uses:
+Choose the request schema explicitly. Schema 1 is the immutable movement-only
+contract used by the existing private receipts. It accepts only `move_party`
+records with contiguous zero-based ordinals and exactly one
+`arguments.command` string. Outdoor movement uses:
 
 `north`, `northeast`, `east`, `southeast`, `south`, `southwest`, `west`,
 `northwest`.
@@ -124,6 +126,27 @@ actually make that transition. Record an index-by-index coverage narrative
 that identifies the expected context, location change, trigger avoidance or
 intent, and the reason each action is present. Zero actions remain legal for
 generic harness tests but are not an acceptable milestone profile.
+
+Schema 2 preserves all movement records and adds exactly one closed action:
+
+```json
+{
+  "ordinal": 0,
+  "kind": "select_party_member",
+  "arguments": {"member": 2}
+}
+```
+
+`member` is the zero-based roster ID and must be a JSON integer from 0 through
+5; booleans, strings, missing or extra fields, and out-of-range values fail
+before fixture staging. Selection is eligible only on the live exploration or
+dungeon surfaces. Both changing the selection and reselecting the active member
+are valid, but the latter remains an idempotent no-op rather than the Classic
+second portrait click that could open a modal. The action settles on the next
+gameplay poll only after the narrow adapter accepts it, and the captured
+post-action state must report that member selected. Review the live roster and
+surface, the intended member, and the absence of a modal or unresolved
+encounter for every selection action.
 
 Create a private request using exact absolute physical paths:
 
@@ -152,6 +175,12 @@ Create a private request using exact absolute physical paths:
 The output slot must differ from the input slot and must begin absent in the
 gate-owned roots. The seed, stream, timeout, executable, and every action are
 part of the reviewed profile.
+
+For a schema-2 profile, set `schema_version` to `2` and use only schema-2 action
+records. The version propagates through the runner, child configs, child
+results, and completed envelopes; it selects a distinct engine identity,
+action-digest domain, and exact-comparison contract. Never change the version
+on an already reviewed request without repeating profile review.
 
 Inspect the complete profile without staging or launching either child:
 

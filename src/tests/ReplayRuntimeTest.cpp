@@ -64,6 +64,15 @@ void check_runtime_error(Function&& function) {
   };
 }
 
+[[nodiscard]] realmz::presentation::UIAction selection(
+    realmz::presentation::ActionSequence sequence,
+    realmz::presentation::PartyMemberId member) {
+  return {
+      .sequence = sequence,
+      .payload = realmz::presentation::SelectPartyMemberAction{member},
+  };
+}
+
 [[nodiscard]] std::string json_string(std::string_view value) {
   std::string result = "\"";
   for (const char character : value) {
@@ -88,7 +97,8 @@ void check_runtime_error(Function&& function) {
 
 [[nodiscard]] ReplayChildConfig make_config(
     std::string_view route = "semantic",
-    std::string_view presentation = "remastered") {
+    std::string_view presentation = "remastered",
+    std::uint32_t schema_version = 1U) {
   const fs::path root =
       (fs::temp_directory_path() / "Realmz Replay Runtime Root")
           .lexically_normal();
@@ -97,7 +107,7 @@ void check_runtime_error(Function&& function) {
           .lexically_normal();
   const std::string json =
       "{"
-      "\"schema_version\":1,"
+      "\"schema_version\":" + std::to_string(schema_version) + ","
       "\"run_id\":\"0123456789abcdef0123456789abcdef\","
       "\"child_nonce\":\"fedcba9876543210fedcba9876543210\","
       "\"replay_route\":" + json_string(route) + ","
@@ -117,7 +127,9 @@ void check_runtime_error(Function&& function) {
       "\"rng_seed\":\"0123456789abcdef\","
       "\"rng_stream\":\"fedcba9876543210\""
       "}";
-  return parse_child_config_v1(json);
+  return schema_version == 2U
+      ? parse_child_config_v2(json)
+      : parse_child_config_v1(json);
 }
 
 void test_immutable_policy_access() {
@@ -252,6 +264,78 @@ void test_action_plan_rejection_is_atomic() {
   CHECK(runtime.settled_action_count() == 0U);
 }
 
+void test_v2_selection_delivery_and_snapshot_settlement() {
+  ReplayRuntime runtime(make_config("semantic", "remastered", 2U));
+  runtime.start_action_plan({selection(1, 2), selection(2, 2)});
+
+  ReplayStateSnapshot initial;
+  initial.party.selected_member = 0;
+  ReplayStateSnapshot selected = initial;
+  selected.party.selected_member = 2;
+
+  auto directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->kind == ReplayCheckpointKind::initial);
+  runtime.record_checkpoint(*directive.checkpoint, initial);
+  CHECK(directive.action != nullptr);
+  runtime.acknowledge_party_selection_delivery(
+      directive.action->sequence,
+      2,
+      ReplayPartySelectionDeliveryOutcome::changed);
+  CHECK(runtime.settled_action_count() == 0U);
+
+  directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->action_index == 0U);
+  ReplayStateSnapshot wrong = selected;
+  wrong.party.selected_member = 1;
+  check_runtime_error([&] {
+    runtime.record_checkpoint(*directive.checkpoint, wrong);
+  });
+  CHECK(runtime.settled_action_count() == 0U);
+  runtime.record_checkpoint(*directive.checkpoint, selected);
+  CHECK(runtime.settled_action_count() == 1U);
+
+  CHECK(directive.action != nullptr);
+  runtime.acknowledge_party_selection_delivery(
+      directive.action->sequence,
+      2,
+      ReplayPartySelectionDeliveryOutcome::unchanged);
+  CHECK(runtime.settled_action_count() == 1U);
+
+  directive = runtime.next_gameplay_poll();
+  CHECK(directive.checkpoint->action_index == 1U);
+  runtime.record_checkpoint(*directive.checkpoint, selected);
+  CHECK(runtime.settled_action_count() == 2U);
+  CHECK(directive.finalize);
+  static_cast<void>(runtime.finalize_state_trace());
+}
+
+void test_v1_runtime_keeps_movement_only_vocabulary() {
+  ReplayRuntime runtime(make_config());
+  check_runtime_error([&] {
+    runtime.start_action_plan({selection(1, 0)});
+  });
+  CHECK(!runtime.action_plan_started());
+}
+
+void test_v2_runtime_revalidates_typed_selection_boundaries() {
+  ReplayRuntime invalid_member(make_config("semantic", "remastered", 2U));
+  check_runtime_error([&] {
+    invalid_member.start_action_plan({selection(1, 255)});
+  });
+  CHECK(!invalid_member.action_plan_started());
+
+  ReplayRuntime invalid_outcome(make_config("semantic", "remastered", 2U));
+  invalid_outcome.start_action_plan({selection(1, 2)});
+  const auto directive = invalid_outcome.next_gameplay_poll();
+  CHECK(directive.action != nullptr);
+  check_runtime_error([&] {
+    invalid_outcome.acknowledge_party_selection_delivery(
+        directive.action->sequence,
+        2,
+        static_cast<ReplayPartySelectionDeliveryOutcome>(255));
+  });
+}
+
 void test_one_shot_process_installation() {
   CHECK(installed_replay_runtime() == nullptr);
   ReplayRuntime& installed = install_replay_runtime(make_config());
@@ -276,6 +360,9 @@ int main() {
     test_runtime_rng_delegation();
     test_action_plan_and_state_trace_lifecycle();
     test_action_plan_rejection_is_atomic();
+    test_v2_selection_delivery_and_snapshot_settlement();
+    test_v1_runtime_keeps_movement_only_vocabulary();
+    test_v2_runtime_revalidates_typed_selection_boundaries();
     test_one_shot_process_installation();
     std::cout << "ReplayRuntimeTest passed (" << checks_run << " checks)\n";
     return 0;

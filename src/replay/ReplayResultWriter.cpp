@@ -78,6 +78,48 @@ void validate_result_path(const std::filesystem::path& path) {
   }
 }
 
+void require_config_version(
+    const ReplayChildConfig& config,
+    std::uint32_t expected) {
+  if (config.schema_version() != expected) {
+    throw ReplayResultError(
+        "replay result writer does not match the child config schema");
+  }
+}
+
+[[nodiscard]] std::string encode_replay_child_result(
+    const ReplayChildConfig& config,
+    const ReplayCompletedResult& result,
+    std::uint32_t schema_version) {
+  require_config_version(config, schema_version);
+  validate_completed_result(config, result);
+
+  std::string encoded;
+  encoded.reserve(768U);
+  encoded += "{\"schema_version\":" + std::to_string(schema_version);
+  encoded += ",\"run_id\":" + json_string(config.run_id());
+  encoded += ",\"child_nonce\":" + json_string(config.child_nonce());
+  encoded += ",\"replay_route\":" +
+      json_string(to_string(config.replay_route()));
+  encoded += ",\"presentation_mode\":" +
+      json_string(to_string(config.presentation_mode()));
+  encoded += ",\"process_id\":" + std::to_string(result.process_id);
+  encoded += ",\"status\":\"completed\"";
+  encoded += ",\"engine_identity\":" + json_string(result.engine_identity);
+  encoded += ",\"settled_action_count\":" +
+      std::to_string(result.settled_action_count);
+  encoded += ",\"state_sha256\":" +
+      json_string(sha256_hex(result.state_sha256));
+  encoded += ",\"save_tree_sha256\":" +
+      json_string(sha256_hex(result.save_tree_sha256));
+  encoded += ",\"rng_draw_count\":" +
+      std::to_string(result.rng_draw_count);
+  encoded += ",\"rng_seed\":" + json_string(config.rng_seed_token());
+  encoded += ",\"rng_stream\":" + json_string(config.rng_stream_token());
+  encoded += "}\n";
+  return encoded;
+}
+
 #ifdef _WIN32
 
 [[noreturn]] void throw_windows_error(
@@ -269,32 +311,7 @@ void write_private_exclusive_file(
 std::string encode_replay_child_result_v1(
     const ReplayChildConfig& config,
     const ReplayCompletedResult& result) {
-  validate_completed_result(config, result);
-
-  std::string encoded;
-  encoded.reserve(768U);
-  encoded += "{\"schema_version\":1";
-  encoded += ",\"run_id\":" + json_string(config.run_id());
-  encoded += ",\"child_nonce\":" + json_string(config.child_nonce());
-  encoded += ",\"replay_route\":" +
-      json_string(to_string(config.replay_route()));
-  encoded += ",\"presentation_mode\":" +
-      json_string(to_string(config.presentation_mode()));
-  encoded += ",\"process_id\":" + std::to_string(result.process_id);
-  encoded += ",\"status\":\"completed\"";
-  encoded += ",\"engine_identity\":" + json_string(result.engine_identity);
-  encoded += ",\"settled_action_count\":" +
-      std::to_string(result.settled_action_count);
-  encoded += ",\"state_sha256\":" +
-      json_string(sha256_hex(result.state_sha256));
-  encoded += ",\"save_tree_sha256\":" +
-      json_string(sha256_hex(result.save_tree_sha256));
-  encoded += ",\"rng_draw_count\":" +
-      std::to_string(result.rng_draw_count);
-  encoded += ",\"rng_seed\":" + json_string(config.rng_seed_token());
-  encoded += ",\"rng_stream\":" + json_string(config.rng_stream_token());
-  encoded += "}\n";
-  return encoded;
+  return encode_replay_child_result(config, result, 1U);
 }
 
 void write_replay_child_result_v1(
@@ -302,6 +319,20 @@ void write_replay_child_result_v1(
     const ReplayCompletedResult& result) {
   validate_result_path(config.result_path());
   const std::string payload = encode_replay_child_result_v1(config, result);
+  write_private_exclusive_file(config.result_path(), payload);
+}
+
+std::string encode_replay_child_result_v2(
+    const ReplayChildConfig& config,
+    const ReplayCompletedResult& result) {
+  return encode_replay_child_result(config, result, 2U);
+}
+
+void write_replay_child_result_v2(
+    const ReplayChildConfig& config,
+    const ReplayCompletedResult& result) {
+  validate_result_path(config.result_path());
+  const std::string payload = encode_replay_child_result_v2(config, result);
   write_private_exclusive_file(config.result_path(), payload);
 }
 

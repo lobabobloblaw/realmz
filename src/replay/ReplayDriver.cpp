@@ -19,6 +19,8 @@ std::string_view replay_driver_failure_name(
       return "invalid_action_sequence";
     case ReplayDriverFailure::unsupported_action:
       return "unsupported_action";
+    case ReplayDriverFailure::invalid_party_member:
+      return "invalid_party_member";
     case ReplayDriverFailure::gameplay_poll_while_delivery_pending:
       return "gameplay_poll_while_delivery_pending";
     case ReplayDriverFailure::gameplay_poll_after_finalization:
@@ -27,19 +29,31 @@ std::string_view replay_driver_failure_name(
       return "acknowledgement_without_pending_delivery";
     case ReplayDriverFailure::delivered_action_sequence_mismatch:
       return "delivered_action_sequence_mismatch";
+    case ReplayDriverFailure::delivered_action_kind_mismatch:
+      return "delivered_action_kind_mismatch";
     case ReplayDriverFailure::expected_key_down_message_invalid:
       return "expected_key_down_message_invalid";
     case ReplayDriverFailure::delivered_event_not_key_down:
       return "delivered_event_not_key_down";
     case ReplayDriverFailure::delivered_event_message_mismatch:
       return "delivered_event_message_mismatch";
+    case ReplayDriverFailure::delivered_party_member_mismatch:
+      return "delivered_party_member_mismatch";
+    case ReplayDriverFailure::party_selection_rejected:
+      return "party_selection_rejected";
   }
   return "unknown";
 }
 
 ReplayDriver::ReplayDriver(
     std::vector<presentation::UIAction> actions) noexcept
-    : actions_(std::move(actions)) {
+    : ReplayDriver(
+          std::move(actions), ReplayActionVocabulary::native_v1) {}
+
+ReplayDriver::ReplayDriver(
+    std::vector<presentation::UIAction> actions,
+    ReplayActionVocabulary vocabulary) noexcept
+    : actions_(std::move(actions)), vocabulary_(vocabulary) {
   validate_plan();
 }
 
@@ -88,16 +102,12 @@ bool ReplayDriver::acknowledge_delivery(
     presentation::ActionSequence action_sequence,
     std::uint32_t expected_key_down_message,
     ReplayObservedEvent observed) noexcept {
-  if (phase_ == ReplayDriverPhase::failed) {
+  if (!validate_pending_acknowledgement(action_sequence)) {
     return false;
   }
-  if (phase_ != ReplayDriverPhase::awaiting_delivery_acknowledgement ||
-      !pending_delivery_sequence_) {
-    fail(ReplayDriverFailure::acknowledgement_without_pending_delivery);
-    return false;
-  }
-  if (action_sequence != *pending_delivery_sequence_) {
-    fail(ReplayDriverFailure::delivered_action_sequence_mismatch);
+  if (!std::holds_alternative<presentation::MovePartyAction>(
+          actions_[next_action_index_].payload)) {
+    fail(ReplayDriverFailure::delivered_action_kind_mismatch);
     return false;
   }
   // Every supported Classic movement message contains a nonzero character or
@@ -117,11 +127,39 @@ bool ReplayDriver::acknowledge_delivery(
     return false;
   }
 
-  pending_settlement_action_index_ =
-      static_cast<std::uint32_t>(next_action_index_);
-  pending_delivery_sequence_.reset();
-  ++next_action_index_;
-  phase_ = ReplayDriverPhase::awaiting_gameplay_poll;
+  accept_pending_delivery();
+  return true;
+}
+
+bool ReplayDriver::acknowledge_party_selection_delivery(
+    presentation::ActionSequence action_sequence,
+    presentation::PartyMemberId delivered_member,
+    ReplayPartySelectionDeliveryOutcome outcome) noexcept {
+  if (!validate_pending_acknowledgement(action_sequence)) {
+    return false;
+  }
+  const auto* selection =
+      std::get_if<presentation::SelectPartyMemberAction>(
+          &actions_[next_action_index_].payload);
+  if (!selection) {
+    fail(ReplayDriverFailure::delivered_action_kind_mismatch);
+    return false;
+  }
+  if (delivered_member != selection->member) {
+    fail(ReplayDriverFailure::delivered_party_member_mismatch);
+    return false;
+  }
+  switch (outcome) {
+    case ReplayPartySelectionDeliveryOutcome::changed:
+    case ReplayPartySelectionDeliveryOutcome::unchanged:
+      break;
+    case ReplayPartySelectionDeliveryOutcome::rejected:
+    default:
+      fail(ReplayDriverFailure::party_selection_rejected);
+      return false;
+  }
+
+  accept_pending_delivery();
   return true;
 }
 
@@ -139,6 +177,45 @@ std::size_t ReplayDriver::action_count() const noexcept {
 
 std::size_t ReplayDriver::acknowledged_action_count() const noexcept {
   return next_action_index_;
+}
+
+std::optional<presentation::PartyMemberId>
+ReplayDriver::selected_member_for_action(
+    std::uint32_t action_index) const noexcept {
+  if (action_index >= actions_.size()) {
+    return std::nullopt;
+  }
+  const auto* selection =
+      std::get_if<presentation::SelectPartyMemberAction>(
+          &actions_[action_index].payload);
+  return selection
+      ? std::optional<presentation::PartyMemberId>(selection->member)
+      : std::nullopt;
+}
+
+bool ReplayDriver::validate_pending_acknowledgement(
+    presentation::ActionSequence action_sequence) noexcept {
+  if (phase_ == ReplayDriverPhase::failed) {
+    return false;
+  }
+  if (phase_ != ReplayDriverPhase::awaiting_delivery_acknowledgement ||
+      !pending_delivery_sequence_ || next_action_index_ >= actions_.size()) {
+    fail(ReplayDriverFailure::acknowledgement_without_pending_delivery);
+    return false;
+  }
+  if (action_sequence != *pending_delivery_sequence_) {
+    fail(ReplayDriverFailure::delivered_action_sequence_mismatch);
+    return false;
+  }
+  return true;
+}
+
+void ReplayDriver::accept_pending_delivery() noexcept {
+  pending_settlement_action_index_ =
+      static_cast<std::uint32_t>(next_action_index_);
+  pending_delivery_sequence_.reset();
+  ++next_action_index_;
+  phase_ = ReplayDriverPhase::awaiting_gameplay_poll;
 }
 
 void ReplayDriver::fail(ReplayDriverFailure failure) noexcept {
@@ -163,9 +240,20 @@ void ReplayDriver::validate_plan() noexcept {
       fail(ReplayDriverFailure::invalid_action_sequence);
       return;
     }
-    if (!std::holds_alternative<presentation::MovePartyAction>(
-            actions_[index].payload)) {
+    const bool movement =
+        std::holds_alternative<presentation::MovePartyAction>(
+            actions_[index].payload);
+    const auto* selection =
+        vocabulary_ == ReplayActionVocabulary::native_v2
+        ? std::get_if<presentation::SelectPartyMemberAction>(
+              &actions_[index].payload)
+        : nullptr;
+    if (!movement && !selection) {
       fail(ReplayDriverFailure::unsupported_action);
+      return;
+    }
+    if (selection && selection->member > 5U) {
+      fail(ReplayDriverFailure::invalid_party_member);
       return;
     }
   }

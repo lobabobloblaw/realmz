@@ -53,6 +53,18 @@ void check_decode_error(Function&& function, std::string_view message) {
   };
 }
 
+[[nodiscard]] ReplayAction selection_action(
+    std::uint16_t ordinal,
+    ReplayArgumentValue member,
+    std::map<std::string, ReplayArgumentValue> extra = {}) {
+  extra.emplace("member", std::move(member));
+  return ReplayAction{
+      .ordinal = ordinal,
+      .kind = "select_party_member",
+      .arguments = std::move(extra),
+  };
+}
+
 void test_all_movement_values() {
   constexpr std::array<std::pair<std::string_view, MovementCommand>, 12>
       cases = {{
@@ -181,6 +193,89 @@ void test_complete_sequence_validation() {
       "4096-action limit");
 }
 
+void test_v2_preserves_movement_and_adds_selection() {
+  for (const std::string_view command : {
+           "step_forward", "step_backward", "turn_left", "turn_right",
+           "north", "northeast", "east", "southeast", "south",
+           "southwest", "west", "northwest",
+       }) {
+    const auto action = movement_action(0, std::string(command));
+    CHECK(decode_replay_action_v2(action) ==
+        decode_replay_action_v1(action));
+  }
+
+  for (const std::int64_t member : {0, 5}) {
+    const auto decoded = decode_replay_action_v2(
+        selection_action(0, member));
+    CHECK(decoded.sequence == 1U);
+    const auto* selection =
+        std::get_if<SelectPartyMemberAction>(&decoded.payload);
+    CHECK(selection != nullptr);
+    CHECK(selection->member == member);
+  }
+
+  const auto mixed = decode_replay_actions_v2({
+      selection_action(0, std::int64_t{2}),
+      movement_action(1, std::string("north")),
+  });
+  CHECK(mixed.size() == 2U);
+  CHECK(std::holds_alternative<SelectPartyMemberAction>(mixed[0].payload));
+  CHECK(std::holds_alternative<MovePartyAction>(mixed[1].payload));
+}
+
+void test_v2_selection_validation_is_exact() {
+  for (const std::int64_t member : {-1, 6, 256}) {
+    check_decode_error(
+        [member] {
+          static_cast<void>(decode_replay_action_v2(
+              selection_action(0, member)));
+        },
+        "range 0..5");
+  }
+  for (const ReplayArgumentValue& member : {
+           ReplayArgumentValue{true},
+           ReplayArgumentValue{std::string("2")},
+       }) {
+    check_decode_error(
+        [&member] {
+          static_cast<void>(decode_replay_action_v2(
+              selection_action(0, member)));
+        },
+        "must be an integer");
+  }
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v2(ReplayAction{
+            .ordinal = 0,
+            .kind = "select_party_member",
+            .arguments = {},
+        }));
+      },
+      "exactly the member argument");
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v2(selection_action(
+            0, std::int64_t{2}, {{"extra", false}})));
+      },
+      "exactly the member argument");
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_action_v2(ReplayAction{
+            .ordinal = 0,
+            .kind = "open_inventory",
+            .arguments = {},
+        }));
+      },
+      "unsupported v2 action kind");
+  check_decode_error(
+      [] {
+        static_cast<void>(decode_replay_actions_v2({
+            selection_action(1, std::int64_t{2}),
+        }));
+      },
+      "contiguous zero-based ordinals");
+}
+
 } // namespace
 
 int main() {
@@ -188,6 +283,8 @@ int main() {
     test_all_movement_values();
     test_exact_vocabulary();
     test_complete_sequence_validation();
+    test_v2_preserves_movement_and_adds_selection();
+    test_v2_selection_validation_is_exact();
     std::cout << "ReplayActionDecoderTest passed (" << checks_run
               << " checks)\n";
     return 0;

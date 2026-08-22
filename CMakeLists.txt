@@ -768,6 +768,10 @@ if(REALMZ_BUILD_CORE_TESTS)
     realmz_configure_core_target(SemanticReplayChildBootstrapTest)
     add_test(NAME SemanticReplayChildBootstrapTest
         COMMAND SemanticReplayChildBootstrapTest)
+    add_test(NAME SemanticReplayChildBootstrapV2Test
+        COMMAND SemanticReplayChildBootstrapTest "v2")
+    add_test(NAME SemanticReplayChildBootstrapUnknownVersionTest
+        COMMAND SemanticReplayChildBootstrapTest "unknown-version")
 
     # EventManager reaches the Classic globals and helpers defined alongside
     # the application entry point. Compile that translation unit with only its
@@ -802,7 +806,13 @@ if(REALMZ_BUILD_CORE_TESTS)
             add_test(
                 NAME SemanticReplay${REPLAY_ROUTE}${REPLAY_SURFACE}RouteIntegrationTest
                 COMMAND SemanticReplayRouteIntegrationTest
-                    "${REPLAY_ROUTE_ARGUMENT}" "${REPLAY_SURFACE_ARGUMENT}")
+                    "v1" "${REPLAY_ROUTE_ARGUMENT}"
+                    "${REPLAY_SURFACE_ARGUMENT}")
+            add_test(
+                NAME SemanticReplayV2${REPLAY_ROUTE}${REPLAY_SURFACE}RouteIntegrationTest
+                COMMAND SemanticReplayRouteIntegrationTest
+                    "v2" "${REPLAY_ROUTE_ARGUMENT}"
+                    "${REPLAY_SURFACE_ARGUMENT}")
         endforeach()
     endforeach()
 endif()

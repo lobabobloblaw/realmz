@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run two process-isolated semantic replay children under a strict v1 protocol.
+"""Run two process-isolated semantic replay children under a strict v1/v2 protocol.
 
 This is parent-orchestration infrastructure only.  Realmz recognizes
 ``--semantic-replay-child``, installs its bounded startup policies, drives the
@@ -52,6 +52,8 @@ from typing import Any, NoReturn, Sequence
 
 
 SCHEMA_VERSION = 1
+SCHEMA_VERSION_V2 = 2
+SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION, SCHEMA_VERSION_V2})
 CHILD_ARGUMENT = "--semantic-replay-child"
 RUNNER_SCOPE = "process_isolation_only"
 SEMANTIC_EQUIVALENCE = "not_evaluated"
@@ -158,11 +160,19 @@ ENVELOPE_FIELDS = frozenset(
 class ReplayRunnerError(Exception):
     """A stable, user-facing replay-runner failure."""
 
-    def __init__(self, code: str, message: str, exit_code: int) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        exit_code: int,
+        *,
+        schema_version: int = SCHEMA_VERSION,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.exit_code = exit_code
+        self.schema_version = schema_version
         self.workspace_retention: dict[str, object] | None = None
 
 
@@ -186,6 +196,7 @@ class Action:
 
 @dataclass(frozen=True)
 class RunRequest:
+    schema_version: int
     executable: Path
     executable_identity: tuple[int, int, int, int, int]
     classic_user_data_root: Path
@@ -296,6 +307,35 @@ def _reject_json_constant(value: str) -> NoReturn:
 
 def _is_plain_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_supported_schema_version(value: object) -> bool:
+    return _is_plain_int(value) and value in SUPPORTED_SCHEMA_VERSIONS
+
+
+def _schema_version_hint(value: object) -> int:
+    if isinstance(value, dict):
+        candidate = value.get("schema_version")
+        if _is_supported_schema_version(candidate):
+            return candidate
+    if isinstance(value, RunRequest):
+        candidate = value.schema_version
+        if _is_supported_schema_version(candidate):
+            return candidate
+    return SCHEMA_VERSION
+
+
+def _attach_schema_version(error: BaseException, schema_version: int) -> None:
+    try:
+        setattr(error, "schema_version", schema_version)
+    except BaseException:  # pragma: no cover - defensive exception annotation
+        pass
+
+
+def _validate_schema_version(value: object, error: Any) -> int:
+    if not _is_supported_schema_version(value):
+        error("schema_version must be 1 or 2")
+    return value
 
 
 def _contains_control(value: str) -> bool:
@@ -425,6 +465,8 @@ def _validate_actions(value: object, error: Any) -> tuple[Action, ...]:
         if len(raw_arguments) > MAX_ARGUMENTS:
             error(f"{context}.arguments exceeds the {MAX_ARGUMENTS}-argument limit")
         arguments: dict[str, str | int | bool] = {}
+        if any(not isinstance(name, str) for name in raw_arguments):
+            error(f"{context}.arguments keys must be strings")
         for name in sorted(raw_arguments):
             normalized_name = _validate_identifier(
                 name, f"{context}.arguments key", error
@@ -732,13 +774,11 @@ def _verify_route_slots(
     return output_identity
 
 
-def _parse_request(value: object) -> RunRequest:
+def _parse_request_impl(value: object) -> RunRequest:
     if not isinstance(value, dict):
         _request_error("run request must be a JSON object")
     _require_fields(value, REQUEST_FIELDS, "run request", _request_error)
-    version = value["schema_version"]
-    if not _is_plain_int(version) or version != SCHEMA_VERSION:
-        _request_error(f"schema_version must be {SCHEMA_VERSION}")
+    version = _validate_schema_version(value["schema_version"], _request_error)
     executable = _validate_canonical_path(
         value["executable"], "executable", directory=False, executable=True
     )
@@ -793,6 +833,7 @@ def _parse_request(value: object) -> RunRequest:
     rng_seed = _validate_rng_hex(value["rng_seed"], "rng_seed", _request_error)
     rng_stream = _validate_rng_hex(value["rng_stream"], "rng_stream", _request_error)
     return RunRequest(
+        schema_version=version,
         executable=executable,
         executable_identity=executable_identity,
         classic_user_data_root=classic_root,
@@ -810,10 +851,111 @@ def _parse_request(value: object) -> RunRequest:
     )
 
 
+def _parse_request(value: object) -> RunRequest:
+    schema_version = _schema_version_hint(value)
+    try:
+        return _parse_request_impl(value)
+    except BaseException as error:
+        _attach_schema_version(error, schema_version)
+        raise
+
+
 def load_request(path: Path) -> RunRequest:
-    """Load and strictly validate a v1 replay run request."""
+    """Load and strictly validate a supported replay run request."""
 
     return _parse_request(_read_json(path, MAX_JSON_BYTES, "run request"))
+
+
+def _validate_normalized_path_value(value: object, context: str) -> Path:
+    if not isinstance(value, Path):
+        _request_error(f"{context} must be a normalized Path value")
+    text = str(value)
+    if (
+        not text
+        or not value.is_absolute()
+        or os.path.normpath(text) != text
+        or _contains_control(text)
+        or unicodedata.normalize("NFC", text) != text
+    ):
+        _request_error(f"{context} must be an absolute normalized Path value")
+    try:
+        encoded = text.encode("utf-8")
+    except UnicodeEncodeError:
+        _request_error(f"{context} is not valid UTF-8 text")
+    if len(encoded) > MAX_PATH_BYTES:
+        _request_error(f"{context} exceeds {MAX_PATH_BYTES} UTF-8 bytes")
+    return value
+
+
+def _validate_identity_tuple(
+    value: object, length: int, context: str
+) -> tuple[int, ...]:
+    if (
+        not isinstance(value, tuple)
+        or len(value) != length
+        or any(not _is_plain_int(component) for component in value)
+    ):
+        _request_error(f"{context} must be a normalized {length}-integer tuple")
+    return value
+
+
+def _validate_normalized_request(request: RunRequest) -> None:
+    """Recheck public ``RunRequest`` values before any workspace is allocated."""
+
+    if not isinstance(request, RunRequest):
+        _request_error("request must be a normalized RunRequest")
+    _validate_schema_version(request.schema_version, _request_error)
+    _validate_normalized_path_value(request.executable, "executable")
+    _validate_identity_tuple(request.executable_identity, 5, "executable_identity")
+    classic_root = _validate_normalized_path_value(
+        request.classic_user_data_root, "classic_user_data_root"
+    )
+    _validate_identity_tuple(
+        request.classic_user_data_identity, 2, "classic_user_data_identity"
+    )
+    _validate_identity_tuple(
+        request.classic_input_slot_identity, 2, "classic_input_slot_identity"
+    )
+    semantic_root = _validate_normalized_path_value(
+        request.semantic_user_data_root, "semantic_user_data_root"
+    )
+    _validate_identity_tuple(
+        request.semantic_user_data_identity, 2, "semantic_user_data_identity"
+    )
+    _validate_identity_tuple(
+        request.semantic_input_slot_identity, 2, "semantic_input_slot_identity"
+    )
+    if classic_root == semantic_root:
+        _request_error("Classic and semantic user-data roots must be distinct")
+    _validate_slot(request.input_slot, "input_slot", _request_error)
+    _validate_slot(request.output_slot, "output_slot", _request_error)
+    if request.input_slot == request.output_slot:
+        _request_error("input_slot and output_slot must be distinct")
+    if not isinstance(request.actions, tuple):
+        _request_error("actions must be a normalized tuple")
+    raw_actions: list[dict[str, object]] = []
+    for index, action in enumerate(request.actions):
+        if not isinstance(action, Action):
+            _request_error(f"actions[{index}] is not a normalized replay action")
+        if not isinstance(action.arguments, dict):
+            _request_error(f"actions[{index}].arguments must be a normalized dict")
+        raw_actions.append(action.as_json())
+    _validate_actions(raw_actions, _request_error)
+    timeout = request.timeout_seconds
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        _request_error("timeout_seconds must be a finite number")
+    try:
+        timeout_float = float(timeout)
+    except OverflowError:
+        _request_error("timeout_seconds must be a finite number")
+    if not math.isfinite(timeout_float):
+        _request_error("timeout_seconds must be a finite number")
+    if not MIN_TIMEOUT_SECONDS <= timeout_float <= MAX_TIMEOUT_SECONDS:
+        _request_error(
+            f"timeout_seconds must be between {MIN_TIMEOUT_SECONDS} and {MAX_TIMEOUT_SECONDS}"
+        )
+    _validate_rng_hex(request.rng_seed, "rng_seed", _request_error)
+    _validate_rng_hex(request.rng_stream, "rng_stream", _request_error)
 
 
 def _private_json_bytes(value: object) -> bytes:
@@ -1114,9 +1256,10 @@ def _read_child_result(path: Path) -> object:
         raise
 
 
-def _parse_child_result(
+def _parse_child_result_impl(
     value: object,
     *,
+    schema_version: int,
     run_id: str,
     nonce: str,
     route: str,
@@ -1125,12 +1268,16 @@ def _parse_child_result(
     request_rng_seed: str,
     request_rng_stream: str,
 ) -> dict[str, object]:
+    if not _is_supported_schema_version(schema_version):
+        _result_error("child result schema_version expectation must be 1 or 2")
     if not isinstance(value, dict):
         _result_error(f"{route} child result must be a JSON object")
     _require_fields(value, RESULT_FIELDS, f"{route} child result", _result_error)
     version = value["schema_version"]
-    if not _is_plain_int(version) or version != SCHEMA_VERSION:
-        _result_error(f"{route} child result schema_version must be {SCHEMA_VERSION}")
+    if not _is_plain_int(version) or version != schema_version:
+        _result_error(
+            f"{route} child result schema_version must be {schema_version}"
+        )
     if _validate_token(value["run_id"], "child result run_id") != run_id:
         _result_error(f"{route} child result echoed a stale run_id")
     if _validate_token(value["child_nonce"], "child result child_nonce") != nonce:
@@ -1180,6 +1327,40 @@ def _parse_child_result(
     return dict(value)
 
 
+def _parse_child_result(
+    value: object,
+    *,
+    schema_version: int,
+    run_id: str,
+    nonce: str,
+    route: str,
+    process_id: int,
+    action_count: int,
+    request_rng_seed: str,
+    request_rng_stream: str,
+) -> dict[str, object]:
+    error_schema_version = (
+        schema_version
+        if _is_supported_schema_version(schema_version)
+        else SCHEMA_VERSION
+    )
+    try:
+        return _parse_child_result_impl(
+            value,
+            schema_version=schema_version,
+            run_id=run_id,
+            nonce=nonce,
+            route=route,
+            process_id=process_id,
+            action_count=action_count,
+            request_rng_seed=request_rng_seed,
+            request_rng_stream=request_rng_stream,
+        )
+    except BaseException as error:
+        _attach_schema_version(error, error_schema_version)
+        raise
+
+
 def _child_config(
     request: RunRequest,
     *,
@@ -1194,7 +1375,7 @@ def _child_config(
         else request.semantic_user_data_root
     )
     config: dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": request.schema_version,
         "run_id": run_id,
         "child_nonce": nonce,
         "replay_route": route,
@@ -1213,7 +1394,9 @@ def _child_config(
         "rng_stream": request.rng_stream,
     }
     if frozenset(config) != CONFIG_FIELDS:  # pragma: no cover - internal guard
-        raise AssertionError("child config fields drifted from the v1 contract")
+        raise AssertionError(
+            f"child config fields drifted from the v{request.schema_version} contract"
+        )
     return config
 
 
@@ -1423,6 +1606,7 @@ def _run_one_child(
         _result_error(f"{route} child result identity changed while it was read")
     result = _parse_child_result(
         value,
+        schema_version=request.schema_version,
         run_id=run_id,
         nonce=nonce,
         route=route,
@@ -1446,12 +1630,12 @@ def _run_one_child(
     return result
 
 
-def run_request(
+def _run_request_impl(
     request: RunRequest,
     *,
     retention_out: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Run the v1 parent protocol and return a non-equivalence envelope."""
+    """Run a validated parent protocol and return a non-equivalence envelope."""
 
     run_id = secrets.token_hex(TOKEN_HEX_LENGTH // 2)
     nonces = [secrets.token_hex(TOKEN_HEX_LENGTH // 2) for _ in ROUTES]
@@ -1529,7 +1713,7 @@ def run_request(
             except OSError:
                 pass
     envelope: dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": request.schema_version,
         "run_id": run_id,
         "runner_scope": RUNNER_SCOPE,
         "semantic_equivalence": SEMANTIC_EQUIVALENCE,
@@ -1540,8 +1724,26 @@ def run_request(
         "workspace_retention": retention,
     }
     if frozenset(envelope) != ENVELOPE_FIELDS:  # pragma: no cover - internal guard
-        raise AssertionError("run envelope fields drifted from the v1 contract")
+        raise AssertionError(
+            f"run envelope fields drifted from the v{request.schema_version} contract"
+        )
     return envelope
+
+
+def run_request(
+    request: RunRequest,
+    *,
+    retention_out: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Validate and run a supported parent protocol version."""
+
+    schema_version = _schema_version_hint(request)
+    try:
+        _validate_normalized_request(request)
+        return _run_request_impl(request, retention_out=retention_out)
+    except BaseException as error:
+        _attach_schema_version(error, schema_version)
+        raise
 
 
 def run_request_file(
@@ -1555,8 +1757,11 @@ def run_request_file(
 
 
 def _error_envelope(error: ReplayRunnerError) -> dict[str, object]:
+    schema_version = getattr(error, "schema_version", SCHEMA_VERSION)
+    if not _is_supported_schema_version(schema_version):
+        schema_version = SCHEMA_VERSION
     envelope: dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "status": "error",
         "semantic_equivalence": SEMANTIC_EQUIVALENCE,
         "error": {"code": error.code, "message": error.message},
@@ -1579,7 +1784,7 @@ def _argument_parser() -> argparse.ArgumentParser:
         "--request",
         required=True,
         type=Path,
-        help="v1 semantic replay run request JSON",
+        help="v1 or v2 semantic replay run request JSON",
     )
     return parser
 
@@ -1587,6 +1792,7 @@ def _argument_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _argument_parser().parse_args(argv)
     retention_out: dict[str, object] = {}
+    envelope: dict[str, object] | None = None
     try:
         envelope = run_request_file(
             arguments.request,
@@ -1604,10 +1810,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return error.exit_code
     except KeyboardInterrupt as error:
+        schema_version = getattr(error, "schema_version", None)
+        if (
+            not _is_supported_schema_version(schema_version)
+            and isinstance(envelope, dict)
+        ):
+            schema_version = envelope.get("schema_version")
+        if not _is_supported_schema_version(schema_version):
+            schema_version = SCHEMA_VERSION
         wrapped = ReplayRunnerError(
             "runner.interrupted",
             "semantic replay runner interrupted",
             EXIT_INTERRUPTED,
+            schema_version=schema_version,
         )
         retention = getattr(error, "workspace_retention", None)
         if not isinstance(retention, dict):
@@ -1622,10 +1837,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SystemExit:
         raise
     except BaseException as error:  # pragma: no cover - fail-closed CLI guard
+        schema_version = getattr(error, "schema_version", None)
+        if (
+            not _is_supported_schema_version(schema_version)
+            and isinstance(envelope, dict)
+        ):
+            schema_version = envelope.get("schema_version")
+        if not _is_supported_schema_version(schema_version):
+            schema_version = SCHEMA_VERSION
         wrapped = ReplayRunnerError(
             "runner.internal_error",
             f"unexpected runner failure: {type(error).__name__}",
             EXIT_INTERNAL,
+            schema_version=schema_version,
         )
         retention = getattr(error, "workspace_retention", None)
         if not isinstance(retention, dict):

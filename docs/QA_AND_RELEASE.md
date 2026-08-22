@@ -23,9 +23,12 @@ and exact state/save/action/RNG comparison into a fail-closed local verdict.
 Its census performs no explicit content writes (filesystem reads may update
 access-time metadata) and produces unreviewed mechanical fixture evidence. Its
 request pins both the reviewed manifest bytes and fixture tree, and
-`--inspect-profile` validates the exact native-v1 action digest without staging
-or launching children. A configured build separately exercises all 12 native
-movement commands through both linked production routes.
+`--inspect-profile` validates the exact versioned native action digest without
+staging or launching children. Schema 1 remains movement-only and byte-stable;
+schema 2 preserves those records and adds bounded party selection. A configured
+build preserves all 12 native movement commands under schema 1 and repeats them
+in schema-2 plans that also cover changed and idempotent party selection through
+both linked production routes.
 No private Tutorial fixture is selected in the repository, so no current CI
 result establishes real-engine equivalence. Separately reviewed private outdoor
 and first-person dungeon profiles have completed the real gate; their narrowly
@@ -35,7 +38,8 @@ and [dungeon receipt](CONTENT_PROVENANCE.md#private-first-person-dungeon-replay-
 Together they exercise all 12 native-v1 movement command names, but they bind
 different exact fixtures and executables and are not a combined CI,
 current-HEAD, or release-wide verdict. Broader action profiles and City coverage
-remain separate acceptance work. Follow
+remain separate acceptance work. No real schema-2 envelope or receipt has been
+accepted yet; its current coverage is synthetic and linked-native only. Follow
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md) for each private
 gate and archive its canonical envelope outside the repository.
 

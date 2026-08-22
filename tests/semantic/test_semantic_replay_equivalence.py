@@ -32,6 +32,15 @@ ENVELOPE_SCHEMA_PATH = Path(__file__).with_name(
 PROFILE_SCHEMA_PATH = Path(__file__).with_name(
     "semantic-replay-equivalence-profile.schema.json"
 )
+V2_REQUEST_SCHEMA_PATH = Path(__file__).with_name(
+    "semantic-replay-equivalence-request-v2.schema.json"
+)
+V2_ENVELOPE_SCHEMA_PATH = Path(__file__).with_name(
+    "semantic-replay-equivalence-envelope-v2.schema.json"
+)
+V2_PROFILE_SCHEMA_PATH = Path(__file__).with_name(
+    "semantic-replay-equivalence-profile-v2.schema.json"
+)
 
 SPEC = importlib.util.spec_from_file_location(
     "semantic_replay_equivalence", SCRIPT_PATH
@@ -113,14 +122,18 @@ output_path = (
 output_path.mkdir()
 
 result = {
-    "schema_version": 1,
+    "schema_version": config["schema_version"],
     "run_id": config["run_id"],
     "child_nonce": config["child_nonce"],
     "replay_route": route,
     "presentation_mode": config["presentation_mode"],
     "process_id": os.getpid(),
     "status": "completed",
-    "engine_identity": "synthetic-live-gate-child-v1",
+    "engine_identity": (
+        "synthetic-live-gate-child-v1"
+        if config["schema_version"] == 1
+        else "synthetic-live-gate-child-v2"
+    ),
     "settled_action_count": len(config["actions"]),
     "state_sha256": "1" * 64,
     "save_tree_sha256": "2" * 64,
@@ -128,6 +141,8 @@ result = {
     "rng_seed": config["rng_seed"],
     "rng_stream": config["rng_stream"],
 }
+if "wrong_schema" in flags:
+    result["schema_version"] = 2 if config["schema_version"] == 1 else 1
 if route == "semantic":
     if "state_sha256" in flags:
         result["state_sha256"] = "3" * 64
@@ -336,6 +351,17 @@ class CompletedGateTests(EquivalenceGateTestCase):
         self.assertEqual(semantic["replay_route"], "semantic")
         self.assertEqual(semantic["presentation_mode"], "remastered")
         self.assertNotEqual(classic["process_id"], semantic["process_id"])
+        self.assertEqual(runner["schema_version"], 1)
+        self.assertEqual(classic["schema_version"], 1)
+        self.assertEqual(semantic["schema_version"], 1)
+        self.assertEqual(
+            {classic["engine_identity"], semantic["engine_identity"]},
+            {"synthetic-live-gate-child-v1"},
+        )
+        encoded = json.dumps(
+            envelope, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        self.assertIn(b'"schema_version":1', encoded)
 
         fixture_retention = envelope["fixture_workspace_retention"]
         runner_retention = runner["workspace_retention"]
@@ -345,6 +371,41 @@ class CompletedGateTests(EquivalenceGateTestCase):
             path = Path(retention["candidate_path"])
             self.assertTrue(path.is_dir())
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+
+    def test_v2_mixed_actions_propagate_to_an_exact_v2_envelope(self) -> None:
+        self.request["schema_version"] = 2
+        self.request["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "move_party",
+                "arguments": {"command": "north"},
+            },
+            {
+                "ordinal": 1,
+                "kind": "select_party_member",
+                "arguments": {"member": 2},
+            },
+        ]
+        self.write_request()
+
+        envelope = self.run_gate()
+
+        self.assertEqual(envelope["schema_version"], 2)
+        self.assertEqual(envelope["comparison"]["contract"], "realmz.semantic-replay.exact.v2")
+        self.assertEqual(envelope["replay_profile"]["action_count"], 2)
+        runner_envelope = envelope["runner_envelope"]
+        self.assertEqual(runner_envelope["schema_version"], 2)
+        self.assertEqual(
+            [result["schema_version"] for result in runner_envelope["child_results"]],
+            [2, 2],
+        )
+        self.assertEqual(
+            {
+                result["engine_identity"]
+                for result in runner_envelope["child_results"]
+            },
+            {"synthetic-live-gate-child-v2"},
+        )
 
     def test_only_declared_observables_control_the_verdict(self) -> None:
         envelope = self.run_gate()
@@ -390,6 +451,7 @@ class CompletedGateTests(EquivalenceGateTestCase):
 
     def test_settled_count_is_recorded_but_a_divergence_is_not_evaluated(self) -> None:
         classic = {
+            "schema_version": 1,
             "state_sha256": "1" * 64,
             "save_tree_sha256": "2" * 64,
             "settled_action_count": 1,
@@ -404,6 +466,49 @@ class CompletedGateTests(EquivalenceGateTestCase):
             gate.compare_child_results([classic, semantic])
         self.assertEqual(raised.exception.code, "runner.envelope_invalid")
         self.assertIn("settled_action_count", raised.exception.message)
+
+    def test_comparison_rejects_cross_version_child_results(self) -> None:
+        result = {
+            "schema_version": 1,
+            "state_sha256": "1" * 64,
+            "save_tree_sha256": "2" * 64,
+            "settled_action_count": 1,
+            "rng_draw_count": 7,
+        }
+        with self.assertRaises(gate.EquivalenceGateError) as raised:
+            gate.compare_child_results([result, dict(result)], 2)
+        self.assertEqual(raised.exception.code, "runner.envelope_invalid")
+        self.assertEqual(raised.exception.schema_version, 2)
+        self.assertIn("schema_version must be 2", raised.exception.message)
+
+    def test_comparison_requires_plain_exact_child_versions(self) -> None:
+        base = {
+            "state_sha256": "1" * 64,
+            "save_tree_sha256": "2" * 64,
+            "settled_action_count": 1,
+            "rng_draw_count": 7,
+        }
+        missing = object()
+        for expected, invalid_versions in (
+            (1, (missing, True, 1.0, 2)),
+            (2, (missing, False, 2.0, 1)),
+        ):
+            for invalid_version in invalid_versions:
+                with self.subTest(
+                    expected=expected,
+                    invalid_version=invalid_version,
+                ):
+                    result = dict(base)
+                    if invalid_version is not missing:
+                        result["schema_version"] = invalid_version
+                    with self.assertRaises(gate.EquivalenceGateError) as raised:
+                        gate.compare_child_results(
+                            [result, dict(result)], expected
+                        )
+                    self.assertEqual(
+                        raised.exception.code, "runner.envelope_invalid"
+                    )
+                    self.assertEqual(raised.exception.schema_version, expected)
 
     def test_cli_uses_a_dedicated_non_equivalent_exit_and_stdout_envelope(self) -> None:
         environment = os.environ.copy()
@@ -438,6 +543,77 @@ class CompletedGateTests(EquivalenceGateTestCase):
 
 
 class FailClosedGateTests(EquivalenceGateTestCase):
+    def test_v2_child_result_version_mismatch_is_a_v2_error(self) -> None:
+        self.request["schema_version"] = 2
+        self.request["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "select_party_member",
+                "arguments": {"member": 2},
+            }
+        ]
+        self.write_request()
+
+        error = self.assert_gate_error("child.result_invalid", flags="wrong_schema")
+
+        self.assertEqual(error.schema_version, 2)
+        self.assertEqual(gate._error_envelope(error)["schema_version"], 2)
+
+    def test_v2_gate_rejects_non_plain_or_downgraded_runner_envelope(self) -> None:
+        self.request["schema_version"] = 2
+        self.request["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "select_party_member",
+                "arguments": {"member": 2},
+            }
+        ]
+        self.write_request()
+        run_runner = gate.replay_runner.run_request
+
+        for invalid_version in (1, 2.0):
+            with self.subTest(invalid_version=invalid_version):
+                def invalid_envelope(
+                    *args: object, **kwargs: object
+                ) -> dict[str, object]:
+                    envelope = run_runner(*args, **kwargs)
+                    envelope["schema_version"] = invalid_version
+                    return envelope
+
+                with mock.patch.object(
+                    gate.replay_runner,
+                    "run_request",
+                    side_effect=invalid_envelope,
+                ):
+                    error = self.assert_gate_error("runner.envelope_invalid")
+
+                self.assertEqual(error.schema_version, 2)
+                self.assertIn("must match the equivalence request", error.message)
+
+    def test_v1_gate_rejects_missing_or_boolean_runner_envelope_version(self) -> None:
+        run_runner = gate.replay_runner.run_request
+        for invalid_version in (None, True):
+            with self.subTest(invalid_version=invalid_version):
+                def invalid_envelope(
+                    *args: object, **kwargs: object
+                ) -> dict[str, object]:
+                    envelope = run_runner(*args, **kwargs)
+                    if invalid_version is None:
+                        envelope.pop("schema_version")
+                    else:
+                        envelope["schema_version"] = invalid_version
+                    return envelope
+
+                with mock.patch.object(
+                    gate.replay_runner,
+                    "run_request",
+                    side_effect=invalid_envelope,
+                ):
+                    error = self.assert_gate_error("runner.envelope_invalid")
+
+                self.assertEqual(error.schema_version, 1)
+                self.assertIn("must match the equivalence request", error.message)
+
     def test_partial_workspace_creation_is_retained_and_reported(self) -> None:
         require_private = gate._require_private_directory
 
@@ -606,8 +782,13 @@ class FailClosedGateTests(EquivalenceGateTestCase):
         self.assertIsNotNone(error.fixture_workspace_retention)
         self.assertIsNotNone(error.runner_workspace_retention)
         envelope = gate._error_envelope(error)
+        self.assertEqual(envelope["schema_version"], 1)
         self.assertEqual(envelope["semantic_equivalence"], "not_evaluated")
         self.assertEqual(envelope["status"], "error")
+        encoded = json.dumps(
+            envelope, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        self.assertIn(b'"schema_version":1', encoded)
 
     def test_child_output_cannot_leak_fixture_bytes_through_gate_errors(self) -> None:
         error = self.assert_gate_error(
@@ -981,6 +1162,63 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         )
         self.assert_request_error("duplicate JSON key: schema_version")
 
+    def test_unknown_schema_version_fails_closed_without_downgrade(self) -> None:
+        for unknown_version in (True, 0, 3):
+            with self.subTest(unknown_version=unknown_version):
+                value = copy.deepcopy(self.request)
+                value["schema_version"] = unknown_version
+                self.write_request(value)
+
+                with mock.patch.object(
+                    gate.fixture_tool,
+                    "verify_fixture",
+                    side_effect=AssertionError("fixture must not be inspected"),
+                ) as verify_fixture, mock.patch.object(
+                    gate,
+                    "_make_gate_workspace",
+                    side_effect=AssertionError("workspace must not be created"),
+                ) as make_workspace:
+                    with self.assertRaises(gate.EquivalenceGateError) as raised:
+                        gate.run_request_file(self.request_path)
+
+                self.assertEqual(raised.exception.code, "request.invalid")
+                self.assertEqual(raised.exception.schema_version, 1)
+                self.assertIn(
+                    "schema_version must be 1 or 2", raised.exception.message
+                )
+                self.assertEqual(
+                    gate._error_envelope(raised.exception)["schema_version"], 1
+                )
+                verify_fixture.assert_not_called()
+                make_workspace.assert_not_called()
+
+    def test_recognized_v2_cli_validation_error_emits_schema_two(self) -> None:
+        value = copy.deepcopy(self.request)
+        value["schema_version"] = 2
+        value["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "select_party_member",
+                "arguments": {"member": True},
+            }
+        ]
+        self.write_request(value)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", stderr
+        ):
+            exit_code = gate.main(
+                ["--request", str(self.request_path), "--inspect-profile"]
+            )
+
+        self.assertEqual(exit_code, gate.EXIT_REQUEST)
+        self.assertEqual(stdout.getvalue(), "")
+        envelope = json.loads(stderr.getvalue())
+        self.assertEqual(envelope["schema_version"], 2)
+        self.assertEqual(envelope["error"]["code"], "request.invalid")
+
     def test_deep_or_nonfinite_json_is_a_bounded_request_error(self) -> None:
         self.request_path.write_text("[" * 600000 + "]" * 600000, encoding="utf-8")
         self.assert_request_error("not valid strict JSON")
@@ -1017,6 +1255,15 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         self,
     ) -> None:
         cases = (
+            (
+                "v2 selection kind",
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"member": 2},
+                },
+                ".kind must be move_party",
+            ),
             (
                 "unsupported kind",
                 {
@@ -1097,6 +1344,167 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
                 self.assertIn(expected, raised.exception.message)
                 verify_fixture.assert_not_called()
                 make_workspace.assert_not_called()
+
+    def test_native_v2_mixed_actions_and_member_boundaries_are_closed(self) -> None:
+        valid = copy.deepcopy(self.request)
+        valid["schema_version"] = 2
+        valid["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "move_party",
+                "arguments": {"command": "southwest"},
+            },
+            {
+                "ordinal": 1,
+                "kind": "select_party_member",
+                "arguments": {"member": 0},
+            },
+            {
+                "ordinal": 2,
+                "kind": "select_party_member",
+                "arguments": {"member": 5},
+            },
+        ]
+        self.write_request(valid)
+        parsed = gate.load_request(self.request_path)
+        self.assertEqual(parsed.schema_version, 2)
+        self.assertEqual(
+            [action.kind for action in parsed.actions],
+            ["move_party", "select_party_member", "select_party_member"],
+        )
+
+        invalid_cases = (
+            (
+                "unknown kind",
+                {"ordinal": 0, "kind": "probe", "arguments": {"member": 2}},
+                "must be move_party or select_party_member",
+            ),
+            (
+                "missing member",
+                {"ordinal": 0, "kind": "select_party_member", "arguments": {}},
+                "exactly the member field",
+            ),
+            (
+                "wrong member key",
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"index": 2},
+                },
+                "exactly the member field",
+            ),
+            (
+                "extra member argument",
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"member": 2, "repeat": True},
+                },
+                "exactly the member field",
+            ),
+            (
+                "boolean member",
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"member": True},
+                },
+                "plain integer from 0 through 5",
+            ),
+            (
+                "string member",
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"member": "2"},
+                },
+                "plain integer from 0 through 5",
+            ),
+            (
+                "negative member",
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"member": -1},
+                },
+                "plain integer from 0 through 5",
+            ),
+            (
+                "member above range",
+                {
+                    "ordinal": 0,
+                    "kind": "select_party_member",
+                    "arguments": {"member": 6},
+                },
+                "plain integer from 0 through 5",
+            ),
+        )
+        for name, action, expected in invalid_cases:
+            with self.subTest(name=name):
+                invalid = copy.deepcopy(self.request)
+                invalid["schema_version"] = 2
+                invalid["actions"] = [action]
+                self.write_request(invalid)
+                with mock.patch.object(
+                    gate.fixture_tool,
+                    "verify_fixture",
+                    side_effect=AssertionError("fixture must not be inspected"),
+                ) as verify_fixture, mock.patch.object(
+                    gate,
+                    "_make_gate_workspace",
+                    side_effect=AssertionError("workspace must not be created"),
+                ) as make_workspace:
+                    with self.assertRaises(gate.EquivalenceGateError) as raised:
+                        gate.run_request_file(self.request_path)
+                self.assertEqual(raised.exception.code, "request.invalid")
+                self.assertEqual(raised.exception.schema_version, 2)
+                self.assertEqual(
+                    gate._error_envelope(raised.exception)["schema_version"], 2
+                )
+                self.assertIn(expected, raised.exception.message)
+                verify_fixture.assert_not_called()
+                make_workspace.assert_not_called()
+
+    def test_direct_v2_request_cannot_bypass_closed_action_validation(self) -> None:
+        value = copy.deepcopy(self.request)
+        value["schema_version"] = 2
+        value["actions"] = [
+            {
+                "ordinal": 0,
+                "kind": "select_party_member",
+                "arguments": {"member": 2},
+            }
+        ]
+        self.write_request(value)
+        parsed = gate.load_request(self.request_path)
+        invalid = replace(
+            parsed,
+            actions=(
+                gate.replay_runner.Action(
+                    ordinal=0,
+                    kind="select_party_member",
+                    arguments={"member": True},
+                ),
+            ),
+        )
+
+        with mock.patch.object(
+            gate.fixture_tool,
+            "verify_fixture",
+            side_effect=AssertionError("fixture must not be inspected"),
+        ) as verify_fixture, mock.patch.object(
+            gate,
+            "_make_gate_workspace",
+            side_effect=AssertionError("workspace must not be created"),
+        ) as make_workspace:
+            with self.assertRaises(gate.EquivalenceGateError) as raised:
+                gate.inspect_profile(invalid)
+
+        self.assertEqual(raised.exception.code, "request.invalid")
+        self.assertEqual(raised.exception.schema_version, 2)
+        self.assertIn("plain integer", raised.exception.message)
+        verify_fixture.assert_not_called()
+        make_workspace.assert_not_called()
 
     def test_direct_request_value_cannot_bypass_native_v1_action_check(self) -> None:
         self.write_request()
@@ -1200,6 +1608,10 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         expected = hashlib.sha256(
             b"realmz-semantic-replay-actions-v1\n" + canonical
         ).hexdigest()
+        self.assertEqual(
+            expected,
+            "7dd7082ddb92f2d93c904a23b408c271376e92ebf67e94e2ff366c197a183ae3",
+        )
         self.assertEqual(gate._actions_sha256(actions), expected)
 
         envelope_schema = json.loads(
@@ -1210,6 +1622,32 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
         ]["description"]
         self.assertIn("realmz-semantic-replay-actions-v1", description)
         self.assertIn("RFC 8785", description)
+
+    def test_v2_member_two_digest_has_a_pinned_canonical_protocol_vector(self) -> None:
+        action = gate.replay_runner.Action(
+            ordinal=0,
+            kind="select_party_member",
+            arguments={"member": 2},
+        )
+        canonical = (
+            b'[{"arguments":{"member":2},"kind":"select_party_member","ordinal":0}]'
+        )
+        expected = hashlib.sha256(
+            b"realmz-semantic-replay-actions-v2\n" + canonical
+        ).hexdigest()
+        self.assertEqual(
+            expected,
+            "65823e0696865fefb0eee51795f5edcc9d80eeaf4d656e4936b8f8425262c896",
+        )
+        self.assertEqual(gate._actions_sha256((action,), 2), expected)
+
+        value = copy.deepcopy(self.request)
+        value["schema_version"] = 2
+        value["actions"] = [action.as_json()]
+        self.write_request(value)
+        profile = gate.inspect_profile_file(self.request_path)
+        self.assertEqual(profile["schema_version"], 2)
+        self.assertEqual(profile["actions_sha256"], expected)
 
     def test_request_schema_matches_native_v1_runtime_action_contract(self) -> None:
         request_schema = json.loads(REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -1268,6 +1706,44 @@ class RequestAndSchemaTests(EquivalenceGateTestCase):
             ),
             gate.NATIVE_V1_MOVEMENT_COMMANDS,
         )
+
+    def test_v2_schemas_bind_the_closed_vocabulary_and_nested_runner_v2(self) -> None:
+        request_schema = json.loads(
+            V2_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8")
+        )
+        envelope_schema = json.loads(
+            V2_ENVELOPE_SCHEMA_PATH.read_text(encoding="utf-8")
+        )
+        profile_schema = json.loads(
+            V2_PROFILE_SCHEMA_PATH.read_text(encoding="utf-8")
+        )
+        for schema in (request_schema, envelope_schema, profile_schema):
+            self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
+            self.assertIs(schema["additionalProperties"], False)
+
+        action_variants = request_schema["$defs"]["action"]["oneOf"]
+        self.assertEqual(
+            [variant["properties"]["kind"]["const"] for variant in action_variants],
+            ["move_party", "select_party_member"],
+        )
+        member = action_variants[1]["properties"]["arguments"]["properties"][
+            "member"
+        ]
+        self.assertEqual(member, {"maximum": 5, "minimum": 0, "type": "integer"})
+        self.assertEqual(
+            envelope_schema["properties"]["runner_envelope"]["$ref"],
+            "https://realmz-castle.github.io/schemas/semantic-replay-run-envelope-v2.json",
+        )
+        self.assertEqual(
+            envelope_schema["$defs"]["comparison"]["properties"]["contract"][
+                "const"
+            ],
+            "realmz.semantic-replay.exact.v2",
+        )
+        digest_description = envelope_schema["$defs"]["replay_profile"][
+            "properties"
+        ]["actions_sha256"]["description"]
+        self.assertIn("realmz-semantic-replay-actions-v2", digest_description)
 
     def test_new_schemas_are_v1_closed_and_keep_runner_v1_nested(self) -> None:
         request_schema = json.loads(REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))

@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -94,10 +95,11 @@ void write_text(const fs::path& path, std::string_view text) {
 
 [[nodiscard]] std::string child_config(
     const fs::path& user_root,
-    const fs::path& result_path) {
+    const fs::path& result_path,
+    std::uint32_t schema_version) {
   return
       "{"
-      "\"schema_version\":1,"
+      "\"schema_version\":" + std::to_string(schema_version) + ","
       "\"run_id\":\"0123456789abcdef0123456789abcdef\","
       "\"child_nonce\":\"fedcba9876543210fedcba9876543210\","
       "\"replay_route\":\"semantic\","
@@ -119,7 +121,7 @@ void write_text(const fs::path& path, std::string_view text) {
       "}";
 }
 
-void test_configured_bootstrap_policies() {
+void test_configured_bootstrap_policies(std::uint32_t schema_version) {
   TemporaryDirectory temporary;
   const fs::path user_root = temporary.path() / "user-root";
   const fs::path input_root = user_root / "Save" / "Game A";
@@ -134,7 +136,8 @@ void test_configured_bootstrap_policies() {
       REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT);
   CHECK(!RealmzSemanticReplayChildIsActive());
 
-  write_text(config_path, child_config(user_root, result_path));
+  write_text(
+      config_path, child_config(user_root, result_path, schema_version));
   CHECK(RealmzConfigureSemanticReplayChild(config_path.string().c_str()) == 0);
   CHECK(RealmzSemanticReplayChildIsActive());
   const auto selected_root = realmz::app::remastered_user_data_root();
@@ -160,6 +163,7 @@ void test_configured_bootstrap_policies() {
 
   auto* runtime = realmz::replay::installed_replay_runtime();
   CHECK(runtime != nullptr);
+  CHECK(runtime->config().schema_version() == schema_version);
   CHECK(runtime->read_policy_for_user_relative_path(
             fs::path("save") / "game a" / "state.dat") ==
       realmz::replay::ReplayReadPolicy::user_data_only);
@@ -200,13 +204,54 @@ void test_configured_bootstrap_policies() {
   CHECK(!fs::exists(output_root));
 }
 
+void test_unknown_schema_rejected_before_runtime_installation() {
+  TemporaryDirectory temporary;
+  const fs::path user_root = temporary.path() / "user-root";
+  const fs::path input_root = user_root / "Save" / "Game A";
+  const fs::path output_root = user_root / "Save" / "Game B";
+  const fs::path result_path = temporary.path() / "result.json";
+  const fs::path config_path = temporary.path() / "config-v3.json";
+  fs::create_directories(input_root);
+  const fs::path sentinel = input_root / "state.dat";
+  write_text(sentinel, "unchanged-input");
+  write_text(config_path, child_config(user_root, result_path, 3U));
+
+  CHECK(realmz::replay::installed_replay_runtime() == nullptr);
+  CHECK(!RealmzSemanticReplayChildIsActive());
+  CHECK(RealmzConfigureSemanticReplayChild(config_path.string().c_str()) ==
+      REALMZ_SEMANTIC_REPLAY_CONFIG_ERROR_EXIT);
+  CHECK(!RealmzSemanticReplayChildIsActive());
+  CHECK(realmz::replay::installed_replay_runtime() == nullptr);
+  CHECK(read_text(sentinel) == "unchanged-input");
+  CHECK(!fs::exists(output_root));
+  CHECK(!fs::exists(result_path));
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
   try {
-    test_configured_bootstrap_policies();
+    std::string_view scenario = "v1";
+    if (argc == 2) {
+      scenario = argv[1];
+    } else if (argc != 1) {
+      std::cerr << "usage: SemanticReplayChildBootstrapTest "
+                   "[v1|v2|unknown-version]\n";
+      return 2;
+    }
+    if (scenario == "v1") {
+      test_configured_bootstrap_policies(1U);
+    } else if (scenario == "v2") {
+      test_configured_bootstrap_policies(2U);
+    } else if (scenario == "unknown-version") {
+      test_unknown_schema_rejected_before_runtime_installation();
+    } else {
+      std::cerr << "usage: SemanticReplayChildBootstrapTest "
+                   "[v1|v2|unknown-version]\n";
+      return 2;
+    }
     std::cout << "SemanticReplayChildBootstrapTest passed ("
-              << checks_run << " checks)\n";
+              << scenario << ", " << checks_run << " checks)\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "SemanticReplayChildBootstrapTest failed after "
