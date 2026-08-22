@@ -499,6 +499,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .save_available = true,
                  .load_control_visible = true,
                  .load_available = true,
+                 .rest_control_visible = true,
+                 .rest_available = true,
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -517,6 +519,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .save_available = true,
                  .load_control_visible = true,
                  .load_available = true,
+                 .rest_control_visible = true,
+                 .rest_available = true,
              },
          }) {
       std::array<std::vector<ShellControlPlacement>, 3> layouts;
@@ -525,7 +529,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
         layouts[page_index] = compute_shell_control_layout(request);
         const size_t action_count = page_index == 0U
             ? (request.screen == ScreenContext::exploration ? 8U : 4U)
-            : (page_index == 1U ? 4U : 2U);
+            : (page_index == 1U ? 4U : 3U);
         CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
         verify_world_tabs(
             layouts[page_index], panel, kWorldPages[page_index]);
@@ -590,6 +594,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       const auto& game = layouts[2];
       const auto& save = game[3];
       const auto& load = game[4];
+      const auto& rest = game[5];
       CHECK(save.region.value == 1102U);
       CHECK(save.kind == ShellControlKind::open_save_game);
       CHECK(save.label == "SAVE");
@@ -606,6 +611,14 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(load.tab_order == 1103);
       CHECK(load.enabled);
       CHECK(load.payload == UIActionPayload{OpenLoadGameAction{}});
+      CHECK(rest.region.value == 1118U);
+      CHECK(rest.kind == ShellControlKind::rest_party);
+      CHECK(rest.label == "REST");
+      CHECK(rest.accessibility_label == "Rest party");
+      CHECK(rest.focus_identifier == "focus.action.party.rest");
+      CHECK(rest.tab_order == 1118);
+      CHECK(rest.enabled);
+      CHECK(rest.payload == UIActionPayload{RestPartyAction{}});
 
       // Every tab payload is a direct destination, including selecting the
       // already-active page. Recompose each target from every origin.
@@ -698,6 +711,37 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .load_available = true,
   }).empty());
 
+  const auto rest_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .rest_control_visible = true,
+      .rest_available = false,
+  });
+  CHECK(rest_disabled.size() == 4U);
+  verify_world_tabs(rest_disabled, panel, WorldActionPage::game);
+  CHECK(rest_disabled.back().region.value == 1118U);
+  CHECK(rest_disabled.back().kind == ShellControlKind::rest_party);
+  CHECK(rest_disabled.back().label == "REST");
+  CHECK(rest_disabled.back().accessibility_label ==
+      "Rest party, Camp first");
+  CHECK(rest_disabled.back().focus_identifier == "focus.action.party.rest");
+  CHECK(rest_disabled.back().tab_order == 1118);
+  CHECK(!rest_disabled.back().enabled);
+  CHECK(std::holds_alternative<RestPartyAction>(
+      rest_disabled.back().payload));
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_first_person,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .rest_available = true,
+  }).empty());
+
   // Dungeon Travel and the reserved four-slot Party page are both reachable
   // at this exact 44-point floor. One point less in either dimension fails
   // the whole persistent deck closed on every page.
@@ -721,6 +765,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
         .save_available = true,
         .load_control_visible = true,
         .load_available = true,
+        .rest_control_visible = true,
+        .rest_available = true,
     };
     const auto exact = compute_shell_control_layout(exact_request);
     CHECK(!exact.empty());

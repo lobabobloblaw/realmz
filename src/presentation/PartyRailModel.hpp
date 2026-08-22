@@ -116,6 +116,7 @@ enum class ActionIntent {
   open_character_sheet,
   save_game,
   load_game,
+  rest,
   guard,
   finish,
   delay,

@@ -197,6 +197,23 @@ outer loop can take that member. The loop rechecks `charnum`, `charselectnew`,
 `charselectold`, and `charmainbut` immediately before entering its existing
 `buttonchoice` route. EventManager never fabricates a mouse event or calls the
 sheet synchronously, and Classic owns all sheet browsing and nested modals.
+The Game page's member-free Rest control carries a distinct `RestPartyAction`
+and is available only while the party is already in camp. Its single-use tag
+must be consumed from a completed semantic scope matching the encoded origin.
+Late consumption then freshly requires adaptive eligibility, an exact
+exploration or dungeon screen match, a matching snapshot screen, outdoor
+presentation for exploration or dungeon-map/first-person presentation for a
+dungeon, and `in_camp == true`. Only then does it return Classic's exact
+lowercase `r` message `0x00000F72`. Pointer dispatch occurs after capture is
+cancelled on release, and EventManager rejects either activation when its
+non-pumping cached SDL/Classic state reports a held mouse button. An accepted
+activation therefore begins with one mandatory iteration of Classic's
+preserved `do`/`while (StillDown())` Rest path; a distinct physical press after
+delivery remains ordinary Classic input. Classic remains authoritative for sound,
+tick/delay behavior, `updatefat(FALSE, -2, FALSE)`, both `timeclick` calls and
+any resulting encounters, and the preserved `revertgame` return. The semantic
+route does not synthesize a Rest hold, predict an encounter, or reproduce those
+mutations.
 Combat exposes seventeen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
@@ -407,8 +424,8 @@ inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Search, use/consume Torch, Heal, Rest/Camp, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
-| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Rest/Camp, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Outdoor | Search, use/consume Torch, Heal, Camp, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
+| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Camp, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -593,7 +610,7 @@ Automated checks do not replace these release decisions:
   rather than a partial crop. Archive the inventory, captures, failure evidence,
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, non-combat Use Scroll, Character, Save, Load, Guard, Finish, Delay, Center,
+  Spells, non-combat Use Scroll, Character, Save, Load, Rest, Guard, Finish, Delay, Center,
   Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
   Combat Cast, Combat Target, Combat Escape, Use Scroll, and Center Cursor
   controls at compact and wide layouts,
@@ -609,6 +626,13 @@ Automated checks do not replace these release decisions:
   Load actions after leaving their gameplay surface; verify Character is inert
   after selection, member, or surface changes and otherwise reaches only the
   existing Classic character-sheet path through the neutral one-shot handoff;
+  verify Rest is unavailable outside camp; becomes inert after its semantic
+  scope, surface, adaptive eligibility, presentation, or fresh camp state
+  changes; yields the exact Classic `r` message only after every late gate;
+  rejects delivery while the cached SDL/Classic mouse state is held; and begins
+  with one mandatory Classic rest quantum per accepted pointer-release or
+  keyboard activation, absent a distinct later physical press, while Classic
+  alone owns sound, fatigue, time, encounters, and revert handling;
   and inert stale Guard,
   Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting

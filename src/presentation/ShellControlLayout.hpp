@@ -19,6 +19,7 @@ enum class ShellControlKind {
   open_character_sheet,
   open_save_game,
   open_load_game,
+  rest_party,
   guard_combatant,
   finish_combatant,
   delay_combatant,
@@ -74,6 +75,8 @@ struct ShellControlLayoutRequest {
   bool save_available = false;
   bool load_control_visible = false;
   bool load_available = false;
+  bool rest_control_visible = false;
+  bool rest_available = false;
   std::optional<CombatantId> guard_combatant;
   bool guard_available = false;
   std::optional<CombatantId> finish_combatant;

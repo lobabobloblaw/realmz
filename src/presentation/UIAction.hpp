@@ -91,6 +91,13 @@ struct OpenLoadGameAction {
   bool operator==(const OpenLoadGameAction&) const = default;
 };
 
+// Requests the preserved Classic Rest command for the party. Camp entry,
+// healing, time advancement, spell recovery, encounters, RNG, hold behavior,
+// and every gameplay mutation remain authoritative in the compatibility flow.
+struct RestPartyAction {
+  bool operator==(const RestPartyAction&) const = default;
+};
+
 // Ends the explicitly identified party combatant's current turn in the
 // preserved Classic combat loop with its Guard command. Carrying the actor
 // prevents a queued action from silently retargeting after the turn advances.
@@ -447,6 +454,7 @@ using UIActionPayload = std::variant<
     OpenCharacterSheetAction,
     OpenSaveGameAction,
     OpenLoadGameAction,
+    RestPartyAction,
     GuardCombatantAction,
     FinishCombatantAction,
     DelayCombatantAction,
@@ -501,6 +509,8 @@ struct UIAction {
       return "open_save_game";
     } else if constexpr (std::is_same_v<Action, OpenLoadGameAction>) {
       return "open_load_game";
+    } else if constexpr (std::is_same_v<Action, RestPartyAction>) {
+      return "rest_party";
     } else if constexpr (std::is_same_v<Action, GuardCombatantAction>) {
       return "guard_combatant";
     } else if constexpr (std::is_same_v<Action, FinishCombatantAction>) {

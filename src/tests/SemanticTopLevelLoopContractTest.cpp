@@ -343,6 +343,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic load input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticRestPartyEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic Rest input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic guard input");
@@ -414,6 +418,22 @@ void require_no_semantic_scope_or_consumer(
 void verify_event_manager(const fs::path& repository_root) {
   const std::string source = code_only(read_file(
       repository_root / "src/EventManager.cpp"));
+  const std::string cached_mouse_query = function_body(
+      source, "is_mouse_button_down_without_event_pump");
+  const std::string compact_cached_mouse_query =
+      without_whitespace(cached_mouse_query);
+  require(compact_cached_mouse_query.contains(
+              "constSDL_MouseButtonFlagssdl_mouse_buttons="
+              "SDL_GetMouseState(nullptr,nullptr);") &&
+          compact_cached_mouse_query.contains(
+              "return!(this->modifier_flags&EVMOD_MOUSE_BUTTON_UP)||"
+              "((sdl_mouse_buttons&SDL_BUTTON_LMASK)!=0);") &&
+          count_identifier(cached_mouse_query, "SDL_GetMouseState") == 1 &&
+          count_identifier(cached_mouse_query, "enqueue_pending_events") == 0 &&
+          count_identifier(cached_mouse_query, "SDL_PollEvent") == 0 &&
+          count_identifier(cached_mouse_query, "WindowManager") == 0,
+      "semantic delivery mouse-state query must combine cached SDL and "
+      "Classic state without pumping or recursively dispatching input");
   const std::string push = function_body(
       source, "push_semantic_movement_event");
   const std::string compact_push = without_whitespace(push);
@@ -637,6 +657,32 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(load_wrapper, "keyDown") == 0 &&
           count_identifier(load_wrapper, "mouseDown") == 0,
       "public semantic open load enqueue must not synthesize Classic input");
+
+  const std::string push_rest = function_body(
+      source, "push_semantic_rest_party_event");
+  const std::string compact_push_rest = without_whitespace(push_rest);
+  require(count_identifier(
+              push_rest, "RealmzIsSemanticRestPartyTag") == 1,
+      "semantic Rest enqueue must validate exactly one Rest tag");
+  require(count_identifier(push_rest, "app1Evt") == 1,
+      "semantic Rest enqueue must use app1Evt exactly once");
+  require(count_identifier(push_rest, "keyDown") == 0 &&
+          count_identifier(push_rest, "mouseDown") == 0 &&
+          count_identifier(push_rest, "ShowCombatRangeAction") == 0,
+      "semantic Rest enqueue must retain its world tag without synthesizing "
+      "Classic input or sharing the combat Range route");
+  require(compact_push_rest.contains("ev.what=app1Evt;") &&
+          compact_push_rest.contains("ev.message=tagged_message;"),
+      "semantic Rest must retain its tagged app1Evt payload");
+
+  const std::string rest_wrapper = function_body(
+      source, "PushSemanticRestPartyEvent");
+  require(without_whitespace(rest_wrapper).contains(
+              "returnem.push_semantic_rest_party_event(tagged_message);"),
+      "public semantic Rest enqueue must delegate to its tagged queue");
+  require(count_identifier(rest_wrapper, "keyDown") == 0 &&
+          count_identifier(rest_wrapper, "mouseDown") == 0,
+      "public semantic Rest enqueue must not synthesize Classic input");
 
   const std::string push_guard = function_body(
       source, "push_semantic_guard_combatant_event");
@@ -1125,6 +1171,10 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must have one late load consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticRestPartyEvent") == 1,
+      "semantic gameplay wrapper must have one late Rest consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late guard consumer");
   require(count_identifier(
@@ -1194,14 +1244,14 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 24,
-      "semantic gameplay wrapper must recognize all twenty-four tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 23 &&
-          count_text(compact_semantic, "ret->what=keyDown;") == 21 &&
+  require(count_identifier(semantic_wrapper, "app1Evt") == 25,
+      "semantic gameplay wrapper must recognize all twenty-five tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 24 &&
+          count_text(compact_semantic, "ret->what=keyDown;") == 22 &&
           count_text(
               compact_semantic, ".kind=(ret->what==keyDown)") == 2,
       "only guarded Classic replay injection or late movement, inventory, "
-      "spellbook, non-combat scroll-case, guard, finish, delay, center, "
+      "spellbook, non-combat scroll-case, Rest, guard, finish, delay, center, "
       "switch-weapon, cycle-focus, "
       "combat-items, Auto, Range, Bandage, Undo, combat-spellbook, "
       "combat-targeting, Escape, scroll-case, or center-cursor validation may "
@@ -1245,6 +1295,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenLoadGameEvent") == 1,
       "EventManager may consume semantic load input only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticRestPartyEvent") == 1,
+      "EventManager may consume semantic Rest input only inside its gameplay "
+      "wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "EventManager may consume semantic guard input only inside its gameplay wrapper");
@@ -1497,9 +1551,26 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", load_item_id);
   const std::size_t load_rejected_message = compact_semantic.find(
       "ret->message=0", load_null);
+  const std::size_t rest_branch = compact_semantic.find(
+      "RealmzIsSemanticRestPartyTag(ret->message)",
+      load_rejected_message);
+  const std::size_t rest_mouse_check = compact_semantic.find(
+      "em.is_mouse_button_down_without_event_pump()", rest_branch);
+  const std::size_t rest_mouse_gate = compact_semantic.find(
+      "!mouse_button_held", rest_mouse_check);
+  const std::size_t rest_consume = compact_semantic.find(
+      "RealmzConsumeSemanticRestPartyEvent(", rest_mouse_gate);
+  const std::size_t rest_keydown = compact_semantic.find(
+      "ret->what=keyDown", rest_consume);
+  const std::size_t rest_invalidate = compact_semantic.find(
+      "RealmzInvalidateSemanticInputBoundary()", rest_keydown);
+  const std::size_t rest_null = compact_semantic.find(
+      "ret->what=nullEvent", rest_invalidate);
+  const std::size_t rest_rejected_message = compact_semantic.find(
+      "ret->message=0", rest_null);
   const std::size_t guard_branch = compact_semantic.find(
       "RealmzIsSemanticGuardCombatantTag(ret->message)",
-      load_rejected_message);
+      rest_rejected_message);
   const std::size_t guard_consume = compact_semantic.find(
       "RealmzConsumeSemanticGuardCombatantEvent(", guard_branch);
   const std::size_t guard_keydown = compact_semantic.find(
@@ -1738,6 +1809,14 @@ void verify_event_manager(const fs::path& repository_root) {
           load_item_id != std::string::npos &&
           load_null != std::string::npos &&
           load_rejected_message != std::string::npos &&
+          rest_branch != std::string::npos &&
+          rest_mouse_check != std::string::npos &&
+          rest_mouse_gate != std::string::npos &&
+          rest_consume != std::string::npos &&
+          rest_keydown != std::string::npos &&
+          rest_invalidate != std::string::npos &&
+          rest_null != std::string::npos &&
+          rest_rejected_message != std::string::npos &&
           guard_branch != std::string::npos &&
           guard_consume != std::string::npos &&
           guard_keydown != std::string::npos &&
@@ -1873,7 +1952,15 @@ void verify_event_manager(const fs::path& repository_root) {
           load_menu_id < load_item_id &&
           load_item_id < load_null &&
           load_null < load_rejected_message &&
-          load_rejected_message < guard_branch &&
+          load_rejected_message < rest_branch &&
+          rest_branch < rest_mouse_check &&
+          rest_mouse_check < rest_mouse_gate &&
+          rest_mouse_gate < rest_consume &&
+          rest_consume < rest_keydown &&
+          rest_keydown < rest_invalidate &&
+          rest_invalidate < rest_null &&
+          rest_null < rest_rejected_message &&
+          rest_rejected_message < guard_branch &&
           guard_branch < guard_consume &&
           guard_consume < guard_keydown &&
           guard_keydown < guard_null &&
@@ -1955,6 +2042,14 @@ void verify_event_manager(const fs::path& repository_root) {
           center_cursor_keydown < center_cursor_null &&
           center_cursor_null < center_cursor_rejected_message,
       "semantic wrapper must scope only its poll and translate afterward");
+  require(scope_block_close < rest_branch &&
+          rest_branch < rest_mouse_check &&
+          rest_mouse_check < rest_mouse_gate &&
+          rest_mouse_gate < rest_consume &&
+          rest_consume < rest_keydown && rest_keydown < rest_invalidate &&
+          rest_invalidate < guard_branch,
+      "Rest must leave semantic gameplay scope, reject a cached held mouse "
+      "without pumping, then consume once before its lowercase-r handoff");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
       "Range must leave semantic gameplay scope before its late Classic key "
@@ -5207,6 +5302,527 @@ void verify_character_sheet_window_manager_contract(
       "synthetic Classic input or modal shortcut");
 }
 
+void verify_rest_party_window_manager_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string runtime_context = type_body(
+      runtime_header, "RuntimeLegacyCommandContext");
+  const std::string world_sinks_type = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  require(count_identifier(runtime_context, "in_camp") == 1 &&
+          count_identifier(runtime_context, "bool") >= 2,
+      "runtime legacy context must carry one value-only camp-state flag");
+  require(count_identifier(
+              runtime_header, "RuntimeLegacyRestPartySink") == 2 &&
+          count_identifier(world_sinks_type, "rest_party") == 1,
+      "runtime bridge must append exactly one named Rest sink");
+
+  const std::string legacy_bridge_header = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.hpp"));
+  const std::string legacy_handlers = type_body(
+      legacy_bridge_header, "LegacyActionHandlers");
+  require(without_whitespace(legacy_handlers).ends_with(
+              "LegacyActionHandler<RestPartyAction>rest_party;}"),
+      "LegacyActionHandlers must append Rest so positional aggregate clients "
+      "retain the pre-Rest member order");
+
+  const std::string runtime_source = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string compact_runtime_source =
+      without_whitespace(runtime_source);
+  require(compact_runtime_source.contains(
+              "kRestPartyMessage=0x00000F72U;") &&
+          compact_runtime_source.contains(
+              "kShowCombatRangeMessage=0x00000F72U;"),
+      "world Rest and combat Range must preserve the same exact Classic r "
+      "record behind distinct typed routes");
+  const std::string rest_mapper = function_body(
+      runtime_source, "legacy_key_message_for_rest_party");
+  const std::string compact_rest_mapper = without_whitespace(rest_mapper);
+  require(compact_rest_mapper.contains(
+              "if(!context.adaptive_eligible||!context.in_camp){") &&
+          compact_rest_mapper.contains(
+              "context.screen==ScreenContext::exploration") &&
+          compact_rest_mapper.contains(
+              "context.world_presentation==WorldPresentation::outdoor") &&
+          compact_rest_mapper.contains(
+              "context.screen==ScreenContext::dungeon") &&
+          compact_rest_mapper.contains(
+              "WorldPresentation::dungeon_map") &&
+          compact_rest_mapper.contains(
+              "WorldPresentation::dungeon_first_person") &&
+          count_identifier(rest_mapper, "kRestPartyMessage") == 2 &&
+          count_identifier(rest_mapper, "ShowCombatRangeAction") == 0,
+      "Rest key mapping must require camp plus exact outdoor or dungeon "
+      "presentation and remain independent from combat Range");
+
+  const std::size_t runtime_world_sinks = find_identifier(
+      runtime_source, "RuntimeLegacyWorldActionSinks");
+  const std::size_t runtime_world_body_open = runtime_source.find(
+      '{', runtime_world_sinks +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(runtime_world_sinks != std::string::npos &&
+          runtime_world_body_open != std::string::npos,
+      "runtime world-action handler body is missing");
+  const std::size_t runtime_world_body_close = matching_delimiter(
+      runtime_source, runtime_world_body_open, '{', '}');
+  const std::string runtime_world_handlers = runtime_source.substr(
+      runtime_world_body_open,
+      runtime_world_body_close - runtime_world_body_open + 1U);
+  const std::string compact_runtime_world_handlers =
+      without_whitespace(runtime_world_handlers);
+  require(compact_runtime_world_handlers.contains(
+              "handlers.rest_party=[") &&
+          compact_runtime_world_handlers.contains(
+              "constRestPartyAction&") &&
+          compact_runtime_world_handlers.contains(
+              "legacy_key_message_for_rest_party(context)") &&
+          compact_runtime_world_handlers.contains(
+              "rest_party_sink(*message,context)"),
+      "runtime world handler must map an empty typed Rest activation through "
+      "only its named sink");
+
+  const std::string snapshot_source = code_only(read_file(
+      repository_root / "src/presentation/LegacyGameSnapshotSource.cpp"));
+  const std::string snapshot_capture = function_body(
+      snapshot_source, "capture");
+  require(without_whitespace(snapshot_capture).contains(
+              "snapshot.world.in_camp=incamp!=0;"),
+      "snapshot capture must project Classic's authoritative camp flag "
+      "without mutating it");
+
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary_source =
+      without_whitespace(boundary_source);
+  require(compact_boundary_source.contains(
+              "kSemanticRestPartySignature=0x57520000U;") &&
+          compact_boundary_source.contains(
+              "kSemanticShowCombatRangeSignature=0x52520000U;"),
+      "world Rest and combat Range must retain distinct wire signatures");
+  const std::string decode_rest = function_body(
+      boundary_source, "decode_rest_party");
+  require(count_identifier(decode_rest, "is_world_gameplay_surface") == 1 &&
+          count_identifier(decode_rest, "kSemanticRestPartyReservedMask") ==
+              1,
+      "Rest tag decoding must reject non-world surfaces and nonzero reserved "
+      "payload bytes");
+  const std::string consume_rest = function_body(
+      boundary_source, "RealmzConsumeSemanticRestPartyEvent");
+  const std::string compact_consume_rest = without_whitespace(consume_rest);
+  const std::size_t consume_authorize = compact_consume_rest.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t consume_decode = compact_consume_rest.find(
+      "decode_rest_party(tagged_message)", consume_authorize);
+  const std::size_t consume_origin = compact_consume_rest.find(
+      "rest_party->surface!=expected_surface", consume_decode);
+  const std::size_t consume_legacy = compact_consume_rest.find(
+      "RealmzCaptureLegacyPresentationContext()", consume_origin);
+  const std::size_t consume_adaptive = compact_consume_rest.find(
+      "!legacy.adaptive_eligible", consume_legacy);
+  const std::size_t consume_screen = compact_consume_rest.find(
+      "screen!=screen_for_surface(expected_surface)", consume_adaptive);
+  const std::size_t consume_snapshot = compact_consume_rest.find(
+      "LegacyGameSnapshotSource().capture()", consume_screen);
+  const std::size_t consume_presentation = compact_consume_rest.find(
+      ".world_presentation=snapshot.world.presentation", consume_snapshot);
+  const std::size_t consume_camp = compact_consume_rest.find(
+      ".in_camp=snapshot.world.in_camp", consume_presentation);
+  const std::size_t consume_snapshot_screen = compact_consume_rest.find(
+      "snapshot.screen!=screen", consume_camp);
+  const std::size_t consume_mapper = compact_consume_rest.find(
+      "legacy_key_message_for_rest_party(context)", consume_snapshot_screen);
+  const std::size_t consume_output = compact_consume_rest.find(
+      "*classic_key_message=*message", consume_mapper);
+  require(consume_authorize != std::string::npos &&
+          consume_decode != std::string::npos &&
+          consume_origin != std::string::npos &&
+          consume_legacy != std::string::npos &&
+          consume_adaptive != std::string::npos &&
+          consume_screen != std::string::npos &&
+          consume_snapshot != std::string::npos &&
+          consume_presentation != std::string::npos &&
+          consume_camp != std::string::npos &&
+          consume_snapshot_screen != std::string::npos &&
+          consume_mapper != std::string::npos &&
+          consume_output != std::string::npos &&
+          consume_authorize < consume_decode && consume_decode < consume_origin &&
+          consume_origin < consume_legacy && consume_legacy < consume_adaptive &&
+          consume_adaptive < consume_screen && consume_screen < consume_snapshot &&
+          consume_snapshot < consume_presentation &&
+          consume_presentation < consume_camp &&
+          consume_camp < consume_snapshot_screen &&
+          consume_snapshot_screen < consume_mapper &&
+          consume_mapper < consume_output,
+      "late Rest consumption must recheck single-use origin, fresh adaptive "
+      "screen, exact presentation, and camp state before returning r");
+  require(count_identifier(consume_rest, "keyDown") == 0 &&
+          count_identifier(consume_rest, "buttonchoice") == 0 &&
+          count_identifier(consume_rest, "updatefat") == 0 &&
+          count_identifier(consume_rest, "timeclick") == 0,
+      "semantic Rest boundary must return only a validated key record and "
+      "never execute Classic rest behavior");
+
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string capture_context = function_body(
+      window_source, "capture_runtime_legacy_command_context");
+  const std::string compact_capture_context =
+      without_whitespace(capture_context);
+  require(compact_capture_context.contains(
+              "context.in_camp=snapshot.world.in_camp;") &&
+          count_identifier(capture_context, "incamp") == 0,
+      "WindowManager runtime context must copy only snapshot camp state and "
+      "never read the Classic global directly");
+
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t world_sinks_name = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t world_sinks_open = skip_whitespace(
+      create_window,
+      world_sinks_name +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(world_sinks_name != std::string::npos &&
+          world_sinks_open < create_window.size() &&
+          create_window[world_sinks_open] == '{',
+      "WindowManager named world-action sink bundle is missing");
+  const std::size_t world_sinks_close = matching_delimiter(
+      create_window, world_sinks_open, '{', '}');
+  const std::string world_sinks = create_window.substr(
+      world_sinks_open, world_sinks_close - world_sinks_open + 1U);
+  const std::string rest_sink = designated_lambda_body(
+      world_sinks, "rest_party");
+  const std::string compact_rest_sink = without_whitespace(rest_sink);
+  const std::size_t sink_surface = compact_rest_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_match = compact_rest_sink.find(
+      "constboolmatching_surface=", sink_surface);
+  const std::size_t sink_mapper = compact_rest_sink.find(
+      "legacy_key_message_for_rest_party(context)", sink_match);
+  const std::size_t sink_message = compact_rest_sink.find(
+      "message!=*expected", sink_mapper);
+  const std::size_t sink_tag = compact_rest_sink.find(
+      "semantic_rest_party_tag(surface)", sink_message);
+  const std::size_t sink_push = compact_rest_sink.find(
+      "returntag&&PushSemanticRestPartyEvent(tag);", sink_tag);
+  require(sink_surface != std::string::npos &&
+          sink_match != std::string::npos && sink_mapper != std::string::npos &&
+          sink_message != std::string::npos && sink_tag != std::string::npos &&
+          sink_push != std::string::npos && sink_surface < sink_match &&
+          sink_match < sink_mapper && sink_mapper < sink_message &&
+          sink_message < sink_tag && sink_tag < sink_push,
+      "production Rest sink must bind the active world surface, validate the "
+      "exact mapped r record, then tag and enqueue once");
+  require(count_identifier(rest_sink, "ShowCombatRangeAction") == 0 &&
+          count_identifier(rest_sink, "semantic_show_combat_range_tag") == 0 &&
+          count_identifier(rest_sink, "mouseDown") == 0 &&
+          count_identifier(rest_sink, "keyDown") == 0,
+      "production Rest sink must not share combat Range or synthesize input");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  const std::size_t rest_action = compact_present.find(
+      "ActionIntent::rest");
+  const std::size_t rest_visible = compact_present.find(
+      "constboolrest_control_visible=", rest_action);
+  const std::size_t rest_available = compact_present.find(
+      "constboolrest_available=", rest_visible);
+  const std::size_t rest_snapshot_camp = compact_present.find(
+      "snapshot.world.in_camp", rest_available);
+  const std::size_t rest_can_invoke = compact_present.find(
+      "rest_action->can_invoke()", rest_snapshot_camp);
+  const std::size_t rest_context_match = compact_present.find(
+      "snapshot_context_matches", rest_can_invoke);
+  const std::size_t rest_mapper_position = compact_present.find(
+      "legacy_key_message_for_rest_party({", rest_context_match);
+  const std::size_t request_visible = compact_present.find(
+      ".rest_control_visible=rest_control_visible", rest_mapper_position);
+  const std::size_t request_available = compact_present.find(
+      ".rest_available=rest_available", request_visible);
+  require(rest_action != std::string::npos &&
+          rest_visible != std::string::npos &&
+          rest_available != std::string::npos &&
+          rest_snapshot_camp != std::string::npos &&
+          rest_can_invoke != std::string::npos &&
+          rest_context_match != std::string::npos &&
+          rest_mapper_position != std::string::npos &&
+          request_visible != std::string::npos &&
+          request_available != std::string::npos &&
+          rest_action < rest_visible && rest_visible < rest_available &&
+          rest_available < rest_snapshot_camp &&
+          rest_snapshot_camp < rest_can_invoke &&
+          rest_can_invoke < rest_context_match &&
+          rest_context_match < rest_mapper_position &&
+          rest_mapper_position < request_visible &&
+          request_visible < request_available,
+      "Rest composition must derive visibility and availability from the "
+      "modeled action plus fresh world/camp context before layout");
+
+  const std::size_t live_rest = compact_present.find(
+      "std::holds_alternative<realmz::presentation::RestPartyAction>",
+      request_available);
+  const std::size_t live_rest_end = compact_present.find(
+      "std::get_if<realmz::presentation::GuardCombatantAction>", live_rest);
+  require(live_rest != std::string::npos &&
+          live_rest_end != std::string::npos && live_rest < live_rest_end,
+      "composition-time Rest liveness branch is missing");
+  const std::string live_rest_branch = compact_present.substr(
+      live_rest, live_rest_end - live_rest);
+  for (const auto needle : {
+           "ShellControlKind::rest_party",
+           "WorldActionPage::game",
+           "action_panel.contains(control.bounds)",
+           "snapshot.screen==context.screen",
+           "snapshot.world.in_camp&&context.in_camp",
+           "ActionIntent::rest",
+           "modeled_action->can_invoke()",
+           "legacy_key_message_for_rest_party(context).has_value()",
+       }) {
+    require(live_rest_branch.contains(needle),
+        std::string("composition-time Rest liveness must retain ") + needle);
+  }
+
+  const std::string keyboard = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_rest = compact_keyboard.find(
+      "std::holds_alternative<realmz::presentation::RestPartyAction>");
+  const std::size_t keyboard_rest_end = compact_keyboard.find(
+      "std::get_if<realmz::presentation::GuardCombatantAction>",
+      keyboard_rest);
+  require(keyboard_rest != std::string::npos &&
+          keyboard_rest_end != std::string::npos &&
+          keyboard_rest < keyboard_rest_end,
+      "keyboard Rest liveness branch is missing");
+  const std::string keyboard_rest_branch = compact_keyboard.substr(
+      keyboard_rest, keyboard_rest_end - keyboard_rest);
+  for (const auto needle : {
+           "!surface_matches_context",
+           "ShellControlKind::rest_party",
+           "WorldActionPage::game",
+           "action_bar.contains(control.bounds)",
+           "legacy_key_message_for_rest_party(context)",
+           "LegacyGameSnapshotSource().capture()",
+           "snapshot->screen!=context.screen",
+           "snapshot->world.presentation!=context.world_presentation",
+           "!snapshot->world.in_camp||!context.in_camp",
+       }) {
+    require(keyboard_rest_branch.contains(needle),
+        std::string("keyboard Rest liveness must retain ") + needle);
+  }
+  require(count_identifier(keyboard_rest_branch, "Button") == 0 &&
+          count_identifier(keyboard_rest_branch, "StillDown") == 0 &&
+          count_identifier(keyboard_rest_branch, "SDL_PollEvent") == 0,
+      "WindowManager Rest liveness must not pump EventManager or recursively "
+      "dispatch SDL input");
+
+  const std::string event_source = code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  const std::string cached_mouse_query = function_body(
+      event_source, "is_mouse_button_down_without_event_pump");
+  const std::string compact_cached_mouse_query =
+      without_whitespace(cached_mouse_query);
+  require(compact_cached_mouse_query.contains(
+              "constSDL_MouseButtonFlagssdl_mouse_buttons="
+              "SDL_GetMouseState(nullptr,nullptr);") &&
+          compact_cached_mouse_query.contains(
+              "return!(this->modifier_flags&EVMOD_MOUSE_BUTTON_UP)||"
+              "((sdl_mouse_buttons&SDL_BUTTON_LMASK)!=0);") &&
+          count_identifier(cached_mouse_query, "SDL_GetMouseState") == 1 &&
+          count_identifier(cached_mouse_query, "enqueue_pending_events") == 0 &&
+          count_identifier(cached_mouse_query, "SDL_PollEvent") == 0 &&
+          count_identifier(cached_mouse_query, "WindowManager") == 0,
+      "Rest delivery's held-button query must combine cached SDL and Classic "
+      "state without a reentrant event pump");
+  const std::string semantic_delivery = function_body(
+      event_source, "GetNextSemanticGameplayEvent");
+  const std::string compact_semantic_delivery =
+      without_whitespace(semantic_delivery);
+  const std::size_t delivery_rest = compact_semantic_delivery.find(
+      "RealmzIsSemanticRestPartyTag(ret->message)");
+  const std::size_t delivery_mouse = compact_semantic_delivery.find(
+      "em.is_mouse_button_down_without_event_pump()", delivery_rest);
+  const std::size_t delivery_gate = compact_semantic_delivery.find(
+      "still_remastered&&!mouse_button_held", delivery_mouse);
+  const std::size_t delivery_consume = compact_semantic_delivery.find(
+      "RealmzConsumeSemanticRestPartyEvent(", delivery_gate);
+  const std::size_t delivery_key = compact_semantic_delivery.find(
+      "ret->what=keyDown", delivery_consume);
+  const std::size_t delivery_message = compact_semantic_delivery.find(
+      "ret->message=classic_key_message", delivery_key);
+  const std::size_t delivery_held_rejection = compact_semantic_delivery.find(
+      "if(mouse_button_held)", delivery_message);
+  const std::size_t delivery_burn = compact_semantic_delivery.find(
+      "RealmzInvalidateSemanticInputBoundary()", delivery_held_rejection);
+  const std::size_t delivery_null = compact_semantic_delivery.find(
+      "ret->what=nullEvent", delivery_burn);
+  const std::size_t delivery_guard = compact_semantic_delivery.find(
+      "RealmzIsSemanticGuardCombatantTag(ret->message)", delivery_null);
+  require(delivery_rest != std::string::npos &&
+          delivery_mouse != std::string::npos &&
+          delivery_gate != std::string::npos &&
+          delivery_consume != std::string::npos &&
+          delivery_key != std::string::npos &&
+          delivery_message != std::string::npos &&
+          delivery_held_rejection != std::string::npos &&
+          delivery_burn != std::string::npos &&
+          delivery_null != std::string::npos &&
+          delivery_guard != std::string::npos,
+      "EventManager semantic Rest delivery route is incomplete");
+  require(delivery_rest < delivery_mouse && delivery_mouse < delivery_gate &&
+          delivery_gate < delivery_consume && delivery_consume < delivery_key &&
+          delivery_key < delivery_message &&
+          delivery_message < delivery_held_rejection &&
+          delivery_held_rejection < delivery_burn &&
+          delivery_burn < delivery_null && delivery_null < delivery_guard,
+      "EventManager must reject and burn a held Rest at delivery, while an "
+      "accepted activation consumes once and yields one Classic keyDown");
+  require(count_identifier(
+              compact_semantic_delivery.substr(
+                  delivery_rest, delivery_guard - delivery_rest),
+              "is_mouse_button_down_without_event_pump") == 1,
+      "EventManager Rest delivery must consult cached held state exactly once");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::RestPartyAction>(&control.payload)");
+  const std::size_t dispatch_rest_guard = compact_dispatch.find(
+      "rest_party&&", dispatch_payload);
+  const std::size_t dispatch_kind = compact_dispatch.find(
+      "ShellControlKind::rest_party", dispatch_rest_guard);
+  const std::size_t dispatch_page = compact_dispatch.find(
+      "WorldActionPage::game", dispatch_kind);
+  const std::size_t dispatch_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_page);
+  const std::size_t dispatch_action = compact_dispatch.find(
+      "constrealmz::presentation::UIActionaction{", dispatch_panel);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "runtime_legacy_command_bridge->dispatch(action)", dispatch_action);
+  require(dispatch_payload != std::string::npos &&
+          dispatch_rest_guard != std::string::npos &&
+          dispatch_kind != std::string::npos &&
+          dispatch_page != std::string::npos &&
+          dispatch_panel != std::string::npos &&
+          dispatch_action != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_payload < dispatch_rest_guard &&
+          dispatch_rest_guard < dispatch_kind && dispatch_kind < dispatch_page &&
+          dispatch_page < dispatch_panel && dispatch_panel < dispatch_action &&
+          dispatch_action < dispatch_bridge,
+      "Rest dispatch must validate the live descriptor, GAME page, and action "
+      "bar before constructing and bridging the typed action");
+
+  const std::string release = function_body(
+      window_source, "end_remastered_pointer");
+  const std::string compact_release = without_whitespace(release);
+  const std::size_t release_cancel = compact_release.find(
+      "this->cancel_remastered_pointer_capture()");
+  const std::size_t release_dispatch = compact_release.find(
+      "this->dispatch_remastered_shell_control(*pressed_control)",
+      release_cancel);
+  require(release_cancel != std::string::npos &&
+          release_dispatch != std::string::npos &&
+          release_cancel < release_dispatch,
+      "pointer Rest activation must release/cancel capture before EventManager "
+      "applies its cached held-button delivery gate");
+
+  const std::string raw_outdoor = read_file(
+      repository_root / "src/realmz_orig/checkkeypad.c");
+  const std::string raw_dungeon = read_file(
+      repository_root / "src/realmz_orig/threed.c");
+  for (const auto& [name, raw_source] : std::array{
+           std::pair{"outdoor", raw_outdoor},
+           std::pair{"dungeon", raw_dungeon},
+       }) {
+    const std::size_t rest_case = raw_source.find("case 'r':");
+    const std::size_t next_case = raw_source.find("case 'e':", rest_case);
+    require(rest_case != std::string::npos &&
+            next_case != std::string::npos && rest_case < next_case,
+        std::string("Classic ") + name + " lowercase-r branch is missing");
+    const std::string rest_case_body = without_whitespace(code_only(
+        raw_source.substr(rest_case, next_case - rest_case)));
+    require(rest_case_body.contains(
+                "if(incamp==TRUE)theControl=rest;break;"),
+        std::string("Classic ") + name +
+            " r must still gate only on camp and select the Rest control");
+  }
+
+  const std::string buttonchoice_source = code_only(read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c"));
+  const std::string buttonchoice = function_body(
+      buttonchoice_source, "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t classic_rest = compact_buttonchoice.find(
+      "if(theControl==rest){");
+  const std::size_t classic_camp = compact_buttonchoice.find(
+      "if(theControl==campbut){", classic_rest);
+  require(classic_rest != std::string::npos &&
+          classic_camp != std::string::npos && classic_rest < classic_camp,
+      "Classic buttonchoice Rest branch is missing");
+  const std::string classic_rest_branch = compact_buttonchoice.substr(
+      classic_rest, classic_camp - classic_rest);
+  const std::size_t classic_sound = classic_rest_branch.find(
+      "sound(6001)");
+  const std::size_t classic_tick = classic_rest_branch.find(
+      "tickcheck()", classic_sound);
+  const std::size_t classic_delay = classic_rest_branch.find(
+      "delay(1)", classic_tick);
+  const std::size_t classic_update = classic_rest_branch.find(
+      "updatefat(FALSE,-2,FALSE)", classic_delay);
+  const std::size_t classic_time_three = classic_rest_branch.find(
+      "timeclick(3,FALSE)", classic_update);
+  const std::size_t classic_time_two = classic_rest_branch.find(
+      "timeclick(2,TRUE)", classic_time_three);
+  const std::size_t classic_revert = classic_rest_branch.find(
+      "if(revertgame)return(0)", classic_time_two);
+  const std::size_t classic_still_down = classic_rest_branch.find(
+      "while(StillDown())", classic_revert);
+  require(classic_sound != std::string::npos &&
+          classic_tick != std::string::npos &&
+          classic_delay != std::string::npos &&
+          classic_update != std::string::npos &&
+          classic_time_three != std::string::npos &&
+          classic_time_two != std::string::npos &&
+          classic_revert != std::string::npos &&
+          classic_still_down != std::string::npos &&
+          classic_sound < classic_tick && classic_tick < classic_delay &&
+          classic_delay < classic_update && classic_update < classic_time_three &&
+          classic_time_three < classic_time_two &&
+          classic_time_two < classic_revert &&
+          classic_revert < classic_still_down,
+      "Classic must remain authoritative for fatigue, time, revert handling, "
+      "and its existing hold-to-repeat Rest loop");
+
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string replay_source = code_only(read_file(entry.path()));
+    require(count_identifier(replay_source, "RestPartyAction") == 0 &&
+            count_identifier(replay_source, "semantic_rest_party_tag") == 0 &&
+            count_identifier(replay_source, "PushSemanticRestPartyEvent") == 0,
+        "Rest slice must not add replay actions, tags, or enqueue vocabulary");
+  }
+}
+
 void verify_selected_party_details_renderer_contract(
     const fs::path& repository_root) {
   const std::string model_header = code_only(read_file(
@@ -5591,7 +6207,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x4E2C63DB45F7295CULL") !=
+          coverage_header.find("0x1FB74F42D95EB551ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -5681,7 +6297,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x4E2C63DB45F7295CULL") !=
+          coverage_test.find("0x1FB74F42D95EB551ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -8899,6 +9515,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t world_scroll_case_consume_calls = 0;
   std::size_t save_consume_calls = 0;
   std::size_t load_consume_calls = 0;
+  std::size_t rest_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
   std::size_t finish_consume_calls = 0;
   std::size_t delay_consume_calls = 0;
@@ -8960,6 +9577,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenSaveGameEvent");
     load_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenLoadGameEvent");
+    rest_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticRestPartyEvent");
     guard_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     finish_consume_calls += count_identifier(
@@ -9035,6 +9654,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticOpenSaveGameEvent");
   require(load_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticOpenLoadGameEvent");
+  require(rest_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticRestPartyEvent");
   require(guard_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
   require(finish_consume_calls == 0,
@@ -9106,6 +9727,7 @@ int main(int argc, char** argv) {
     verify_window_manager_named_combat_sinks(repository_root);
     verify_window_manager_shell_dispatch_freshness(repository_root);
     verify_character_sheet_window_manager_contract(repository_root);
+    verify_rest_party_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

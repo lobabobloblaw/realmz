@@ -42,6 +42,7 @@ extern Boolean inbooty;
 extern Boolean inshop;
 extern Boolean intemple;
 extern Boolean indung;
+extern Boolean incamp;
 extern Boolean spellcasting;
 extern struct character c[6];
 extern struct itemattr allweapons[200];
@@ -244,6 +245,7 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
   snapshot.party.fatigue = fat;
 
   snapshot.world.presentation = world_presentation();
+  snapshot.world.in_camp = incamp != 0;
   snapshot.world.party_x = partyx;
   snapshot.world.party_y = partyy;
   snapshot.world.land_level = landlevel;

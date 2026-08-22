@@ -213,6 +213,21 @@ void test_action_availability_is_conservative() {
   CHECK(character_sheet.command == "action.character_sheet.open");
   CHECK(character_sheet.label == "Character");
   CHECK(character_sheet.availability_reason->label == "Game rules apply");
+  const auto& rest = action_with(model, ActionIntent::rest);
+  CHECK(!rest.can_invoke());
+  CHECK(rest.availability == ActionAvailability::unavailable);
+  CHECK(rest.command == "action.party.rest");
+  CHECK(rest.label == "Rest");
+  CHECK(rest.availability_reason->label == "Camp first");
+
+  snapshot.world.in_camp = true;
+  model = build_presentation_shell_model(snapshot);
+  const auto& available_rest = action_with(model, ActionIntent::rest);
+  CHECK(available_rest.can_invoke());
+  CHECK(available_rest.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(available_rest.availability_reason->label == "Game rules apply");
+  snapshot.world.in_camp = false;
 
   snapshot.party.members[1].use_scroll_available = true;
   model = build_presentation_shell_model(snapshot);
@@ -263,13 +278,15 @@ void test_action_availability_is_conservative() {
   CHECK(!character_in_encounter.can_invoke());
   CHECK(character_in_encounter.availability_reason->label ==
       "Select a party member first");
-  CHECK(model.actions.size() == 10);
-  CHECK(model.actions[7].command == "encounter.choice.11");
-  CHECK(model.actions[7].can_invoke());
-  CHECK(model.actions[8].command == "encounter.choice.12");
-  CHECK(!model.actions[8].can_invoke());
-  CHECK(model.actions[9].intent == ActionIntent::cancel);
-  CHECK(model.actions[9].can_invoke());
+  CHECK(action_with(model, ActionIntent::rest)
+            .availability_reason->label == "Camp first");
+  CHECK(model.actions.size() == 11);
+  CHECK(model.actions[8].command == "encounter.choice.11");
+  CHECK(model.actions[8].can_invoke());
+  CHECK(model.actions[9].command == "encounter.choice.12");
+  CHECK(!model.actions[9].can_invoke());
+  CHECK(model.actions[10].intent == ActionIntent::cancel);
+  CHECK(model.actions[10].can_invoke());
 }
 
 void test_world_action_page_preferences_are_normalized() {
@@ -352,7 +369,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 24U);
+  CHECK(model.actions.size() == 25U);
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());

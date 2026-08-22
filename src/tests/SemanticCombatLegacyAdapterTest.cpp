@@ -60,6 +60,7 @@ Boolean inbooty = 0;
 Boolean inshop = 0;
 Boolean intemple = 0;
 Boolean indung = 0;
+Boolean incamp = 0;
 Boolean spellcasting = 0;
 struct character c[6] = {};
 struct monster monster[100] = {};

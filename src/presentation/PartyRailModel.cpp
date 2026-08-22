@@ -337,6 +337,19 @@ std::vector<ActionControlModel> build_actions(
       ActionAvailability::deferred_to_engine,
       tab_order++,
       engine_rules_token()));
+  const bool can_rest = navigation_context && snapshot.world.in_camp;
+  result.emplace_back(action(
+      ActionIntent::rest,
+      "action.party.rest",
+      "Rest",
+      can_rest ? ActionAvailability::deferred_to_engine
+               : ActionAvailability::unavailable,
+      tab_order++,
+      can_rest
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{unavailable_token(
+                snapshot.world.in_camp ? "Rest is unavailable now"
+                                       : "Camp first")}));
 
   ActionAvailability scroll_availability =
       ActionAvailability::deferred_to_engine;

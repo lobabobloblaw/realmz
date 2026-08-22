@@ -648,6 +648,29 @@ public:
     return true;
   }
 
+  bool push_semantic_rest_party_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticRestPartyTag(tagged_message)) {
+      return false;
+    }
+    // Keep Rest distinct from combat Range even though both eventually use
+    // Classic's lowercase-r record. The world-only tag retains its origin
+    // until fresh camp and presentation state are checked at delivery.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic rest party (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   bool push_semantic_guard_combatant_event(uint32_t tagged_message) {
     if (!RealmzIsSemanticGuardCombatantTag(tagged_message)) {
       return false;
@@ -1040,6 +1063,16 @@ public:
     // events to detect any state change in the mouse button, so we do so here
     this->enqueue_pending_events(0);
     return !(this->modifier_flags & EVMOD_MOUSE_BUTTON_UP);
+  }
+  // Semantic delivery runs immediately after get_next_semantic_event has
+  // performed the ordinary SDL pump. Consult both cached views here: shell
+  // hit-testing can consume a physical down before the legacy modifier is
+  // updated, while pumping again can recursively dispatch input.
+  inline bool is_mouse_button_down_without_event_pump() const noexcept {
+    const SDL_MouseButtonFlags sdl_mouse_buttons =
+        SDL_GetMouseState(nullptr, nullptr);
+    return !(this->modifier_flags & EVMOD_MOUSE_BUTTON_UP) ||
+        ((sdl_mouse_buttons & SDL_BUTTON_LMASK) != 0);
   }
   bool any_mouse_events_pending() const {
     for (const auto& ev : this->event_queue) {
@@ -1746,6 +1779,31 @@ Boolean GetNextSemanticGameplayEvent(
       ret->message = 0;
     }
   } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticRestPartyTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    const bool mouse_button_held =
+        em.is_mouse_button_down_without_event_pump();
+    if (still_remastered && !mouse_button_held &&
+        RealmzConsumeSemanticRestPartyEvent(
+            surface, ret->message, &classic_key_message)) {
+      // Pointer actions dispatch after release, and keyboard actions are
+      // admitted only when the cached button state is up. The resulting
+      // keyDown therefore begins with one mandatory Classic rest quantum;
+      // any distinct physical press after delivery remains Classic input.
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      if (mouse_button_held) {
+        // A held-button rejection must also burn the completed one-shot scope.
+        RealmzInvalidateSemanticInputBoundary();
+      }
+      // Camp state, presentation, or cached button state can change while
+      // queued. Rejected Rest is inert and can never fall through as combat
+      // Range or a raw app event.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
+  } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticGuardCombatantTag(ret->message)) {
     uint32_t classic_key_message = 0;
     if (still_remastered && RealmzConsumeSemanticGuardCombatantEvent(
@@ -2102,6 +2160,10 @@ Boolean PushSemanticOpenSaveGameEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticOpenLoadGameEvent(uint32_t tagged_message) {
   return em.push_semantic_open_load_game_event(tagged_message);
+}
+
+Boolean PushSemanticRestPartyEvent(uint32_t tagged_message) {
+  return em.push_semantic_rest_party_event(tagged_message);
 }
 
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message) {

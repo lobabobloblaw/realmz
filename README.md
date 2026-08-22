@@ -24,8 +24,8 @@ selecting the active member never emulates the Classic second click that opens
 the character modal. World commands are organized into persistent, directly
 selectable **Travel**, **Party**, and **Game** pages so every target keeps the
 44-point minimum at the 1024×768 floor. Party contains Items, Spells, Scroll,
-and Character; Game contains Save and Load. Selecting the current page is an
-idempotent presentation action.
+and Character; Game contains Save, Load, and Rest. Selecting the current page
+is an idempotent presentation action.
 A code-native Items control carries the selected member in
 a typed `OpenInventoryAction`. A neighboring Spells control is available only
 for a conscious selected member with spell points and carries that member in a
@@ -52,6 +52,19 @@ revalidates both Classic selection variables and enters the existing
 `charmainbut`/`buttonchoice` path. No mouse click, dungeon key shortcut, or
 synchronous modal call is forged. Classic remains authoritative for the sheet,
 all browsing, and every nested modal.
+The member-free `RestPartyAction` is available only while the party is already
+in camp. Its single-use tag is late-validated against the completed semantic
+scope and freshly captured Legacy and snapshot state: adaptive eligibility,
+the exact exploration or dungeon surface, the matching outdoor or dungeon
+map/first-person presentation, and `in_camp` must all still hold. It then
+becomes Classic's exact lowercase `r` message `0x00000F72`. Pointer activation
+is dispatched after release; keyboard and pointer delivery are both rejected
+when EventManager's non-pumping cached SDL/Classic state reports a held mouse
+button. An accepted activation therefore begins with one mandatory iteration
+of Classic's preserved Rest loop rather than synthesizing a hold. A distinct
+physical press after delivery remains ordinary Classic input. Classic remains authoritative
+for the rest sound, fatigue update, elapsed time and resulting encounters, and
+the preserved `revertgame` exit.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
 Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, Escape, Use Scroll,
 and Center Cursor controls carry the stable active-party combatant ID in typed
@@ -193,7 +206,7 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current inventory is deliberately incomplete. Known missing outdoor and
-dungeon roles include Search, use/consume Torch, Heal, Rest and Camp, Make
+dungeon roles include Search, use/consume Torch, Heal and Camp, Make
 Scroll/Area Search, context-sensitive Shop/Temple/seamless-encounter entry,
 Trade, Money/Swap, active-member inspection, item and
 condition drilldowns, and the per-member Auto controls. Known missing combat

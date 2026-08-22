@@ -19,6 +19,7 @@ constexpr uint32_t kOpenInventoryMessage = 0x00002269U;
 constexpr uint32_t kOpenSpellbookMessage = 0x00000173U;
 constexpr uint32_t kOpenOutdoorScrollCaseMessage = 0x0000256CU;
 constexpr uint32_t kOpenDungeonScrollCaseMessage = 0x00002370U;
+constexpr uint32_t kRestPartyMessage = 0x00000F72U;
 constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
@@ -750,7 +751,7 @@ LegacyActionHandlers make_handlers(
     return DispatchResult::handled();
   };
   handlers.open_character_sheet = [
-      context_provider = std::move(context_provider),
+      context_provider,
       open_character_sheet_sink =
           std::move(world_action_sinks.open_character_sheet)](
           const OpenCharacterSheetAction& action) {
@@ -778,6 +779,35 @@ LegacyActionHandlers make_handlers(
     if (!open_character_sheet_sink(action.member, context)) {
       return DispatchResult::failed(
           "Legacy event queue rejected semantic open-character-sheet action");
+    }
+    return DispatchResult::handled();
+  };
+  handlers.rest_party = [
+      context_provider = std::move(context_provider),
+      rest_party_sink = std::move(world_action_sinks.rest_party)](
+          const RestPartyAction&) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!rest_party_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy rest-party sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic rest");
+    }
+    const auto message = legacy_key_message_for_rest_party(context);
+    if (!message) {
+      return DispatchResult::rejected(
+          "Rest is not supported in the current legacy context");
+    }
+    if (!rest_party_sink(*message, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic rest-party action");
     }
     return DispatchResult::handled();
   };
@@ -1136,6 +1166,24 @@ bool runtime_legacy_context_supports_open_character_sheet(
       (context.world_presentation == WorldPresentation::dungeon_map) ||
       (context.world_presentation == WorldPresentation::dungeon_first_person);
   return (context.screen == ScreenContext::dungeon) && dungeon_presentation;
+}
+
+std::optional<uint32_t> legacy_key_message_for_rest_party(
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || !context.in_camp) {
+    return std::nullopt;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return kRestPartyMessage;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  if ((context.screen == ScreenContext::dungeon) && dungeon_presentation) {
+    return kRestPartyMessage;
+  }
+  return std::nullopt;
 }
 
 std::optional<RuntimeLegacyMenuCommand>

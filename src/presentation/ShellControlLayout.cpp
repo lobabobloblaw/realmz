@@ -30,6 +30,7 @@ constexpr uint32_t kAutoCombatantRegion = 1114U;
 constexpr uint32_t kShowCombatRangeRegion = 1115U;
 constexpr uint32_t kBandageCombatantRegion = 1116U;
 constexpr uint32_t kUndoCombatantRegion = 1117U;
+constexpr uint32_t kRestPartyRegion = 1118U;
 constexpr uint32_t kOpenCombatSpellbookRegion = 1119U;
 constexpr uint32_t kOpenCombatTargetingRegion = 1120U;
 constexpr uint32_t kEscapeCombatRegion = 1121U;
@@ -318,7 +319,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.character_sheet_member ? 1U : 0U);
   const size_t game_world_control_count =
       (request.save_control_visible ? 1U : 0U) +
-      (request.load_control_visible ? 1U : 0U);
+      (request.load_control_visible ? 1U : 0U) +
+      (request.rest_control_visible ? 1U : 0U);
   const size_t world_control_count = travel_world_page
       ? travel_world_control_count
       : (party_world_page ? party_world_control_count
@@ -386,7 +388,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.navigation_available || request.inventory_member ||
               request.spellbook_member || request.scroll_case_member ||
               request.character_sheet_member ||
-              request.save_control_visible || request.load_control_visible)) ||
+              request.save_control_visible || request.load_control_visible ||
+              request.rest_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.scroll_case_available && !request.scroll_case_member) ||
@@ -394,6 +397,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.character_sheet_available && !valid_character_sheet) ||
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
+      (request.rest_available && !request.rest_control_visible) ||
       (request.guard_available && !valid_guard) ||
       (request.finish_available && !valid_finish) ||
       (request.delay_available && !valid_delay) ||
@@ -622,6 +626,22 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             .tab_order = 1103,
             .enabled = request.load_available,
             .payload = OpenLoadGameAction{},
+        });
+        x += button_width + gap;
+      }
+      if (request.rest_control_visible) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kRestPartyRegion},
+            .kind = ShellControlKind::rest_party,
+            .bounds = {x, y, button_width, button_height},
+            .label = "REST",
+            .accessibility_label = request.rest_available
+                ? "Rest party"
+                : "Rest party, Camp first",
+            .focus_identifier = "focus.action.party.rest",
+            .tab_order = 1118,
+            .enabled = request.rest_available,
+            .payload = RestPartyAction{},
         });
         x += button_width + gap;
       }

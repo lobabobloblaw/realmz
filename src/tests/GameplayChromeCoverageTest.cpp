@@ -75,7 +75,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.action.character_sheet", Surface::exploration,
         Kind::interaction, Status::semantic_complete},
     {"exploration.action.rest", Surface::exploration,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"exploration.action.camp", Surface::exploration,
         Kind::interaction, Status::missing},
     {"exploration.action.search_toggle", Surface::exploration,
@@ -138,7 +138,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.action.character_sheet", Surface::dungeon,
         Kind::interaction, Status::semantic_complete},
     {"dungeon.action.rest", Surface::dungeon,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"dungeon.action.camp", Surface::dungeon,
         Kind::interaction, Status::missing},
     {"dungeon.action.search_toggle", Surface::dungeon,
@@ -495,7 +495,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x4E2C63DB45F7295CULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x1FB74F42D95EB551ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -584,7 +584,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x4E2C63DB45F7295CULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x1FB74F42D95EB551ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -595,6 +595,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   std::set<std::string_view> stable_ids;
   std::array<std::array<size_t, kKinds.size()>, kSurfaces.size()> coverage{};
   std::array<bool, 3> statuses_seen{};
+  std::array<size_t, 3> status_counts{};
   size_t previous_surface = 0U;
   bool first_entry = true;
   for (size_t index = 0; index < first.size(); ++index) {
@@ -619,7 +620,9 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     first_entry = false;
     previous_surface = surface;
     ++coverage[surface][kind];
-    statuses_seen[static_cast<size_t>(entry.status)] = true;
+    const size_t status = static_cast<size_t>(entry.status);
+    statuses_seen[status] = true;
+    ++status_counts[status];
   }
   CHECK(stable_ids.size() == first.size());
   for (size_t surface = 0; surface < kSurfaces.size(); ++surface) {
@@ -630,6 +633,9 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   for (const bool seen : statuses_seen) {
     CHECK(seen);
   }
+  CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 37U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 52U);
 }
 
 void expect_issue(

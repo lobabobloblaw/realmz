@@ -42,6 +42,10 @@ constexpr uint32_t kSemanticOpenLoadGameSignature = 0x524C0000U;
 constexpr uint32_t kSemanticOpenLoadGameMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenLoadGameSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenLoadGameReservedMask = 0x000000FFU;
+constexpr uint32_t kSemanticRestPartySignature = 0x57520000U;
+constexpr uint32_t kSemanticRestPartyMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticRestPartySurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticRestPartyReservedMask = 0x000000FFU;
 constexpr uint32_t kSemanticDelayCombatantSignature = 0x52440000U;
 constexpr uint32_t kSemanticDelayCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticDelayCombatantSurfaceMask = 0x0000FF00U;
@@ -151,6 +155,10 @@ struct DecodedOpenSaveGame {
 };
 
 struct DecodedOpenLoadGame {
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedRestParty {
   RealmzSemanticInputSurface surface;
 };
 
@@ -395,6 +403,21 @@ std::optional<DecodedOpenLoadGame> decode_open_load_game(
     return std::nullopt;
   }
   return DecodedOpenLoadGame{.surface = surface_value};
+}
+
+std::optional<DecodedRestParty> decode_rest_party(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticRestPartyMask) !=
+          kSemanticRestPartySignature ||
+      (tagged_message & kSemanticRestPartyReservedMask) != 0) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticRestPartySurfaceMask) >> 8U;
+  if (!is_world_gameplay_surface(surface_value)) {
+    return std::nullopt;
+  }
+  return DecodedRestParty{.surface = surface_value};
 }
 
 std::optional<DecodedGuardCombatant> decode_guard_combatant(
@@ -958,6 +981,15 @@ uint32_t semantic_open_load_game_tag(
       (static_cast<uint32_t>(surface) << 8U);
 }
 
+uint32_t semantic_rest_party_tag(
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_world_gameplay_surface(surface)) {
+    return 0;
+  }
+  return kSemanticRestPartySignature |
+      (static_cast<uint32_t>(surface) << 8U);
+}
+
 uint32_t semantic_guard_combatant_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept {
@@ -1305,6 +1337,17 @@ RealmzSemanticOpenLoadGameTagSurface(uint32_t tagged_message) {
   return load_game ? load_game->surface : kNoSemanticInputSurface;
 }
 
+extern "C" uint8_t RealmzIsSemanticRestPartyTag(
+    uint32_t tagged_message) {
+  return decode_rest_party(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticRestPartyTagSurface(uint32_t tagged_message) {
+  const auto rest_party = decode_rest_party(tagged_message);
+  return rest_party ? rest_party->surface : kNoSemanticInputSurface;
+}
+
 extern "C" uint8_t RealmzIsSemanticGuardCombatantTag(
     uint32_t tagged_message) {
   return decode_guard_combatant(tagged_message).has_value() ? 1 : 0;
@@ -1499,6 +1542,7 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_open_scroll_case(tagged_message) ||
           decode_open_save_game(tagged_message) ||
           decode_open_load_game(tagged_message) ||
+          decode_rest_party(tagged_message) ||
           decode_guard_combatant(tagged_message) ||
           decode_finish_combatant(tagged_message) ||
           decode_delay_combatant(tagged_message) ||
@@ -1545,6 +1589,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto load_game = decode_open_load_game(tagged_message)) {
     return load_game->surface;
+  }
+  if (const auto rest_party = decode_rest_party(tagged_message)) {
+    return rest_party->surface;
   }
   if (const auto guard = decode_guard_combatant(tagged_message)) {
     return guard->surface;
@@ -1937,6 +1984,50 @@ extern "C" uint8_t RealmzConsumeSemanticOpenLoadGameEvent(
     }
     *menu_id = command->menu_id;
     *item_id = command->item_id;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticRestPartyEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!classic_key_message || !authorized) {
+    return 0;
+  }
+  const auto rest_party = decode_rest_party(tagged_message);
+  if (!rest_party || (rest_party->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    const realmz::presentation::RuntimeLegacyCommandContext context{
+        .screen = screen,
+        .world_presentation = snapshot.world.presentation,
+        .adaptive_eligible = legacy.adaptive_eligible != 0,
+        .in_camp = snapshot.world.in_camp,
+    };
+    if (snapshot.screen != screen) {
+      return 0;
+    }
+    const auto message =
+        realmz::presentation::legacy_key_message_for_rest_party(context);
+    if (!message) {
+      return 0;
+    }
+    *classic_key_message = *message;
     return 1;
   } catch (...) {
     return 0;

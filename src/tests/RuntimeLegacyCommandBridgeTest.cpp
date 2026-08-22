@@ -69,6 +69,14 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyWorldActionSinks::open_character_sheet),
     RuntimeLegacyOpenCharacterSheetSink>);
+static_assert(std::is_same_v<
+    RuntimeLegacyRestPartySink,
+    std::function<bool(
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::rest_party),
+    RuntimeLegacyRestPartySink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -1067,6 +1075,164 @@ void test_open_character_sheet_context_and_named_sink_dispatch() {
   CHECK(movement_only.dispatch(UIAction{
       .sequence = sequence,
       .payload = OpenCharacterSheetAction{2},
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_rest_party_context_and_named_sink_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .in_camp = true,
+  };
+  int rest_calls = 0;
+  bool accept_rest = true;
+  RuntimeLegacyCommandBridge bridge(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .rest_party = [&rest_calls, &accept_rest, &context](
+              uint32_t message,
+              const RuntimeLegacyCommandContext& captured_context) {
+            ++rest_calls;
+            CHECK(message == 0x00000F72U);
+            CHECK(captured_context == context);
+            return accept_rest;
+          },
+      });
+
+  ActionSequence sequence = 98;
+  CHECK(legacy_key_message_for_rest_party(context) == 0x00000F72U);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = RestPartyAction{},
+  }).status == DispatchStatus::handled);
+  CHECK(rest_calls == 1);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    CHECK(legacy_key_message_for_rest_party(context) == 0x00000F72U);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = RestPartyAction{},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(rest_calls == 3);
+
+  // Combat Range intentionally shares Classic's key record but can never use
+  // the world Rest action, sink, or context route.
+  CHECK(legacy_key_message_for_show_combat_range(
+      1,
+      RuntimeLegacyCommandContext{
+          .screen = ScreenContext::combat,
+          .world_presentation = WorldPresentation::none,
+          .adaptive_eligible = true,
+      }) == 0x00000F72U);
+  CHECK(!legacy_key_message_for_rest_party(RuntimeLegacyCommandContext{
+      .screen = ScreenContext::combat,
+      .world_presentation = WorldPresentation::none,
+      .adaptive_eligible = true,
+      .in_camp = true,
+  }));
+
+  for (const auto invalid : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .in_camp = false,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = false,
+               .in_camp = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+               .in_camp = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .in_camp = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+               .in_camp = true,
+           },
+       }) {
+    context = invalid;
+    CHECK(!legacy_key_message_for_rest_party(context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = RestPartyAction{},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(rest_calls == 3);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .in_camp = true,
+  };
+  accept_rest = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = RestPartyAction{},
+  }).status == DispatchStatus::failed);
+  CHECK(rest_calls == 4);
+
+  RuntimeLegacyCommandBridge missing_provider(
+      kRuntimeLegacyNamedActionSinks,
+      {},
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .rest_party = [](
+              uint32_t,
+              const RuntimeLegacyCommandContext&) { return true; },
+      });
+  CHECK(missing_provider.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = RestPartyAction{},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge empty_named_sink(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{});
+  CHECK(empty_named_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = RestPartyAction{},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = RestPartyAction{},
   }).status == DispatchStatus::unsupported);
 }
 
@@ -5918,6 +6084,7 @@ int main() {
     test_open_spellbook_mapping_and_dispatch();
     test_open_scroll_case_mapping_and_named_sink_dispatch();
     test_open_character_sheet_context_and_named_sink_dispatch();
+    test_rest_party_context_and_named_sink_dispatch();
     test_empty_brace_world_sink_compatibility_is_unambiguous();
     test_open_save_game_mapping_and_dispatch();
     test_open_load_game_mapping_and_dispatch();

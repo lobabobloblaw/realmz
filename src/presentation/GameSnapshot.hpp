@@ -106,6 +106,10 @@ struct WorldView {
   size_t visible_columns = 0;
   size_t visible_rows = 0;
   std::vector<WorldTileView> visible_tiles;
+  // Value-only projection of Classic's authoritative camp state. Appending
+  // it preserves positional source compatibility for existing snapshots.
+  // Presentation may gate Rest with it, but cannot mutate Classic state.
+  bool in_camp = false;
 
   bool operator==(const WorldView&) const = default;
 

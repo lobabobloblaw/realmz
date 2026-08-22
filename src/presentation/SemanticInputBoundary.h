@@ -76,6 +76,13 @@ uint8_t RealmzIsSemanticOpenLoadGameTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenLoadGameTagSurface(
     uint32_t tagged_message);
 
+// Rest tags carry only their originating world surface. The guarded consumer
+// rechecks a fresh adaptive snapshot and camp state before producing Classic's
+// lowercase-r key record.
+uint8_t RealmzIsSemanticRestPartyTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticRestPartyTagSurface(
+    uint32_t tagged_message);
+
 // Guard tags carry the acting combatant explicitly and are valid only on the
 // combat surface. This prevents a queued command from applying to a later turn.
 uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
@@ -251,6 +258,14 @@ uint8_t RealmzConsumeSemanticOpenLoadGameEvent(
     int16_t* menu_id,
     int16_t* item_id);
 
+// Revalidates the originating world surface, exact world presentation, and
+// fresh camp state, then returns Classic's lowercase "r" key record. Classic
+// remains authoritative for the complete rest quantum and every mutation.
+uint8_t RealmzConsumeSemanticRestPartyEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 // Revalidates the live acting party combatant, then returns the preserved
 // Classic "g" key record to the top-level combat loop.
 uint8_t RealmzConsumeSemanticGuardCombatantEvent(
@@ -418,6 +433,9 @@ struct CombatFieldCell;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_open_load_game_tag(
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_rest_party_tag(
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_guard_combatant_tag(

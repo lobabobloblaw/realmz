@@ -189,6 +189,13 @@ void test_actions_and_events() {
   CHECK(std::holds_alternative<OpenLoadGameAction>(
       open_load_game.payload));
 
+  UIAction rest_party{
+      .sequence = 13,
+      .payload = RestPartyAction{},
+  };
+  CHECK(action_name(rest_party.payload) == "rest_party");
+  CHECK(std::holds_alternative<RestPartyAction>(rest_party.payload));
+
   UIAction guard{
       .sequence = 13,
       .payload = GuardCombatantAction{2},

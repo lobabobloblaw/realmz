@@ -15,6 +15,7 @@ struct RuntimeLegacyCommandContext {
   ScreenContext screen = ScreenContext::title;
   WorldPresentation world_presentation = WorldPresentation::none;
   bool adaptive_eligible = false;
+  bool in_camp = false;
 
   bool operator==(const RuntimeLegacyCommandContext&) const = default;
 };
@@ -56,6 +57,9 @@ using RuntimeLegacyOpenSaveGameSink = std::function<bool(
     const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyOpenLoadGameSink = std::function<bool(
     RuntimeLegacyMenuCommand,
+    const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyRestPartySink = std::function<bool(
+    uint32_t,
     const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
@@ -136,6 +140,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacyOpenSaveGameSink open_save_game;
   RuntimeLegacyOpenLoadGameSink open_load_game;
   RuntimeLegacyOpenCharacterSheetSink open_character_sheet;
+  RuntimeLegacyRestPartySink rest_party;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -205,6 +210,12 @@ struct RuntimeLegacyCombatActionSinks {
 // world-context checks; the bridge range-checks the party slot, and the
 // original loop still revalidates the exact live member before opening it.
 [[nodiscard]] bool runtime_legacy_context_supports_open_character_sheet(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact Classic lowercase "r" key record used by both preserved
+// world loops. Rest is exposed only while the fresh value-only snapshot says
+// the party remains in camp; Classic owns the complete rest quantum.
+[[nodiscard]] std::optional<uint32_t> legacy_key_message_for_rest_party(
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Game > Save Current Game menu selection consumed by the
