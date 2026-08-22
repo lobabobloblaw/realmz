@@ -232,7 +232,8 @@ permission and feedback, music and sound, `incamp` and related state changes,
 `moveparty(0)`, time advancement, `updatecontrols()`, and every preserved
 `revertgame` return. No Camp action or delivery vocabulary is added to replay.
 The Game page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP,
-SEARCH/STOP SEARCH, and TORCH. The member-free Search control remains available
+SEARCH/STOP SEARCH, TORCH, and the contextual AREA SEARCH/MAKE SCROLL control.
+The member-free Search control remains available
 during
 ordinary outdoor or dungeon navigation with no active encounter, including
 while camped. It presents `SEARCH` / `Start searching` when the current state is
@@ -273,6 +274,29 @@ or already lit. Classic alone owns charge consumption, item dropping and slot
 shifts, item/spell loading, RNG, sound, Light duration, darkness, and icon
 updates. No Torch action or delivery vocabulary is added to replay. Automated
 tests do not close the private manual-QA gap described below.
+The final Game control carries one discriminated `ContextualOverviewAction`.
+Outside camp, `area_search` has no member; in camp, `make_scroll` carries the
+member selected when the action was composed. An absent Make Scroll member is
+valid only for its visible disabled shell control and is rejected at dispatch.
+The strict single-use `0x574F` tag binds the originating exploration or dungeon
+surface, explicit mode, and canonical absent-or-bounded member. Completed-scope
+consumption freshly requires adaptive eligibility, the exact outdoor or
+dungeon-map/first-person presentation, an unchanged camp mode, and, for Make
+Scroll, the same live selected member with Classic's case, stamina, and
+spell-flow capability. A queued command can neither change contextual meaning
+nor retarget a later member. Only then does EventManager yield Classic's exact
+lowercase `a` key record `0x00000061` for Area Search or lowercase `k` record
+`0x0000286B` for Make Scroll. The non-pumping cached SDL/Classic held-mouse gate
+applies only to Area Search because its existing `Button()` loop can repeat;
+Make Scroll has no such hold loop and remains subject only to its ordinary late
+gates. The route forges no pointer or control handle, mutates no secret, party,
+item, spell, or scroll data directly, and changes no Classic source. Classic
+alone owns contextual control gating and warnings, forced secret discovery,
+sound, time, encounters and revert handling, and the complete scroll dialog,
+member browsing, caster and parchment checks, spell-point cost, first-free-slot
+write, first matching parchment consumption/drop, and cleanup. No contextual
+Overview action or delivery vocabulary is added to replay. Automated tests do
+not close the private, no-redistribution manual-QA gap described below.
 Combat exposes seventeen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
@@ -478,15 +502,15 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 43
-`semantic_complete`, and 46 `missing` roles. Cropping remains disabled. The
+The 95-row inventory currently contains six `retained_in_crop`, 45
+`semantic_complete`, and 44 `missing` roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Heal, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
-| Dungeon | The corresponding dungeon Heal, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Outdoor | Heal, context-sensitive Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
+| Dungeon | The corresponding dungeon Heal, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -674,7 +698,7 @@ Automated checks do not replace these release decisions:
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, non-combat Use Scroll, Character, Save, Load, Rest, Camp/Break Camp,
-  Search/Stop Search, Torch,
+  Search/Stop Search, Torch, Area Search/Make Scroll,
   Guard, Finish, Delay, Center,
   Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
   Combat Cast, Combat Target, Combat Escape, Use Scroll, and Center Cursor
@@ -740,6 +764,32 @@ Automated checks do not replace these release decisions:
   Light duration, darkness, and icon updates. Confirm replay schemas and
   decoders expose no Torch vocabulary, and do not redistribute private fixture
   data;
+- close the private manual-QA gap for the contextual Overview control on
+  disposable outdoor and dungeon fixtures, including dungeon map and
+  first-person presentations. Confirm the GAME order ends in
+  SEARCH/STOP SEARCH, TORCH, then AREA SEARCH outside camp or MAKE SCROLL in
+  camp; that the one `ContextualOverviewAction` always carries an explicit
+  mode; Area Search carries no member; and enabled Make Scroll carries the
+  selected member. Queue actions made stale by scope, surface, adaptive
+  eligibility, presentation, camp-mode, selection, stamina, case, or spell-flow
+  changes and confirm they are inert and never change mode or retarget. Verify
+  malformed `0x574F` mode/member encodings are rejected. For each accepted
+  activation, confirm EventManager yields only the exact Classic lowercase `a`
+  message `0x00000061` or lowercase `k` message `0x0000286B`. Press, hold, and
+  release AREA SEARCH and verify it fires only after release and begins exactly
+  one forced-search pass; separately verify a pre-held cached SDL or Classic
+  mouse state burns and rejects only Area Search, while Make Scroll does not
+  acquire that extra held-mouse gate. Exercise a known secret and the fatigue
+  warning, and verify Classic alone owns discovery, sound, one location-scaled
+  time quantum (`timeclick(1, TRUE)`) per mandatory pass, encounters, and revert
+  handling. Open and cancel
+  Make Scroll; then exercise noncaster, no-parchment, full-case, and successful
+  scribing paths, verifying Classic alone owns warnings, browsing, spell-point
+  cost, first-free-slot contents, first matching parchment charge/load/drop,
+  and cleanup. Confirm no pointer or control is forged, no Classic source is
+  changed, and replay schemas and decoders expose no contextual Overview
+  vocabulary. Keep all fixtures and resulting evidence private and do not
+  redistribute them;
   and inert stale Guard,
   Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting

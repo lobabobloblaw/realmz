@@ -102,6 +102,15 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyWorldActionSinks::use_torch),
     RuntimeLegacyUseTorchSink>);
+static_assert(std::is_same_v<
+    RuntimeLegacyContextualOverviewSink,
+    std::function<bool(
+        const ContextualOverviewAction&,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::contextual_overview),
+    RuntimeLegacyContextualOverviewSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -1825,6 +1834,220 @@ void test_use_torch_context_source_and_named_sink_dispatch() {
   CHECK(movement_only.dispatch(UIAction{
       .sequence = sequence,
       .payload = UseTorchAction{.source = expected_source},
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_contextual_overview_mapping_and_named_sink_dispatch() {
+  const TorchSource torch_source{.member = 1, .slot = 7};
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .in_camp = false,
+      .usable_torch_source = torch_source,
+  };
+  int context_calls = 0;
+  int torch_calls = 0;
+  int overview_calls = 0;
+  bool accept_overview = true;
+  uint32_t received_message = 0;
+  ContextualOverviewAction received_action{};
+  RuntimeLegacyCommandBridge bridge(
+      kRuntimeLegacyNamedActionSinks,
+      [&context, &context_calls] {
+        ++context_calls;
+        return context;
+      },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .use_torch = [&torch_calls](
+              const TorchSource&,
+              const RuntimeLegacyCommandContext&) {
+            ++torch_calls;
+            return true;
+          },
+          .contextual_overview = [
+              &overview_calls,
+              &accept_overview,
+              &received_message,
+              &received_action,
+              &context](
+              const ContextualOverviewAction& action,
+              uint32_t message,
+              const RuntimeLegacyCommandContext& captured_context) {
+            ++overview_calls;
+            received_action = action;
+            received_message = message;
+            CHECK(captured_context == context);
+            return accept_overview;
+          },
+      });
+
+  ActionSequence sequence = 140;
+  const ContextualOverviewAction area{
+      .mode = ContextualOverviewMode::area_search,
+  };
+  const ContextualOverviewAction make{
+      .mode = ContextualOverviewMode::make_scroll,
+      .member = 2,
+  };
+  CHECK(legacy_key_message_for_contextual_overview(area, context) ==
+      0x00000061U);
+
+  // Torch immediately followed by Overview proves the appended Torch handler
+  // retained a provider copy for the new final move-capturing handler.
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = UseTorchAction{.source = torch_source},
+  }).status == DispatchStatus::handled);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = area,
+  }).status == DispatchStatus::handled);
+  CHECK(context_calls == 2);
+  CHECK(torch_calls == 1);
+  CHECK(overview_calls == 1);
+  CHECK(received_action == area);
+  CHECK(received_message == 0x00000061U);
+
+  context.in_camp = true;
+  CHECK(legacy_key_message_for_contextual_overview(make, context) ==
+      0x0000286BU);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = make,
+  }).status == DispatchStatus::handled);
+  CHECK(overview_calls == 2);
+  CHECK(received_action == make);
+  CHECK(received_message == 0x0000286BU);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    CHECK(legacy_key_message_for_contextual_overview(make, context) ==
+        0x0000286BU);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = make,
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(overview_calls == 4);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .in_camp = false,
+  };
+  for (const auto& invalid : {
+           ContextualOverviewAction{
+               .mode = ContextualOverviewMode::area_search,
+               .member = 0,
+           },
+           ContextualOverviewAction{
+               .mode = ContextualOverviewMode::make_scroll,
+           },
+           ContextualOverviewAction{
+               .mode = ContextualOverviewMode::make_scroll,
+               .member = 6,
+           },
+           ContextualOverviewAction{
+               .mode = static_cast<ContextualOverviewMode>(0xFF),
+           },
+       }) {
+    CHECK(!legacy_key_message_for_contextual_overview(invalid, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = invalid,
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(overview_calls == 4);
+
+  context.in_camp = true;
+  CHECK(!legacy_key_message_for_contextual_overview(area, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = area,
+  }).status == DispatchStatus::rejected);
+  context.in_camp = false;
+  CHECK(!legacy_key_message_for_contextual_overview(make, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = make,
+  }).status == DispatchStatus::rejected);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::dungeon_map,
+      .adaptive_eligible = true,
+  };
+  CHECK(!legacy_key_message_for_contextual_overview(area, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = area,
+  }).status == DispatchStatus::rejected);
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = false,
+  };
+  CHECK(!legacy_key_message_for_contextual_overview(area, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = area,
+  }).status == DispatchStatus::rejected);
+
+  context.adaptive_eligible = true;
+  accept_overview = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = area,
+  }).status == DispatchStatus::failed);
+  CHECK(overview_calls == 5);
+
+  RuntimeLegacyCommandBridge missing_provider(
+      kRuntimeLegacyNamedActionSinks,
+      {},
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .contextual_overview = [](
+              const ContextualOverviewAction&,
+              uint32_t,
+              const RuntimeLegacyCommandContext&) { return true; },
+      });
+  CHECK(missing_provider.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = area,
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge empty_named_sink(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{});
+  CHECK(empty_named_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = area,
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = area,
   }).status == DispatchStatus::unsupported);
 }
 
@@ -6680,6 +6903,7 @@ int main() {
     test_set_camp_state_context_and_named_sink_dispatch();
     test_set_search_state_context_and_named_sink_dispatch();
     test_use_torch_context_source_and_named_sink_dispatch();
+    test_contextual_overview_mapping_and_named_sink_dispatch();
     test_empty_brace_world_sink_compatibility_is_unambiguous();
     test_open_save_game_mapping_and_dispatch();
     test_open_load_game_mapping_and_dispatch();

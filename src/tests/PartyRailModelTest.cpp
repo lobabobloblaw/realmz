@@ -246,6 +246,18 @@ void test_action_availability_is_conservative() {
       std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
   CHECK(use_torch.tab_order == start_search.tab_order + 1);
   CHECK(use_torch.availability_reason->label == "Game rules apply");
+  const auto& area_search =
+      action_with(model, ActionIntent::contextual_overview);
+  CHECK(area_search.can_invoke());
+  CHECK(area_search.availability == ActionAvailability::deferred_to_engine);
+  CHECK(area_search.command == "action.party.overview");
+  CHECK(area_search.label == "Area search");
+  CHECK(area_search.contextual_overview_mode ==
+      std::optional<ContextualOverviewMode>{
+          ContextualOverviewMode::area_search});
+  CHECK(!area_search.party_member);
+  CHECK(area_search.tab_order == use_torch.tab_order + 1);
+  CHECK(area_search.availability_reason->label == "Game rules apply");
 
   snapshot.world.usable_torch_source.reset();
   model = build_presentation_shell_model(snapshot);
@@ -264,6 +276,7 @@ void test_action_availability_is_conservative() {
   snapshot.world.usable_torch_source = TorchSource{.member = 1, .slot = 7};
 
   snapshot.world.in_camp = true;
+  snapshot.party.members[1].use_scroll_available = true;
   model = build_presentation_shell_model(snapshot);
   const auto& available_rest = action_with(model, ActionIntent::rest);
   CHECK(available_rest.can_invoke());
@@ -289,6 +302,27 @@ void test_action_availability_is_conservative() {
   CHECK((torch_while_camped.torch_source ==
       std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
   CHECK(torch_while_camped.tab_order == search_while_camped.tab_order + 1);
+  const auto& make_scroll =
+      action_with(model, ActionIntent::contextual_overview);
+  CHECK(make_scroll.can_invoke());
+  CHECK(make_scroll.availability == ActionAvailability::deferred_to_engine);
+  CHECK(make_scroll.command == "action.party.overview");
+  CHECK(make_scroll.label == "Make scroll");
+  CHECK(make_scroll.contextual_overview_mode ==
+      std::optional<ContextualOverviewMode>{
+          ContextualOverviewMode::make_scroll});
+  CHECK(make_scroll.party_member == 2);
+  CHECK(make_scroll.tab_order == torch_while_camped.tab_order + 1);
+
+  snapshot.party.members[1].use_scroll_available = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& unavailable_make_scroll =
+      action_with(model, ActionIntent::contextual_overview);
+  CHECK(!unavailable_make_scroll.can_invoke());
+  CHECK(unavailable_make_scroll.party_member == 2);
+  CHECK(unavailable_make_scroll.availability_reason->label ==
+      "Make scroll is unavailable for the selected member");
+  snapshot.party.members[1].use_scroll_available = true;
 
   snapshot.world.searching = true;
   model = build_presentation_shell_model(snapshot);
@@ -298,6 +332,7 @@ void test_action_availability_is_conservative() {
   CHECK(stop_search.label == "Stop search");
   CHECK(stop_search.desired_searching == false);
   CHECK(action_with(model, ActionIntent::use_torch).can_invoke());
+  CHECK(action_with(model, ActionIntent::contextual_overview).can_invoke());
 
   snapshot.screen = ScreenContext::dungeon;
   snapshot.world.searching = false;
@@ -308,6 +343,7 @@ void test_action_availability_is_conservative() {
   CHECK(dungeon_search.desired_searching == true);
   CHECK(action_with(model, ActionIntent::rest).can_invoke());
   CHECK(action_with(model, ActionIntent::use_torch).can_invoke());
+  CHECK(action_with(model, ActionIntent::contextual_overview).can_invoke());
   snapshot.screen = ScreenContext::exploration;
   snapshot.world.in_camp = false;
   snapshot.world.searching = false;
@@ -342,6 +378,26 @@ void test_action_availability_is_conservative() {
   CHECK(!character_without_selection.party_member);
   CHECK(character_without_selection.availability_reason->label ==
       "Select a party member first");
+  const auto& area_search_without_selection =
+      action_with(model, ActionIntent::contextual_overview);
+  CHECK(area_search_without_selection.can_invoke());
+  CHECK(!area_search_without_selection.party_member);
+  CHECK(area_search_without_selection.contextual_overview_mode ==
+      std::optional<ContextualOverviewMode>{
+          ContextualOverviewMode::area_search});
+
+  snapshot.world.in_camp = true;
+  model = build_presentation_shell_model(snapshot);
+  const auto& make_scroll_without_selection =
+      action_with(model, ActionIntent::contextual_overview);
+  CHECK(!make_scroll_without_selection.can_invoke());
+  CHECK(!make_scroll_without_selection.party_member);
+  CHECK(make_scroll_without_selection.contextual_overview_mode ==
+      std::optional<ContextualOverviewMode>{
+          ContextualOverviewMode::make_scroll});
+  CHECK(make_scroll_without_selection.availability_reason->label ==
+      "Select a party member first");
+  snapshot.world.in_camp = false;
 
   snapshot.screen = ScreenContext::encounter;
   snapshot.encounter = EncounterView{
@@ -382,13 +438,21 @@ void test_action_availability_is_conservative() {
       std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
   CHECK(torch_in_encounter.availability_reason->label ==
       "Torch use is unavailable now");
-  CHECK(model.actions.size() == 14);
-  CHECK(model.actions[11].command == "encounter.choice.11");
-  CHECK(model.actions[11].can_invoke());
-  CHECK(model.actions[12].command == "encounter.choice.12");
-  CHECK(!model.actions[12].can_invoke());
-  CHECK(model.actions[13].intent == ActionIntent::cancel);
-  CHECK(model.actions[13].can_invoke());
+  const auto& overview_in_encounter =
+      action_with(model, ActionIntent::contextual_overview);
+  CHECK(!overview_in_encounter.can_invoke());
+  CHECK(overview_in_encounter.contextual_overview_mode ==
+      std::optional<ContextualOverviewMode>{
+          ContextualOverviewMode::area_search});
+  CHECK(overview_in_encounter.availability_reason->label ==
+      "Area search is unavailable now");
+  CHECK(model.actions.size() == 15);
+  CHECK(model.actions[12].command == "encounter.choice.11");
+  CHECK(model.actions[12].can_invoke());
+  CHECK(model.actions[13].command == "encounter.choice.12");
+  CHECK(!model.actions[13].can_invoke());
+  CHECK(model.actions[14].intent == ActionIntent::cancel);
+  CHECK(model.actions[14].can_invoke());
 }
 
 void test_world_action_page_preferences_are_normalized() {
@@ -471,7 +535,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 28U);
+  CHECK(model.actions.size() == 29U);
   const auto& camp_in_combat =
       action_with(model, ActionIntent::set_camp_state);
   CHECK(!camp_in_combat.can_invoke());
@@ -491,6 +555,15 @@ void test_combat_actions_track_the_active_party_combatant() {
       std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
   CHECK(torch_in_combat.availability_reason->label ==
       "Torch use is unavailable now");
+  const auto& overview_in_combat =
+      action_with(model, ActionIntent::contextual_overview);
+  CHECK(!overview_in_combat.can_invoke());
+  CHECK(overview_in_combat.contextual_overview_mode ==
+      std::optional<ContextualOverviewMode>{
+          ContextualOverviewMode::area_search});
+  CHECK(!overview_in_combat.party_member);
+  CHECK(overview_in_combat.availability_reason->label ==
+      "Area search is unavailable now");
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());

@@ -397,6 +397,40 @@ std::vector<ActionControlModel> build_actions(
                                    : "Torch use is unavailable now")}));
   result.back().torch_source = torch_source;
 
+  const auto contextual_overview_mode = snapshot.world.in_camp
+      ? ContextualOverviewMode::make_scroll
+      : ContextualOverviewMode::area_search;
+  ActionAvailability contextual_overview_availability =
+      ActionAvailability::deferred_to_engine;
+  std::optional<StateTokenModel> contextual_overview_reason =
+      engine_rules_token();
+  if (!navigation_context) {
+    contextual_overview_availability = ActionAvailability::unavailable;
+    contextual_overview_reason = unavailable_token(
+        snapshot.world.in_camp ? "Make scroll is unavailable now"
+                               : "Area search is unavailable now");
+  } else if (snapshot.world.in_camp && !selected) {
+    contextual_overview_availability = ActionAvailability::unavailable;
+    contextual_overview_reason =
+        unavailable_token("Select a party member first");
+  } else if (snapshot.world.in_camp && selected &&
+      !selected->use_scroll_available) {
+    contextual_overview_availability = ActionAvailability::unavailable;
+    contextual_overview_reason = unavailable_token(
+        "Make scroll is unavailable for the selected member");
+  }
+  result.emplace_back(action(
+      ActionIntent::contextual_overview,
+      "action.party.overview",
+      snapshot.world.in_camp ? "Make scroll" : "Area search",
+      contextual_overview_availability,
+      tab_order++,
+      std::move(contextual_overview_reason)));
+  if (snapshot.world.in_camp) {
+    result.back().party_member = selected_member;
+  }
+  result.back().contextual_overview_mode = contextual_overview_mode;
+
   ActionAvailability scroll_availability =
       ActionAvailability::deferred_to_engine;
   std::optional<StateTokenModel> scroll_reason = engine_rules_token();

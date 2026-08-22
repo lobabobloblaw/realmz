@@ -127,6 +127,24 @@ struct UseTorchAction {
   bool operator==(const UseTorchAction&) const = default;
 };
 
+enum class ContextualOverviewMode {
+  area_search,
+  make_scroll,
+};
+
+// Requests one of the two preserved meanings of Classic's contextual Overview
+// control. Carrying the explicit mode prevents a queued Area Search from
+// becoming Make Scroll, or vice versa, after camp state changes. Area Search is
+// party-wide and therefore carries no member. Make Scroll binds the member that
+// was selected when the action was composed; a disengaged member exists only
+// for the shell's visible disabled control and is never dispatchable.
+struct ContextualOverviewAction {
+  ContextualOverviewMode mode = ContextualOverviewMode::area_search;
+  std::optional<PartyMemberId> member;
+
+  bool operator==(const ContextualOverviewAction&) const = default;
+};
+
 // Ends the explicitly identified party combatant's current turn in the
 // preserved Classic combat loop with its Guard command. Carrying the actor
 // prevents a queued action from silently retargeting after the turn advances.
@@ -513,7 +531,8 @@ using UIActionPayload = std::variant<
     SetPresentationModeAction,
     SetCampStateAction,
     SetSearchStateAction,
-    UseTorchAction>;
+    UseTorchAction,
+    ContextualOverviewAction>;
 
 struct UIAction {
   ActionSequence sequence = 0;
@@ -603,6 +622,8 @@ struct UIAction {
       return "set_search_state";
     } else if constexpr (std::is_same_v<Action, UseTorchAction>) {
       return "use_torch";
+    } else if constexpr (std::is_same_v<Action, ContextualOverviewAction>) {
+      return "contextual_overview";
     } else {
       return "set_presentation_mode";
     }

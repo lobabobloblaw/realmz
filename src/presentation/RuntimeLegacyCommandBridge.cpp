@@ -21,6 +21,8 @@ constexpr uint32_t kOpenOutdoorScrollCaseMessage = 0x0000256CU;
 constexpr uint32_t kOpenDungeonScrollCaseMessage = 0x00002370U;
 constexpr uint32_t kRestPartyMessage = 0x00000F72U;
 constexpr uint32_t kSetCampStateMessage = 0x00000863U;
+constexpr uint32_t kAreaSearchMessage = 0x00000061U;
+constexpr uint32_t kMakeScrollMessage = 0x0000286BU;
 constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
@@ -877,7 +879,7 @@ LegacyActionHandlers make_handlers(
     return DispatchResult::handled();
   };
   handlers.use_torch = [
-      context_provider = std::move(context_provider),
+      context_provider,
       use_torch_sink = std::move(world_action_sinks.use_torch)](
           const UseTorchAction& action) {
     if (!context_provider) {
@@ -906,6 +908,39 @@ LegacyActionHandlers make_handlers(
     if (!use_torch_sink(*action.source, context)) {
       return DispatchResult::failed(
           "Legacy event queue rejected semantic use-torch action");
+    }
+    return DispatchResult::handled();
+  };
+  handlers.contextual_overview = [
+      context_provider = std::move(context_provider),
+      contextual_overview_sink =
+          std::move(world_action_sinks.contextual_overview)](
+          const ContextualOverviewAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!contextual_overview_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy contextual-overview sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for the semantic "
+          "Overview control");
+    }
+    const auto message = legacy_key_message_for_contextual_overview(
+        action, context);
+    if (!message) {
+      return DispatchResult::rejected(
+          "The contextual Overview control is not supported in the current "
+          "legacy context");
+    }
+    if (!contextual_overview_sink(action, *message, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic contextual-overview action");
     }
     return DispatchResult::handled();
   };
@@ -1337,6 +1372,40 @@ bool runtime_legacy_context_supports_use_torch(
       (context.world_presentation == WorldPresentation::dungeon_map) ||
       (context.world_presentation == WorldPresentation::dungeon_first_person);
   return (context.screen == ScreenContext::dungeon) && dungeon_presentation;
+}
+
+std::optional<uint32_t> legacy_key_message_for_contextual_overview(
+    const ContextualOverviewAction& action,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible) {
+    return std::nullopt;
+  }
+  const bool outdoor_presentation =
+      (context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor);
+  const bool dungeon_presentation =
+      (context.screen == ScreenContext::dungeon) &&
+      ((context.world_presentation == WorldPresentation::dungeon_map) ||
+       (context.world_presentation ==
+           WorldPresentation::dungeon_first_person));
+  if (!outdoor_presentation && !dungeon_presentation) {
+    return std::nullopt;
+  }
+
+  switch (action.mode) {
+    case ContextualOverviewMode::area_search:
+      if (context.in_camp || action.member) {
+        return std::nullopt;
+      }
+      return kAreaSearchMessage;
+    case ContextualOverviewMode::make_scroll:
+      if (!context.in_camp || !action.member ||
+          (*action.member > kMaximumPartyMemberId)) {
+        return std::nullopt;
+      }
+      return kMakeScrollMessage;
+  }
+  return std::nullopt;
 }
 
 std::optional<RuntimeLegacyMenuCommand>

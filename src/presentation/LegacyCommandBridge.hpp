@@ -98,6 +98,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<SetCampStateAction> set_camp_state;
   LegacyActionHandler<SetSearchStateAction> set_search_state;
   LegacyActionHandler<UseTorchAction> use_torch;
+  LegacyActionHandler<ContextualOverviewAction> contextual_overview;
 };
 
 class InjectedLegacyCommandBridge final : public LegacyCommandBridge {

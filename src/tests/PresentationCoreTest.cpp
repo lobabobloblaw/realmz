@@ -234,6 +234,36 @@ void test_actions_and_events() {
   CHECK((TorchSource{.member = 2, .slot = 7} !=
       TorchSource{.member = 2, .slot = 8}));
 
+  UIAction area_search{
+      .sequence = 17,
+      .payload = ContextualOverviewAction{
+          .mode = ContextualOverviewMode::area_search,
+          .member = std::nullopt,
+      },
+  };
+  CHECK(action_name(area_search.payload) == "contextual_overview");
+  CHECK(std::get<ContextualOverviewAction>(area_search.payload).mode ==
+      ContextualOverviewMode::area_search);
+  CHECK(!std::get<ContextualOverviewAction>(area_search.payload).member);
+
+  UIAction make_scroll{
+      .sequence = 18,
+      .payload = ContextualOverviewAction{
+          .mode = ContextualOverviewMode::make_scroll,
+          .member = PartyMemberId{2},
+      },
+  };
+  CHECK(action_name(make_scroll.payload) == "contextual_overview");
+  CHECK(std::get<ContextualOverviewAction>(make_scroll.payload).mode ==
+      ContextualOverviewMode::make_scroll);
+  CHECK(std::get<ContextualOverviewAction>(make_scroll.payload).member ==
+      std::optional<PartyMemberId>{2});
+  CHECK(area_search.payload != make_scroll.payload);
+  CHECK((make_scroll.payload != UIActionPayload{ContextualOverviewAction{
+      .mode = ContextualOverviewMode::make_scroll,
+      .member = std::nullopt,
+  }}));
+
   UIAction guard{
       .sequence = 13,
       .payload = GuardCombatantAction{2},

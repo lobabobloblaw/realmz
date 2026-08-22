@@ -188,6 +188,14 @@ bool consume_use_torch(
              expected_surface, tag, &member, &slot) != 0;
 }
 
+bool consume_contextual_overview(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticContextualOverviewEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 bool consume_guard(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tag,
@@ -1866,6 +1874,122 @@ void test_use_torch_tag_encoding_and_collisions() {
   CHECK(search != 0);
   CHECK(!torch_tags.contains(search));
   CHECK(RealmzIsSemanticUseTorchTag(search) == 0);
+}
+
+void test_contextual_overview_tag_encoding_and_collisions() {
+  constexpr std::array surfaces{
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+  };
+  const ContextualOverviewAction area{
+      .mode = ContextualOverviewMode::area_search,
+  };
+  std::set<uint32_t> overview_tags;
+  for (const auto surface : surfaces) {
+    const uint32_t area_tag = semantic_contextual_overview_tag(area, surface);
+    CHECK(area_tag == (0x574F0000U |
+        (static_cast<uint32_t>(surface) << 8U)));
+    CHECK(RealmzIsSemanticContextualOverviewTag(area_tag) != 0);
+    CHECK(RealmzSemanticContextualOverviewTagSurface(area_tag) == surface);
+    CHECK(RealmzSemanticContextualOverviewTagIsAreaSearch(area_tag) != 0);
+    CHECK(RealmzIsSemanticGameplayTag(area_tag) != 0);
+    CHECK(RealmzSemanticGameplayTagSurface(area_tag) == surface);
+    CHECK(RealmzIsSemanticRestPartyTag(area_tag) == 0);
+    CHECK(RealmzIsSemanticSetCampStateTag(area_tag) == 0);
+    CHECK(RealmzIsSemanticSetSearchStateTag(area_tag) == 0);
+    CHECK(RealmzIsSemanticUseTorchTag(area_tag) == 0);
+    CHECK(overview_tags.emplace(area_tag).second);
+
+    for (PartyMemberId member = 0; member <= 5; ++member) {
+      const ContextualOverviewAction make{
+          .mode = ContextualOverviewMode::make_scroll,
+          .member = member,
+      };
+      const uint32_t make_tag =
+          semantic_contextual_overview_tag(make, surface);
+      CHECK(make_tag == (0x574F0000U |
+          (static_cast<uint32_t>(surface) << 8U) | 0x80U | member));
+      CHECK(RealmzIsSemanticContextualOverviewTag(make_tag) != 0);
+      CHECK(RealmzSemanticContextualOverviewTagSurface(make_tag) == surface);
+      CHECK(RealmzSemanticContextualOverviewTagIsAreaSearch(make_tag) == 0);
+      CHECK(RealmzIsSemanticGameplayTag(make_tag) != 0);
+      CHECK(RealmzSemanticGameplayTagSurface(make_tag) == surface);
+      CHECK(overview_tags.emplace(make_tag).second);
+    }
+  }
+  CHECK(overview_tags.size() == 14);
+  CHECK(semantic_contextual_overview_tag(
+      area, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x574F0100U);
+  CHECK(semantic_contextual_overview_tag(
+      ContextualOverviewAction{
+          .mode = ContextualOverviewMode::make_scroll,
+          .member = 5,
+      },
+      REALMZ_SEMANTIC_INPUT_DUNGEON) == 0x574F0285U);
+
+  for (const RealmzSemanticInputSurface surface :
+       std::array<RealmzSemanticInputSurface, 3>{
+           REALMZ_SEMANTIC_INPUT_NONE,
+           REALMZ_SEMANTIC_INPUT_COMBAT,
+           0xFF,
+       }) {
+    CHECK(semantic_contextual_overview_tag(area, surface) == 0);
+  }
+  for (const auto& invalid : {
+           ContextualOverviewAction{
+               .mode = ContextualOverviewMode::area_search,
+               .member = 0,
+           },
+           ContextualOverviewAction{
+               .mode = ContextualOverviewMode::make_scroll,
+           },
+           ContextualOverviewAction{
+               .mode = ContextualOverviewMode::make_scroll,
+               .member = 6,
+           },
+           ContextualOverviewAction{
+               .mode = static_cast<ContextualOverviewMode>(0xFF),
+           },
+       }) {
+    CHECK(semantic_contextual_overview_tag(
+        invalid, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  }
+
+  for (const uint32_t malformed : {
+           0U,
+           0x574E0100U,
+           0x574F0000U,
+           0x574F0186U,
+           0x574F0101U,
+           0x574F017FU,
+           0x574F01FFU,
+           0x574F0300U,
+           0x574FFF80U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticContextualOverviewTag(malformed) == 0);
+    CHECK(RealmzSemanticContextualOverviewTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+    CHECK(RealmzSemanticContextualOverviewTagIsAreaSearch(malformed) == 0);
+    CHECK(RealmzIsSemanticGameplayTag(malformed) == 0);
+    CHECK(RealmzSemanticGameplayTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  for (const uint32_t other_tag : {
+           semantic_rest_party_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_set_camp_state_tag(
+               true, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_set_search_state_tag(
+               true, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_use_torch_tag(
+               TorchSource{.member = 0, .slot = 0},
+               REALMZ_SEMANTIC_INPUT_EXPLORATION),
+       }) {
+    CHECK(other_tag != 0);
+    CHECK(!overview_tags.contains(other_tag));
+    CHECK(RealmzIsSemanticContextualOverviewTag(other_tag) == 0);
+  }
 }
 
 void test_open_scroll_case_tag_encoding_and_collisions() {
@@ -4488,6 +4612,216 @@ void test_use_torch_late_validation_and_source_handoff() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_contextual_overview_late_validation_and_exact_translation() {
+  const ContextualOverviewAction area{
+      .mode = ContextualOverviewMode::area_search,
+  };
+  const ContextualOverviewAction make{
+      .mode = ContextualOverviewMode::make_scroll,
+      .member = 0,
+  };
+  const uint32_t area_tag = semantic_contextual_overview_tag(
+      area, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  const uint32_t make_tag = semantic_contextual_overview_tag(
+      make, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  uint32_t output = kUnchangedClassicMessage;
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.in_camp = false;
+  captured_snapshot.party.fatigue = 999;
+  captured_snapshot.party.selected_member = std::nullopt;
+  captured_snapshot.party.members[0].selected = false;
+  captured_snapshot.party.members[0].use_scroll_available = false;
+
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  // Area Search remains party-wide and lets Classic own fatigue feedback.
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+  CHECK(output == 0x00000061U);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticContextualOverviewEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            area_tag,
+            nullptr) == 0);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+
+  // Fresh camp state rejects Area Search and consumes the authorization.
+  captured_snapshot.world.in_camp = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  captured_snapshot.world.in_camp = false;
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    captured_snapshot.world.in_camp = false;
+    const uint32_t dungeon_area = semantic_contextual_overview_tag(
+        area, REALMZ_SEMANTIC_INPUT_DUNGEON);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    output = kUnchangedClassicMessage;
+    CHECK(consume_contextual_overview(
+        REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_area, output));
+    CHECK(output == 0x00000061U);
+  }
+
+  // The tag's originating surface is checked before either live capture.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::dungeon_map);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, area_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  for (const auto& invalid : {
+           std::pair{
+               ScreenContext::dungeon,
+               WorldPresentation::outdoor,
+           },
+           std::pair{
+               ScreenContext::exploration,
+               WorldPresentation::dungeon_map,
+           },
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        invalid.first,
+        invalid.second);
+    captured_snapshot.world.in_camp = false;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    CHECK(!consume_contextual_overview(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+    CHECK(output == kUnchangedClassicMessage);
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, area_tag, output));
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 0);
+
+  // Make Scroll binds and freshly validates one exact selected member. Caste
+  // is deliberately irrelevant here so Classic can retain its noncaster warn.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.in_camp = true;
+  captured_snapshot.party.members[0].caste_id = 99;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = kUnchangedClassicMessage;
+  CHECK(consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, make_tag, output));
+  CHECK(output == 0x0000286BU);
+
+  const GameSnapshot valid_make_snapshot = captured_snapshot;
+  captured_snapshot.world.in_camp = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, make_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+
+  captured_snapshot = valid_make_snapshot;
+  captured_snapshot.party.selected_member = 1;
+  captured_snapshot.party.members[0].selected = false;
+  captured_snapshot.party.members[1].selected = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, make_tag, output));
+
+  captured_snapshot = valid_make_snapshot;
+  captured_snapshot.party.members[0].selected = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, make_tag, output));
+
+  captured_snapshot = valid_make_snapshot;
+  captured_snapshot.party.members[0].use_scroll_available = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, make_tag, output));
+
+  captured_snapshot = valid_make_snapshot;
+  const uint32_t missing_member_tag = semantic_contextual_overview_tag(
+      ContextualOverviewAction{
+          .mode = ContextualOverviewMode::make_scroll,
+          .member = 5,
+      },
+      REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, missing_member_tag, output));
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    captured_snapshot.world.in_camp = true;
+    const uint32_t dungeon_make = semantic_contextual_overview_tag(
+        make, REALMZ_SEMANTIC_INPUT_DUNGEON);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    output = kUnchangedClassicMessage;
+    CHECK(consume_contextual_overview(
+        REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_make, output));
+    CHECK(output == 0x0000286BU);
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.in_camp = true;
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_contextual_overview(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, make_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void test_shared_combat_late_validation_matrix() {
   for (const auto& action : kCombatActionCases) {
     reset_valid_shared_combat();
@@ -5858,6 +6192,7 @@ int main() {
     test_set_camp_state_tag_encoding_and_collisions();
     test_set_search_state_tag_encoding_and_collisions();
     test_use_torch_tag_encoding_and_collisions();
+    test_contextual_overview_tag_encoding_and_collisions();
     test_open_scroll_case_tag_encoding_and_collisions();
     test_bandage_tag_encoding_collision_and_malformed_rejection();
     test_undo_tag_encoding_collision_and_malformed_rejection();
@@ -5881,6 +6216,7 @@ int main() {
     test_set_camp_state_late_validation_and_exact_translation();
     test_set_search_state_late_validation_and_absolute_handoff();
     test_use_torch_late_validation_and_source_handoff();
+    test_contextual_overview_late_validation_and_exact_translation();
     test_shared_combat_late_validation_matrix();
     test_show_combat_range_route_boundaries();
     test_bandage_combatant_route_and_canundo_boundaries();

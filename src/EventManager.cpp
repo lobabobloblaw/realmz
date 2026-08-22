@@ -769,6 +769,29 @@ public:
     return true;
   }
 
+  bool push_semantic_contextual_overview_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticContextualOverviewTag(tagged_message)) {
+      return false;
+    }
+    // Keep Area Search and Make Scroll under their shared contextual tag until
+    // the guarded world loop freshly validates camp, presentation, and (for
+    // Make Scroll) the selected member. Nested Classic loops never see it.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic contextual Overview (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   bool push_semantic_guard_combatant_event(uint32_t tagged_message) {
     if (!RealmzIsSemanticGuardCombatantTag(tagged_message)) {
       return false;
@@ -1883,6 +1906,29 @@ Boolean GetNextSemanticGameplayEvent(
       ret->message = 0;
     }
   } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticContextualOverviewTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    const bool area_search =
+        RealmzSemanticContextualOverviewTagIsAreaSearch(ret->message) != 0;
+    const bool mouse_button_held = area_search &&
+        em.is_mouse_button_down_without_event_pump();
+    if (still_remastered && !mouse_button_held &&
+        RealmzConsumeSemanticContextualOverviewEvent(
+            surface, ret->message, &classic_key_message)) {
+      // Area Search and Make Scroll both re-enter their preserved Overview
+      // switch through exact Classic key records. Only Area Search has the
+      // held-button repeat hazard; Make Scroll remains a single modal entry.
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      if (mouse_button_held) {
+        // The non-pumping rejection consumes the completed one-shot scope.
+        RealmzInvalidateSemanticInputBoundary();
+      }
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
+  } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticRestPartyTag(ret->message)) {
     uint32_t classic_key_message = 0;
     const bool mouse_button_held =
@@ -2332,6 +2378,10 @@ Boolean PushSemanticSetSearchStateEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticUseTorchEvent(uint32_t tagged_message) {
   return em.push_semantic_use_torch_event(tagged_message);
+}
+
+Boolean PushSemanticContextualOverviewEvent(uint32_t tagged_message) {
+  return em.push_semantic_contextual_overview_event(tagged_message);
 }
 
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message) {

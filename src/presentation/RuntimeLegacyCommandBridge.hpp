@@ -73,6 +73,10 @@ using RuntimeLegacySetSearchStateSink = std::function<bool(
 using RuntimeLegacyUseTorchSink = std::function<bool(
     const TorchSource&,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyContextualOverviewSink = std::function<bool(
+    const ContextualOverviewAction&,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
@@ -156,6 +160,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacySetCampStateSink set_camp_state;
   RuntimeLegacySetSearchStateSink set_search_state;
   RuntimeLegacyUseTorchSink use_torch;
+  RuntimeLegacyContextualOverviewSink contextual_overview;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -254,6 +259,15 @@ struct RuntimeLegacyCombatActionSinks {
 // +805 item on a guarded world presentation before the app-event handoff.
 [[nodiscard]] bool runtime_legacy_context_supports_use_torch(
     const TorchSource& source,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the exact preserved Classic key record for the context-sensitive
+// Overview control: lowercase "a" for Area Search outside camp and lowercase
+// "k" for Make Scroll in camp. The latter retains its selected-member binding
+// for late validation even though Classic receives only the key record.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_contextual_overview(
+    const ContextualOverviewAction& action,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Game > Save Current Game menu selection consumed by the

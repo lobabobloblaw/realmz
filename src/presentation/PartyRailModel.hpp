@@ -139,6 +139,7 @@ enum class ActionIntent {
   set_camp_state,
   set_search_state,
   use_torch,
+  contextual_overview,
 };
 
 // "deferred_to_engine" means that the snapshot satisfies the prerequisites
@@ -170,6 +171,11 @@ struct ActionControlModel {
   // usable. A disengaged source keeps the corresponding shell control visible
   // but disabled without inventing an inventory target.
   std::optional<TorchSource> torch_source;
+  // Only set for Classic's contextual Overview command so a queued action
+  // cannot change meaning when camp state changes before dispatch. Make Scroll
+  // reuses party_member for its selected-member target; Area Search leaves it
+  // disengaged.
+  std::optional<ContextualOverviewMode> contextual_overview_mode;
 
   bool operator==(const ActionControlModel&) const = default;
 

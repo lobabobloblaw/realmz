@@ -41,6 +41,7 @@ enum class ShellControlKind {
   set_camp_state,
   set_search_state,
   use_torch,
+  contextual_overview,
 };
 
 struct ShellControlPlacement {
@@ -124,6 +125,11 @@ struct ShellControlLayoutRequest {
   bool torch_control_visible = false;
   bool torch_available = false;
   std::optional<TorchSource> torch_source;
+  bool contextual_overview_control_visible = false;
+  bool contextual_overview_available = false;
+  ContextualOverviewMode contextual_overview_mode =
+      ContextualOverviewMode::area_search;
+  std::optional<PartyMemberId> contextual_overview_member;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

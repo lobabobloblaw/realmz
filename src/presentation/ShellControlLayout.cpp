@@ -39,6 +39,7 @@ constexpr uint32_t kCenterCombatCursorRegion = 1123U;
 constexpr uint32_t kSetCampStateRegion = 1124U;
 constexpr uint32_t kSetSearchStateRegion = 1125U;
 constexpr uint32_t kUseTorchRegion = 1126U;
+constexpr uint32_t kContextualOverviewRegion = 1127U;
 constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
@@ -242,11 +243,26 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const bool valid_torch_source = !request.torch_source ||
       ((request.torch_source->member < 6U) &&
           (request.torch_source->slot < 30U));
+  const bool valid_contextual_overview_mode =
+      request.contextual_overview_mode ==
+          ContextualOverviewMode::area_search ||
+      request.contextual_overview_mode ==
+          ContextualOverviewMode::make_scroll;
+  const bool valid_contextual_overview_member =
+      !request.contextual_overview_member ||
+      (*request.contextual_overview_member < 6U);
+  const bool valid_contextual_overview_shape =
+      (request.contextual_overview_mode ==
+              ContextualOverviewMode::area_search)
+      ? !request.contextual_overview_member.has_value()
+      : (!request.contextual_overview_available ||
+            request.contextual_overview_member.has_value());
   const std::array party_members{
       request.inventory_member,
       request.spellbook_member,
       request.scroll_case_member,
       request.character_sheet_member,
+      request.contextual_overview_member,
   };
   std::optional<PartyMemberId> common_party_member;
   bool mismatched_party_members = false;
@@ -329,7 +345,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.rest_control_visible ? 1U : 0U) +
       (request.camp_control_visible ? 1U : 0U) +
       (request.search_control_visible ? 1U : 0U) +
-      (request.torch_control_visible ? 1U : 0U);
+      (request.torch_control_visible ? 1U : 0U) +
+      (request.contextual_overview_control_visible ? 1U : 0U);
   const size_t world_control_count = travel_world_page
       ? travel_world_control_count
       : (party_world_page ? party_world_control_count
@@ -356,11 +373,11 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   // Keep room for all four PARTY commands even when the current snapshot has
   // no selected member and therefore omits one or more disabled controls.
   constexpr size_t kPartyActionCapacity = 4U;
-  // The GAME page always presents Torch, including as a disabled control when
-  // no usable source exists. Reserve all six positions even for partial test
-  // requests so a later fully modeled page cannot make the persistent deck
-  // disappear.
-  constexpr size_t kGameActionCapacity = 6U;
+  // The GAME page always presents Torch and the contextual Overview action,
+  // including disabled controls when their source or selected member is absent.
+  // Reserve all seven positions even for partial test requests so a later fully
+  // modeled page cannot make the persistent deck disappear.
+  constexpr size_t kGameActionCapacity = 7U;
   const size_t required_world_control_capacity = std::max({
       world_page_control_count,
       travel_world_control_count,
@@ -407,7 +424,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.rest_control_visible ||
               request.camp_control_visible ||
               request.search_control_visible ||
-              request.torch_control_visible)) ||
+              request.torch_control_visible ||
+              request.contextual_overview_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.scroll_case_available && !request.scroll_case_member) ||
@@ -429,6 +447,14 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.torch_source.has_value() &&
           !request.torch_control_visible) ||
       !valid_torch_source ||
+      (request.contextual_overview_available &&
+          (!request.contextual_overview_control_visible ||
+              !request.navigation_available)) ||
+      (request.contextual_overview_member.has_value() &&
+          !request.contextual_overview_control_visible) ||
+      !valid_contextual_overview_mode ||
+      !valid_contextual_overview_member ||
+      !valid_contextual_overview_shape ||
       (request.guard_available && !valid_guard) ||
       (request.finish_available && !valid_finish) ||
       (request.delay_available && !valid_delay) ||
@@ -728,6 +754,43 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
                 request.navigation_available &&
                 request.torch_source.has_value(),
             .payload = UseTorchAction{request.torch_source},
+        });
+        x += button_width + gap;
+      }
+      if (request.contextual_overview_control_visible) {
+        const bool make_scroll = request.contextual_overview_mode ==
+            ContextualOverviewMode::make_scroll;
+        std::string accessibility_label;
+        if (!make_scroll) {
+          accessibility_label = request.contextual_overview_available &&
+                  request.navigation_available
+              ? "Search nearby area"
+              : "Search nearby area, unavailable";
+        } else if (!request.contextual_overview_member) {
+          accessibility_label =
+              "Make scroll, select a party member first";
+        } else {
+          accessibility_label = request.contextual_overview_available &&
+                  request.navigation_available
+              ? "Make scroll for selected party member"
+              : "Make scroll, unavailable for selected party member";
+        }
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kContextualOverviewRegion},
+            .kind = ShellControlKind::contextual_overview,
+            .bounds = {x, y, button_width, button_height},
+            .label = make_scroll ? "MAKE SCROLL" : "AREA SEARCH",
+            .accessibility_label = std::move(accessibility_label),
+            .focus_identifier = "focus.action.party.overview",
+            .tab_order = 1127,
+            .enabled = request.contextual_overview_available &&
+                request.navigation_available &&
+                (!make_scroll ||
+                    request.contextual_overview_member.has_value()),
+            .payload = ContextualOverviewAction{
+                .mode = request.contextual_overview_mode,
+                .member = request.contextual_overview_member,
+            },
         });
         x += button_width + gap;
       }

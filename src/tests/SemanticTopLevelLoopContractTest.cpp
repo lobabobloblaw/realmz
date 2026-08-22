@@ -360,6 +360,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic Torch input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticContextualOverviewEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic contextual Overview input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic guard input");
@@ -1340,14 +1344,15 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 28,
-      "semantic gameplay wrapper must recognize all twenty-eight tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 25 &&
-          count_text(compact_semantic, "ret->what=keyDown;") == 23 &&
+  require(count_identifier(semantic_wrapper, "app1Evt") == 29,
+      "semantic gameplay wrapper must recognize all twenty-nine tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 26 &&
+          count_text(compact_semantic, "ret->what=keyDown;") == 24 &&
           count_text(
               compact_semantic, ".kind=(ret->what==keyDown)") == 2,
       "only guarded Classic replay injection or late movement, inventory, "
-      "spellbook, non-combat scroll-case, Rest, Camp, guard, finish, delay, "
+      "spellbook, non-combat scroll-case, contextual Overview, Rest, Camp, "
+      "guard, finish, delay, "
       "center, "
       "switch-weapon, cycle-focus, "
       "combat-items, Auto, Range, Bandage, Undo, combat-spellbook, "
@@ -1408,6 +1413,10 @@ void verify_event_manager(const fs::path& repository_root) {
               source, "RealmzConsumeSemanticUseTorchEvent") == 1,
       "EventManager may consume semantic Torch input only inside its gameplay "
       "wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticContextualOverviewEvent") == 1,
+      "EventManager may consume semantic contextual Overview input only "
+      "inside its gameplay wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "EventManager may consume semantic guard input only inside its gameplay wrapper");
@@ -5641,10 +5650,12 @@ void verify_rest_party_window_manager_contract(
               "LegacyActionHandler<RestPartyAction>rest_party;"
               "LegacyActionHandler<SetCampStateAction>set_camp_state;"
               "LegacyActionHandler<SetSearchStateAction>set_search_state;"
-              "LegacyActionHandler<UseTorchAction>use_torch;}"),
+              "LegacyActionHandler<UseTorchAction>use_torch;"
+              "LegacyActionHandler<ContextualOverviewAction>"
+              "contextual_overview;}"),
       "LegacyActionHandlers must retain Rest and Camp followed by append-only "
-      "Search and Torch so positional aggregate clients keep their prior member "
-      "order");
+      "Search, Torch, and contextual Overview so positional aggregate clients "
+      "keep their prior member order");
 
   const std::string runtime_source = code_only(read_file(
       repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
@@ -6654,15 +6665,18 @@ void verify_set_search_state_window_manager_contract(
               "context_provider,") &&
           compact_runtime.contains(
               "handlers.use_torch=["
+              "context_provider,") &&
+          compact_runtime.contains(
+              "handlers.contextual_overview=["
               "context_provider=std::move(context_provider),") &&
           compact_runtime.contains(
               "runtime_legacy_context_supports_set_search_state("
               "action.desired_searching,context)") &&
           compact_runtime.contains(
               "set_search_state_sink(action.desired_searching,context)"),
-      "Camp and Search must copy the shared provider and only final Torch may "
-      "move it, while Search preserves the typed desired state through its "
-      "sink");
+      "Camp, Search, and Torch must copy the shared provider and only final "
+      "contextual Overview may move it, while Search preserves the typed "
+      "desired state through its sink");
 
   const std::string boundary_source = code_only(read_file(
       repository_root / "src/presentation/SemanticInputBoundary.cpp"));
@@ -7122,7 +7136,8 @@ void verify_use_torch_window_manager_contract(
   const std::size_t renderer_compact_summary = compact_renderer.find(
       "if(has_semantic_torch){append_summary();}", renderer_summary);
   const std::size_t renderer_gate = compact_renderer.find(
-      "has_semantic_search||has_semantic_torch||has_semantic_guard",
+      "has_semantic_search||has_semantic_torch||"
+      "has_semantic_contextual_overview||has_semantic_guard",
       renderer_compact_summary);
   const std::size_t renderer_allowlist = compact_renderer.find(
       "control.kind!=realmz::presentation::ShellControlKind::use_torch",
@@ -7142,6 +7157,613 @@ void verify_use_torch_window_manager_contract(
           count_text(window_raw, "append_summary(\"TORCH\")") == 1,
       "action-bar renderer must summarize Torch in paged and compact world "
       "chrome and admit only its explicit semantic control kind");
+}
+
+void verify_contextual_overview_window_manager_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string ui_header = code_only(read_file(
+      repository_root / "src/presentation/UIAction.hpp"));
+  const std::string overview_modes = type_body(
+      ui_header, "ContextualOverviewMode");
+  const std::string overview_action = type_body(
+      ui_header, "ContextualOverviewAction");
+  require(count_identifier(overview_modes, "area_search") == 1 &&
+          count_identifier(overview_modes, "make_scroll") == 1 &&
+          count_identifier(overview_action, "mode") == 1 &&
+          count_identifier(overview_action, "member") == 1 &&
+          count_identifier(overview_action, "optional") == 1 &&
+          count_identifier(ui_header, "ContextualOverviewAction") == 4 &&
+          count_identifier(ui_header, "AreaSearchAction") == 0 &&
+          count_identifier(ui_header, "MakeScrollAction") == 0,
+      "the contextual Overview route must remain one discriminated typed "
+      "action with exactly two modes and one optional member binding");
+
+  const std::string legacy_bridge_header = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.hpp"));
+  const std::string legacy_handlers = type_body(
+      legacy_bridge_header, "LegacyActionHandlers");
+  require(count_identifier(legacy_handlers, "contextual_overview") == 1 &&
+          count_identifier(legacy_handlers, "ContextualOverviewAction") == 1,
+      "the injected legacy bridge must expose one typed contextual Overview "
+      "handler");
+  const std::string legacy_bridge_source = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.cpp"));
+  const std::string injected_dispatch = function_body(
+      legacy_bridge_source, "dispatch");
+  require(count_identifier(injected_dispatch,
+              "ContextualOverviewAction") == 1 &&
+          count_identifier(injected_dispatch, "contextual_overview") == 1,
+      "the injected bridge must dispatch the one contextual Overview action "
+      "only to its named handler");
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root /
+          "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string world_sinks_type = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  require(count_identifier(
+              runtime_header, "RuntimeLegacyContextualOverviewSink") == 2 &&
+          count_identifier(world_sinks_type, "contextual_overview") == 1 &&
+          count_identifier(runtime_header,
+              "legacy_key_message_for_contextual_overview") == 1,
+      "the runtime bridge must expose one typed contextual Overview sink and "
+      "one exact-key mapper");
+
+  const std::string runtime_source = code_only(read_file(
+      repository_root /
+          "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string compact_runtime = without_whitespace(runtime_source);
+  require(compact_runtime.contains("kAreaSearchMessage=0x00000061U;") &&
+          compact_runtime.contains("kMakeScrollMessage=0x0000286BU;"),
+      "contextual Overview must preserve Classic's exact lowercase a and k "
+      "key records");
+  const std::string key_mapper = function_body(
+      runtime_source, "legacy_key_message_for_contextual_overview");
+  const std::string compact_key_mapper = without_whitespace(key_mapper);
+  for (const auto needle : {
+           "if(!context.adaptive_eligible){returnstd::nullopt;}",
+           "context.screen==ScreenContext::exploration",
+           "context.world_presentation==WorldPresentation::outdoor",
+           "context.screen==ScreenContext::dungeon",
+           "WorldPresentation::dungeon_map",
+           "WorldPresentation::dungeon_first_person",
+           "caseContextualOverviewMode::area_search:",
+           "if(context.in_camp||action.member){returnstd::nullopt;}",
+           "returnkAreaSearchMessage;",
+           "caseContextualOverviewMode::make_scroll:",
+           "if(!context.in_camp||!action.member||",
+           "*action.member>kMaximumPartyMemberId",
+           "returnkMakeScrollMessage;",
+       }) {
+    require(compact_key_mapper.contains(needle),
+        std::string("contextual Overview key mapping must retain ") + needle);
+  }
+  require(count_identifier(key_mapper, "kAreaSearchMessage") == 1 &&
+          count_identifier(key_mapper, "kMakeScrollMessage") == 1 &&
+          count_identifier(key_mapper, "app1Evt") == 0 &&
+          count_identifier(key_mapper, "mouseDown") == 0,
+      "the contextual mapper must return only one of the two exact key "
+      "records without a neutral or pointer event");
+  const std::size_t runtime_world_sinks = find_identifier(
+      runtime_source, "RuntimeLegacyWorldActionSinks");
+  const std::size_t runtime_world_open = runtime_source.find(
+      '{', runtime_world_sinks +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(runtime_world_sinks != std::string::npos &&
+          runtime_world_open != std::string::npos,
+      "runtime contextual Overview handler bundle is missing");
+  const std::size_t runtime_world_close = matching_delimiter(
+      runtime_source, runtime_world_open, '{', '}');
+  const std::string runtime_world_handlers = runtime_source.substr(
+      runtime_world_open, runtime_world_close - runtime_world_open + 1U);
+  const std::string compact_runtime_world_handlers =
+      without_whitespace(runtime_world_handlers);
+  require(compact_runtime_world_handlers.contains(
+              "handlers.contextual_overview=[") &&
+          compact_runtime_world_handlers.contains(
+              "legacy_key_message_for_contextual_overview(action,context)") &&
+          compact_runtime_world_handlers.contains(
+              "contextual_overview_sink(action,*message,context)"),
+      "runtime dispatch must preserve the discriminated action and exact key "
+      "record through its named sink");
+
+  const std::string boundary_header = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.h"));
+  for (const auto identifier : {
+           "RealmzIsSemanticContextualOverviewTag",
+           "RealmzSemanticContextualOverviewTagSurface",
+           "RealmzSemanticContextualOverviewTagIsAreaSearch",
+           "RealmzConsumeSemanticContextualOverviewEvent",
+           "semantic_contextual_overview_tag",
+       }) {
+    require(count_identifier(boundary_header, identifier) == 1,
+        std::string("semantic contextual Overview boundary must expose one ") +
+            identifier);
+  }
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary = without_whitespace(boundary_source);
+  for (const auto constant : {
+           "kSemanticContextualOverviewSignature=0x574F0000U;",
+           "kSemanticContextualOverviewMask=0xFFFF0000U;",
+           "kSemanticContextualOverviewSurfaceMask=0x0000FF00U;",
+           "kSemanticContextualOverviewPayloadMask=0x000000FFU;",
+           "kSemanticContextualOverviewMakeScrollFlag=0x80U;",
+       }) {
+    require(compact_boundary.contains(constant),
+        std::string("strict 0x574F contextual tag must retain ") + constant);
+  }
+  const std::string decode = function_body(
+      boundary_source, "decode_contextual_overview");
+  const std::string compact_decode = without_whitespace(decode);
+  require(count_identifier(decode, "is_world_gameplay_surface") == 1 &&
+          compact_decode.contains("if(payload==0){") &&
+          compact_decode.contains(
+              ".mode=realmz::presentation::ContextualOverviewMode::"
+              "area_search,.member=std::nullopt,") &&
+          compact_decode.contains(
+              "payload<kSemanticContextualOverviewMakeScrollFlag") &&
+          compact_decode.contains(
+              "payload>kSemanticContextualOverviewMakeScrollFlag+"
+              "kMaximumContextualOverviewMember") &&
+          compact_decode.contains(
+              ".mode=realmz::presentation::ContextualOverviewMode::"
+              "make_scroll") &&
+          compact_decode.contains(
+              "payload-kSemanticContextualOverviewMakeScrollFlag"),
+      "contextual Overview decoding must accept only world surfaces, zero for "
+      "member-free Area Search, or 0x80..0x85 for Make Scroll");
+  const std::string make_tag = function_body(
+      boundary_source, "semantic_contextual_overview_tag");
+  const std::string compact_make_tag = without_whitespace(make_tag);
+  require(compact_make_tag.contains(
+              "caseContextualOverviewMode::area_search:"
+              "if(action.member){return0;}") &&
+          compact_make_tag.contains(
+              "caseContextualOverviewMode::make_scroll:"
+              "if(!action.member||") &&
+          compact_make_tag.contains(
+              "payload=kSemanticContextualOverviewMakeScrollFlag+"
+              "*action.member;") &&
+          compact_make_tag.contains(
+              "kSemanticContextualOverviewSignature|"
+              "(static_cast<uint32_t>(surface)<<8U)|payload"),
+      "contextual Overview tag creation must preserve canonical mode/member "
+      "shape and originating world surface");
+  const std::string consume = function_body(
+      boundary_source, "RealmzConsumeSemanticContextualOverviewEvent");
+  const std::string compact_consume = without_whitespace(consume);
+  const std::size_t consume_authorize = compact_consume.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t consume_decode = compact_consume.find(
+      "decode_contextual_overview(tagged_message)", consume_authorize);
+  const std::size_t consume_surface = compact_consume.find(
+      "overview->surface!=expected_surface", consume_decode);
+  const std::size_t consume_context = compact_consume.find(
+      "RealmzCaptureLegacyPresentationContext()", consume_surface);
+  const std::size_t consume_snapshot = compact_consume.find(
+      "LegacyGameSnapshotSource().capture()", consume_context);
+  const std::size_t consume_mode = compact_consume.find(
+      "ContextualOverviewMode::make_scroll", consume_snapshot);
+  const std::size_t consume_member = compact_consume.find(
+      "snapshot.party.member(*overview->action.member)", consume_mode);
+  const std::size_t consume_capability = compact_consume.find(
+      "!member->use_scroll_available", consume_member);
+  const std::size_t consume_selection = compact_consume.find(
+      "snapshot.party.selected_member!=overview->action.member",
+      consume_capability);
+  const std::size_t consume_mapper = compact_consume.find(
+      "legacy_key_message_for_contextual_overview(", consume_selection);
+  const std::size_t consume_output = compact_consume.find(
+      "*classic_key_message=*message", consume_mapper);
+  require(consume_authorize != std::string::npos &&
+          consume_decode != std::string::npos &&
+          consume_surface != std::string::npos &&
+          consume_context != std::string::npos &&
+          consume_snapshot != std::string::npos &&
+          consume_mode != std::string::npos &&
+          consume_member != std::string::npos &&
+          consume_capability != std::string::npos &&
+          consume_selection != std::string::npos &&
+          consume_mapper != std::string::npos &&
+          consume_output != std::string::npos &&
+          consume_authorize < consume_decode && consume_decode < consume_surface &&
+          consume_surface < consume_context && consume_context < consume_snapshot &&
+          consume_snapshot < consume_mode && consume_mode < consume_member &&
+          consume_member < consume_capability &&
+          consume_capability < consume_selection &&
+          consume_selection < consume_mapper && consume_mapper < consume_output,
+      "late contextual Overview consumption must burn one completed scope and "
+      "freshly revalidate surface, presentation, camp mode, selected member, "
+      "and scroll capability before returning a Classic key record");
+  require(count_identifier(consume, "keyDown") == 0 &&
+          count_identifier(consume, "buttonchoice") == 0 &&
+          count_identifier(consume, "makescroll") == 0 &&
+          count_identifier(consume, "checkforsecret") == 0,
+      "the semantic boundary must return a key record without executing any "
+      "Classic contextual effect");
+
+  const std::string event_source = code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  const std::string push = function_body(
+      event_source, "push_semantic_contextual_overview_event");
+  const std::string compact_push = without_whitespace(push);
+  require(count_identifier(
+              push, "RealmzIsSemanticContextualOverviewTag") == 1 &&
+          count_identifier(push, "app1Evt") == 1 &&
+          count_identifier(push, "keyDown") == 0 &&
+          count_identifier(push, "mouseDown") == 0 &&
+          compact_push.contains("ev.what=app1Evt;") &&
+          compact_push.contains("ev.message=tagged_message;"),
+      "EventManager must validate and queue one contextual Overview app1Evt "
+      "without synthesizing Classic input at enqueue time");
+  const std::string public_push = function_body(
+      event_source, "PushSemanticContextualOverviewEvent");
+  require(without_whitespace(public_push).contains(
+              "returnem.push_semantic_contextual_overview_event("
+              "tagged_message);") &&
+          count_identifier(public_push, "keyDown") == 0,
+      "the public contextual Overview enqueue must delegate only to the "
+      "validated tagged queue");
+  const std::string semantic_delivery = function_body(
+      event_source, "GetNextSemanticGameplayEvent");
+  const std::string compact_delivery = without_whitespace(semantic_delivery);
+  const std::size_t delivery_start = compact_delivery.find(
+      "RealmzIsSemanticContextualOverviewTag(ret->message)");
+  const std::size_t delivery_end = compact_delivery.find(
+      "RealmzIsSemanticRestPartyTag(ret->message)", delivery_start);
+  require(delivery_start != std::string::npos &&
+          delivery_end != std::string::npos && delivery_start < delivery_end,
+      "EventManager contextual Overview delivery branch is missing");
+  const std::string delivery = compact_delivery.substr(
+      delivery_start, delivery_end - delivery_start);
+  const std::size_t area_flag = delivery.find(
+      "RealmzSemanticContextualOverviewTagIsAreaSearch(ret->message)!=0");
+  const std::size_t held_query = delivery.find(
+      "mouse_button_held=area_search&&"
+      "em.is_mouse_button_down_without_event_pump()", area_flag);
+  const std::size_t consume_event = delivery.find(
+      "RealmzConsumeSemanticContextualOverviewEvent(", held_query);
+  const std::size_t keydown = delivery.find(
+      "ret->what=keyDown;ret->message=classic_key_message;", consume_event);
+  const std::size_t invalidate = delivery.find(
+      "if(mouse_button_held){RealmzInvalidateSemanticInputBoundary();}",
+      keydown);
+  require(area_flag != std::string::npos && held_query != std::string::npos &&
+          consume_event != std::string::npos && keydown != std::string::npos &&
+          invalidate != std::string::npos && area_flag < held_query &&
+          held_query < consume_event && consume_event < keydown &&
+          keydown < invalidate &&
+          count_identifier(delivery,
+              "is_mouse_button_down_without_event_pump") == 1 &&
+          count_identifier(delivery,
+              "RealmzConsumeSemanticContextualOverviewEvent") == 1 &&
+          count_identifier(delivery, "keyDown") == 1 &&
+          count_identifier(delivery, "nullEvent") == 1 &&
+          count_identifier(delivery, "mouseDown") == 0 &&
+          count_identifier(delivery, "Button") == 0,
+      "EventManager must apply its non-pumping held-mouse rejection only when "
+      "the tag discriminates Area Search; Make Scroll must bypass that gate "
+      "and either yield its exact key record once or become inert");
+
+  const std::string window_raw = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string window_source = code_only(window_raw);
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t world_sinks_name = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t world_sinks_open = skip_whitespace(
+      create_window, world_sinks_name +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(world_sinks_name != std::string::npos &&
+          world_sinks_open < create_window.size() &&
+          create_window[world_sinks_open] == '{',
+      "WindowManager named contextual Overview sink bundle is missing");
+  const std::size_t world_sinks_close = matching_delimiter(
+      create_window, world_sinks_open, '{', '}');
+  const std::string world_sinks = create_window.substr(
+      world_sinks_open, world_sinks_close - world_sinks_open + 1U);
+  const std::string sink = designated_lambda_body(
+      world_sinks, "contextual_overview");
+  const std::string compact_sink = without_whitespace(sink);
+  const std::size_t sink_surface = compact_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_expected = compact_sink.find(
+      "legacy_key_message_for_contextual_overview(action,context)",
+      sink_surface);
+  const std::size_t sink_message = compact_sink.find(
+      "message!=*expected", sink_expected);
+  const std::size_t sink_tag = compact_sink.find(
+      "semantic_contextual_overview_tag(action,surface)", sink_message);
+  const std::size_t sink_push = compact_sink.find(
+      "returntag&&PushSemanticContextualOverviewEvent(tag);", sink_tag);
+  require(sink_surface != std::string::npos &&
+          sink_expected != std::string::npos &&
+          sink_message != std::string::npos && sink_tag != std::string::npos &&
+          sink_push != std::string::npos && sink_surface < sink_expected &&
+          sink_expected < sink_message && sink_message < sink_tag &&
+          sink_tag < sink_push && count_identifier(sink, "keyDown") == 0 &&
+          count_identifier(sink, "mouseDown") == 0,
+      "WindowManager must bind the active world surface, verify the expected "
+      "key record, encode the discriminated tag, and enqueue exactly once");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  for (const auto needle : {
+           "ActionIntent::contextual_overview",
+           "conststd::optional<realmz::presentation::ContextualOverviewMode>"
+               "contextual_overview_mode=",
+           "constrealmz::presentation::ContextualOverviewAction"
+               "contextual_overview_payload{",
+           "ContextualOverviewMode::area_search",
+           "ContextualOverviewMode::make_scroll",
+           "contextual_overview_member_view->selected",
+           "contextual_overview_member_view->use_scroll_available",
+           "snapshot.party.selected_member==contextual_overview_payload.member",
+           "legacy_key_message_for_contextual_overview(",
+           ".contextual_overview_control_visible="
+               "contextual_overview_control_visible",
+           ".contextual_overview_available=contextual_overview_available",
+           ".contextual_overview_mode=contextual_overview_payload.mode",
+           ".contextual_overview_member=contextual_overview_payload.member",
+       }) {
+    require(compact_present.contains(needle),
+        std::string("contextual Overview composition must retain ") + needle);
+  }
+  const std::size_t live_overview = compact_present.find(
+      "if(constauto*contextual_overview=std::get_if<"
+      "realmz::presentation::ContextualOverviewAction>");
+  const std::size_t live_overview_end = compact_present.find(
+      "if(constauto*guard=", live_overview);
+  require(live_overview != std::string::npos &&
+          live_overview_end != std::string::npos &&
+          live_overview < live_overview_end,
+      "composition-time contextual Overview liveness branch is missing");
+  const std::string live_branch = compact_present.substr(
+      live_overview, live_overview_end - live_overview);
+  for (const auto needle : {
+           "ShellControlKind::contextual_overview",
+           "WorldActionPage::game",
+           "action_panel.contains(control.bounds)",
+           "snapshot.world.in_camp==context.in_camp",
+           "!contextual_overview->member&&!snapshot.world.in_camp",
+           "contextual_overview->member.has_value()&&"
+               "snapshot.world.in_camp&&member&&member->selected&&"
+               "member->use_scroll_available",
+           "snapshot.party.selected_member==contextual_overview->member",
+           "modeled_action->contextual_overview_mode==",
+           "modeled_action->party_member==contextual_overview->member",
+           "legacy_key_message_for_contextual_overview(",
+       }) {
+    require(live_branch.contains(needle),
+        std::string("composition-time Overview liveness must retain ") +
+            needle);
+  }
+
+  const std::string keyboard = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_overview = compact_keyboard.find(
+      "if(constauto*contextual_overview=std::get_if<"
+      "realmz::presentation::ContextualOverviewAction>");
+  const std::size_t keyboard_overview_end = compact_keyboard.find(
+      "if(constauto*guard=", keyboard_overview);
+  require(keyboard_overview != std::string::npos &&
+          keyboard_overview_end != std::string::npos &&
+          keyboard_overview < keyboard_overview_end,
+      "keyboard contextual Overview liveness branch is missing");
+  const std::string keyboard_branch = compact_keyboard.substr(
+      keyboard_overview, keyboard_overview_end - keyboard_overview);
+  for (const auto needle : {
+           "!surface_matches_context",
+           "ShellControlKind::contextual_overview",
+           "WorldActionPage::game",
+           "action_bar.contains(control.bounds)",
+           "legacy_key_message_for_contextual_overview(",
+           "LegacyGameSnapshotSource().capture()",
+           "snapshot->world.in_camp!=context.in_camp",
+           "ContextualOverviewMode::area_search",
+           "ContextualOverviewMode::make_scroll",
+           "!member->selected",
+           "!member->use_scroll_available",
+           "snapshot->party.selected_member!=contextual_overview->member",
+       }) {
+    require(keyboard_branch.contains(needle),
+        std::string("keyboard Overview liveness must retain ") + needle);
+  }
+  require(count_identifier(keyboard_branch, "SDL_PollEvent") == 0 &&
+          count_identifier(keyboard_branch, "buttonchoice") == 0 &&
+          count_identifier(keyboard_branch, "makescroll") == 0,
+      "WindowManager Overview liveness must be read-only and non-pumping");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::ContextualOverviewAction>("
+      "&control.payload)");
+  const std::size_t dispatch_shape = compact_dispatch.find(
+      "valid_contextual_overview_payload", dispatch_payload);
+  const std::size_t dispatch_live = compact_dispatch.find(
+      "this->remastered_shell_keyboard_route_is_eligible()", dispatch_shape);
+  const std::size_t dispatch_guard = compact_dispatch.find(
+      "(contextual_overview&&", dispatch_live);
+  const std::size_t dispatch_kind = compact_dispatch.find(
+      "ShellControlKind::contextual_overview", dispatch_guard);
+  const std::size_t dispatch_page = compact_dispatch.find(
+      "WorldActionPage::game", dispatch_kind);
+  const std::size_t dispatch_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_page);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "runtime_legacy_command_bridge->dispatch(action)", dispatch_panel);
+  require(dispatch_payload != std::string::npos &&
+          dispatch_shape != std::string::npos &&
+          dispatch_live != std::string::npos &&
+          dispatch_guard != std::string::npos &&
+          dispatch_kind != std::string::npos &&
+          dispatch_page != std::string::npos &&
+          dispatch_panel != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_payload < dispatch_shape && dispatch_shape < dispatch_live &&
+          dispatch_live < dispatch_guard && dispatch_guard < dispatch_kind &&
+          dispatch_kind < dispatch_page && dispatch_page < dispatch_panel &&
+          dispatch_panel < dispatch_bridge &&
+          count_text(compact_dispatch,
+              "runtime_legacy_command_bridge->dispatch(action)") == 1,
+      "shell dispatch must validate canonical Overview shape, live GAME "
+      "placement, and fresh liveness before its sole typed bridge dispatch");
+
+  const std::string renderer = function_body(
+      window_source, "draw_shell_panel_contents");
+  require(count_identifier(renderer,
+              "has_semantic_contextual_overview") >= 4 &&
+          count_identifier(renderer, "contextual_overview_summary") >= 3 &&
+          count_identifier(renderer, "contextual_overview") >= 2 &&
+          count_text(window_raw, "action_summary += contextual_overview_summary") ==
+              1 &&
+          count_text(window_raw,
+              "append_summary(contextual_overview_summary)") == 1,
+      "wide and compact action chrome must summarize and admit the one "
+      "contextual Overview control");
+
+  const std::string raw_outdoor = read_file(
+      repository_root / "src/realmz_orig/checkkeypad.c");
+  const std::string raw_dungeon = read_file(
+      repository_root / "src/realmz_orig/threed.c");
+  for (const auto& [name, raw_source] : std::array{
+           std::pair{"outdoor", raw_outdoor},
+           std::pair{"dungeon", raw_dungeon},
+       }) {
+    const std::size_t make_case = raw_source.find("case 'k':");
+    const std::size_t make_next = raw_source.find("case 'c':", make_case);
+    const std::size_t area_case = raw_source.find("case 'a':", make_next);
+    const std::size_t area_next = raw_source.find("case 'g':", area_case);
+    require(make_case != std::string::npos &&
+            make_next != std::string::npos &&
+            area_case != std::string::npos && area_next != std::string::npos &&
+            make_case < make_next && make_next < area_case &&
+            area_case < area_next,
+        std::string("Classic ") + name +
+            " must retain separate lowercase k and a branches");
+    const std::string make_branch = without_whitespace(code_only(
+        raw_source.substr(make_case, make_next - make_case)));
+    const std::string area_branch = without_whitespace(code_only(
+        raw_source.substr(area_case, area_next - area_case)));
+    require(make_branch.contains(
+                "if((!inspell)&&(checkfortype(charselectnew,13,TRUE))){"
+                "if((incamp)&&(c[charselectnew].stamina>0))"
+                "theControl=overviewbut;}break;") &&
+            area_branch.contains(
+                "if(!incamp)theControl=overviewbut;break;"),
+        std::string("Classic ") + name +
+            " k/a ownership must still select only overviewbut under its "
+            "preserved mode and member gates");
+  }
+
+  const std::string buttonchoice_source = code_only(read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c"));
+  const std::string buttonchoice = function_body(
+      buttonchoice_source, "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t classic_overview = compact_buttonchoice.find(
+      "if(theControl==overviewbut){");
+  const std::size_t classic_overview_end = compact_buttonchoice.find(
+      "if(theControl==shopbut){", classic_overview);
+  require(classic_overview != std::string::npos &&
+          classic_overview_end != std::string::npos &&
+          classic_overview < classic_overview_end,
+      "Classic buttonchoice contextual Overview branch is missing");
+  const std::string classic_branch = compact_buttonchoice.substr(
+      classic_overview, classic_overview_end - classic_overview);
+  for (const auto needle : {
+           "if((incamp)&&(c[charselectnew].stamina>0))",
+           "if(!c[charselectnew].spellcastertype)",
+           "checkfortype(charselectnew,13,TRUE)",
+           "makescroll()",
+           "elseif(!incamp)",
+           "if(fat>134)",
+           "warn(54)",
+           "checkforsecret(TRUE)",
+           "newland(partyx+lookx,partyy+looky,0,TRUE,0)",
+           "timeclick(1,TRUE)",
+           "tickcheck()",
+           "while((Button())&&(fat<135))",
+       }) {
+    require(classic_branch.contains(needle),
+        std::string("Classic Overview effects must retain ") + needle);
+  }
+  require(count_identifier(classic_branch, "makescroll") == 1 &&
+          count_identifier(classic_branch, "Button") == 1,
+      "Classic alone must retain one Make Scroll entry and Area Search's one "
+      "held-button repeat loop");
+
+  const std::string makescroll_source = code_only(read_file(
+      repository_root / "src/realmz_orig/makescroll.c"));
+  const std::string makescroll = function_body(makescroll_source, "makescroll");
+  for (const auto identifier : {
+           "ModalDialog", "castspell", "scrollcase", "spellinfo",
+           "dropitem", "scribing", "inspell", "inscroll", "DisposeDialog",
+       }) {
+    require(count_identifier(makescroll, identifier) != 0,
+        std::string("Classic makescroll must retain authoritative ") +
+            identifier);
+  }
+  require(count_identifier(makescroll, "Button") == 0 &&
+          count_identifier(makescroll, "RealmzConsumeSemanticContextualOverviewEvent") ==
+              0,
+      "Make Scroll must retain its modal flow without acquiring Area Search's "
+      "held-button loop or consuming semantic input directly");
+
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/realmz_orig")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const auto extension = entry.path().extension();
+    if (extension != ".c" && extension != ".h") {
+      continue;
+    }
+    const std::string classic_source = code_only(read_file(entry.path()));
+    require(count_identifier(classic_source, "ContextualOverviewAction") == 0 &&
+            count_identifier(classic_source,
+                "semantic_contextual_overview_tag") == 0 &&
+            count_identifier(classic_source,
+                "PushSemanticContextualOverviewEvent") == 0 &&
+            count_identifier(classic_source,
+                "RealmzConsumeSemanticContextualOverviewEvent") == 0,
+        "the contextual Overview slice must not change Classic sources or "
+        "move semantic ownership into a preserved loop");
+  }
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string replay_source = code_only(read_file(entry.path()));
+    require(count_identifier(replay_source, "ContextualOverviewAction") == 0 &&
+            count_identifier(replay_source,
+                "semantic_contextual_overview_tag") == 0 &&
+            count_identifier(replay_source,
+                "PushSemanticContextualOverviewEvent") == 0 &&
+            count_identifier(replay_source,
+                "RealmzConsumeSemanticContextualOverviewEvent") == 0,
+        "contextual Overview must add no replay action, tag, enqueue, or "
+        "consume vocabulary");
+  }
 }
 
 void verify_selected_party_details_renderer_contract(
@@ -7480,6 +8102,7 @@ void verify_gameplay_chrome_coverage_contract(
            "exploration.action.contextual_shop_temple_encounter",
            "exploration.action.use_scroll",
            "exploration.action.use_torch",
+           "exploration.action.contextual_overview",
            "exploration.info.narrative_messages",
            "exploration.info.calendar_clock",
            "exploration.info.fatigue",
@@ -7491,6 +8114,7 @@ void verify_gameplay_chrome_coverage_contract(
            "dungeon.action.contextual_shop_temple_encounter",
            "dungeon.action.use_scroll",
            "dungeon.action.use_torch",
+           "dungeon.action.contextual_overview",
            "dungeon.info.narrative_messages",
            "dungeon.info.calendar_clock",
            "dungeon.info.fatigue",
@@ -7528,7 +8152,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x97D7228BC94A5358ULL") !=
+          coverage_header.find("0x4829FE3EF98CB4D3ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -7618,7 +8242,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x97D7228BC94A5358ULL") !=
+          coverage_test.find("0x4829FE3EF98CB4D3ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -10872,6 +11496,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_load_consumer_count = 0;
   std::size_t global_search_consumer_count = 0;
   std::size_t global_torch_consumer_count = 0;
+  std::size_t global_contextual_overview_consumer_count = 0;
   std::size_t global_guard_consumer_count = 0;
   std::size_t global_finish_consumer_count = 0;
   std::size_t global_delay_consumer_count = 0;
@@ -10928,6 +11553,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticSetSearchStateEvent");
     global_torch_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticUseTorchEvent");
+    global_contextual_overview_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticContextualOverviewEvent");
     global_guard_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     global_finish_consumer_count += count_identifier(
@@ -11007,6 +11634,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic Search input directly");
   require(global_torch_consumer_count == 0,
       "legacy loops must not consume tagged semantic Torch input directly");
+  require(global_contextual_overview_consumer_count == 0,
+      "legacy loops must not consume tagged semantic contextual Overview "
+      "input directly");
   require(global_guard_consumer_count == 0,
       "legacy loops must not consume tagged semantic guard input directly");
   require(global_finish_consumer_count == 0,
@@ -11104,6 +11734,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t camp_consume_calls = 0;
   std::size_t search_consume_calls = 0;
   std::size_t torch_consume_calls = 0;
+  std::size_t contextual_overview_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
   std::size_t finish_consume_calls = 0;
   std::size_t delay_consume_calls = 0;
@@ -11177,6 +11808,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticSetSearchStateEvent");
     torch_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticUseTorchEvent");
+    contextual_overview_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticContextualOverviewEvent");
     guard_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     finish_consume_calls += count_identifier(
@@ -11272,6 +11905,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticSetSearchStateEvent");
   require(torch_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticUseTorchEvent");
+  require(contextual_overview_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticContextualOverviewEvent");
   require(guard_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
   require(finish_consume_calls == 0,
@@ -11361,6 +11997,7 @@ int main(int argc, char** argv) {
     verify_set_camp_state_window_manager_contract(repository_root);
     verify_set_search_state_window_manager_contract(repository_root);
     verify_use_torch_window_manager_contract(repository_root);
+    verify_contextual_overview_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

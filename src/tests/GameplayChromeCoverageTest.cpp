@@ -84,7 +84,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.action.use_torch", Surface::exploration,
         Kind::interaction, Status::semantic_complete},
     {"exploration.action.contextual_overview", Surface::exploration,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"exploration.action.selected_item_drilldown", Surface::exploration,
         Kind::interaction, Status::missing},
     {"exploration.action.contextual_shop_temple_encounter",
@@ -147,7 +147,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.action.use_torch", Surface::dungeon,
         Kind::interaction, Status::semantic_complete},
     {"dungeon.action.contextual_overview", Surface::dungeon,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"dungeon.action.selected_item_drilldown", Surface::dungeon,
         Kind::interaction, Status::missing},
     {"dungeon.action.contextual_shop_temple_encounter", Surface::dungeon,
@@ -438,6 +438,46 @@ void test_manifest_matches_independent_oracle() {
   CHECK(find_manifest_entry(
       manifest, "dungeon.action.torch_toggle") == nullptr);
 
+  for (const auto& [stable_id, surface] : std::array{
+           std::pair{
+               "exploration.action.contextual_overview",
+               Surface::exploration},
+           std::pair{
+               "dungeon.action.contextual_overview",
+               Surface::dungeon},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::interaction, Status::semantic_complete);
+    const auto* overview = find_manifest_entry(manifest, stable_id);
+    CHECK(overview != nullptr);
+    CHECK(overview->evidence.find("discriminated ContextualOverviewAction") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("Area Search outside camp") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("selected-member Make Scroll") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("0x574F") != std::string_view::npos);
+    CHECK(overview->evidence.find("explicit mode") != std::string_view::npos);
+    CHECK(overview->evidence.find("absent-or-bounded member") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("0x00000061") != std::string_view::npos);
+    CHECK(overview->evidence.find("0x0000286B") != std::string_view::npos);
+    CHECK(overview->evidence.find("only Area Search is rejected") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("non-pumping cached SDL/Classic") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("No Classic source or replay vocabulary") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("Classic retains the contextual control") !=
+        std::string_view::npos);
+    CHECK(overview->evidence.find("complete scroll modal") !=
+        std::string_view::npos);
+    CHECK(overview->source_anchor ==
+        "src/presentation/SemanticInputBoundary.cpp::"
+        "semantic_contextual_overview_tag/"
+        "RealmzConsumeSemanticContextualOverviewEvent");
+  }
+
   expect_manifest_entry(manifest,
       "exploration.info.party_condition_indicators",
       Surface::exploration, Kind::essential_information, Status::missing);
@@ -596,7 +636,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x97D7228BC94A5358ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x4829FE3EF98CB4D3ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -685,7 +725,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x97D7228BC94A5358ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x4829FE3EF98CB4D3ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -735,8 +775,8 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 43U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 46U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 45U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 44U);
 }
 
 void expect_issue(

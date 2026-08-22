@@ -62,6 +62,13 @@ constexpr uint32_t kSemanticUseTorchMemberShift = 5U;
 constexpr uint32_t kSemanticUseTorchSlotMask = 0x1FU;
 constexpr realmz::presentation::PartyMemberId kMaximumTorchMember = 5;
 constexpr uint8_t kMaximumTorchSlot = 29;
+constexpr uint32_t kSemanticContextualOverviewSignature = 0x574F0000U;
+constexpr uint32_t kSemanticContextualOverviewMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticContextualOverviewSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticContextualOverviewPayloadMask = 0x000000FFU;
+constexpr uint8_t kSemanticContextualOverviewMakeScrollFlag = 0x80U;
+constexpr realmz::presentation::PartyMemberId
+    kMaximumContextualOverviewMember = 5;
 constexpr uint32_t kSemanticDelayCombatantSignature = 0x52440000U;
 constexpr uint32_t kSemanticDelayCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticDelayCombatantSurfaceMask = 0x0000FF00U;
@@ -190,6 +197,11 @@ struct DecodedSetSearchState {
 
 struct DecodedUseTorch {
   realmz::presentation::TorchSource source;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedContextualOverview {
+  realmz::presentation::ContextualOverviewAction action;
   RealmzSemanticInputSurface surface;
 };
 
@@ -509,6 +521,43 @@ std::optional<DecodedUseTorch> decode_use_torch(
   }
   return DecodedUseTorch{
       .source = {.member = member, .slot = slot},
+      .surface = surface_value,
+  };
+}
+
+std::optional<DecodedContextualOverview> decode_contextual_overview(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticContextualOverviewMask) !=
+      kSemanticContextualOverviewSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticContextualOverviewSurfaceMask) >> 8U;
+  const auto payload = static_cast<uint8_t>(
+      tagged_message & kSemanticContextualOverviewPayloadMask);
+  if (!is_world_gameplay_surface(surface_value)) {
+    return std::nullopt;
+  }
+  if (payload == 0) {
+    return DecodedContextualOverview{
+        .action = {
+            .mode = realmz::presentation::ContextualOverviewMode::area_search,
+            .member = std::nullopt,
+        },
+        .surface = surface_value,
+    };
+  }
+  if ((payload < kSemanticContextualOverviewMakeScrollFlag) ||
+      (payload > kSemanticContextualOverviewMakeScrollFlag +
+          kMaximumContextualOverviewMember)) {
+    return std::nullopt;
+  }
+  return DecodedContextualOverview{
+      .action = {
+          .mode = realmz::presentation::ContextualOverviewMode::make_scroll,
+          .member = static_cast<realmz::presentation::PartyMemberId>(
+              payload - kSemanticContextualOverviewMakeScrollFlag),
+      },
       .surface = surface_value,
   };
 }
@@ -1121,6 +1170,33 @@ uint32_t semantic_use_torch_tag(
       (static_cast<uint32_t>(surface) << 8U) | packed_source;
 }
 
+uint32_t semantic_contextual_overview_tag(
+    const ContextualOverviewAction& action,
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_world_gameplay_surface(surface)) {
+    return 0;
+  }
+  uint32_t payload = 0;
+  switch (action.mode) {
+    case ContextualOverviewMode::area_search:
+      if (action.member) {
+        return 0;
+      }
+      break;
+    case ContextualOverviewMode::make_scroll:
+      if (!action.member ||
+          (*action.member > kMaximumContextualOverviewMember)) {
+        return 0;
+      }
+      payload = kSemanticContextualOverviewMakeScrollFlag + *action.member;
+      break;
+    default:
+      return 0;
+  }
+  return kSemanticContextualOverviewSignature |
+      (static_cast<uint32_t>(surface) << 8U) | payload;
+}
+
 uint32_t semantic_guard_combatant_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept {
@@ -1536,6 +1612,27 @@ extern "C" uint8_t RealmzSemanticUseTorchTagSlot(
   return torch ? torch->source.slot : 0;
 }
 
+extern "C" uint8_t RealmzIsSemanticContextualOverviewTag(
+    uint32_t tagged_message) {
+  return decode_contextual_overview(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticContextualOverviewTagSurface(uint32_t tagged_message) {
+  const auto overview = decode_contextual_overview(tagged_message);
+  return overview ? overview->surface : kNoSemanticInputSurface;
+}
+
+extern "C" uint8_t RealmzSemanticContextualOverviewTagIsAreaSearch(
+    uint32_t tagged_message) {
+  const auto overview = decode_contextual_overview(tagged_message);
+  return overview &&
+      (overview->action.mode ==
+          realmz::presentation::ContextualOverviewMode::area_search)
+      ? 1
+      : 0;
+}
+
 extern "C" uint8_t RealmzIsSemanticGuardCombatantTag(
     uint32_t tagged_message) {
   return decode_guard_combatant(tagged_message).has_value() ? 1 : 0;
@@ -1734,6 +1831,7 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_set_camp_state(tagged_message) ||
           decode_set_search_state(tagged_message) ||
           decode_use_torch(tagged_message) ||
+          decode_contextual_overview(tagged_message) ||
           decode_guard_combatant(tagged_message) ||
           decode_finish_combatant(tagged_message) ||
           decode_delay_combatant(tagged_message) ||
@@ -1792,6 +1890,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto torch = decode_use_torch(tagged_message)) {
     return torch->surface;
+  }
+  if (const auto overview = decode_contextual_overview(tagged_message)) {
+    return overview->surface;
   }
   if (const auto guard = decode_guard_combatant(tagged_message)) {
     return guard->surface;
@@ -2361,6 +2462,62 @@ extern "C" uint8_t RealmzConsumeSemanticUseTorchEvent(
     }
     *member = torch->source.member;
     *slot = torch->source.slot;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticContextualOverviewEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!classic_key_message || !authorized) {
+    return 0;
+  }
+  const auto overview = decode_contextual_overview(tagged_message);
+  if (!overview || (overview->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if (snapshot.screen != screen) {
+      return 0;
+    }
+    const realmz::presentation::RuntimeLegacyCommandContext context{
+        .screen = screen,
+        .world_presentation = snapshot.world.presentation,
+        .adaptive_eligible = legacy.adaptive_eligible != 0,
+        .in_camp = snapshot.world.in_camp,
+    };
+    if (overview->action.mode ==
+        realmz::presentation::ContextualOverviewMode::make_scroll) {
+      if (!overview->action.member) {
+        return 0;
+      }
+      const auto* member = snapshot.party.member(*overview->action.member);
+      if (!member || !member->selected || !member->use_scroll_available ||
+          (snapshot.party.selected_member != overview->action.member)) {
+        return 0;
+      }
+    }
+    const auto message =
+        realmz::presentation::legacy_key_message_for_contextual_overview(
+            overview->action, context);
+    if (!message) {
+      return 0;
+    }
+    *classic_key_message = *message;
     return 1;
   } catch (...) {
     return 0;

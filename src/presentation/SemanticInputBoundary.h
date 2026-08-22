@@ -110,6 +110,15 @@ RealmzSemanticInputSurface RealmzSemanticUseTorchTagSurface(
 uint8_t RealmzSemanticUseTorchTagMember(uint32_t tagged_message);
 uint8_t RealmzSemanticUseTorchTagSlot(uint32_t tagged_message);
 
+// The contextual Overview tag uses one shared collision-free signature for
+// both Classic controls. Payload 0 is Area Search; payloads 0x80..0x85 are
+// Make Scroll bound to party members 0..5. Every other payload is malformed.
+uint8_t RealmzIsSemanticContextualOverviewTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticContextualOverviewTagSurface(
+    uint32_t tagged_message);
+uint8_t RealmzSemanticContextualOverviewTagIsAreaSearch(
+    uint32_t tagged_message);
+
 // Guard tags carry the acting combatant explicitly and are valid only on the
 // combat surface. This prevents a queued command from applying to a later turn.
 uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
@@ -319,6 +328,14 @@ uint8_t RealmzConsumeSemanticUseTorchEvent(
     uint8_t* member,
     uint8_t* slot);
 
+// Revalidates the exact live world presentation and camp state. Make Scroll
+// additionally requires the encoded member to remain selected and eligible.
+// On success this returns Classic's exact lowercase "a" or "k" key record.
+uint8_t RealmzConsumeSemanticContextualOverviewEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 // Revalidates the live acting party combatant, then returns the preserved
 // Classic "g" key record to the top-level combat loop.
 uint8_t RealmzConsumeSemanticGuardCombatantEvent(
@@ -457,6 +474,7 @@ namespace realmz::presentation {
 enum class MovementCommand;
 enum class CombatFocusDirection;
 struct CombatFieldCell;
+struct ContextualOverviewAction;
 
 [[nodiscard]] uint32_t semantic_movement_tag(
     MovementCommand command,
@@ -501,6 +519,10 @@ struct CombatFieldCell;
 
 [[nodiscard]] uint32_t semantic_use_torch_tag(
     const TorchSource& source,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_contextual_overview_tag(
+    const ContextualOverviewAction& action,
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_guard_combatant_tag(

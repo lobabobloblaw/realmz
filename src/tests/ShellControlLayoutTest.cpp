@@ -510,6 +510,10 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .torch_control_visible = true,
                  .torch_available = true,
                  .torch_source = TorchSource{.member = 2, .slot = 7},
+                 .contextual_overview_control_visible = true,
+                 .contextual_overview_available = true,
+                 .contextual_overview_mode =
+                     ContextualOverviewMode::area_search,
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -539,6 +543,10 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .torch_control_visible = true,
                  .torch_available = true,
                  .torch_source = TorchSource{.member = 2, .slot = 7},
+                 .contextual_overview_control_visible = true,
+                 .contextual_overview_available = true,
+                 .contextual_overview_mode =
+                     ContextualOverviewMode::area_search,
              },
          }) {
       std::array<std::vector<ShellControlPlacement>, 3> layouts;
@@ -547,7 +555,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
         layouts[page_index] = compute_shell_control_layout(request);
         const size_t action_count = page_index == 0U
             ? (request.screen == ScreenContext::exploration ? 8U : 4U)
-            : (page_index == 1U ? 4U : 6U);
+            : (page_index == 1U ? 4U : 7U);
         CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
         verify_world_tabs(
             layouts[page_index], panel, kWorldPages[page_index]);
@@ -616,6 +624,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       const auto& camp = game[6];
       const auto& search = game[7];
       const auto& torch = game[8];
+      const auto& overview = game[9];
       CHECK(save.region.value == 1102U);
       CHECK(save.kind == ShellControlKind::open_save_game);
       CHECK(save.label == "SAVE");
@@ -665,6 +674,17 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(torch.enabled);
       CHECK((torch.payload == UIActionPayload{UseTorchAction{
           .source = TorchSource{.member = 2, .slot = 7}}}));
+      CHECK(overview.region.value == 1127U);
+      CHECK(overview.kind == ShellControlKind::contextual_overview);
+      CHECK(overview.label == "AREA SEARCH");
+      CHECK(overview.accessibility_label == "Search nearby area");
+      CHECK(overview.focus_identifier == "focus.action.party.overview");
+      CHECK(overview.tab_order == 1127);
+      CHECK(overview.enabled);
+      CHECK((overview.payload == UIActionPayload{ContextualOverviewAction{
+          .mode = ContextualOverviewMode::area_search,
+          .member = std::nullopt,
+      }}));
 
       // Every tab payload is a direct destination, including selecting the
       // already-active page. Recompose each target from every origin.
@@ -995,10 +1015,217 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .torch_available = true,
   }).empty());
 
-  // Dungeon Travel, the reserved four-slot Party page, and the six-slot GAME
+  const auto area_search_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = false,
+      .contextual_overview_mode = ContextualOverviewMode::area_search,
+  });
+  CHECK(area_search_disabled.size() == 4U);
+  verify_world_tabs(
+      area_search_disabled, panel, WorldActionPage::game);
+  const auto& disabled_area_search = area_search_disabled.back();
+  CHECK(disabled_area_search.region.value == 1127U);
+  CHECK(disabled_area_search.kind ==
+      ShellControlKind::contextual_overview);
+  CHECK(disabled_area_search.label == "AREA SEARCH");
+  CHECK(disabled_area_search.accessibility_label ==
+      "Search nearby area, unavailable");
+  CHECK(disabled_area_search.focus_identifier ==
+      "focus.action.party.overview");
+  CHECK(disabled_area_search.tab_order == 1127);
+  CHECK(!disabled_area_search.enabled);
+  CHECK((disabled_area_search.payload ==
+      UIActionPayload{ContextualOverviewAction{
+          .mode = ContextualOverviewMode::area_search,
+          .member = std::nullopt,
+      }}));
+
+  const auto area_search_enabled = compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_first_person,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = true,
+      .contextual_overview_mode = ContextualOverviewMode::area_search,
+  });
+  CHECK(area_search_enabled.size() == 4U);
+  verify_world_tabs(area_search_enabled, panel, WorldActionPage::game);
+  const auto& enabled_area_search = area_search_enabled.back();
+  CHECK(enabled_area_search.accessibility_label == "Search nearby area");
+  CHECK(enabled_area_search.enabled);
+  CHECK((enabled_area_search.payload ==
+      UIActionPayload{ContextualOverviewAction{
+          .mode = ContextualOverviewMode::area_search,
+          .member = std::nullopt,
+      }}));
+
+  const auto make_scroll_no_member = compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_first_person,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = false,
+      .contextual_overview_mode = ContextualOverviewMode::make_scroll,
+  });
+  CHECK(make_scroll_no_member.size() == 4U);
+  verify_world_tabs(make_scroll_no_member, panel, WorldActionPage::game);
+  const auto& disabled_make_scroll_no_member =
+      make_scroll_no_member.back();
+  CHECK(disabled_make_scroll_no_member.region.value == 1127U);
+  CHECK(disabled_make_scroll_no_member.kind ==
+      ShellControlKind::contextual_overview);
+  CHECK(disabled_make_scroll_no_member.label == "MAKE SCROLL");
+  CHECK(disabled_make_scroll_no_member.accessibility_label ==
+      "Make scroll, select a party member first");
+  CHECK(disabled_make_scroll_no_member.focus_identifier ==
+      "focus.action.party.overview");
+  CHECK(disabled_make_scroll_no_member.tab_order == 1127);
+  CHECK(!disabled_make_scroll_no_member.enabled);
+  CHECK((disabled_make_scroll_no_member.payload ==
+      UIActionPayload{ContextualOverviewAction{
+          .mode = ContextualOverviewMode::make_scroll,
+          .member = std::nullopt,
+      }}));
+
+  const auto make_scroll_member_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = false,
+      .contextual_overview_mode = ContextualOverviewMode::make_scroll,
+      .contextual_overview_member = PartyMemberId{4},
+  });
+  CHECK(make_scroll_member_disabled.size() == 4U);
+  verify_world_tabs(
+      make_scroll_member_disabled, panel, WorldActionPage::game);
+  CHECK(make_scroll_member_disabled.back().accessibility_label ==
+      "Make scroll, unavailable for selected party member");
+  CHECK(!make_scroll_member_disabled.back().enabled);
+  CHECK((make_scroll_member_disabled.back().payload ==
+      UIActionPayload{ContextualOverviewAction{
+          .mode = ContextualOverviewMode::make_scroll,
+          .member = PartyMemberId{4},
+      }}));
+
+  const auto make_scroll_enabled = compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_map,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = true,
+      .contextual_overview_mode = ContextualOverviewMode::make_scroll,
+      .contextual_overview_member = PartyMemberId{4},
+  });
+  CHECK(make_scroll_enabled.size() == 4U);
+  verify_world_tabs(make_scroll_enabled, panel, WorldActionPage::game);
+  const auto& enabled_make_scroll = make_scroll_enabled.back();
+  CHECK(enabled_make_scroll.label == "MAKE SCROLL");
+  CHECK(enabled_make_scroll.accessibility_label ==
+      "Make scroll for selected party member");
+  CHECK(enabled_make_scroll.enabled);
+  CHECK((enabled_make_scroll.payload ==
+      UIActionPayload{ContextualOverviewAction{
+          .mode = ContextualOverviewMode::make_scroll,
+          .member = PartyMemberId{4},
+      }}));
+
+  // The contextual command changes meaning without moving or changing its
+  // keyboard/accessibility identity.
+  CHECK(enabled_make_scroll.region == enabled_area_search.region);
+  CHECK(enabled_make_scroll.bounds == enabled_area_search.bounds);
+  CHECK(enabled_make_scroll.focus_identifier ==
+      enabled_area_search.focus_identifier);
+  CHECK(enabled_make_scroll.tab_order == enabled_area_search.tab_order);
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_available = true,
+      .contextual_overview_mode = ContextualOverviewMode::area_search,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = true,
+      .contextual_overview_mode = ContextualOverviewMode::area_search,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = false,
+      .contextual_overview_mode = ContextualOverviewMode::area_search,
+      .contextual_overview_member = PartyMemberId{4},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = true,
+      .contextual_overview_mode = ContextualOverviewMode::make_scroll,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = false,
+      .contextual_overview_mode = ContextualOverviewMode::make_scroll,
+      .contextual_overview_member = PartyMemberId{6},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::travel,
+      .navigation_available = true,
+      .contextual_overview_mode = ContextualOverviewMode::make_scroll,
+      .contextual_overview_member = PartyMemberId{0},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_overview_control_visible = true,
+      .contextual_overview_mode =
+          static_cast<ContextualOverviewMode>(255),
+  }).empty());
+
+  // Dungeon Travel, the reserved four-slot Party page, and the seven-slot GAME
   // page are all reachable at this exact 44-point floor. One point less in
   // either dimension fails the whole persistent deck closed on every page.
-  constexpr LogicalRect exact_minimum{0.0, 0.0, 322.0, 120.0};
+  constexpr LogicalRect exact_minimum{0.0, 0.0, 372.0, 120.0};
   for (const auto page : kWorldPages) {
     const ShellControlLayoutRequest exact_request{
         .screen = ScreenContext::dungeon,
@@ -1029,20 +1256,23 @@ void test_world_action_controls_at_combined_minimum_layout() {
         .torch_control_visible = true,
         .torch_available = true,
         .torch_source = TorchSource{.member = 2, .slot = 7},
+        .contextual_overview_control_visible = true,
+        .contextual_overview_available = true,
+        .contextual_overview_mode = ContextualOverviewMode::area_search,
     };
     const auto exact = compute_shell_control_layout(exact_request);
     CHECK(!exact.empty());
     verify_world_tabs(exact, exact_minimum, page);
     if (page == WorldActionPage::game) {
-      CHECK(exact.size() == kWorldPages.size() + 6U);
+      CHECK(exact.size() == kWorldPages.size() + 7U);
       for (size_t index = kWorldPages.size(); index < exact.size(); ++index) {
         CHECK(exact[index].bounds.width == 44.0);
         CHECK(exact[index].bounds.height == 44.0);
       }
-      CHECK(exact.back().kind == ShellControlKind::use_torch);
+      CHECK(exact.back().kind == ShellControlKind::contextual_overview);
     }
     auto narrow_request = exact_request;
-    narrow_request.action_panel.width = 321.0;
+    narrow_request.action_panel.width = 371.0;
     CHECK(compute_shell_control_layout(narrow_request).empty());
     auto short_request = exact_request;
     short_request.action_panel.height = 119.0;
@@ -1136,6 +1366,13 @@ void test_fail_closed_inputs() {
       .search_control_visible = true,
   }).empty());
   CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = usable,
+      .guard_combatant = CombatantId{2},
+      .contextual_overview_control_visible = true,
+      .contextual_overview_mode = ContextualOverviewMode::area_search,
+  }).empty());
+  CHECK(compute_shell_control_layout({
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = usable,
@@ -1160,6 +1397,17 @@ void test_fail_closed_inputs() {
       .world_action_page = WorldActionPage::travel,
       .navigation_available = true,
       .torch_source = TorchSource{.member = 0, .slot = 0},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = usable,
+      .world_action_page = WorldActionPage::travel,
+      .navigation_available = true,
+      .inventory_member = PartyMemberId{1},
+      .contextual_overview_control_visible = true,
+      .contextual_overview_mode = ContextualOverviewMode::make_scroll,
+      .contextual_overview_member = PartyMemberId{2},
   }).empty());
 }
 
