@@ -2166,13 +2166,16 @@ void test_contextual_world_entry_tag_encoding_and_collisions() {
       const bool valid_surface = (surface_byte == 1U) || (surface_byte == 2U);
       const bool valid_mode = mode_byte <= 2U;
       const bool expected_valid = valid_surface && valid_mode;
+      const RealmzSemanticInputSurface expected_surface = expected_valid
+          ? static_cast<RealmzSemanticInputSurface>(surface_byte)
+          : REALMZ_SEMANTIC_INPUT_NONE;
       CHECK((RealmzIsSemanticContextualWorldEntryTag(tag) != 0) ==
           expected_valid);
       CHECK((RealmzIsSemanticGameplayTag(tag) != 0) == expected_valid);
       CHECK(RealmzSemanticContextualWorldEntryTagSurface(tag) ==
-          (expected_valid ? surface_byte : REALMZ_SEMANTIC_INPUT_NONE));
+          expected_surface);
       CHECK(RealmzSemanticGameplayTagSurface(tag) ==
-          (expected_valid ? surface_byte : REALMZ_SEMANTIC_INPUT_NONE));
+          expected_surface);
     }
   }
 
