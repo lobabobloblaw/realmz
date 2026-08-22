@@ -38,8 +38,11 @@ and [dungeon receipt](CONTENT_PROVENANCE.md#private-first-person-dungeon-replay-
 Together they exercise all 12 native-v1 movement command names, but they bind
 different exact fixtures and executables and are not a combined CI,
 current-HEAD, or release-wide verdict. Broader action profiles and City coverage
-remain separate acceptance work. No real schema-2 envelope or receipt has been
-accepted yet; its current coverage is synthetic and linked-native only. Follow
+remain separate acceptance work. A separate
+[schema-2 party-selection receipt](CONTENT_PROVENANCE.md#private-schema-v2-party-selection-replay-receipt-2026-08-21)
+covers changed and idempotent selection of one member on one exact private
+dungeon fixture; it establishes no movement or broader selection equivalence.
+Follow
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md) for each private
 gate and archive its canonical envelope outside the repository.
 

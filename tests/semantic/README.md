@@ -469,16 +469,18 @@ namespace before deliberately removing either candidate.
 
 This completes the comparison harness. Its integration tests use a synthetic
 child and remain harness evidence rather than a live verdict. Two externally
-reviewed private Tutorial profiles have completed the real gate; their narrowly
-scoped results and identities are recorded in separate
+reviewed private Tutorial movement profiles have completed the real gate; their
+narrowly scoped results and identities are recorded in separate
 [outdoor](../../docs/CONTENT_PROVENANCE.md#private-outdoor-replay-receipt-2026-08-21)
 and [first-person dungeon](../../docs/CONTENT_PROVENANCE.md#private-first-person-dungeon-replay-receipt-2026-08-21)
 digest-only receipts. Together they cover all 12 native-v1 movement command
 names, but each verdict remains bound to its own exact fixture and executable.
-The repository still contains no private fixture or raw envelope. The v1
-profile also compares RNG draw counts, not a separate trace of every drawn
-value. No schema-2 real-engine result or receipt exists yet; its current
-selection coverage is synthetic and linked-native only.
+The v1 profile also compares RNG draw counts, not a separate trace of every
+drawn value. A separately reviewed
+[schema-2 party-selection profile](../../docs/CONTENT_PROVENANCE.md#private-schema-v2-party-selection-replay-receipt-2026-08-21)
+covers changed and idempotent selection of one member on one exact private
+dungeon fixture; it does not establish movement or broader selection
+equivalence. The repository still contains no private fixture or raw envelope.
 
 The dependency-free native checks are included in the core test runner:
 
@@ -515,15 +517,15 @@ runner result and owns the only evaluated verdict.
 The outdoor and first-person dungeon portions of the native-v1 movement
 milestone now have separate completed local envelopes and the digest-only
 receipts linked above. The first vocabulary-expansion vertical is implemented
-under schema 2 for bounded party selection, without changing those v1 records.
-The remaining roadmap work is to:
+under schema 2 for bounded party selection, without changing those v1 records;
+its narrow private receipt is also linked above. The remaining roadmap work is
+to:
 
-1. review and run a private schema-2 Tutorial party-selection profile;
-2. continue expanding the versioned vocabulary and repeat the gate with
+1. continue expanding the versioned vocabulary and repeat the gate with
    separately reviewed broader Tutorial and City profiles,
    including any combat-specific fixture and modal coverage those actions need;
    and
-3. run the intended release-candidate executable before treating replay
+2. run the intended release-candidate executable before treating replay
    equivalence as a current-build or release-wide claim.
 
 Each real-fixture invocation, rather than the synthetic gate tests, is the

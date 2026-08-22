@@ -412,9 +412,10 @@ but it can carry a digest-only receipt for an externally reviewed run. Every
 verdict remains scoped to its exact fixture tree, action plan, executable, and
 deterministic inputs; a zero-action or narrow profile must not be presented as
 broader release coverage. Schema 1 also compares RNG draw counts rather than a
-separate trace of every value drawn. The schema-2 selection contract currently
-has synthetic and linked-native coverage only. It has no accepted real-engine
-envelope or receipt; producing one requires a newly reviewed private profile.
+separate trace of every value drawn. The schema-2 selection contract has
+synthetic and linked-native coverage plus the narrowly scoped private receipt
+below. That receipt does not broaden selection equivalence beyond its exact
+fixture, action plan, executable, and deterministic inputs.
 
 #### Private outdoor replay receipt (2026-08-21)
 
@@ -491,6 +492,44 @@ and it does not make the private source fixture redistributable. Together, the
 outdoor and dungeon receipts exercise all 12 native-v1 movement command names,
 but they remain two separately scoped verdicts over different exact fixtures
 and executables rather than one combined release claim.
+
+#### Private schema-v2 party-selection replay receipt (2026-08-21)
+
+The same private, nonredistributable Tutorial dungeon fixture completed a
+separately reviewed two-action schema-2 profile through the real Classic and
+semantic child routes. The reviewed profile covered one changed and one
+idempotent party-selection outcome. The canonical envelope and all
+fixture-bearing artifacts remain in private storage. This receipt contains
+only non-content identities and results:
+
+- comparison contract: `realmz.semantic-replay.exact.v2`;
+- result: `equivalent`, exit status `0`, empty stderr, and no mismatched fields;
+- build source: clean arm64 Release build of commit
+  `9d6e980e528d5031f153565805be6ab8f6c0f7a4`, engine identity
+  `Realmz-8.1.0-native-replay-v2`, executable SHA-256
+  `baf7578df94cf426912563212181ea2982db03828616f8c812811c247da105c7`;
+- fixture manifest SHA-256
+  `86bf0b12de0e263f5c4c1c2e544b050313d21269cc77c1777ca50cc92ed4744c`
+  and fixture-tree SHA-256
+  `2bf79f662d61b3b50c9e59f8d534b7b9fa9148cf76abae254e51dbc40a31f15b`;
+- two-action selection profile SHA-256
+  `8e185994a3efea72983988a7ce38b377b949743d800788abd841c5593d0d4e74`,
+  input/output slots `A`/`B`, RNG seed `0123456789abcdef`, RNG stream
+  `fedcba9876543210`, and settlement barrier
+  `next_semantic_gameplay_poll`;
+- Classic/semantic settled-action counts `2`/`2` and RNG-draw counts `1`/`1`;
+- matching state SHA-256
+  `f4ca9faa1c7dbae5ea4ec98c4f9ac03fe7372b4dfd3973ce565a39114754b569`
+  and output save-tree SHA-256
+  `46602e7271470c9b34f59cb124b7d5ef32df0874c2dba4b6d01a3c0d93c2ca46`;
+- request SHA-256
+  `92078412638f9d2600f9664de92b23be1ac725cf2a6496f5495891759effac29`
+  and independently recorded raw-envelope SHA-256
+  `0cf6310f8950a2deeb872687679b8cf754cd08226e5b8b42df8cc9f65b11a028`.
+
+This is party-selection-only evidence for those exact identities. It
+establishes no movement, outdoor, combat, City, release-wide, or other-member
+equivalence, and it does not make the private source fixture redistributable.
 
 The complete private review and archival checklist is
 [`docs/SEMANTIC_REPLAY_RUNBOOK.md`](SEMANTIC_REPLAY_RUNBOOK.md).
