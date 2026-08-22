@@ -81,6 +81,7 @@ void reset_capture(
       PartyMemberView{.id = 2, .name = "Cerys", .spell_points = {3, 6}},
   };
   captured_snapshot.party.selected_member = 0;
+  captured_snapshot.party.members[0].use_scroll_available = true;
   captured_snapshot.world.presentation = world_presentation;
   snapshot_capture_throws = false;
   legacy_capture_calls = 0;
@@ -116,6 +117,14 @@ bool consume_spellbook(
     uint32_t tag,
     uint32_t& output) {
   return RealmzConsumeSemanticOpenSpellbookEvent(
+             expected_surface, tag, &output) != 0;
+}
+
+bool consume_scroll_case(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticOpenScrollCaseEvent(
              expected_surface, tag, &output) != 0;
 }
 
@@ -1432,6 +1441,115 @@ void test_tag_encoding_and_validation() {
   }
 }
 
+void test_open_scroll_case_tag_encoding_and_collisions() {
+  constexpr std::array surfaces{
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+  };
+  std::set<uint32_t> scroll_case_tags;
+  for (const auto surface : surfaces) {
+    for (const PartyMemberId member :
+         std::array<PartyMemberId, 4>{0, 1, 5, 0xFF}) {
+      const uint32_t tag = semantic_open_scroll_case_tag(member, surface);
+      CHECK((tag & 0xFFFF0000U) == 0x53550000U);
+      CHECK(((tag >> 8U) & 0xFFU) == static_cast<uint32_t>(surface));
+      CHECK((tag & 0xFFU) == static_cast<uint32_t>(member));
+      CHECK(RealmzIsSemanticOpenScrollCaseTag(tag) != 0);
+      CHECK(RealmzSemanticOpenScrollCaseTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+      CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+      CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenSpellbookTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenSaveGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenLoadGameTag(tag) == 0);
+      CHECK(RealmzIsSemanticGuardCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticFinishCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticDelayCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticCenterActiveCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticSwitchWeaponTag(tag) == 0);
+      CHECK(RealmzIsSemanticCycleCombatFocusTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenCombatItemsTag(tag) == 0);
+      CHECK(RealmzIsSemanticAutoCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticShowCombatRangeTag(tag) == 0);
+      CHECK(RealmzIsSemanticBandageCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticUndoCombatantTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenCombatSpellbookTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenCombatTargetingTag(tag) == 0);
+      CHECK(RealmzIsSemanticEscapeCombatTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenCombatScrollCaseTag(tag) == 0);
+      CHECK(RealmzIsSemanticCenterCombatCursorTag(tag) == 0);
+      CHECK(scroll_case_tags.emplace(tag).second);
+    }
+  }
+  CHECK(scroll_case_tags.size() == 8);
+  CHECK(semantic_open_scroll_case_tag(
+            0, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x53550100U);
+  CHECK(semantic_open_scroll_case_tag(
+            0xFF, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0x535502FFU);
+  CHECK(semantic_open_scroll_case_tag(
+            0, REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_open_scroll_case_tag(
+            0, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+
+  for (const uint32_t malformed : {
+           0U,
+           0x53540000U,
+           0x53550000U,
+           0x53550300U,
+           0x5355FF00U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticOpenScrollCaseTag(malformed) == 0);
+    CHECK(RealmzSemanticOpenScrollCaseTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  for (const uint32_t other_tag : {
+           semantic_movement_tag(
+               MovementCommand::north, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_party_selection_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_inventory_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_spellbook_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_save_game_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_load_game_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_guard_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_finish_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_delay_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_center_active_combatant_tag(
+               1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_switch_weapon_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_cycle_combat_focus_tag(
+               1,
+               CombatFocusDirection::next,
+               REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_open_combat_items_tag(
+               1, 0, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_auto_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_show_combat_range_tag(
+               1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_bandage_combatant_tag(
+               1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_undo_combatant_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_open_combat_spellbook_tag(
+               1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_open_combat_targeting_tag(
+               1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_escape_combat_tag(1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_open_combat_scroll_case_tag(
+               1, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_center_combat_cursor_tag(
+               1, {.x = 22, .y = 32}, REALMZ_SEMANTIC_INPUT_COMBAT),
+       }) {
+    CHECK(RealmzIsSemanticOpenScrollCaseTag(other_tag) == 0);
+    CHECK(!scroll_case_tags.contains(other_tag));
+  }
+}
+
 void test_bandage_tag_encoding_collision_and_malformed_rejection() {
   std::set<uint32_t> bandage_tags;
   for (const CombatantId combatant : {0, 1, 10, 109, 255}) {
@@ -2617,6 +2735,192 @@ void test_open_spellbook_late_validation_and_exact_translation() {
   complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
   CHECK(!consume_spellbook(
       REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(snapshot_capture_calls == 1);
+}
+
+void test_open_scroll_case_late_validation_and_surface_translation() {
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  const uint32_t open_arin = semantic_open_scroll_case_tag(
+      0, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+
+  uint32_t classic_message = kUnchangedClassicMessage;
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == 0x0000256CU);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // Completed-scope authorization is one-shot.
+  classic_message = kUnchangedClassicMessage;
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+
+  // A null output consumes authorization without consulting mutable state.
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticOpenScrollCaseEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            open_arin,
+            nullptr) == 0);
+  const int legacy_after_null = legacy_capture_calls;
+  const int snapshot_after_null = snapshot_capture_calls;
+  classic_message = kUnchangedClassicMessage;
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == legacy_after_null);
+  CHECK(snapshot_capture_calls == snapshot_after_null);
+
+  // A queued command cannot retarget after selection changes.
+  captured_snapshot.party.selected_member = 1;
+  captured_snapshot.party.members[0].selected = false;
+  captured_snapshot.party.members[1].selected = true;
+  captured_snapshot.party.members[1].use_scroll_available = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.members[0].selected = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.members[0].use_scroll_available = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  const uint32_t missing_member = semantic_open_scroll_case_tag(
+      5, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      missing_member,
+      classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(snapshot_capture_calls == 1);
+
+  // The payload surface must match the freshly completed scope before any
+  // mutable legacy state is consulted.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  const uint32_t dungeon_tag = semantic_open_scroll_case_tag(
+      0, REALMZ_SEMANTIC_INPUT_DUNGEON);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, dungeon_tag, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    const uint32_t open_dungeon_scroll_case = semantic_open_scroll_case_tag(
+        0, REALMZ_SEMANTIC_INPUT_DUNGEON);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    classic_message = kUnchangedClassicMessage;
+    CHECK(consume_scroll_case(
+        REALMZ_SEMANTIC_INPUT_DUNGEON,
+        open_dungeon_scroll_case,
+        classic_message));
+    CHECK(classic_message == 0x00002370U);
+  }
+
+  // A screen-correct snapshot with the wrong world presentation still fails
+  // closed instead of handing Classic the other surface's shortcut.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::outdoor);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  classic_message = kUnchangedClassicMessage;
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_tag, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::dungeon_map);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::dungeon_map);
+  captured_legacy_context.screen = REALMZ_LEGACY_SCREEN_EXPLORATION;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_tag, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::dungeon,
+      WorldPresentation::outdoor);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(snapshot_capture_calls == 1);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_scroll_case(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, open_arin, classic_message));
+  CHECK(classic_message == kUnchangedClassicMessage);
   CHECK(snapshot_capture_calls == 1);
 }
 
@@ -4281,6 +4585,7 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
 int main() {
   try {
     test_tag_encoding_and_validation();
+    test_open_scroll_case_tag_encoding_and_collisions();
     test_bandage_tag_encoding_collision_and_malformed_rejection();
     test_undo_tag_encoding_collision_and_malformed_rejection();
     test_open_combat_spellbook_tag_encoding_and_collisions();
@@ -4295,6 +4600,7 @@ int main() {
     test_party_selection_late_validation_and_single_use();
     test_open_inventory_late_validation_and_exact_translation();
     test_open_spellbook_late_validation_and_exact_translation();
+    test_open_scroll_case_late_validation_and_surface_translation();
     test_open_save_game_late_validation_and_exact_menu_translation();
     test_open_load_game_late_validation_and_exact_menu_translation();
     test_shared_combat_late_validation_matrix();

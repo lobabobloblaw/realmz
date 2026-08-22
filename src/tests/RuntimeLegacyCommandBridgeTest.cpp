@@ -51,6 +51,16 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     RuntimeLegacyBandageCombatantSink,
     RuntimeLegacyUndoCombatantSink>);
+static_assert(std::is_aggregate_v<RuntimeLegacyWorldActionSinks>);
+static_assert(std::is_same_v<
+    RuntimeLegacyOpenScrollCaseSink,
+    std::function<bool(
+        PartyMemberId,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::open_scroll_case),
+    RuntimeLegacyOpenScrollCaseSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -704,6 +714,225 @@ void test_open_spellbook_mapping_and_dispatch() {
       .sequence = sequence,
       .payload = OpenSpellbookAction{2},
   }).status == DispatchStatus::unsupported);
+}
+
+void test_open_scroll_case_mapping_and_named_sink_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  int inventory_calls = 0;
+  int spellbook_calls = 0;
+  int scroll_calls = 0;
+  bool accept_scroll = true;
+  uint32_t received_message = 0;
+  PartyMemberId received_member = 0;
+  RuntimeLegacyCommandBridge bridge(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .open_inventory = [&inventory_calls](
+              PartyMemberId,
+              uint32_t,
+              const RuntimeLegacyCommandContext&) {
+            ++inventory_calls;
+            return true;
+          },
+          .open_spellbook = [&spellbook_calls](
+              PartyMemberId,
+              uint32_t,
+              const RuntimeLegacyCommandContext&) {
+            ++spellbook_calls;
+            return true;
+          },
+          .open_scroll_case = [
+              &scroll_calls,
+              &accept_scroll,
+              &received_message,
+              &received_member,
+              &context](
+              PartyMemberId member,
+              uint32_t message,
+              const RuntimeLegacyCommandContext& captured_context) {
+            ++scroll_calls;
+            received_member = member;
+            received_message = message;
+            CHECK(captured_context == context);
+            return accept_scroll;
+          },
+      });
+
+  ActionSequence sequence = 90;
+  CHECK(legacy_key_message_for_open_scroll_case(context) == 0x0000256CU);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenScrollCaseAction{2},
+  }).status == DispatchStatus::handled);
+  CHECK(scroll_calls == 1);
+  CHECK(inventory_calls == 0);
+  CHECK(spellbook_calls == 0);
+  CHECK(received_member == 2);
+  CHECK(received_message == 0x0000256CU);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    CHECK(legacy_key_message_for_open_scroll_case(context) == 0x00002370U);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenScrollCaseAction{255},
+    }).status == DispatchStatus::handled);
+    CHECK(received_member == 255);
+    CHECK(received_message == 0x00002370U);
+  }
+  CHECK(scroll_calls == 3);
+  CHECK(inventory_calls == 0);
+  CHECK(spellbook_calls == 0);
+
+  context.adaptive_eligible = false;
+  CHECK(!legacy_key_message_for_open_scroll_case(context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenScrollCaseAction{2},
+  }).status == DispatchStatus::rejected);
+  CHECK(scroll_calls == 3);
+
+  context.adaptive_eligible = true;
+  for (const auto invalid : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+           },
+       }) {
+    context = invalid;
+    CHECK(!legacy_key_message_for_open_scroll_case(context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenScrollCaseAction{2},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(scroll_calls == 3);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  accept_scroll = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenScrollCaseAction{2},
+  }).status == DispatchStatus::failed);
+  CHECK(scroll_calls == 4);
+
+  RuntimeLegacyCommandBridge empty_named_sink(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{});
+  CHECK(empty_named_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenScrollCaseAction{2},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = OpenScrollCaseAction{2},
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_empty_brace_world_sink_compatibility_is_unambiguous() {
+  RuntimeLegacyCommandBridge all_empty_inventory({}, {}, {}, {});
+  RuntimeLegacyCommandBridge all_empty_through_spellbook(
+      {}, {}, {}, {}, {});
+  RuntimeLegacyCommandBridge all_empty_through_save(
+      {}, {}, {}, {}, {}, {});
+  RuntimeLegacyCommandBridge all_empty_through_load(
+      {}, {}, {}, {}, {}, {}, {});
+
+  const RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  const RuntimeLegacyContextProvider context_provider =
+      [context] { return context; };
+  const RuntimeLegacyMovementSink movement_sink =
+      [](MovementCommand, uint32_t, const RuntimeLegacyCommandContext&) {
+        return true;
+      };
+  const RuntimeLegacyPartySelectionSink party_selection_sink =
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; };
+
+  // These source-compatible calls intentionally use empty braced sinks. The
+  // tag-first named-bundle constructor must never compete with the append-only
+  // positional overloads during overload resolution.
+  RuntimeLegacyCommandBridge inventory_only(
+      context_provider, movement_sink, party_selection_sink, {});
+  RuntimeLegacyCommandBridge through_spellbook(
+      context_provider, movement_sink, party_selection_sink, {}, {});
+  RuntimeLegacyCommandBridge through_save(
+      context_provider, movement_sink, party_selection_sink, {}, {}, {});
+  RuntimeLegacyCommandBridge through_load(
+      context_provider, movement_sink, party_selection_sink, {}, {}, {}, {});
+
+  CHECK(inventory_only.dispatch(UIAction{
+      .sequence = 100,
+      .payload = OpenInventoryAction{0},
+  }).status == DispatchStatus::failed);
+  CHECK(through_spellbook.dispatch(UIAction{
+      .sequence = 101,
+      .payload = OpenSpellbookAction{0},
+  }).status == DispatchStatus::failed);
+  CHECK(through_save.dispatch(UIAction{
+      .sequence = 102,
+      .payload = OpenSaveGameAction{},
+  }).status == DispatchStatus::failed);
+  CHECK(through_load.dispatch(UIAction{
+      .sequence = 103,
+      .payload = OpenLoadGameAction{},
+  }).status == DispatchStatus::failed);
+  CHECK(all_empty_inventory.dispatch(UIAction{
+      .sequence = 104,
+      .payload = OpenInventoryAction{0},
+  }).status == DispatchStatus::failed);
+  CHECK(all_empty_through_spellbook.dispatch(UIAction{
+      .sequence = 105,
+      .payload = OpenSpellbookAction{0},
+  }).status == DispatchStatus::failed);
+  CHECK(all_empty_through_save.dispatch(UIAction{
+      .sequence = 106,
+      .payload = OpenSaveGameAction{},
+  }).status == DispatchStatus::failed);
+  CHECK(all_empty_through_load.dispatch(UIAction{
+      .sequence = 107,
+      .payload = OpenLoadGameAction{},
+  }).status == DispatchStatus::failed);
 }
 
 void test_open_save_game_mapping_and_dispatch() {
@@ -5483,6 +5712,8 @@ int main() {
     test_party_selection_is_opt_in_and_preserves_movement();
     test_open_inventory_mapping_and_dispatch();
     test_open_spellbook_mapping_and_dispatch();
+    test_open_scroll_case_mapping_and_named_sink_dispatch();
+    test_empty_brace_world_sink_compatibility_is_unambiguous();
     test_open_save_game_mapping_and_dispatch();
     test_open_load_game_mapping_and_dispatch();
     test_guard_combatant_mapping_and_dispatch();

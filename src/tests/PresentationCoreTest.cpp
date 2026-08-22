@@ -158,6 +158,13 @@ void test_actions_and_events() {
   CHECK(action_name(open_spellbook.payload) == "open_spellbook");
   CHECK(std::get<OpenSpellbookAction>(open_spellbook.payload).member == 2);
 
+  UIAction open_scroll_case{
+      .sequence = 10,
+      .payload = OpenScrollCaseAction{2},
+  };
+  CHECK(action_name(open_scroll_case.payload) == "open_scroll_case");
+  CHECK(std::get<OpenScrollCaseAction>(open_scroll_case.payload).member == 2);
+
   UIAction open_save_game{
       .sequence = 11,
       .payload = OpenSaveGameAction{},
@@ -389,6 +396,7 @@ void test_command_bridge() {
   CombatantId open_combat_targeting = -1;
   CombatantId escape_combat = -1;
   CombatantId open_combat_scroll_case = -1;
+  PartyMemberId open_scroll_case_member = 0;
   CombatantId center_combat_cursor = -1;
   CombatFieldCell center_combat_cursor_cell{};
   LegacyActionHandlers handlers;
@@ -460,6 +468,11 @@ void test_command_bridge() {
         open_combat_scroll_case = action.combatant;
         return DispatchResult::handled();
       };
+  handlers.open_scroll_case =
+      [&open_scroll_case_member](const OpenScrollCaseAction& action) {
+        open_scroll_case_member = action.member;
+        return DispatchResult::handled();
+      };
   handlers.center_combat_cursor =
       [&center_combat_cursor, &center_combat_cursor_cell](
           const CenterCombatCursorAction& action) {
@@ -527,6 +540,13 @@ void test_command_bridge() {
   CHECK(spellbook_unsupported.status == DispatchStatus::unsupported);
   CHECK(spellbook_unsupported.detail.find("open_spellbook") !=
       std::string::npos);
+
+  const auto open_scroll_case_handled = bridge.dispatch(UIAction{
+      .sequence = 7,
+      .payload = OpenScrollCaseAction{4},
+  });
+  CHECK(open_scroll_case_handled.was_handled());
+  CHECK(open_scroll_case_member == 4);
 
   const auto save_chooser_unsupported = bridge.dispatch(UIAction{
       .sequence = 8,

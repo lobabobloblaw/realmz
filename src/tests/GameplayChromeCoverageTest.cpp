@@ -95,7 +95,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.action.heal", Surface::exploration,
         Kind::interaction, Status::missing},
     {"exploration.action.use_scroll", Surface::exploration,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"exploration.action.show_conditions", Surface::exploration,
         Kind::interaction, Status::missing},
     {"exploration.action.party_auto_toggles", Surface::exploration,
@@ -158,7 +158,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.action.heal", Surface::dungeon,
         Kind::interaction, Status::missing},
     {"dungeon.action.use_scroll", Surface::dungeon,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"dungeon.action.show_conditions", Surface::dungeon,
         Kind::interaction, Status::missing},
     {"dungeon.action.party_auto_toggles", Surface::dungeon,
@@ -495,7 +495,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x4B210C95241B6D56ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x3C04B103D888E062ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -584,7 +584,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x4B210C95241B6D56ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x3C04B103D888E062ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);

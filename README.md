@@ -26,8 +26,16 @@ a typed `OpenInventoryAction`. A neighboring Spells control is available only
 for a conscious selected member with spell points and carries that member in a
 typed `OpenSpellbookAction`. The guarded top-level route revalidates either
 selection before translating it to the preserved Classic `i` or `s` key, so the
-inventory and spell-selection screens remain intact compatibility flows. Their
-neighboring Save and Load controls carry distinct typed `OpenSaveGameAction`
+inventory and spell-selection screens remain intact compatibility flows. The
+non-combat Use Scroll control carries the selected member in a distinct typed
+`OpenScrollCaseAction`. It is available only while that member has positive
+stamina, an equipped scroll case, and no spell flow already in progress; a
+fresh guarded handoff revalidates the selection and eligibility, then emits
+Classic's exact outdoor `l` message or dungeon `p` message. It deliberately
+does not inspect the five case entries:
+an equipped empty case still opens the preserved chooser, and Classic owns all
+browsing, selection, targeting, and consumption after handoff. Save and Load
+controls carry distinct typed `OpenSaveGameAction`
 and `OpenLoadGameAction` commands. After late surface validation, they become
 the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
@@ -175,7 +183,7 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 The current inventory is deliberately incomplete. Known missing outdoor and
 dungeon roles include Search, use/consume Torch, Heal, Rest and Camp, Make
 Scroll/Area Search, context-sensitive Shop/Temple/seamless-encounter entry,
-Trade, Money/Swap, non-combat Use Scroll, active-member inspection, item and
+Trade, Money/Swap, active-member inspection, item and
 condition drilldowns, and the per-member Auto controls. Known missing combat
 roles include conditional Turn Undead, per-member Auto, and the distinct
 focused-combatant inspection controls for character or monster details, items,

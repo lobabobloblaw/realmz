@@ -193,6 +193,54 @@ void test_party_world_and_inventory_capture() {
   CHECK(snapshot.inventory->items[0].item_id == 901);
 }
 
+void test_noncombat_scroll_case_eligibility_capture() {
+  reset_legacy_state();
+  seed_party();
+  LegacyGameSnapshotSource source;
+
+  // Classic opens the chooser for an equipped case even when all five slots
+  // are empty. Contents and every subsequent choice remain Classic-owned.
+  charselectnew = 0;
+  c[0].stamina = 18;
+  c[0].armor[13] = 1;
+  std::memset(c[0].scrollcase, 0, sizeof(c[0].scrollcase));
+  auto snapshot = source.capture();
+  CHECK(snapshot.party.selected_member == 0);
+  CHECK(snapshot.party.members[0].use_scroll_available);
+
+  std::memset(c[0].scrollcase, 0x7F, sizeof(c[0].scrollcase));
+  snapshot = source.capture();
+  CHECK(snapshot.party.members[0].use_scroll_available);
+
+  inspell = 1;
+  snapshot = source.capture();
+  CHECK(!snapshot.party.members[0].use_scroll_available);
+  inspell = 0;
+
+  c[0].stamina = 0;
+  snapshot = source.capture();
+  CHECK(!snapshot.party.members[0].use_scroll_available);
+  c[0].stamina = 18;
+
+  c[0].armor[13] = 0;
+  snapshot = source.capture();
+  CHECK(!snapshot.party.members[0].use_scroll_available);
+  c[0].armor[13] = -1;
+  snapshot = source.capture();
+  CHECK(snapshot.party.members[0].use_scroll_available);
+
+  // The DTO carries eligibility per member; selecting another member does not
+  // mutate or silently transfer the first member's projection.
+  charselectnew = 1;
+  c[1].stamina = 1;
+  c[1].armor[13] = 2;
+  std::memset(c[1].scrollcase, 0, sizeof(c[1].scrollcase));
+  snapshot = source.capture();
+  CHECK(snapshot.party.selected_member == 1);
+  CHECK(snapshot.party.members[0].use_scroll_available);
+  CHECK(snapshot.party.members[1].use_scroll_available);
+}
+
 void test_combat_capture() {
   reset_legacy_state();
   seed_party();
@@ -582,6 +630,7 @@ void test_encounter_and_bounds() {
 int main() {
   try {
     test_party_world_and_inventory_capture();
+    test_noncombat_scroll_case_eligibility_capture();
     test_combat_capture();
     test_encounter_and_bounds();
     std::cout << "LegacyGameSnapshotSourceTest passed (" << checks_run

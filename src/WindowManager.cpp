@@ -1381,6 +1381,7 @@ void WindowManager::create_sdl_window() {
   }
   this->runtime_legacy_command_bridge =
       std::make_unique<realmz::presentation::RuntimeLegacyCommandBridge>(
+          realmz::presentation::kRuntimeLegacyNamedActionSinks,
           [] { return capture_runtime_legacy_command_context(); },
           [](realmz::presentation::MovementCommand command,
               uint32_t,
@@ -1421,85 +1422,114 @@ void WindowManager::create_sdl_window() {
                     member, surface);
             return tag && PushSemanticPartySelectionEvent(tag);
           },
-          [](realmz::presentation::PartyMemberId member,
-              uint32_t,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::exploration)) ||
-                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::dungeon));
-            if (!matching_surface) {
-              return false;
-            }
-            const uint32_t tag =
-                realmz::presentation::semantic_open_inventory_tag(
-                    member, surface);
-            return tag && PushSemanticOpenInventoryEvent(tag);
-          },
-          [](realmz::presentation::PartyMemberId member,
-              uint32_t,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::exploration)) ||
-                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::dungeon));
-            if (!matching_surface) {
-              return false;
-            }
-            const uint32_t tag =
-                realmz::presentation::semantic_open_spellbook_tag(
-                    member, surface);
-            return tag && PushSemanticOpenSpellbookEvent(tag);
-          },
-          [](realmz::presentation::RuntimeLegacyMenuCommand command,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::exploration)) ||
-                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::dungeon));
-            const auto expected = realmz::presentation::
-                legacy_menu_command_for_open_save_game(context);
-            if (!matching_surface || !expected || command != *expected) {
-              return false;
-            }
-            const uint32_t tag =
-                realmz::presentation::semantic_open_save_game_tag(surface);
-            return tag && PushSemanticOpenSaveGameEvent(tag);
-          },
-          [](realmz::presentation::RuntimeLegacyMenuCommand command,
-              const realmz::presentation::RuntimeLegacyCommandContext&
-                  context) {
-            const auto surface = RealmzCurrentSemanticInputSurface();
-            const bool matching_surface =
-                ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::exploration)) ||
-                ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
-                    (context.screen ==
-                        realmz::presentation::ScreenContext::dungeon));
-            const auto expected = realmz::presentation::
-                legacy_menu_command_for_open_load_game(context);
-            if (!matching_surface || !expected || command != *expected) {
-              return false;
-            }
-            const uint32_t tag =
-                realmz::presentation::semantic_open_load_game_tag(surface);
-            return tag && PushSemanticOpenLoadGameEvent(tag);
+          realmz::presentation::RuntimeLegacyWorldActionSinks{
+              .open_inventory =
+                  [](realmz::presentation::PartyMemberId member,
+                      uint32_t,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    if (!matching_surface) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_open_inventory_tag(member, surface);
+                    return tag && PushSemanticOpenInventoryEvent(tag);
+                  },
+              .open_spellbook =
+                  [](realmz::presentation::PartyMemberId member,
+                      uint32_t,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    if (!matching_surface) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_open_spellbook_tag(member, surface);
+                    return tag && PushSemanticOpenSpellbookEvent(tag);
+                  },
+              .open_scroll_case =
+                  [](realmz::presentation::PartyMemberId member,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_open_scroll_case(context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_open_scroll_case_tag(member, surface);
+                    return tag && PushSemanticOpenScrollCaseEvent(tag);
+                  },
+              .open_save_game =
+                  [](realmz::presentation::RuntimeLegacyMenuCommand command,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    const auto expected = realmz::presentation::
+                        legacy_menu_command_for_open_save_game(context);
+                    if (!matching_surface || !expected ||
+                        command != *expected) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_open_save_game_tag(surface);
+                    return tag && PushSemanticOpenSaveGameEvent(tag);
+                  },
+              .open_load_game =
+                  [](realmz::presentation::RuntimeLegacyMenuCommand command,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    const auto expected = realmz::presentation::
+                        legacy_menu_command_for_open_load_game(context);
+                    if (!matching_surface || !expected ||
+                        command != *expected) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_open_load_game_tag(surface);
+                    return tag && PushSemanticOpenLoadGameEvent(tag);
+                  },
           },
           realmz::presentation::RuntimeLegacyCombatActionSinks{
               .guard_combatant =
@@ -2784,6 +2814,12 @@ void draw_shell_panel_contents(
           return control.kind ==
               realmz::presentation::ShellControlKind::open_spellbook;
         });
+    const bool has_semantic_scroll_case = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind ==
+              realmz::presentation::ShellControlKind::open_scroll_case;
+        });
     const bool has_semantic_save = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -2912,6 +2948,9 @@ void draw_shell_panel_contents(
       if (has_semantic_spellbook) {
         action_summary += " · SPELLS";
       }
+      if (has_semantic_scroll_case) {
+        action_summary += " · SCROLL";
+      }
       if (has_semantic_save) {
         action_summary += " · SAVE";
       }
@@ -2965,6 +3004,8 @@ void draw_shell_panel_contents(
                 realmz::presentation::ShellControlKind::open_inventory) &&
             (control.kind !=
                 realmz::presentation::ShellControlKind::open_spellbook) &&
+            (control.kind !=
+                realmz::presentation::ShellControlKind::open_scroll_case) &&
             (control.kind !=
                 realmz::presentation::ShellControlKind::open_save_game) &&
             (control.kind !=
@@ -3570,6 +3611,27 @@ void WindowManager::present_remastered_frame() {
           (spellbook_action != shell_model->actions.end()) &&
           spellbook_action->can_invoke() && snapshot_context_matches &&
           legacy_context.adaptive_eligible != 0;
+      const auto scroll_case_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent ==
+                realmz::presentation::ActionIntent::open_scroll_case;
+          });
+      const std::optional<realmz::presentation::PartyMemberId>
+          scroll_case_member =
+              (world_action_surface &&
+                  (scroll_case_action != shell_model->actions.end()))
+              ? scroll_case_action->party_member
+              : std::nullopt;
+      const bool scroll_case_available = scroll_case_member &&
+          (scroll_case_action != shell_model->actions.end()) &&
+          scroll_case_action->can_invoke() && snapshot_context_matches &&
+          realmz::presentation::legacy_key_message_for_open_scroll_case({
+              .screen = screen,
+              .world_presentation = snapshot.world.presentation,
+              .adaptive_eligible =
+                  legacy_context.adaptive_eligible != 0,
+          }).has_value();
       const auto save_action = std::ranges::find_if(
           shell_model->actions,
           [](const auto& action) {
@@ -4078,6 +4140,8 @@ void WindowManager::present_remastered_frame() {
               .inventory_available = inventory_available,
               .spellbook_member = spellbook_member,
               .spellbook_available = spellbook_available,
+              .scroll_case_member = scroll_case_member,
+              .scroll_case_available = scroll_case_available,
               .save_control_visible = save_control_visible,
               .save_available = save_available,
               .load_control_visible = load_control_visible,
@@ -4278,6 +4342,21 @@ void WindowManager::present_remastered_frame() {
                     snapshot.party.selected_member == spellbook->member &&
                     realmz::presentation::
                         legacy_key_message_for_open_spellbook(context)
+                        .has_value();
+              }
+              if (const auto* scroll_case =
+                      std::get_if<
+                          realmz::presentation::OpenScrollCaseAction>(
+                          &control.payload)) {
+                const auto* member =
+                    snapshot.party.member(scroll_case->member);
+                return control.kind == realmz::presentation::
+                        ShellControlKind::open_scroll_case &&
+                    member && member->selected &&
+                    member->use_scroll_available &&
+                    snapshot.party.selected_member == scroll_case->member &&
+                    realmz::presentation::
+                        legacy_key_message_for_open_scroll_case(context)
                         .has_value();
               }
               if (std::holds_alternative<
@@ -5406,6 +5485,32 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
           !member->selected || !member->conscious ||
           (member->spell_points.current <= 0) ||
           snapshot->party.selected_member != spellbook->member) {
+        return false;
+      }
+      continue;
+    }
+    if (const auto* scroll_case =
+            std::get_if<realmz::presentation::OpenScrollCaseAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind !=
+              realmz::presentation::ShellControlKind::open_scroll_case ||
+          !realmz::presentation::legacy_key_message_for_open_scroll_case(
+              context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      const auto* member = snapshot->party.member(scroll_case->member);
+      if ((snapshot->screen != context.screen) || !member ||
+          !member->selected || !member->use_scroll_available ||
+          snapshot->party.selected_member != scroll_case->member) {
         return false;
       }
       continue;

@@ -338,6 +338,25 @@ std::vector<ActionControlModel> build_actions(
       tab_order++,
       engine_rules_token()));
 
+  ActionAvailability scroll_availability =
+      ActionAvailability::deferred_to_engine;
+  std::optional<StateTokenModel> scroll_reason = engine_rules_token();
+  if (!selected) {
+    scroll_availability = ActionAvailability::unavailable;
+    scroll_reason = unavailable_token("Select a party member first");
+  } else if (!navigation_context || !selected->use_scroll_available) {
+    scroll_availability = ActionAvailability::unavailable;
+    scroll_reason = unavailable_token("Scroll use is unavailable now");
+  }
+  result.emplace_back(action(
+      ActionIntent::open_scroll_case,
+      "action.scroll_case.open",
+      "Use scroll",
+      scroll_availability,
+      tab_order++,
+      std::move(scroll_reason)));
+  result.back().party_member = selected_member;
+
   if (snapshot.screen == ScreenContext::combat) {
     const CombatantView* acting = nullptr;
     if (snapshot.combat && snapshot.combat->active &&

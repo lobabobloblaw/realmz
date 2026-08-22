@@ -26,6 +26,10 @@ constexpr uint32_t kSemanticOpenSpellbookSignature = 0x52500000U;
 constexpr uint32_t kSemanticOpenSpellbookMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenSpellbookSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticOpenSpellbookMemberMask = 0x000000FFU;
+constexpr uint32_t kSemanticOpenScrollCaseSignature = 0x53550000U;
+constexpr uint32_t kSemanticOpenScrollCaseMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticOpenScrollCaseSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticOpenScrollCaseMemberMask = 0x000000FFU;
 constexpr uint32_t kSemanticOpenSaveGameSignature = 0x52560000U;
 constexpr uint32_t kSemanticOpenSaveGameMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenSaveGameSurfaceMask = 0x0000FF00U;
@@ -124,6 +128,11 @@ struct DecodedOpenInventory {
 };
 
 struct DecodedOpenSpellbook {
+  realmz::presentation::PartyMemberId member;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedOpenScrollCase {
   realmz::presentation::PartyMemberId member;
   RealmzSemanticInputSurface surface;
 };
@@ -305,6 +314,25 @@ std::optional<DecodedOpenSpellbook> decode_open_spellbook(
   return DecodedOpenSpellbook{
       .member = static_cast<realmz::presentation::PartyMemberId>(
           tagged_message & kSemanticOpenSpellbookMemberMask),
+      .surface = surface_value,
+  };
+}
+
+std::optional<DecodedOpenScrollCase> decode_open_scroll_case(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticOpenScrollCaseMask) !=
+      kSemanticOpenScrollCaseSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticOpenScrollCaseSurfaceMask) >> 8U;
+  if ((surface_value != REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+      (surface_value != REALMZ_SEMANTIC_INPUT_DUNGEON)) {
+    return std::nullopt;
+  }
+  return DecodedOpenScrollCase{
+      .member = static_cast<realmz::presentation::PartyMemberId>(
+          tagged_message & kSemanticOpenScrollCaseMemberMask),
       .surface = surface_value,
   };
 }
@@ -862,6 +890,17 @@ uint32_t semantic_open_spellbook_tag(
       static_cast<uint32_t>(member);
 }
 
+uint32_t semantic_open_scroll_case_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_world_gameplay_surface(surface)) {
+    return 0;
+  }
+  return kSemanticOpenScrollCaseSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(member);
+}
+
 uint32_t semantic_open_save_game_tag(
     RealmzSemanticInputSurface surface) noexcept {
   if (!is_world_gameplay_surface(surface)) {
@@ -1181,6 +1220,17 @@ RealmzSemanticOpenSpellbookTagSurface(uint32_t tagged_message) {
   return spellbook ? spellbook->surface : kNoSemanticInputSurface;
 }
 
+extern "C" uint8_t RealmzIsSemanticOpenScrollCaseTag(
+    uint32_t tagged_message) {
+  return decode_open_scroll_case(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticOpenScrollCaseTagSurface(uint32_t tagged_message) {
+  const auto scroll_case = decode_open_scroll_case(tagged_message);
+  return scroll_case ? scroll_case->surface : kNoSemanticInputSurface;
+}
+
 extern "C" uint8_t RealmzIsSemanticOpenSaveGameTag(
     uint32_t tagged_message) {
   return decode_open_save_game(tagged_message).has_value() ? 1 : 0;
@@ -1393,6 +1443,7 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_party_selection(tagged_message) ||
           decode_open_inventory(tagged_message) ||
           decode_open_spellbook(tagged_message) ||
+          decode_open_scroll_case(tagged_message) ||
           decode_open_save_game(tagged_message) ||
           decode_open_load_game(tagged_message) ||
           decode_guard_combatant(tagged_message) ||
@@ -1428,6 +1479,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto spellbook = decode_open_spellbook(tagged_message)) {
     return spellbook->surface;
+  }
+  if (const auto scroll_case = decode_open_scroll_case(tagged_message)) {
+    return scroll_case->surface;
   }
   if (const auto save_game = decode_open_save_game(tagged_message)) {
     return save_game->surface;
@@ -1641,6 +1695,51 @@ extern "C" uint8_t RealmzConsumeSemanticOpenSpellbookEvent(
     }
     const auto message =
         realmz::presentation::legacy_key_message_for_open_spellbook({
+            .screen = screen,
+            .world_presentation = snapshot.world.presentation,
+            .adaptive_eligible = true,
+        });
+    if (!message) {
+      return 0;
+    }
+    *classic_key_message = *message;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticOpenScrollCaseEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!classic_key_message || !authorized) {
+    return 0;
+  }
+  const auto scroll_case = decode_open_scroll_case(tagged_message);
+  if (!scroll_case || (scroll_case->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    const auto* member = snapshot.party.member(scroll_case->member);
+    if ((snapshot.screen != screen) || !member || !member->selected ||
+        !member->use_scroll_available ||
+        (snapshot.party.selected_member != scroll_case->member)) {
+      return 0;
+    }
+    const auto message =
+        realmz::presentation::legacy_key_message_for_open_scroll_case({
             .screen = screen,
             .world_presentation = snapshot.world.presentation,
             .adaptive_eligible = true,

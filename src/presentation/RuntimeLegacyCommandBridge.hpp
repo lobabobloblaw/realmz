@@ -44,6 +44,10 @@ using RuntimeLegacyOpenSpellbookSink = std::function<bool(
     PartyMemberId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenScrollCaseSink = std::function<bool(
+    PartyMemberId,
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyOpenSaveGameSink = std::function<bool(
     RuntimeLegacyMenuCommand,
     const RuntimeLegacyCommandContext&)>;
@@ -118,6 +122,28 @@ using RuntimeLegacyCenterCombatCursorSink = std::function<bool(
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
 
+// World-action sinks are named because Inventory, Spells, and Use Scroll have
+// intentionally identical callable shapes while their Classic commands are
+// not interchangeable. Empty functions register the corresponding action but
+// fail closed at dispatch, matching the positional compatibility overloads.
+struct RuntimeLegacyWorldActionSinks {
+  RuntimeLegacyOpenInventorySink open_inventory;
+  RuntimeLegacyOpenSpellbookSink open_spellbook;
+  RuntimeLegacyOpenScrollCaseSink open_scroll_case;
+  RuntimeLegacyOpenSaveGameSink open_save_game;
+  RuntimeLegacyOpenLoadGameSink open_load_game;
+};
+
+// The named-bundle constructor accepts only the named lvalue token below. Its
+// non-const reference cannot bind an empty braced argument, keeping all
+// append-only positional overloads source-compatible at every arity.
+struct RuntimeLegacyNamedActionSinksTag final {
+  RuntimeLegacyNamedActionSinksTag() = delete;
+  explicit constexpr RuntimeLegacyNamedActionSinksTag(int) noexcept {}
+};
+
+inline RuntimeLegacyNamedActionSinksTag kRuntimeLegacyNamedActionSinks{0};
+
 // Combat sinks are named because several callable signatures are intentionally
 // identical even though their commands are not interchangeable. The focus
 // sink additionally carries its typed direction. A disengaged field leaves
@@ -162,6 +188,12 @@ struct RuntimeLegacyCombatActionSinks {
 // chooser. The command is exposed only on guarded exploration/dungeon
 // surfaces; spell selection and targeting stay in the Classic flow.
 [[nodiscard]] std::optional<uint32_t> legacy_key_message_for_open_spellbook(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns the preserved Classic lowercase "l" key record outdoors and
+// lowercase "p" key record in a dungeon. The selected member is carried by
+// OpenScrollCaseAction; Classic owns the five case slots and the entire chooser.
+[[nodiscard]] std::optional<uint32_t> legacy_key_message_for_open_scroll_case(
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Game > Save Current Game menu selection consumed by the
@@ -333,6 +365,13 @@ public:
       RuntimeLegacyContextProvider context_provider,
       RuntimeLegacyMovementSink movement_sink,
       RuntimeLegacyPartySelectionSink party_selection_sink);
+  RuntimeLegacyCommandBridge(
+      RuntimeLegacyNamedActionSinksTag&,
+      RuntimeLegacyContextProvider context_provider,
+      RuntimeLegacyMovementSink movement_sink,
+      RuntimeLegacyPartySelectionSink party_selection_sink,
+      RuntimeLegacyWorldActionSinks world_action_sinks,
+      RuntimeLegacyCombatActionSinks combat_action_sinks = {});
   RuntimeLegacyCommandBridge(
       RuntimeLegacyContextProvider context_provider,
       RuntimeLegacyMovementSink movement_sink,

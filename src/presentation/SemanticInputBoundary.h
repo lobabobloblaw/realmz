@@ -50,6 +50,13 @@ uint8_t RealmzIsSemanticOpenSpellbookTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticOpenSpellbookTagSurface(
     uint32_t tagged_message);
 
+// Non-combat scroll-case tags carry the selected member explicitly and retain
+// their originating world surface. Late validation prevents queued commands
+// from retargeting or outliving the selected member's live eligibility.
+uint8_t RealmzIsSemanticOpenScrollCaseTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenScrollCaseTagSurface(
+    uint32_t tagged_message);
+
 // Open-save-game tags request only the preserved slot chooser. They do not
 // identify a slot and cannot write save data at this boundary.
 uint8_t RealmzIsSemanticOpenSaveGameTag(uint32_t tagged_message);
@@ -201,6 +208,14 @@ uint8_t RealmzConsumeSemanticOpenInventoryEvent(
 // Revalidates the originating gameplay surface and intended caster, then
 // returns the preserved Classic "s" key record to the top-level loop.
 uint8_t RealmzConsumeSemanticOpenSpellbookEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
+// Revalidates the originating gameplay surface, selected member, and fresh
+// non-combat Scroll capability, then returns the surface-specific preserved
+// Classic key record. Classic owns the chooser and all scroll-slot behavior.
+uint8_t RealmzConsumeSemanticOpenScrollCaseEvent(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tagged_message,
     uint32_t* classic_key_message);
@@ -373,6 +388,10 @@ struct CombatFieldCell;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_open_spellbook_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_scroll_case_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept;
 

@@ -231,6 +231,9 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
         .conditions = active_conditions(legacy.condition),
         .selected = index == selected_index,
         .conscious = legacy.stamina > 0,
+        .use_scroll_available =
+            (inspell == 0) && (legacy.stamina > 0) &&
+            (legacy.armor[13] != 0),
     });
   }
   if (selected_index >= 0) {

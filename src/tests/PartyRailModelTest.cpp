@@ -196,6 +196,25 @@ void test_action_availability_is_conservative() {
   CHECK(!casting.can_invoke());
   CHECK(casting.availability_reason->label ==
       "The selected member is unconscious");
+  const auto& unavailable_scroll =
+      action_with(model, ActionIntent::open_scroll_case);
+  CHECK(!unavailable_scroll.can_invoke());
+  CHECK(unavailable_scroll.party_member == 2);
+  CHECK(unavailable_scroll.command == "action.scroll_case.open");
+  CHECK(unavailable_scroll.label == "Use scroll");
+  CHECK(unavailable_scroll.availability_reason->label ==
+      "Scroll use is unavailable now");
+
+  snapshot.party.members[1].use_scroll_available = true;
+  model = build_presentation_shell_model(snapshot);
+  const auto& available_scroll =
+      action_with(model, ActionIntent::open_scroll_case);
+  CHECK(available_scroll.can_invoke());
+  CHECK(available_scroll.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(available_scroll.party_member == 2);
+  CHECK(available_scroll.availability_reason->label == "Game rules apply");
+  snapshot.party.members[1].use_scroll_available = false;
 
   snapshot.party.selected_member.reset();
   for (auto& member : snapshot.party.members) {
@@ -204,6 +223,12 @@ void test_action_availability_is_conservative() {
   model = build_presentation_shell_model(snapshot);
   CHECK(!action_with(model, ActionIntent::open_inventory).can_invoke());
   CHECK(!action_with(model, ActionIntent::cast_spell).can_invoke());
+  const auto& scroll_without_selection =
+      action_with(model, ActionIntent::open_scroll_case);
+  CHECK(!scroll_without_selection.can_invoke());
+  CHECK(!scroll_without_selection.party_member);
+  CHECK(scroll_without_selection.availability_reason->label ==
+      "Select a party member first");
 
   snapshot.screen = ScreenContext::encounter;
   snapshot.encounter = EncounterView{
@@ -218,13 +243,13 @@ void test_action_availability_is_conservative() {
   };
   model = build_presentation_shell_model(snapshot);
   CHECK(!action_with(model, ActionIntent::navigate).can_invoke());
-  CHECK(model.actions.size() == 8);
-  CHECK(model.actions[5].command == "encounter.choice.11");
-  CHECK(model.actions[5].can_invoke());
-  CHECK(model.actions[6].command == "encounter.choice.12");
-  CHECK(!model.actions[6].can_invoke());
-  CHECK(model.actions[7].intent == ActionIntent::cancel);
-  CHECK(model.actions[7].can_invoke());
+  CHECK(model.actions.size() == 9);
+  CHECK(model.actions[6].command == "encounter.choice.11");
+  CHECK(model.actions[6].can_invoke());
+  CHECK(model.actions[7].command == "encounter.choice.12");
+  CHECK(!model.actions[7].can_invoke());
+  CHECK(model.actions[8].intent == ActionIntent::cancel);
+  CHECK(model.actions[8].can_invoke());
 }
 
 void test_combat_actions_track_the_active_party_combatant() {
@@ -259,7 +284,13 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 22U);
+  CHECK(model.actions.size() == 23U);
+  const auto& noncombat_scroll =
+      action_with(model, ActionIntent::open_scroll_case);
+  CHECK(!noncombat_scroll.can_invoke());
+  CHECK(noncombat_scroll.party_member == 2);
+  CHECK(noncombat_scroll.availability_reason->label ==
+      "Scroll use is unavailable now");
   const auto& guard = action_with(model, ActionIntent::guard);
   CHECK(guard.can_invoke());
   CHECK(guard.availability == ActionAvailability::deferred_to_engine);
@@ -851,7 +882,7 @@ void test_typography_keyboard_order_and_remappable_ids() {
   CHECK(model.keyboard_tab_order.front().command == "party.select.1");
   CHECK(model.keyboard_tab_order[1].command == "party.select.2");
   CHECK(model.drawers.tabs.empty());
-  CHECK(model.keyboard_tab_order.back().command == "action.game.load");
+  CHECK(model.keyboard_tab_order.back().command == "action.scroll_case.open");
   CHECK(!model.keyboard_tab_order[4].enabled);
 }
 

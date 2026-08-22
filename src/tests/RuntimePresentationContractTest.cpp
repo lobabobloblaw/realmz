@@ -53,6 +53,9 @@ static_assert(std::is_same_v<
     decltype(OpenSpellbookAction::member),
     PartyMemberId>);
 static_assert(std::is_same_v<
+    decltype(OpenScrollCaseAction::member),
+    PartyMemberId>);
+static_assert(std::is_same_v<
     decltype(DelayCombatantAction::combatant),
     CombatantId>);
 static_assert(std::is_same_v<

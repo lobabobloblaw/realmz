@@ -168,7 +168,18 @@ has spell points. The same guarded top-level loop revalidates the member, live
 selection, eligibility, and screen before returning the exact Classic `i` or
 `s` key record. Stale queued actions therefore become inert. The nested
 inventory and spell-selection screens remain unmodified and full-frame.
-The adjacent typed Save action has its own member-free tagged event. It is
+The non-combat Use Scroll action carries the selected member in a
+distinct `OpenScrollCaseAction` and tagged event. It is available only while a
+fresh snapshot shows positive stamina, an equipped scroll case, and no spell
+flow already in progress. After late selection, eligibility, and surface
+validation, outdoor exploration maps it to Classic's exact lowercase `l`
+message `0x0000256C`; dungeon map and
+first-person presentations map it to the distinct lowercase `p` message
+`0x00002370`. The boundary never inspects the case's five entries, so an
+equipped empty case still opens the preserved chooser. Classic remains
+authoritative for browsing other eligible members, choosing a slot, targeting,
+consumption, cancellation, and all mutations. The typed Save action has its
+own member-free tagged event. It is
 late-validated against the current exploration or dungeon surface and only then
 translated to the preserved Game menu ID 129, item 3 route. That route opens
 the unmodified Classic slot chooser; no slot selection or save write occurs at
@@ -386,8 +397,8 @@ inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Search, use/consume Torch, Heal, Rest/Camp, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, non-combat Use Scroll, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
-| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Rest/Camp, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, non-combat Use Scroll, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Outdoor | Search, use/consume Torch, Heal, Rest/Camp, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
+| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Rest/Camp, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -572,17 +583,20 @@ Automated checks do not replace these release decisions:
   rather than a partial crop. Archive the inventory, captures, failure evidence,
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
-  Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat
-  Target, Combat Escape, Use Scroll, and Center Cursor
+  Spells, non-combat Use Scroll, Save, Load, Guard, Finish, Delay, Center,
+  Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
+  Combat Cast, Combat Target, Combat Escape, Use Scroll, and Center Cursor
   controls at compact and wide layouts,
   including direct and idempotent selection of the persistent Turn, Gear,
   Tactics, and Special combat tabs; stable focus across page recomposition;
   unique non-overlapping targets of at least 44×44 points; and a visible
   non-color selected-tab indicator; and an inert stale Spells action after
-  selection, consciousness, spell
-  points, or surface state changes; inert stale Save and Load actions after
-  leaving their gameplay surface; and inert stale Guard, Finish, Delay, and
+  selection, consciousness, spell points, or surface state changes; verify
+  non-combat Use Scroll emits outdoor `l` and dungeon `p`, remains available
+  for an equipped case whose five entries are empty, and becomes inert after
+  selection, stamina, equipment, or surface state changes; inert stale Save and
+  Load actions after leaving their gameplay surface; and inert stale Guard,
+  Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting
   combatant, eligibility, or combat surface changes; verify Combat Items is
   inert after either the acting combatant or selected party member changes and

@@ -17,6 +17,8 @@ constexpr uint32_t kKeypadSevenMessage = 0x00005937U;
 constexpr uint32_t kKeypadNineMessage = 0x00005C39U;
 constexpr uint32_t kOpenInventoryMessage = 0x00002269U;
 constexpr uint32_t kOpenSpellbookMessage = 0x00000173U;
+constexpr uint32_t kOpenOutdoorScrollCaseMessage = 0x0000256CU;
+constexpr uint32_t kOpenDungeonScrollCaseMessage = 0x00002370U;
 constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
@@ -704,6 +706,55 @@ LegacyActionHandlers make_handlers(
     RuntimeLegacyContextProvider context_provider,
     RuntimeLegacyMovementSink movement_sink,
     RuntimeLegacyPartySelectionSink party_selection_sink,
+    RuntimeLegacyWorldActionSinks world_action_sinks,
+    RuntimeLegacyCombatActionSinks combat_action_sinks) {
+  auto handlers = make_handlers(
+      context_provider,
+      std::move(movement_sink),
+      std::move(party_selection_sink),
+      std::move(world_action_sinks.open_inventory),
+      std::move(world_action_sinks.open_spellbook),
+      std::move(world_action_sinks.open_save_game),
+      std::move(world_action_sinks.open_load_game),
+      std::move(combat_action_sinks));
+  handlers.open_scroll_case = [
+      context_provider = std::move(context_provider),
+      open_scroll_case_sink =
+          std::move(world_action_sinks.open_scroll_case)](
+          const OpenScrollCaseAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!open_scroll_case_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy open-scroll-case sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic scroll use");
+    }
+    const auto message = legacy_key_message_for_open_scroll_case(context);
+    if (!message) {
+      return DispatchResult::rejected(
+          "Opening the scroll case is not supported in the current legacy "
+          "context");
+    }
+    if (!open_scroll_case_sink(action.member, *message, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic open-scroll-case action");
+    }
+    return DispatchResult::handled();
+  };
+  return handlers;
+}
+
+LegacyActionHandlers make_handlers(
+    RuntimeLegacyContextProvider context_provider,
+    RuntimeLegacyMovementSink movement_sink,
+    RuntimeLegacyPartySelectionSink party_selection_sink,
     RuntimeLegacyOpenInventorySink open_inventory_sink,
     RuntimeLegacyOpenSpellbookSink open_spellbook_sink);
 
@@ -1021,6 +1072,24 @@ std::optional<uint32_t> legacy_key_message_for_open_spellbook(
   return std::nullopt;
 }
 
+std::optional<uint32_t> legacy_key_message_for_open_scroll_case(
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible) {
+    return std::nullopt;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return kOpenOutdoorScrollCaseMessage;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  if ((context.screen == ScreenContext::dungeon) && dungeon_presentation) {
+    return kOpenDungeonScrollCaseMessage;
+  }
+  return std::nullopt;
+}
+
 std::optional<RuntimeLegacyMenuCommand>
 legacy_menu_command_for_open_save_game(
     const RuntimeLegacyCommandContext& context) noexcept {
@@ -1275,6 +1344,20 @@ RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
           std::move(context_provider),
           std::move(movement_sink),
           std::move(party_selection_sink))) {}
+
+RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
+    RuntimeLegacyNamedActionSinksTag&,
+    RuntimeLegacyContextProvider context_provider,
+    RuntimeLegacyMovementSink movement_sink,
+    RuntimeLegacyPartySelectionSink party_selection_sink,
+    RuntimeLegacyWorldActionSinks world_action_sinks,
+    RuntimeLegacyCombatActionSinks combat_action_sinks)
+    : injected_bridge_(make_handlers(
+          std::move(context_provider),
+          std::move(movement_sink),
+          std::move(party_selection_sink),
+          std::move(world_action_sinks),
+          std::move(combat_action_sinks))) {}
 
 RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge(
     RuntimeLegacyContextProvider context_provider,

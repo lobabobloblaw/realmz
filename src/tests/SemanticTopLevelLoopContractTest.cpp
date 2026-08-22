@@ -327,6 +327,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic spellbook input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticOpenScrollCaseEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged non-combat scroll-case input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticOpenSaveGameEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic save input");
@@ -524,6 +528,33 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(spellbook_wrapper, "keyDown") == 0 &&
           count_identifier(spellbook_wrapper, "mouseDown") == 0,
       "public semantic open spellbook enqueue must not synthesize Classic input");
+
+  const std::string push_world_scroll_case = function_body(
+      source, "push_semantic_open_scroll_case_event");
+  const std::string compact_push_world_scroll_case =
+      without_whitespace(push_world_scroll_case);
+  require(count_identifier(push_world_scroll_case,
+              "RealmzIsSemanticOpenScrollCaseTag") == 1,
+      "semantic non-combat scroll-case enqueue must validate exactly one tag");
+  require(count_identifier(push_world_scroll_case, "app1Evt") == 1,
+      "semantic non-combat scroll-case enqueue must use app1Evt exactly once");
+  require(count_identifier(push_world_scroll_case, "keyDown") == 0 &&
+          count_identifier(push_world_scroll_case, "mouseDown") == 0,
+      "semantic non-combat scroll-case enqueue must not synthesize Classic input");
+  require(compact_push_world_scroll_case.contains("ev.what=app1Evt;") &&
+          compact_push_world_scroll_case.contains(
+              "ev.message=tagged_message;"),
+      "semantic non-combat scroll-case must retain its tagged app1Evt payload");
+
+  const std::string world_scroll_case_wrapper = function_body(
+      source, "PushSemanticOpenScrollCaseEvent");
+  require(without_whitespace(world_scroll_case_wrapper).contains(
+              "returnem.push_semantic_open_scroll_case_event("
+              "tagged_message);"),
+      "public non-combat scroll-case enqueue must delegate to its tagged queue");
+  require(count_identifier(world_scroll_case_wrapper, "keyDown") == 0 &&
+          count_identifier(world_scroll_case_wrapper, "mouseDown") == 0,
+      "public non-combat scroll-case enqueue must not synthesize Classic input");
 
   const std::string push_save = function_body(
       source, "push_semantic_open_save_game_event");
@@ -1043,6 +1074,11 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must have one late spellbook consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticOpenScrollCaseEvent") == 1,
+      "semantic gameplay wrapper must have one late non-combat scroll-case "
+      "consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticOpenSaveGameEvent") == 1,
       "semantic gameplay wrapper must have one late save consumer");
   require(count_identifier(
@@ -1120,14 +1156,15 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 22,
-      "semantic gameplay wrapper must recognize all twenty-two tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 22 &&
-          count_text(compact_semantic, "ret->what=keyDown;") == 20 &&
+  require(count_identifier(semantic_wrapper, "app1Evt") == 23,
+      "semantic gameplay wrapper must recognize all twenty-three tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 23 &&
+          count_text(compact_semantic, "ret->what=keyDown;") == 21 &&
           count_text(
               compact_semantic, ".kind=(ret->what==keyDown)") == 2,
       "only guarded Classic replay injection or late movement, inventory, "
-      "spellbook, guard, finish, delay, center, switch-weapon, cycle-focus, "
+      "spellbook, non-combat scroll-case, guard, finish, delay, center, "
+      "switch-weapon, cycle-focus, "
       "combat-items, Auto, Range, Bandage, Undo, combat-spellbook, "
       "combat-targeting, Escape, scroll-case, or center-cursor validation may "
       "produce keyDown, followed by typed replay delivery observations");
@@ -1155,6 +1192,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenSpellbookEvent") == 1,
       "EventManager may consume semantic spellbook input only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticOpenScrollCaseEvent") == 1,
+      "EventManager may consume semantic non-combat scroll-case input only "
+      "inside its gameplay wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenSaveGameEvent") == 1,
       "EventManager may consume semantic save input only inside its gameplay wrapper");
@@ -1312,8 +1353,20 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", spellbook_keydown);
   const std::size_t spellbook_message = compact_semantic.find(
       "ret->message=0", spellbook_null);
+  const std::size_t world_scroll_case_branch = compact_semantic.find(
+      "RealmzIsSemanticOpenScrollCaseTag(ret->message)", spellbook_message);
+  const std::size_t world_scroll_case_consume = compact_semantic.find(
+      "RealmzConsumeSemanticOpenScrollCaseEvent(",
+      world_scroll_case_branch);
+  const std::size_t world_scroll_case_keydown = compact_semantic.find(
+      "ret->what=keyDown", world_scroll_case_consume);
+  const std::size_t world_scroll_case_null = compact_semantic.find(
+      "ret->what=nullEvent", world_scroll_case_keydown);
+  const std::size_t world_scroll_case_rejected_message = compact_semantic.find(
+      "ret->message=0", world_scroll_case_null);
   const std::size_t save_branch = compact_semantic.find(
-      "RealmzIsSemanticOpenSaveGameTag(ret->message)", spellbook_message);
+      "RealmzIsSemanticOpenSaveGameTag(ret->message)",
+      world_scroll_case_rejected_message);
   const std::size_t save_consume = compact_semantic.find(
       "RealmzConsumeSemanticOpenSaveGameEvent(", save_branch);
   const std::size_t save_mousedown = compact_semantic.find(
@@ -1556,6 +1609,11 @@ void verify_event_manager(const fs::path& repository_root) {
           spellbook_keydown != std::string::npos &&
           spellbook_null != std::string::npos &&
           spellbook_message != std::string::npos &&
+          world_scroll_case_branch != std::string::npos &&
+          world_scroll_case_consume != std::string::npos &&
+          world_scroll_case_keydown != std::string::npos &&
+          world_scroll_case_null != std::string::npos &&
+          world_scroll_case_rejected_message != std::string::npos &&
           save_branch != std::string::npos &&
           save_consume != std::string::npos &&
           save_mousedown != std::string::npos &&
@@ -1676,7 +1734,12 @@ void verify_event_manager(const fs::path& repository_root) {
           spellbook_consume < spellbook_keydown &&
           spellbook_keydown < spellbook_null &&
           spellbook_null < spellbook_message &&
-          spellbook_message < save_branch &&
+          spellbook_message < world_scroll_case_branch &&
+          world_scroll_case_branch < world_scroll_case_consume &&
+          world_scroll_case_consume < world_scroll_case_keydown &&
+          world_scroll_case_keydown < world_scroll_case_null &&
+          world_scroll_case_null < world_scroll_case_rejected_message &&
+          world_scroll_case_rejected_message < save_branch &&
           save_branch < save_consume &&
           save_consume < save_mousedown &&
           save_mousedown < save_message &&
@@ -1799,6 +1862,12 @@ void verify_event_manager(const fs::path& repository_root) {
           combat_targeting_consume < combat_targeting_keydown,
       "Combat targeting must leave semantic gameplay scope before its "
       "lowercase t handoff, leaving quiver choice and targeting in Classic");
+  require(scope_block_close < world_scroll_case_branch &&
+          world_scroll_case_branch < world_scroll_case_consume &&
+          world_scroll_case_consume < world_scroll_case_keydown,
+      "Non-combat Use Scroll must leave semantic gameplay scope before its "
+      "surface-specific lowercase l/p handoff, leaving the five-slot chooser "
+      "and all scroll behavior in Classic");
   require(scope_block_close < escape_branch &&
           escape_branch < escape_consume &&
           escape_consume < escape_keydown,
@@ -1958,6 +2027,606 @@ void verify_mode_switch_cancellation(const fs::path& repository_root) {
   require(mutate < select_assets && select_assets < refresh_assets &&
           refresh_assets < recomposite,
       "presentation assets must refresh after mode selection and before recomposition");
+}
+
+void verify_noncombat_scroll_case_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string raw_ui_action = read_file(
+      repository_root / "src/presentation/UIAction.hpp");
+  const std::string ui_action = code_only(raw_ui_action);
+  const std::string open_scroll_action = type_body(
+      ui_action, "OpenScrollCaseAction");
+  require(count_identifier(open_scroll_action, "PartyMemberId") == 1 &&
+          count_identifier(open_scroll_action, "member") == 1,
+      "OpenScrollCaseAction must carry exactly one typed party-member ID");
+  const std::size_t payload_alias = find_identifier(
+      ui_action, "UIActionPayload");
+  const std::size_t payload_end = ui_action.find(';', payload_alias);
+  require(payload_alias != std::string::npos &&
+          payload_end != std::string::npos,
+      "UIActionPayload definition is missing");
+  const std::string payload_types = ui_action.substr(
+      payload_alias, payload_end - payload_alias + 1U);
+  require(count_identifier(payload_types, "OpenScrollCaseAction") == 1 &&
+          count_identifier(payload_types, "OpenCombatScrollCaseAction") == 1,
+      "non-combat and combat scroll cases must remain distinct UIAction payloads");
+  const std::string action_name_body = function_body(ui_action, "action_name");
+  require(count_identifier(action_name_body, "OpenScrollCaseAction") == 1 &&
+          count_text(raw_ui_action, "\"open_scroll_case\"") == 1,
+      "OpenScrollCaseAction must retain its distinct stable action name");
+
+  const std::string game_snapshot = code_only(read_file(
+      repository_root / "src/presentation/GameSnapshot.hpp"));
+  const std::string party_member_view = type_body(
+      game_snapshot, "PartyMemberView");
+  require(count_identifier(
+              party_member_view, "use_scroll_available") == 1,
+      "PartyMemberView must expose one non-combat scroll-case capability");
+
+  const std::string snapshot_source = code_only(read_file(
+      repository_root / "src/presentation/LegacyGameSnapshotSource.cpp"));
+  const std::string capture = function_body(snapshot_source, "capture");
+  const std::string compact_capture = without_whitespace(capture);
+  require(compact_capture.contains(
+              ".use_scroll_available=(inspell==0)&&"
+              "(legacy.stamina>0)&&(legacy.armor[13]!=0),"),
+      "snapshot capture must project only Classic's live non-combat case, "
+      "spell-flow, and stamina gate");
+
+  const std::string party_model_header = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp"));
+  const std::string action_intent = type_body(
+      party_model_header, "ActionIntent");
+  require(count_identifier(action_intent, "open_scroll_case") == 1 &&
+          count_identifier(action_intent, "open_combat_scroll_case") == 1,
+      "party model must keep non-combat and combat scroll intents distinct");
+  const std::string party_model_source = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp"));
+  const std::string build_actions = function_body(
+      party_model_source, "build_actions");
+  const std::string compact_actions = without_whitespace(build_actions);
+  require(compact_actions.contains(
+              "elseif(!navigation_context||"
+              "!selected->use_scroll_available){") &&
+          compact_actions.contains("ActionIntent::open_scroll_case,") &&
+          compact_actions.contains(
+              "result.back().party_member=selected_member;"),
+      "party model must bind non-combat scroll availability and payload to the "
+      "selected member on a live world surface");
+
+  const std::string shell_header = code_only(read_file(
+      repository_root / "src/presentation/ShellControlLayout.hpp"));
+  const std::string shell_kinds = type_body(shell_header, "ShellControlKind");
+  require(count_identifier(shell_kinds, "open_scroll_case") == 1 &&
+          count_identifier(shell_kinds, "open_combat_scroll_case") == 1,
+      "shell control kinds must distinguish world and combat scroll cases");
+  const std::string shell_request = type_body(
+      shell_header, "ShellControlLayoutRequest");
+  require(count_identifier(shell_request, "scroll_case_member") == 1 &&
+          count_identifier(shell_request, "scroll_case_available") == 1,
+      "shell layout request must carry the non-combat member and capability "
+      "independently");
+  const std::string shell_source = code_only(read_file(
+      repository_root / "src/presentation/ShellControlLayout.cpp"));
+  const std::string shell_layout = function_body(
+      shell_source, "compute_shell_control_layout");
+  const std::string compact_shell_layout = without_whitespace(shell_layout);
+  require(compact_shell_layout.contains("if(request.scroll_case_member){") &&
+          compact_shell_layout.contains(
+              ".kind=ShellControlKind::open_scroll_case,") &&
+          compact_shell_layout.contains(
+              ".enabled=request.scroll_case_available,") &&
+          compact_shell_layout.contains(
+              ".payload=OpenScrollCaseAction{"
+              "*request.scroll_case_member},"),
+      "shell composition must emit one typed, member-bound non-combat scroll "
+      "control using the modeled capability");
+
+  const std::string legacy_bridge_header = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.hpp"));
+  const std::string legacy_handlers = type_body(
+      legacy_bridge_header, "LegacyActionHandlers");
+  const std::string compact_legacy_handlers =
+      without_whitespace(legacy_handlers);
+  require(compact_legacy_handlers.contains(
+              "LegacyActionHandler<OpenScrollCaseAction>open_scroll_case;") &&
+          compact_legacy_handlers.contains(
+              "LegacyActionHandler<OpenCombatScrollCaseAction>"
+              "open_combat_scroll_case;"),
+      "legacy dispatch must register distinct typed world and combat scroll "
+      "handlers");
+  const std::string legacy_bridge_source = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.cpp"));
+  const std::string injected_dispatch = function_body(
+      legacy_bridge_source, "dispatch");
+  const std::string compact_injected_dispatch =
+      without_whitespace(injected_dispatch);
+  require(compact_injected_dispatch.contains(
+              "std::is_same_v<Action,OpenScrollCaseAction>") &&
+          compact_injected_dispatch.contains(
+              "this->handlers_.open_scroll_case,payload"),
+      "InjectedLegacyCommandBridge must dispatch OpenScrollCaseAction only to "
+      "its dedicated handler");
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root /
+          "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string world_sinks_type = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  const std::string named_sinks_tag = type_body(
+      runtime_header, "RuntimeLegacyNamedActionSinksTag");
+  const std::string compact_runtime_header =
+      without_whitespace(runtime_header);
+  const std::string compact_named_sinks_tag =
+      without_whitespace(named_sinks_tag);
+  require(count_identifier(
+              runtime_header, "RuntimeLegacyOpenScrollCaseSink") == 2 &&
+          count_identifier(world_sinks_type, "open_scroll_case") == 1,
+      "runtime bridge must expose one named non-combat scroll-case sink");
+  require(compact_named_sinks_tag.contains(
+              "RuntimeLegacyNamedActionSinksTag()=delete;") &&
+          compact_named_sinks_tag.contains(
+              "explicitconstexprRuntimeLegacyNamedActionSinksTag(int)"
+              "noexcept{}") &&
+          count_identifier(
+              runtime_header, "kRuntimeLegacyNamedActionSinks") == 1 &&
+          compact_runtime_header.contains(
+              "inlineRuntimeLegacyNamedActionSinksTag"
+              "kRuntimeLegacyNamedActionSinks{0};") &&
+          compact_runtime_header.contains(
+              "RuntimeLegacyCommandBridge("
+              "RuntimeLegacyNamedActionSinksTag&,"
+              "RuntimeLegacyContextProvidercontext_provider,"),
+      "named world-action construction must retain its non-default-constructible "
+      "tag-first overload and unique named tag constant");
+  const std::string runtime_source = code_only(read_file(
+      repository_root /
+          "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string compact_runtime_source = without_whitespace(runtime_source);
+  require(count_identifier(
+              runtime_source, "RuntimeLegacyNamedActionSinksTag") == 1 &&
+          compact_runtime_source.contains(
+              "RuntimeLegacyCommandBridge::RuntimeLegacyCommandBridge("
+              "RuntimeLegacyNamedActionSinksTag&,"
+              "RuntimeLegacyContextProvidercontext_provider,"),
+      "runtime implementation must define the unique tag-first named-sinks "
+      "constructor");
+  require(compact_runtime_source.contains(
+              "kOpenOutdoorScrollCaseMessage=0x0000256CU;") &&
+          compact_runtime_source.contains(
+              "kOpenDungeonScrollCaseMessage=0x00002370U;"),
+      "runtime bridge must preserve the exact lowercase outdoor l and dungeon "
+      "p key records");
+  const std::string key_mapper = function_body(
+      runtime_source, "legacy_key_message_for_open_scroll_case");
+  const std::string compact_key_mapper = without_whitespace(key_mapper);
+  require(compact_key_mapper.contains(
+              "if((context.screen==ScreenContext::exploration)&&"
+              "(context.world_presentation==WorldPresentation::outdoor)){"
+              "returnkOpenOutdoorScrollCaseMessage;}") &&
+          compact_key_mapper.contains(
+              "if((context.screen==ScreenContext::dungeon)&&"
+              "dungeon_presentation){returnkOpenDungeonScrollCaseMessage;}"),
+      "scroll-case key mapping must separate outdoor l from both supported "
+      "dungeon p presentations");
+
+  const std::size_t runtime_world_sinks = find_identifier(
+      runtime_source, "RuntimeLegacyWorldActionSinks");
+  require(runtime_world_sinks != std::string::npos,
+      "runtime world-action handler constructor is missing");
+  const std::size_t runtime_world_body_open = runtime_source.find(
+      '{', runtime_world_sinks +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(runtime_world_body_open != std::string::npos,
+      "runtime world-action handler body is missing");
+  const std::size_t runtime_world_body_close = matching_delimiter(
+      runtime_source, runtime_world_body_open, '{', '}');
+  const std::string runtime_world_handlers = runtime_source.substr(
+      runtime_world_body_open,
+      runtime_world_body_close - runtime_world_body_open + 1U);
+  const std::string compact_runtime_world_handlers =
+      without_whitespace(runtime_world_handlers);
+  require(compact_runtime_world_handlers.contains(
+              "handlers.open_scroll_case=[") &&
+          compact_runtime_world_handlers.contains(
+              "legacy_key_message_for_open_scroll_case(context)") &&
+          compact_runtime_world_handlers.contains(
+              "open_scroll_case_sink(action.member,*message,context)"),
+      "runtime world handler must map and enqueue the member-bound scroll case "
+      "through its named sink");
+
+  const std::string boundary_header = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.h"));
+  for (const auto identifier : {
+           "RealmzIsSemanticOpenScrollCaseTag",
+           "RealmzSemanticOpenScrollCaseTagSurface",
+           "RealmzConsumeSemanticOpenScrollCaseEvent",
+           "semantic_open_scroll_case_tag",
+       }) {
+    require(count_identifier(boundary_header, identifier) == 1,
+        std::string("semantic boundary must expose exactly one ") + identifier);
+  }
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary_source =
+      without_whitespace(boundary_source);
+  require(compact_boundary_source.contains(
+              "kSemanticOpenScrollCaseSignature=0x53550000U;") &&
+          compact_boundary_source.contains(
+              "kSemanticOpenCombatScrollCaseSignature=0x55530000U;"),
+      "world and combat scroll cases must retain distinct semantic signatures");
+  const std::string decode_tag = function_body(
+      boundary_source, "decode_open_scroll_case");
+  const std::string compact_decode_tag = without_whitespace(decode_tag);
+  require(compact_decode_tag.contains(
+              "surface_value!=REALMZ_SEMANTIC_INPUT_EXPLORATION") &&
+          compact_decode_tag.contains(
+              "surface_value!=REALMZ_SEMANTIC_INPUT_DUNGEON") &&
+          compact_decode_tag.contains(
+              "tagged_message&kSemanticOpenScrollCaseMemberMask") &&
+          compact_decode_tag.contains(".surface=surface_value,"),
+      "non-combat scroll-case decoder must retain both member and originating "
+      "world surface while rejecting every other surface");
+  const std::string make_tag = function_body(
+      boundary_source, "semantic_open_scroll_case_tag");
+  const std::string compact_make_tag = without_whitespace(make_tag);
+  require(compact_make_tag.contains(
+              "kSemanticOpenScrollCaseSignature|"
+              "(static_cast<uint32_t>(surface)<<8U)|"
+              "static_cast<uint32_t>(member)") &&
+          count_identifier(make_tag, "is_world_gameplay_surface") == 1,
+      "non-combat scroll-case tag must encode its member and validated world "
+      "surface");
+  const std::string consume_tag = function_body(
+      boundary_source, "RealmzConsumeSemanticOpenScrollCaseEvent");
+  const std::string compact_consume_tag = without_whitespace(consume_tag);
+  for (const auto identifier : {
+           "authorize_completed_scope", "decode_open_scroll_case",
+           "RealmzCaptureLegacyPresentationContext", "LegacyGameSnapshotSource",
+           "use_scroll_available", "selected_member",
+           "legacy_key_message_for_open_scroll_case",
+       }) {
+    require(count_identifier(consume_tag, identifier) >= 1,
+        std::string("late scroll-case consumer must revalidate ") + identifier);
+  }
+  const std::size_t consume_authorize = compact_consume_tag.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t consume_decode = compact_consume_tag.find(
+      "decode_open_scroll_case(tagged_message)");
+  const std::size_t consume_surface = compact_consume_tag.find(
+      "scroll_case->surface!=expected_surface", consume_decode);
+  const std::size_t consume_context = compact_consume_tag.find(
+      "RealmzCaptureLegacyPresentationContext()", consume_surface);
+  const std::size_t consume_adaptive = compact_consume_tag.find(
+      "!legacy.adaptive_eligible", consume_context);
+  const std::size_t consume_context_surface = compact_consume_tag.find(
+      "screen!=screen_for_surface(expected_surface)", consume_adaptive);
+  const std::size_t consume_snapshot = compact_consume_tag.find(
+      "LegacyGameSnapshotSource().capture()", consume_context_surface);
+  const std::size_t consume_member = compact_consume_tag.find(
+      "snapshot.party.member(scroll_case->member)", consume_snapshot);
+  const std::size_t consume_snapshot_context = compact_consume_tag.find(
+      "snapshot.screen!=screen", consume_member);
+  const std::size_t consume_capability = compact_consume_tag.find(
+      "!member->use_scroll_available", consume_snapshot_context);
+  const std::size_t consume_selection = compact_consume_tag.find(
+      "snapshot.party.selected_member!=scroll_case->member",
+      consume_capability);
+  const std::size_t consume_mapper = compact_consume_tag.find(
+      "legacy_key_message_for_open_scroll_case", consume_selection);
+  const std::size_t consume_output = compact_consume_tag.find(
+      "*classic_key_message=*message", consume_mapper);
+  require(consume_authorize != std::string::npos &&
+          consume_decode != std::string::npos &&
+          consume_surface != std::string::npos &&
+          consume_context != std::string::npos &&
+          consume_adaptive != std::string::npos &&
+          consume_context_surface != std::string::npos &&
+          consume_snapshot != std::string::npos &&
+          consume_member != std::string::npos &&
+          consume_snapshot_context != std::string::npos &&
+          consume_capability != std::string::npos &&
+          consume_selection != std::string::npos &&
+          consume_mapper != std::string::npos &&
+          consume_output != std::string::npos &&
+          consume_authorize < consume_decode &&
+          consume_decode < consume_surface &&
+          consume_surface < consume_context &&
+          consume_context < consume_adaptive &&
+          consume_adaptive < consume_context_surface &&
+          consume_context_surface < consume_snapshot &&
+          consume_snapshot < consume_member &&
+          consume_member < consume_snapshot_context &&
+          consume_snapshot_context < consume_capability &&
+          consume_capability < consume_selection &&
+          consume_selection < consume_mapper && consume_mapper < consume_output,
+      "late scroll-case consumption must validate tag, surface, fresh member "
+      "capability, selection, and exact context before returning a Classic key");
+  require(count_identifier(consume_tag, "keyDown") == 0 &&
+          count_identifier(consume_tag, "getscroll") == 0,
+      "semantic boundary must return only a validated key record and never "
+      "invoke Classic scroll UI directly");
+
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t bridge = find_identifier(
+      create_window, "RuntimeLegacyCommandBridge");
+  const std::size_t invocation_open = create_window.find(
+      '(', bridge + std::string_view("RuntimeLegacyCommandBridge").size());
+  require(bridge != std::string::npos && invocation_open != std::string::npos,
+      "WindowManager runtime bridge construction is missing");
+  const std::size_t invocation_close = matching_delimiter(
+      create_window, invocation_open, '(', ')');
+  const std::string invocation = create_window.substr(
+      invocation_open, invocation_close - invocation_open + 1U);
+  const std::string compact_invocation = without_whitespace(invocation);
+  require(count_identifier(
+              invocation, "RuntimeLegacyWorldActionSinks") == 1,
+      "WindowManager must construct exactly one named world-action sink bundle");
+  const std::size_t named_world_sinks = find_identifier(
+      invocation, "RuntimeLegacyWorldActionSinks");
+  const std::size_t named_sinks_tag_argument = find_identifier(
+      invocation, "kRuntimeLegacyNamedActionSinks");
+  require(count_identifier(
+              invocation, "kRuntimeLegacyNamedActionSinks") == 1 &&
+          count_identifier(
+              invocation, "RuntimeLegacyNamedActionSinksTag") == 0 &&
+          named_sinks_tag_argument < named_world_sinks &&
+          compact_invocation.starts_with(
+              "(realmz::presentation::kRuntimeLegacyNamedActionSinks,"),
+      "WindowManager must use the named tag constant to select the tag-first "
+      "constructor before passing its world-action bundle");
+  const std::size_t named_world_open = skip_whitespace(
+      invocation,
+      named_world_sinks +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(named_world_open < invocation.size() &&
+          invocation[named_world_open] == '{',
+      "WindowManager named world-action sink aggregate is missing");
+  const std::size_t named_world_close = matching_delimiter(
+      invocation, named_world_open, '{', '}');
+  const std::string named_world_aggregate = invocation.substr(
+      named_world_open, named_world_close - named_world_open + 1U);
+  const std::string world_scroll_sink = designated_lambda_body(
+      named_world_aggregate, "open_scroll_case");
+  const std::string compact_world_scroll_sink =
+      without_whitespace(world_scroll_sink);
+  for (const auto identifier : {
+           "legacy_key_message_for_open_scroll_case",
+           "semantic_open_scroll_case_tag",
+           "PushSemanticOpenScrollCaseEvent",
+       }) {
+    require(count_identifier(world_scroll_sink, identifier) == 1,
+        std::string("named WindowManager scroll-case sink must own one ") +
+            identifier);
+  }
+  require(compact_world_scroll_sink.contains(
+              "if(!matching_surface||!expected||(message!=*expected)){") &&
+          compact_world_scroll_sink.contains(
+              "semantic_open_scroll_case_tag(member,surface)") &&
+          compact_world_scroll_sink.contains(
+              "returntag&&PushSemanticOpenScrollCaseEvent(tag);"),
+      "WindowManager world sink must reject a mismatched key record before "
+      "enqueuing the member-and-surface tag");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  const std::size_t modeled_scroll = compact_present.find(
+      "ActionIntent::open_scroll_case");
+  const std::size_t modeled_member = compact_present.find(
+      "scroll_case_action->party_member", modeled_scroll);
+  const std::size_t modeled_available = compact_present.find(
+      "constboolscroll_case_available=", modeled_member);
+  const std::size_t modeled_context = compact_present.find(
+      "snapshot_context_matches", modeled_available);
+  const std::size_t modeled_mapper = compact_present.find(
+      "legacy_key_message_for_open_scroll_case", modeled_context);
+  const std::size_t composed_member = compact_present.find(
+      ".scroll_case_member=scroll_case_member", modeled_mapper);
+  const std::size_t composed_available = compact_present.find(
+      ".scroll_case_available=scroll_case_available", composed_member);
+  require(modeled_scroll != std::string::npos &&
+          modeled_member != std::string::npos &&
+          modeled_available != std::string::npos &&
+          modeled_context != std::string::npos &&
+          modeled_mapper != std::string::npos &&
+          composed_member != std::string::npos &&
+          composed_available != std::string::npos &&
+          modeled_scroll < modeled_member && modeled_member < modeled_available &&
+          modeled_available < modeled_context && modeled_context < modeled_mapper &&
+          modeled_mapper < composed_member && composed_member < composed_available,
+      "WindowManager shell composition must derive and pass the live modeled "
+      "scroll member and surface-specific availability");
+
+  const auto scroll_liveness_branch = [](std::string_view body,
+                                          std::string_view gate_name) {
+    const std::size_t action = find_identifier(
+        body, "OpenScrollCaseAction");
+    require(action != std::string::npos,
+        std::string(gate_name) +
+            " must inspect the typed non-combat scroll payload");
+    const std::size_t opening = body.find('{', action);
+    require(opening != std::string::npos,
+        std::string(gate_name) + " scroll-case branch is missing");
+    const std::size_t closing = matching_delimiter(body, opening, '{', '}');
+    return without_whitespace(
+        body.substr(opening, closing - opening + 1U));
+  };
+  const std::string composition_liveness = scroll_liveness_branch(
+      present, "composition-time liveness gate");
+  require(composition_liveness.contains(
+              "snapshot.party.member(scroll_case->member)") &&
+          composition_liveness.contains(
+              "ShellControlKind::open_scroll_case") &&
+          composition_liveness.contains("member&&member->selected&&") &&
+          composition_liveness.contains(
+              "member->use_scroll_available&&") &&
+          composition_liveness.contains(
+              "snapshot.party.selected_member==scroll_case->member") &&
+          composition_liveness.contains(
+              "legacy_key_message_for_open_scroll_case(context)"),
+      "composition-time liveness gate must bind the typed control to its "
+      "selected capable member and current world context");
+  const std::string keyboard_eligibility = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string dispatch_liveness = scroll_liveness_branch(
+      keyboard_eligibility, "dispatch-time keyboard liveness gate");
+  require(dispatch_liveness.contains("!surface_matches_context||") &&
+          dispatch_liveness.contains(
+              "ShellControlKind::open_scroll_case||") &&
+          dispatch_liveness.contains(
+              "!realmz::presentation::"
+              "legacy_key_message_for_open_scroll_case(context)") &&
+          dispatch_liveness.contains(
+              "LegacyGameSnapshotSource().capture()") &&
+          dispatch_liveness.contains(
+              "snapshot->party.member(scroll_case->member)") &&
+          dispatch_liveness.contains("snapshot->screen!=context.screen") &&
+          dispatch_liveness.contains("!member->selected") &&
+          dispatch_liveness.contains("!member->use_scroll_available") &&
+          dispatch_liveness.contains(
+              "snapshot->party.selected_member!=scroll_case->member"),
+      "dispatch-time keyboard liveness gate must recapture and revalidate the "
+      "typed selected member, scroll capability, and exact world context");
+  const std::string shell_dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  require(count_identifier(
+              shell_dispatch, "remastered_shell_keyboard_route_is_eligible") >=
+          1 &&
+          count_identifier(shell_dispatch, "runtime_legacy_command_bridge") >= 1,
+      "shell dispatch must pass the fresh keyboard liveness gate before the "
+      "runtime bridge can enqueue any world action");
+
+  const std::string draw_shell = function_body(
+      window_source, "draw_shell_panel_contents");
+  require(count_identifier(draw_shell, "open_scroll_case") == 2 &&
+          count_identifier(draw_shell, "has_semantic_scroll_case") == 2,
+      "action-bar renderer must discover the non-combat scroll control, "
+      "summarize it, and admit it to generic control drawing");
+
+  const std::string raw_checkkeypad = read_file(
+      repository_root / "src/realmz_orig/checkkeypad.c");
+  const std::string checkkeypad = code_only(raw_checkkeypad);
+  const std::string checkkeypad_body = function_body(
+      checkkeypad, "checkkeypad");
+  const std::size_t outdoor_l = raw_checkkeypad.find("case 'l':");
+  const std::size_t outdoor_next = raw_checkkeypad.find(
+      "case 'k':", outdoor_l);
+  require(outdoor_l != std::string::npos && outdoor_next != std::string::npos &&
+          outdoor_l < outdoor_next,
+      "Classic outdoor checkkeypad must retain its lowercase l branch");
+  const std::string outdoor_l_branch = code_only(raw_checkkeypad.substr(
+      outdoor_l, outdoor_next - outdoor_l));
+  require(without_whitespace(outdoor_l_branch).contains(
+              "if((!inspell)&&(checkfortype(charselectnew,13,TRUE)))"
+              "theControl=viewspellsbut;"),
+      "Classic outdoor l must gate only on active spell flow, living selected "
+      "member, and equipped scroll case before choosing viewspellsbut");
+  require(count_identifier(checkkeypad_body, "getscroll") == 0,
+      "outdoor key handling must select the Classic control rather than opening "
+      "the chooser directly");
+
+  const std::string raw_threed = read_file(
+      repository_root / "src/realmz_orig/threed.c");
+  const std::string threed = code_only(raw_threed);
+  const std::string threed_body = function_body(threed, "threed");
+  const std::size_t dungeon_p = raw_threed.find("case 'p':");
+  const std::size_t dungeon_next = raw_threed.find("case 'k':", dungeon_p);
+  require(dungeon_p != std::string::npos && dungeon_next != std::string::npos &&
+          dungeon_p < dungeon_next,
+      "Classic dungeon threed must retain its lowercase p branch");
+  const std::string dungeon_p_branch = code_only(raw_threed.substr(
+      dungeon_p, dungeon_next - dungeon_p));
+  require(without_whitespace(dungeon_p_branch).contains(
+              "if((!inspell)&&(checkfortype(charselectnew,13,TRUE)))"
+              "theControl=viewspellsbut;"),
+      "Classic dungeon p must gate only on active spell flow, living selected "
+      "member, and equipped scroll case before choosing viewspellsbut");
+  require(count_identifier(threed_body, "getscroll") == 0,
+      "dungeon key handling must select the Classic control rather than opening "
+      "the chooser directly");
+
+  const std::string button_choice_source = code_only(read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c"));
+  const std::string button_choice = function_body(
+      button_choice_source, "buttonchoice");
+  const std::string compact_button_choice = without_whitespace(button_choice);
+  require(compact_button_choice.contains(
+              "if(theControl==viewspellsbut){") &&
+          count_identifier(button_choice, "getscroll") == 1,
+      "Classic buttonchoice must remain the single world control-to-getscroll "
+      "handoff");
+
+  const std::string checkfortype_source = code_only(read_file(
+      repository_root / "src/realmz_orig/checkfortype.c"));
+  const std::string checkfortype_body = function_body(
+      checkfortype_source, "checkfortype");
+  const std::string compact_checkfortype =
+      without_whitespace(checkfortype_body);
+  require(compact_checkfortype.contains("if(c[t].armor[type]){") &&
+          compact_checkfortype.contains("if(!aliveonly)reply=TRUE;") &&
+          compact_checkfortype.contains(
+              "elseif(c[t].stamina>0)reply=TRUE;") &&
+          count_identifier(checkfortype_body, "scrollcase") == 0,
+      "Classic checkfortype gate must inspect only equipped-case presence and "
+      "optional liveness, never any scroll slot");
+
+  const std::string getscroll_source = code_only(read_file(
+      repository_root / "src/realmz_orig/getscroll.c"));
+  const std::string getscroll = function_body(getscroll_source, "getscroll");
+  const std::string compact_getscroll = without_whitespace(getscroll);
+  const std::size_t chooser_open = compact_getscroll.find(
+      "scroll=GetNewDialog(154,0L,(WindowPtr)-1L)");
+  const std::size_t equipped_case_gate = compact_getscroll.find(
+      "checkfortype(charselectnew,13,FALSE)", chooser_open);
+  const std::size_t five_slots = compact_getscroll.find(
+      "for(t=0;t<5;t++)", equipped_case_gate);
+  const std::size_t first_slot_value = compact_getscroll.find(
+      "c[charselectnew].scrollcase[t].powerlevel", five_slots);
+  const std::size_t modal = compact_getscroll.find("ModalDialog(0L,&itemHit)");
+  require(chooser_open != std::string::npos &&
+          equipped_case_gate != std::string::npos &&
+          five_slots != std::string::npos &&
+          first_slot_value != std::string::npos && modal != std::string::npos &&
+          chooser_open < equipped_case_gate && equipped_case_gate < five_slots &&
+          five_slots < first_slot_value &&
+          first_slot_value < modal,
+      "Classic getscroll must open the chooser and render all five slots before "
+      "waiting for a selection");
+  require(compact_getscroll.contains("iconhand=GetCIcon(176);") &&
+          compact_getscroll.contains(
+              "elseMyrCDiStr(t+20,(StringPtr));"),
+      "Classic getscroll must render empty slots rather than reject an equipped "
+      "but empty scroll case");
+
+  for (const auto& [name, source] : std::array{
+           std::pair{"GameSnapshot", game_snapshot},
+           std::pair{"snapshot capture", snapshot_source},
+           std::pair{"party model", party_model_source},
+           std::pair{"shell layout", shell_source},
+           std::pair{"runtime bridge", runtime_source},
+           std::pair{"semantic boundary", boundary_source},
+           std::pair{"WindowManager", window_source},
+       }) {
+    require(count_identifier(source, "scrollcase") == 0,
+        std::string(name) +
+            " must not inspect Classic scroll-case slot contents");
+  }
 }
 
 void verify_window_manager_named_combat_sinks(
@@ -4231,7 +4900,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x4B210C95241B6D56ULL") !=
+          coverage_header.find("0x3C04B103D888E062ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -4321,7 +4990,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x4B210C95241B6D56ULL") !=
+          coverage_test.find("0x3C04B103D888E062ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -7423,6 +8092,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t selection_consume_calls = 0;
   std::size_t inventory_consume_calls = 0;
   std::size_t spellbook_consume_calls = 0;
+  std::size_t world_scroll_case_consume_calls = 0;
   std::size_t save_consume_calls = 0;
   std::size_t load_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
@@ -7476,6 +8146,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenInventoryEvent");
     spellbook_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenSpellbookEvent");
+    world_scroll_case_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticOpenScrollCaseEvent");
     save_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenSaveGameEvent");
     load_consume_calls += count_identifier(
@@ -7540,6 +8212,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticOpenInventoryEvent");
   require(spellbook_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticOpenSpellbookEvent");
+  require(world_scroll_case_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticOpenScrollCaseEvent");
   require(save_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticOpenSaveGameEvent");
   require(load_consume_calls == 0,
@@ -7602,6 +8276,7 @@ int main(int argc, char** argv) {
     verify_event_manager(repository_root);
     verify_party_selection_adapter(repository_root);
     verify_center_combat_cursor_contract(repository_root);
+    verify_noncombat_scroll_case_contract(repository_root);
     verify_legacy_loop_ownership(repository_root);
     verify_production_call_ownership(repository_root);
     verify_window_manager_named_combat_sinks(repository_root);

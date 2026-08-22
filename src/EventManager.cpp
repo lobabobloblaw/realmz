@@ -546,6 +546,29 @@ public:
     return true;
   }
 
+  bool push_semantic_open_scroll_case_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticOpenScrollCaseTag(tagged_message)) {
+      return false;
+    }
+    // Keep the selected member and originating world surface attached until
+    // the guarded top-level loop can recheck live non-combat eligibility.
+    // The tag must never enter the preserved scroll chooser as raw input.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic open scroll case (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
   bool push_semantic_open_save_game_event(uint32_t tagged_message) {
     if (!RealmzIsSemanticOpenSaveGameTag(tagged_message)) {
       return false;
@@ -1623,6 +1646,19 @@ Boolean GetNextSemanticGameplayEvent(
       ret->message = 0;
     }
   } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticOpenScrollCaseTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticOpenScrollCaseEvent(
+            surface, ret->message, &classic_key_message)) {
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+    } else {
+      // Selection, capability, or either world-surface identity may have
+      // changed while queued. A rejected tag is inert before Classic input.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
+  } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticOpenSaveGameTag(ret->message)) {
     int16_t menu_id = 0;
     int16_t item_id = 0;
@@ -1995,6 +2031,10 @@ Boolean PushSemanticOpenInventoryEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticOpenSpellbookEvent(uint32_t tagged_message) {
   return em.push_semantic_open_spellbook_event(tagged_message);
+}
+
+Boolean PushSemanticOpenScrollCaseEvent(uint32_t tagged_message) {
+  return em.push_semantic_open_scroll_case_event(tagged_message);
 }
 
 Boolean PushSemanticOpenSaveGameEvent(uint32_t tagged_message) {

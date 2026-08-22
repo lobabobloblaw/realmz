@@ -112,6 +112,7 @@ enum class ActionIntent {
   navigate,
   open_inventory,
   cast_spell,
+  open_scroll_case,
   save_game,
   load_game,
   guard,

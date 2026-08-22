@@ -102,6 +102,7 @@ Boolean PushSemanticMovementEvent(uint32_t tagged_message);
 Boolean PushSemanticPartySelectionEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenInventoryEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenSpellbookEvent(uint32_t tagged_message);
+Boolean PushSemanticOpenScrollCaseEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenSaveGameEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenLoadGameEvent(uint32_t tagged_message);
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message);

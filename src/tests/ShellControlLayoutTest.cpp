@@ -241,7 +241,76 @@ void test_open_inventory_control() {
   }).empty());
 }
 
-void test_spellbook_save_and_load_controls_at_combined_minimum_layout() {
+void test_open_scroll_case_control_is_distinct_and_visible_when_disabled() {
+  const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
+  for (const auto& request : {
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .action_panel = panel,
+               .navigation_available = true,
+               .scroll_case_member = PartyMemberId{2},
+               .scroll_case_available = true,
+           },
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::dungeon_first_person,
+               .action_panel = panel,
+               .navigation_available = true,
+               .scroll_case_member = PartyMemberId{2},
+               .scroll_case_available = true,
+           },
+       }) {
+    const auto controls = compute_shell_control_layout(request);
+    CHECK(controls.size() ==
+        (request.screen == ScreenContext::exploration ? 9U : 5U));
+    const auto& scroll = controls.back();
+    CHECK(scroll.region.value == 1108U);
+    CHECK(scroll.kind == ShellControlKind::open_scroll_case);
+    CHECK(scroll.label == "SCROLL");
+    CHECK(scroll.accessibility_label == "Use scroll");
+    CHECK(scroll.focus_identifier == "focus.action.scroll_case.open");
+    CHECK(scroll.tab_order == 1108);
+    CHECK(scroll.enabled);
+    CHECK(std::holds_alternative<OpenScrollCaseAction>(scroll.payload));
+    CHECK(std::get<OpenScrollCaseAction>(scroll.payload).member == 2);
+    CHECK(request.action_panel.contains(scroll.bounds));
+    for (size_t index = 0; index + 1U < controls.size(); ++index) {
+      CHECK(controls[index].kind == ShellControlKind::movement);
+      CHECK(!interiors_overlap(controls[index].bounds, scroll.bounds));
+    }
+  }
+
+  const auto disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .scroll_case_member = PartyMemberId{4},
+      .scroll_case_available = false,
+  });
+  CHECK(disabled.size() == 9U);
+  CHECK(disabled.back().kind == ShellControlKind::open_scroll_case);
+  CHECK(!disabled.back().enabled);
+  CHECK(std::get<OpenScrollCaseAction>(disabled.back().payload).member == 4);
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .navigation_available = true,
+      .scroll_case_available = true,
+  }).empty());
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .scroll_case_member = PartyMemberId{4},
+      .guard_combatant = CombatantId{2},
+  }).empty());
+}
+
+void test_world_action_controls_at_combined_minimum_layout() {
   constexpr std::array sizes{
       LogicalSize{1024.0, 768.0},
       LogicalSize{1359.0, 900.0},
@@ -261,6 +330,8 @@ void test_spellbook_save_and_load_controls_at_combined_minimum_layout() {
                  .inventory_available = true,
                  .spellbook_member = PartyMemberId{2},
                  .spellbook_available = true,
+                 .scroll_case_member = PartyMemberId{2},
+                 .scroll_case_available = true,
                  .save_control_visible = true,
                  .save_available = true,
                  .load_control_visible = true,
@@ -275,6 +346,8 @@ void test_spellbook_save_and_load_controls_at_combined_minimum_layout() {
                  .inventory_available = true,
                  .spellbook_member = PartyMemberId{2},
                  .spellbook_available = true,
+                 .scroll_case_member = PartyMemberId{2},
+                 .scroll_case_available = true,
                  .save_control_visible = true,
                  .save_available = true,
                  .load_control_visible = true,
@@ -283,12 +356,13 @@ void test_spellbook_save_and_load_controls_at_combined_minimum_layout() {
          }) {
       const auto controls = compute_shell_control_layout(request);
       const size_t expected_count =
-          request.screen == ScreenContext::exploration ? 12U : 8U;
+          request.screen == ScreenContext::exploration ? 13U : 9U;
       CHECK(controls.size() == expected_count);
-      const auto& inventory = controls[controls.size() - 4U];
-      const auto& spellbook = controls[controls.size() - 3U];
-      const auto& save = controls[controls.size() - 2U];
-      const auto& load = controls.back();
+      const auto& inventory = controls[controls.size() - 5U];
+      const auto& spellbook = controls[controls.size() - 4U];
+      const auto& save = controls[controls.size() - 3U];
+      const auto& load = controls[controls.size() - 2U];
+      const auto& scroll = controls.back();
       CHECK(inventory.kind == ShellControlKind::open_inventory);
       CHECK(spellbook.region.value == 1101U);
       CHECK(spellbook.kind == ShellControlKind::open_spellbook);
@@ -325,14 +399,29 @@ void test_spellbook_save_and_load_controls_at_combined_minimum_layout() {
       CHECK(request.action_panel.contains(load.bounds));
       CHECK(load.bounds.width >= 44.0);
       CHECK(load.bounds.height >= 44.0);
-      for (size_t index = 0; index + 3U < controls.size(); ++index) {
+      CHECK(scroll.region.value == 1108U);
+      CHECK(scroll.kind == ShellControlKind::open_scroll_case);
+      CHECK(scroll.label == "SCROLL");
+      CHECK(scroll.accessibility_label == "Use scroll");
+      CHECK(scroll.focus_identifier == "focus.action.scroll_case.open");
+      CHECK(scroll.tab_order == 1108);
+      CHECK(scroll.enabled);
+      CHECK(std::holds_alternative<OpenScrollCaseAction>(scroll.payload));
+      CHECK(std::get<OpenScrollCaseAction>(scroll.payload).member == 2);
+      CHECK(request.action_panel.contains(scroll.bounds));
+      CHECK(scroll.bounds.width >= 44.0);
+      CHECK(scroll.bounds.height >= 44.0);
+      for (size_t index = 0; index + 4U < controls.size(); ++index) {
         CHECK(!interiors_overlap(controls[index].bounds, spellbook.bounds));
       }
-      for (size_t index = 0; index + 2U < controls.size(); ++index) {
+      for (size_t index = 0; index + 3U < controls.size(); ++index) {
         CHECK(!interiors_overlap(controls[index].bounds, save.bounds));
       }
-      for (size_t index = 0; index + 1U < controls.size(); ++index) {
+      for (size_t index = 0; index + 2U < controls.size(); ++index) {
         CHECK(!interiors_overlap(controls[index].bounds, load.bounds));
+      }
+      for (size_t index = 0; index + 1U < controls.size(); ++index) {
+        CHECK(!interiors_overlap(controls[index].bounds, scroll.bounds));
       }
     }
   }
@@ -1050,7 +1139,8 @@ int main() {
     test_canonical_sizes();
     test_payload_order_and_disabled_state();
     test_open_inventory_control();
-    test_spellbook_save_and_load_controls_at_combined_minimum_layout();
+    test_open_scroll_case_control_is_distinct_and_visible_when_disabled();
+    test_world_action_controls_at_combined_minimum_layout();
     test_combat_command_contracts_are_independent_and_fail_closed();
     test_persistent_named_combat_command_deck();
     test_fail_closed_inputs();

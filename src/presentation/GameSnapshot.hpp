@@ -46,6 +46,10 @@ struct PartyMemberView {
   std::vector<int16_t> conditions;
   bool selected = false;
   bool conscious = true;
+  // Read-only projection of Classic's non-combat scroll-case opening gate:
+  // not already in a spell flow, alive, and an equipped case in armor[13].
+  // Case-slot contents deliberately remain Classic-owned.
+  bool use_scroll_available = false;
 
   bool operator==(const PartyMemberView&) const = default;
 };

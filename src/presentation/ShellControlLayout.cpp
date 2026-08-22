@@ -20,6 +20,7 @@ constexpr uint32_t kGuardCombatantRegion = 1104U;
 constexpr uint32_t kFinishCombatantRegion = 1105U;
 constexpr uint32_t kDelayCombatantRegion = 1106U;
 constexpr uint32_t kCenterActiveCombatantRegion = 1107U;
+constexpr uint32_t kOpenScrollCaseRegion = 1108U;
 constexpr uint32_t kSwitchWeaponSetRegion = 1109U;
 constexpr uint32_t kCenterPreviousCombatantRegion = 1110U;
 constexpr uint32_t kCenterNextCombatantRegion = 1111U;
@@ -296,10 +297,11 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (world_controls && has_combat_request) ||
       (combat_controls &&
           (request.navigation_available || request.inventory_member ||
-              request.spellbook_member || request.save_control_visible ||
-              request.load_control_visible)) ||
+              request.spellbook_member || request.scroll_case_member ||
+              request.save_control_visible || request.load_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
+      (request.scroll_case_available && !request.scroll_case_member) ||
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
       (request.guard_available && !valid_guard) ||
@@ -333,6 +335,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       : descriptors.size() +
           (request.inventory_member ? 1U : 0U) +
           (request.spellbook_member ? 1U : 0U) +
+          (request.scroll_case_member ? 1U : 0U) +
           (request.save_control_visible ? 1U : 0U) +
           (request.load_control_visible ? 1U : 0U);
 
@@ -444,6 +447,20 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .tab_order = 1103,
         .enabled = request.load_available,
         .payload = OpenLoadGameAction{},
+    });
+    x += button_width + gap;
+  }
+  if (request.scroll_case_member) {
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{kOpenScrollCaseRegion},
+        .kind = ShellControlKind::open_scroll_case,
+        .bounds = {x, y, button_width, button_height},
+        .label = "SCROLL",
+        .accessibility_label = "Use scroll",
+        .focus_identifier = "focus.action.scroll_case.open",
+        .tab_order = 1108,
+        .enabled = request.scroll_case_available,
+        .payload = OpenScrollCaseAction{*request.scroll_case_member},
     });
     x += button_width + gap;
   }

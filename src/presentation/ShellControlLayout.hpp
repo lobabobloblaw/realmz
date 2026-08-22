@@ -14,6 +14,7 @@ enum class ShellControlKind {
   party_member,
   open_inventory,
   open_spellbook,
+  open_scroll_case,
   open_save_game,
   open_load_game,
   guard_combatant,
@@ -62,6 +63,8 @@ struct ShellControlLayoutRequest {
   bool inventory_available = false;
   std::optional<PartyMemberId> spellbook_member;
   bool spellbook_available = false;
+  std::optional<PartyMemberId> scroll_case_member;
+  bool scroll_case_available = false;
   bool save_control_visible = false;
   bool save_available = false;
   bool load_control_visible = false;

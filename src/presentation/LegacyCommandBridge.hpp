@@ -66,6 +66,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<SelectPartyMemberAction> select_party_member;
   LegacyActionHandler<OpenInventoryAction> open_inventory;
   LegacyActionHandler<OpenSpellbookAction> open_spellbook;
+  LegacyActionHandler<OpenScrollCaseAction> open_scroll_case;
   LegacyActionHandler<OpenSaveGameAction> open_save_game;
   LegacyActionHandler<OpenLoadGameAction> open_load_game;
   LegacyActionHandler<GuardCombatantAction> guard_combatant;

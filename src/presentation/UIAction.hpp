@@ -58,6 +58,16 @@ struct OpenSpellbookAction {
   bool operator==(const OpenSpellbookAction&) const = default;
 };
 
+// Opens the preserved Classic non-combat scroll-case chooser for the
+// explicitly selected party member. The chooser remains authoritative for
+// the five case slots, scroll selection and consumption, targeting, costs,
+// RNG, and every gameplay mutation.
+struct OpenScrollCaseAction {
+  PartyMemberId member = 0;
+
+  bool operator==(const OpenScrollCaseAction&) const = default;
+};
+
 // Opens the preserved Classic save-slot chooser. Selecting a slot and writing
 // data remain separate SaveGameAction concerns owned by the compatibility
 // flow.
@@ -391,6 +401,7 @@ using UIActionPayload = std::variant<
     SelectPartyMemberAction,
     OpenInventoryAction,
     OpenSpellbookAction,
+    OpenScrollCaseAction,
     OpenSaveGameAction,
     OpenLoadGameAction,
     GuardCombatantAction,
@@ -438,6 +449,8 @@ struct UIAction {
       return "open_inventory";
     } else if constexpr (std::is_same_v<Action, OpenSpellbookAction>) {
       return "open_spellbook";
+    } else if constexpr (std::is_same_v<Action, OpenScrollCaseAction>) {
+      return "open_scroll_case";
     } else if constexpr (std::is_same_v<Action, OpenSaveGameAction>) {
       return "open_save_game";
     } else if constexpr (std::is_same_v<Action, OpenLoadGameAction>) {
