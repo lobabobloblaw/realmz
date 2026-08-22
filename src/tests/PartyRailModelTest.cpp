@@ -4,6 +4,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "presentation/PartyRailModel.hpp"
@@ -54,6 +55,8 @@ GameSnapshot sample_snapshot() {
           .movement = 4,
           .movement_maximum = 9,
           .conditions = {9},
+          .normal_attacks = 3,
+          .attack_bonus = 2,
       },
       PartyMemberView{
           .id = 2,
@@ -68,6 +71,8 @@ GameSnapshot sample_snapshot() {
           .conditions = {7, 3, 7},
           .selected = true,
           .conscious = false,
+          .normal_attacks = 7,
+          .attack_bonus = 4,
       },
   };
   snapshot.world.usable_torch_source = TorchSource{.member = 1, .slot = 7};
@@ -91,6 +96,14 @@ void test_party_rail_and_non_color_states() {
   CHECK(model.members[1].selected);
   CHECK(model.members[1].stamina.fill_fraction == 0.2);
   CHECK(model.members[1].stamina.state.identifier == "stamina.critical");
+  CHECK(model.members[0].armor_class == 7);
+  CHECK(model.members[1].armor_class == 5);
+  CHECK(model.members[0].auxiliary_vital ==
+      PartyAuxiliaryVitalKind::spell_points);
+  CHECK(model.members[1].auxiliary_vital ==
+      PartyAuxiliaryVitalKind::spell_points);
+  CHECK(model.members[0].attack_cadence_half_units == 0);
+  CHECK(model.members[1].attack_cadence_half_units == 0);
   CHECK(model.members[1].states.size() == 4);
   CHECK(model.members[1].states[0].identifier == "status.selected");
   CHECK(model.members[1].states[0].marker == StateMarker::selection);
@@ -103,6 +116,122 @@ void test_party_rail_and_non_color_states() {
   CHECK(model.members[0].states.back().label == "Poisoned");
   CHECK(model.members[1].select_command == "party.select.2");
   CHECK(model.members[0].focus_identifier != model.members[1].focus_identifier);
+}
+
+void test_all_member_vitals_are_exact_and_context_independent() {
+  GameSnapshot snapshot;
+  snapshot.party.members = {
+      PartyMemberView{
+          .id = 1,
+          .name = "Caster",
+          .spell_points = {0, 7},
+          .armor_class = -12,
+          .normal_attacks = 8,
+          .attack_bonus = 5,
+      },
+      PartyMemberView{
+          .id = 2,
+          .name = "Fighter",
+          .spell_points = {99, 0},
+          .armor_class = 23,
+          .normal_attacks = 3,
+          .attack_bonus = 2,
+      },
+  };
+
+  auto model = build_party_rail_model(snapshot);
+  CHECK(model.members.size() == 2U);
+  CHECK(model.members[0].armor_class == -12);
+  CHECK(model.members[1].armor_class == 23);
+  CHECK(model.members[0].auxiliary_vital ==
+      PartyAuxiliaryVitalKind::spell_points);
+  CHECK(model.members[0].spell_points.current == 0);
+  CHECK(model.members[0].spell_points.maximum == 7);
+  CHECK(model.members[0].attack_cadence_half_units == 0);
+  CHECK(model.members[1].auxiliary_vital ==
+      PartyAuxiliaryVitalKind::attack_cadence);
+  CHECK(model.members[1].spell_points.current == 99);
+  CHECK(model.members[1].spell_points.maximum == 0);
+  CHECK(model.members[1].attack_cadence_half_units == 5);
+
+  // A nonzero raw maximum selects SP even when the meter is invalid. A zero
+  // maximum selects cadence even when the raw current value is nonzero.
+  snapshot.party.members[0].spell_points = {4, -7};
+  model = build_party_rail_model(snapshot);
+  CHECK(model.members[0].auxiliary_vital ==
+      PartyAuxiliaryVitalKind::spell_points);
+  CHECK(model.members[0].spell_points.current == 4);
+  CHECK(model.members[0].spell_points.maximum == -7);
+  CHECK(model.members[0].attack_cadence_half_units == 0);
+
+  const auto fighter_cadence = [&](
+      int16_t normal_attacks,
+      int16_t attack_bonus,
+      std::vector<int16_t> conditions) {
+    snapshot.party.members[1].normal_attacks = normal_attacks;
+    snapshot.party.members[1].attack_bonus = attack_bonus;
+    snapshot.party.members[1].conditions = std::move(conditions);
+    return build_party_rail_model(snapshot)
+        .members[1]
+        .attack_cadence_half_units;
+  };
+
+  CHECK(fighter_cadence(3, 2, {}) == 5);
+  CHECK(fighter_cadence(3, 2, {23}) == 10);
+  CHECK(fighter_cadence(3, 2, {6}) == 2);
+  CHECK(fighter_cadence(3, 2, {6, 23}) == 5);
+  CHECK(fighter_cadence(-4, 1, {}) == -3);
+  CHECK(fighter_cadence(19, 1, {}) == 20);
+
+  snapshot.party.members[0].spell_points = {0, 7};
+  snapshot.party.members[1].normal_attacks = 3;
+  snapshot.party.members[1].attack_bonus = 2;
+  snapshot.party.members[1].conditions = {6};
+  constexpr std::array screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::combat,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : screens) {
+    snapshot.screen = screen;
+    for (const bool in_camp : {false, true}) {
+      snapshot.world.in_camp = in_camp;
+      for (const bool conscious : {false, true}) {
+        snapshot.party.members[0].conscious = conscious;
+        snapshot.party.members[1].conscious = !conscious;
+        for (int selection = 0; selection < 3; ++selection) {
+          snapshot.party.selected_member.reset();
+          snapshot.party.members[0].selected = false;
+          snapshot.party.members[1].selected = false;
+          if (selection != 0) {
+            const auto selected_index = static_cast<size_t>(selection - 1);
+            snapshot.party.members[selected_index].selected = true;
+            snapshot.party.selected_member =
+                snapshot.party.members[selected_index].id;
+          }
+
+          const auto independent = build_party_rail_model(snapshot);
+          CHECK(independent.members.size() == 2U);
+          CHECK(independent.members[0].armor_class == -12);
+          CHECK(independent.members[0].auxiliary_vital ==
+              PartyAuxiliaryVitalKind::spell_points);
+          CHECK(independent.members[0].spell_points.maximum == 7);
+          CHECK(independent.members[0].attack_cadence_half_units == 0);
+          CHECK(independent.members[1].armor_class == 23);
+          CHECK(independent.members[1].auxiliary_vital ==
+              PartyAuxiliaryVitalKind::attack_cadence);
+          CHECK(independent.members[1].attack_cadence_half_units == 2);
+        }
+      }
+    }
+  }
 }
 
 void test_selection_fallback_and_meter_bounds() {
@@ -1473,6 +1602,7 @@ void test_determinism_and_no_input_mutation() {
 int main() {
   try {
     test_party_rail_and_non_color_states();
+    test_all_member_vitals_are_exact_and_context_independent();
     test_selection_fallback_and_meter_bounds();
     test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();

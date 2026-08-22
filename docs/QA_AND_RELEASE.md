@@ -157,6 +157,23 @@ drawer tabs. Eligible exploration and dungeon screens expose code-native
 movement buttons with typed `MovePartyAction` payloads. Their production bridge
 revalidates the live screen context on release and queues the equivalent neutral
 legacy key event; it does not call movement routines or mutate engine globals.
+Across outdoor exploration, dungeon map/first-person play, and combat, the same
+read-only party rail renders every member in three rows: name / `Lv` / `AC`,
+stamina plus `SP` or `ATK`, and the existing state summary. Detached capture
+copies Classic `ac`, current/maximum spell points, `normattacks`,
+`attackbonus`, and condition identifiers. Matching `updatechar`, the branch is
+chosen solely by `spellpointsmax != 0`, including casters with zero current
+spell points. Noncasters first compute raw `normattacks + attackbonus`, double
+for Speedy condition 23, then integer-half for Slow condition 6. Adjusted
+half-units `0..19` render as reduced fractions (`0/1`, `1/2`, `1/1`, through
+`19/2`); all other adjusted values render `> 10`. A card may visually elide its
+third row, but its layout retains complete semantic accessibility text for the
+name, level, armor class, stamina, selected auxiliary vital, and every state
+label without elision. Outdoor and dungeon selection controls carry that text
+in accessibility-label metadata; combat cards remain noninteractive. This
+slice does not claim OS publication on any surface. This is a shared
+information renderer, not a new action: it defines no semantic tag or input
+path and changes neither Classic sources nor replay schemas/decoders.
 On eligible exploration and dungeon screens, party cards expose typed
 `SelectPartyMemberAction` payloads. Their distinct tagged event is
 late-validated against a fresh party snapshot, then a narrow
@@ -542,8 +559,8 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 51
-`semantic_complete`, and 38 `missing` roles: 15 interactions and 23
+The 95-row inventory currently contains six `retained_in_crop`, 54
+`semantic_complete`, and 35 `missing` roles: 15 interactions and 20
 essential-information roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
@@ -556,16 +573,19 @@ inventory remains authoritative and must reject an omitted role:
 
 Known `missing` essential-information roles across these surfaces include
 ordered capture and retention of the Classic message/flash stream for Event
-Log; pooled-money and fatigue status; party-wide condition indicators; complete
-all-member vitals and combat values, including armor class, spell points, and
-noncaster attack cadence; authoritative coordinates, calendar/clock, and
+Log; pooled-money and fatigue status; party-wide condition indicators;
+authoritative coordinates, calendar/clock, and
 complete combined Search/Torch state (the persistent Torch-state presentation
 remains absent); focused-combatant
-information; and combat round and
-enemies-remaining counts. Snapshot fields or the current placeholder Event Log
+information; complete combat conditions and attacks; and combat round and
+enemies-remaining counts. The common rail now covers the three all-member
+party-vitals rows, but that claim is deliberately bounded: it does not promote
+party conditions, pooled money, fatigue, focused combatants, or combat
+conditions/attacks. Snapshot fields or the current placeholder Event Log
 do not satisfy the information-completeness check merely by existing. The
 selected-member Details inspector remains a distinct bounded renderer and does
-not establish equivalence for these all-member, party-wide, or combat roles.
+not provide the common rail's all-member proof or establish equivalence for
+the remaining party-wide or combat roles.
 
 ## Required automated coverage
 
@@ -599,6 +619,16 @@ Release-candidate tests must include:
   both rendering branches use the shared path, the pure model/layout has no
   SDL, Resource Manager, action, or legacy-state dependency, and the renderer
   has no dispatch path;
+- all-member party-rail capture, model, layout, rendering, and semantic
+  accessibility text on exploration, dungeon, and combat: exact AC;
+  `spellpointsmax != 0` as the sole
+  caster discriminator even at zero current SP; noncaster raw
+  `normattacks + attackbonus`, Speedy 23 before Slow 6, integer halving, reduced
+  `0..19` half-unit fractions, and `> 10` for every other value; row ordering,
+  finite contained non-overlapping geometry, one common renderer, complete
+  unelided layout accessibility state text, exploration/dungeon control
+  metadata without an OS-publication claim, input immutability, and absence of
+  any new action, tag, input, Classic-source, or replay path;
 - logical/physical coordinate transforms, hit testing, stable semantic focus,
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
@@ -716,6 +746,21 @@ Automated checks do not replace these release decisions:
   non-color markers, exact compact `+N` elision, no clipped/overlapping fields,
   and that opening, closing, or viewing Details changes no gameplay state and
   dispatches no legacy action;
+- the common all-member party rail on disposable outdoor, dungeon-map,
+  dungeon-first-person, and combat fixtures with one through six members,
+  compact and wide layouts, minimum and enlarged text, and both backing scales.
+  Verify row 1 name / level / AC, row 2 stamina plus SP for maximum-SP casters
+  (including current SP zero) or ATK for noncasters, and row 3 state summary.
+  Exercise unmodified, Speedy-only, Slow-only, and simultaneous Speedy-then-
+  Slow cadence, every adjusted half-unit from 0 through 19, plus negative and
+  above-range values; compare exact reduced fractions and the `> 10` fallback
+  with Classic `updatechar`. Inspect layout accessibility text with long names
+  and multiple states to confirm the complete unelided three-row meaning
+  remains available even when visible state text is compact; separately verify
+  that outdoor/dungeon selection controls carry it in metadata without
+  asserting an OS-accessibility publisher on any surface. Confirm rendering
+  changes no gameplay state and creates no semantic action, tag, input,
+  Classic-source, or replay path;
 - before accepting any future crop-enabling change, review the globally complete
   versioned outdoor, dungeon, and combat chrome inventory row by row against an
   uncropped Classic reference, including every manifest field and cited source

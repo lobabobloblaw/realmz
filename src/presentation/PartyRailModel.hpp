@@ -60,6 +60,11 @@ struct MeterModel {
 using CommandIdentifier = std::string;
 using FocusIdentifier = std::string;
 
+enum class PartyAuxiliaryVitalKind {
+  spell_points,
+  attack_cadence,
+};
+
 struct PartyRailMemberModel {
   PartyMemberId id = 0;
   std::string name;
@@ -73,6 +78,10 @@ struct PartyRailMemberModel {
   FocusIdentifier focus_identifier;
   CommandIdentifier select_command;
   int32_t tab_order = 0;
+  int16_t armor_class = 0;
+  PartyAuxiliaryVitalKind auxiliary_vital =
+      PartyAuxiliaryVitalKind::attack_cadence;
+  int32_t attack_cadence_half_units = 0;
 
   bool operator==(const PartyRailMemberModel&) const = default;
 };

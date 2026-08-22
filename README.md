@@ -21,7 +21,25 @@ legacy event loop. On those eligible exploration and dungeon screens, party
 cards dispatch typed, idempotent
 `SelectPartyMemberAction` commands through the same guarded top-level route;
 selecting the active member never emulates the Classic second click that opens
-the character modal. World commands are organized into persistent, directly
+the character modal. During outdoor exploration, dungeon map or first-person
+play, and combat, those shared read-only cards now preserve Classic
+`updatechar`'s all-member vital roles in three rows: name, `Lv`, and `AC`;
+stamina plus either `SP` or `ATK`; then the existing state summary. The caster
+branch is selected solely by a nonzero maximum spell-point value, so a caster
+at zero current spell points still shows `SP`. A noncaster's attack cadence
+starts with `normattacks + attackbonus`, applies Speedy condition 23 first by
+doubling, then Slow condition 6 with C++ integer division by two, exactly in
+Classic's order. Adjusted half-units `0..19` appear as reduced fractions from
+`0/1` through `19/2`; every negative or above-19 value appears as `> 10`, just
+as Classic's default branch does. The visible state line may remain compact,
+but each card layout retains complete unelided semantic accessibility text for
+its name, level, armor class, stamina, spell-points-or-cadence branch, and every
+state. Outdoor and dungeon selection controls carry that text in
+accessibility-label metadata; combat cards remain noninteractive. This slice
+does not claim OS publication on any surface. This information-only slice adds
+no action, semantic tag, input handoff, Classic source change, or replay
+vocabulary.
+World commands are organized into persistent, directly
 selectable **Travel**, **Party**, and **Game** pages so every target keeps the
 44-point minimum at the 1024×768 floor. Party contains Items, Equipment,
 Spells, Scroll, Character, and Money; Game contains Save, Load, and Rest. Selecting
@@ -330,8 +348,8 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 51 are `semantic_complete`, and 38 remain `missing` (15
-interactions and 23 essential-information roles), so
+`retained_in_crop`, 54 are `semantic_complete`, and 35 remain `missing` (15
+interactions and 20 essential-information roles), so
 cropping stays disabled. Known missing outdoor and dungeon roles include Heal,
 Trade, selected-member condition drilldowns, and the per-member Auto controls.
 Money management, the context-sensitive Shop/Temple/seamless-encounter entry,
@@ -342,13 +360,15 @@ missing combat roles include conditional Turn Undead, per-member Auto, and the d
 focused-combatant inspection controls for character or monster details, items,
 conditions, and monster attacks. Information gaps include ordered capture and
 retention of Classic messages for Event Log; pooled money and fatigue;
-party-wide condition indicators; complete all-member vitals and combat values,
-including armor class, spell points, and noncaster attack cadence; authoritative
-coordinates, calendar/clock, and complete combined Search/Torch state (the
-persistent Torch-state presentation remains absent); focused-combatant details;
-and combat round and enemies-remaining counts. The bounded selected-member
-Details renderer does not implicitly satisfy those distinct all-member,
-party-wide, or combat roles.
+party-wide condition indicators; authoritative coordinates, calendar/clock,
+and complete combined Search/Torch state (the persistent Torch-state
+presentation remains absent); focused-combatant details; complete combat
+conditions and attacks; and combat round and enemies-remaining counts. The
+three all-member party-vitals rows are now covered by the common code-native
+rail, but they do not implicitly satisfy those distinct party-condition,
+pooled-money, fatigue, focused-combatant, or combat-detail roles. The bounded
+selected-member Details renderer likewise remains a separate information
+surface.
 
 Pointer, popup, text-input, and cursor
 coordinates continue through the embedded Classic frame. Title and modal

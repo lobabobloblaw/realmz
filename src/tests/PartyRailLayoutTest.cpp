@@ -32,6 +32,13 @@ void check(bool condition, const char* expression, int line) {
       std::max(first.y, second.y) < std::min(first.bottom(), second.bottom());
 }
 
+[[nodiscard]] bool interiors_overlap(
+    PhysicalRect first,
+    PhysicalRect second) noexcept {
+  return std::max(first.x, second.x) < std::min(first.right(), second.right()) &&
+      std::max(first.y, second.y) < std::min(first.bottom(), second.bottom());
+}
+
 [[nodiscard]] bool contains(
     PhysicalRect outer,
     PhysicalRect inner) noexcept {
@@ -64,6 +71,11 @@ void check_near(double actual, double expected) {
           .maximum = 20,
           .fill_fraction = (10.0 + static_cast<double>(index)) / 20.0,
       },
+      .spell_points = MeterModel{
+          .current = static_cast<int32_t>(index),
+          .maximum = 12,
+          .fill_fraction = static_cast<double>(index) / 12.0,
+      },
       .states = {
           StateTokenModel{
               .identifier = "status.condition." + std::to_string(index),
@@ -73,6 +85,11 @@ void check_near(double actual, double expected) {
           },
       },
       .conscious = true,
+      .armor_class = static_cast<int16_t>(-3 + static_cast<int>(index)),
+      .auxiliary_vital = index % 2U == 0U
+          ? PartyAuxiliaryVitalKind::attack_cadence
+          : PartyAuxiliaryVitalKind::spell_points,
+      .attack_cadence_half_units = static_cast<int32_t>(index),
   };
 }
 
@@ -124,12 +141,34 @@ void verify_layout(
     CHECK(placed.member_id == members[index].id);
     CHECK(placed.name_text == members[index].name);
     CHECK(placed.level_text == "Lv " + std::to_string(members[index].level));
+    CHECK(placed.armor_class_text ==
+        "AC " + std::to_string(members[index].armor_class));
+    CHECK(placed.stamina_value_text ==
+        "ST " + std::to_string(members[index].stamina.current) + "/" +
+            std::to_string(members[index].stamina.maximum));
+    if (members[index].auxiliary_vital ==
+        PartyAuxiliaryVitalKind::spell_points) {
+      CHECK(placed.auxiliary_vital_text ==
+          "SP " + std::to_string(members[index].spell_points.current) +
+              "/" + std::to_string(members[index].spell_points.maximum));
+    } else {
+      const int32_t half_units = members[index].attack_cadence_half_units;
+      const int32_t numerator = half_units % 2 == 0
+          ? half_units / 2
+          : half_units;
+      const int32_t denominator = half_units % 2 == 0 ? 1 : 2;
+      CHECK(placed.auxiliary_vital_text ==
+          "ATK " + std::to_string(numerator) + "/" +
+              std::to_string(denominator));
+    }
     CHECK(panel.contains(placed.card_bounds));
     CHECK(placed.card_bounds.contains(placed.portrait_bounds));
     CHECK(placed.card_bounds.contains(placed.name_bounds));
     CHECK(placed.card_bounds.contains(placed.level_bounds));
+    CHECK(placed.card_bounds.contains(placed.armor_class_bounds));
     CHECK(placed.card_bounds.contains(placed.stamina_meter_bounds));
     CHECK(placed.card_bounds.contains(placed.stamina_value_bounds));
+    CHECK(placed.card_bounds.contains(placed.auxiliary_vital_bounds));
     CHECK(placed.card_bounds.contains(placed.state_bounds));
     check_near(placed.portrait_bounds.width, 44.0);
     check_near(placed.portrait_bounds.height, 44.0);
@@ -144,42 +183,108 @@ void verify_layout(
     CHECK(!interiors_overlap(
         placed.portrait_bounds, placed.level_bounds));
     CHECK(!interiors_overlap(
+        placed.portrait_bounds, placed.armor_class_bounds));
+    CHECK(!interiors_overlap(
         placed.portrait_bounds, placed.stamina_meter_bounds));
     CHECK(!interiors_overlap(
         placed.portrait_bounds, placed.stamina_value_bounds));
     CHECK(!interiors_overlap(
+        placed.portrait_bounds, placed.auxiliary_vital_bounds));
+    CHECK(!interiors_overlap(
         placed.portrait_bounds, placed.state_bounds));
     CHECK(!interiors_overlap(placed.name_bounds, placed.level_bounds));
+    CHECK(!interiors_overlap(placed.name_bounds, placed.armor_class_bounds));
+    CHECK(!interiors_overlap(
+        placed.level_bounds, placed.armor_class_bounds));
     CHECK(!interiors_overlap(
         placed.stamina_meter_bounds, placed.stamina_value_bounds));
+    CHECK(!interiors_overlap(
+        placed.stamina_meter_bounds, placed.auxiliary_vital_bounds));
+    CHECK(!interiors_overlap(
+        placed.stamina_value_bounds, placed.auxiliary_vital_bounds));
     CHECK(!interiors_overlap(placed.name_bounds, placed.stamina_meter_bounds));
     CHECK(!interiors_overlap(placed.name_bounds, placed.state_bounds));
     CHECK(!interiors_overlap(
         placed.stamina_meter_bounds, placed.state_bounds));
+    CHECK(!interiors_overlap(
+        placed.stamina_value_bounds, placed.state_bounds));
+    CHECK(!interiors_overlap(
+        placed.auxiliary_vital_bounds, placed.state_bounds));
+    CHECK(placed.name_bounds.y == placed.level_bounds.y);
+    CHECK(placed.level_bounds.y == placed.armor_class_bounds.y);
+    CHECK(placed.name_bounds.bottom() <= placed.stamina_value_bounds.y);
+    CHECK(placed.stamina_value_bounds.bottom() <= placed.state_bounds.y);
     check_near(placed.name_bounds.x, placed.stamina_meter_bounds.x);
     check_near(placed.name_bounds.x, placed.state_bounds.x);
-    check_near(placed.level_bounds.right(), placed.state_bounds.right());
     check_near(
-        placed.stamina_value_bounds.right(), placed.state_bounds.right());
-    for (const double backing_scale : {1.0, 2.0}) {
+        placed.armor_class_bounds.right(), placed.state_bounds.right());
+    check_near(
+        placed.auxiliary_vital_bounds.right(), placed.state_bounds.right());
+    for (const double backing_scale : {0.75, 1.0, 2.0}) {
       const BackingTransform transform(backing_scale);
       const auto physical_card = transform.to_physical(placed.card_bounds);
+      for (const auto child : {
+               placed.portrait_bounds,
+               placed.name_bounds,
+               placed.level_bounds,
+               placed.armor_class_bounds,
+               placed.stamina_meter_bounds,
+               placed.stamina_value_bounds,
+               placed.auxiliary_vital_bounds,
+               placed.state_bounds,
+           }) {
+        CHECK(contains(physical_card, transform.to_physical(child)));
+      }
       const auto physical_portrait =
           transform.to_physical(placed.portrait_bounds);
-      CHECK(contains(physical_card, physical_portrait));
       CHECK(physical_portrait.width ==
-          static_cast<int32_t>(44.0 * backing_scale));
+          static_cast<int32_t>(std::lround(44.0 * backing_scale)));
       CHECK(physical_portrait.height ==
-          static_cast<int32_t>(44.0 * backing_scale));
+          static_cast<int32_t>(std::lround(44.0 * backing_scale)));
+      const std::array physical_row_one{
+          transform.to_physical(placed.name_bounds),
+          transform.to_physical(placed.level_bounds),
+          transform.to_physical(placed.armor_class_bounds),
+      };
+      const std::array physical_row_two{
+          transform.to_physical(placed.stamina_meter_bounds),
+          transform.to_physical(placed.stamina_value_bounds),
+          transform.to_physical(placed.auxiliary_vital_bounds),
+      };
+      for (size_t first = 0; first < physical_row_one.size(); ++first) {
+        for (size_t second = first + 1U;
+             second < physical_row_one.size();
+             ++second) {
+          CHECK(!interiors_overlap(
+              physical_row_one[first], physical_row_one[second]));
+          CHECK(!interiors_overlap(
+              physical_row_two[first], physical_row_two[second]));
+        }
+        for (const auto row_two : physical_row_two) {
+          CHECK(!interiors_overlap(physical_row_one[first], row_two));
+        }
+      }
+      const auto physical_state = transform.to_physical(placed.state_bounds);
+      for (const auto row_two : physical_row_two) {
+        CHECK(!interiors_overlap(row_two, physical_state));
+      }
     }
     verify_text_style(
         placed.name_text_style, type.body, placed.name_bounds);
     verify_text_style(
         placed.level_text_style, type.caption, placed.level_bounds);
     verify_text_style(
+        placed.armor_class_text_style,
+        type.caption,
+        placed.armor_class_bounds);
+    verify_text_style(
         placed.stamina_value_text_style,
         type.caption,
         placed.stamina_value_bounds);
+    verify_text_style(
+        placed.auxiliary_vital_text_style,
+        type.caption,
+        placed.auxiliary_vital_bounds);
     verify_text_style(
         placed.state_text_style, type.caption, placed.state_bounds);
     // These representative strings fit at a practical floor even for six
@@ -187,7 +292,11 @@ void verify_layout(
     verify_practical_representative_text_style(placed.name_text_style);
     verify_practical_representative_text_style(placed.level_text_style);
     verify_practical_representative_text_style(
+        placed.armor_class_text_style);
+    verify_practical_representative_text_style(
         placed.stamina_value_text_style);
+    verify_practical_representative_text_style(
+        placed.auxiliary_vital_text_style);
     verify_practical_representative_text_style(placed.state_text_style);
     CHECK(placed.state_tokens.size() == members[index].states.size());
     CHECK(placed.state_tokens[0].identifier ==
@@ -199,6 +308,10 @@ void verify_layout(
     CHECK(placed.state_tokens[0].render_text ==
         "[*] " + members[index].states[0].label);
     CHECK(placed.state_text == placed.state_tokens[0].render_text);
+    CHECK(placed.accessibility_text.find(members[index].name) !=
+        std::string::npos);
+    CHECK(placed.accessibility_text.find(members[index].states[0].label) !=
+        std::string::npos);
     if (index > 0U) {
       CHECK(layout.members[index - 1U].card_bounds.y < placed.card_bounds.y);
       CHECK(!interiors_overlap(
@@ -255,10 +368,14 @@ void test_portrait_slot_is_stable_across_asset_identities() {
       unavailable_layout.members[0].name_bounds);
   CHECK(approved_layout.members[0].level_bounds ==
       unavailable_layout.members[0].level_bounds);
+  CHECK(approved_layout.members[0].armor_class_bounds ==
+      unavailable_layout.members[0].armor_class_bounds);
   CHECK(approved_layout.members[0].stamina_meter_bounds ==
       unavailable_layout.members[0].stamina_meter_bounds);
   CHECK(approved_layout.members[0].stamina_value_bounds ==
       unavailable_layout.members[0].stamina_value_bounds);
+  CHECK(approved_layout.members[0].auxiliary_vital_bounds ==
+      unavailable_layout.members[0].auxiliary_vital_bounds);
   CHECK(approved_layout.members[0].state_bounds ==
       unavailable_layout.members[0].state_bounds);
 }
@@ -301,8 +418,105 @@ void test_state_tokens_are_complete_and_non_color() {
   CHECK(layout.members[0].state_text == "[>] Selected ... (+7)");
   CHECK(layout.members[0].state_text.find("Neutral") == std::string::npos);
   CHECK(layout.members[0].state_tokens.back().label == "Neutral");
+  CHECK(layout.members[0].accessibility_text ==
+      "Member 1, level 1, armor class -3, stamina 10 of 20, "
+      "attack cadence 0 over 1, states Selected, Known, Ready, Low, "
+      "Unconscious, Unavailable, Poisoned, Neutral");
+  for (const auto& state : one.states) {
+    CHECK(layout.members[0].accessibility_text.find(state.label) !=
+        std::string::npos);
+  }
   verify_practical_representative_text_style(
       layout.members[0].state_text_style);
+}
+
+void test_attack_cadence_format_is_exhaustive_and_reduced() {
+  auto one = member(0);
+  one.auxiliary_vital = PartyAuxiliaryVitalKind::attack_cadence;
+  one.spell_points.current = 99;
+  one.spell_points.maximum = 99;
+  constexpr std::array<std::string_view, 20> expected_fractions{
+      "0/1", "1/2", "1/1", "3/2", "2/1",
+      "5/2", "3/1", "7/2", "4/1", "9/2",
+      "5/1", "11/2", "6/1", "13/2", "7/1",
+      "15/2", "8/1", "17/2", "9/1", "19/2",
+  };
+  constexpr std::array out_of_range{
+      -1,
+      20,
+      21,
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::min(),
+  };
+
+  for (int32_t half_units = 0; half_units <= 19; ++half_units) {
+    one.attack_cadence_half_units = half_units;
+    const auto layout = compute_party_rail_layout({
+        {1016.4, 24.0, 319.6, 336.256},
+        std::span<const PartyRailMemberModel>(&one, 1U),
+        typography(1.0),
+    });
+    const auto fraction = expected_fractions[
+        static_cast<size_t>(half_units)];
+    CHECK(layout.members[0].auxiliary_vital_text == "ATK " +
+        std::string(fraction));
+    const auto separator = fraction.find('/');
+    CHECK(layout.members[0].accessibility_text.find(
+        "attack cadence " + std::string(fraction.substr(0U, separator)) +
+            " over " + std::string(fraction.substr(separator + 1U))) !=
+        std::string::npos);
+  }
+
+  for (const int32_t half_units : out_of_range) {
+    one.attack_cadence_half_units = half_units;
+    const auto layout = compute_party_rail_layout({
+        {1016.4, 24.0, 319.6, 336.256},
+        std::span<const PartyRailMemberModel>(&one, 1U),
+        typography(1.0),
+    });
+    CHECK(layout.members[0].auxiliary_vital_text == "ATK > 10");
+    CHECK(layout.members[0].accessibility_text.find(
+        "attack cadence greater than 10") != std::string::npos);
+  }
+}
+
+void test_caster_and_signed_vitals_are_exact() {
+  auto caster = member(0);
+  caster.armor_class = -12;
+  caster.stamina.current = -9;
+  caster.stamina.maximum = -2;
+  caster.spell_points.current = 0;
+  caster.spell_points.maximum = 37;
+  caster.auxiliary_vital = PartyAuxiliaryVitalKind::spell_points;
+  caster.attack_cadence_half_units = 19;
+  auto layout = compute_party_rail_layout({
+      {738.88, 24.0, 261.12, 565.76},
+      std::span<const PartyRailMemberModel>(&caster, 1U),
+      typography(2.0),
+  });
+  CHECK(layout.members[0].armor_class_text == "AC -12");
+  CHECK(layout.members[0].stamina_value_text == "ST -9/-2");
+  CHECK(layout.members[0].auxiliary_vital_text == "SP 0/37");
+  CHECK(layout.members[0].accessibility_text ==
+      "Member 1, level 1, armor class -12, stamina -9 of -2, "
+      "spell points 0 of 37, state Condition 0");
+
+  caster.spell_points.current = -8;
+  caster.spell_points.maximum = -1;
+  layout = compute_party_rail_layout({
+      {738.88, 24.0, 261.12, 565.76},
+      std::span<const PartyRailMemberModel>(&caster, 1U),
+      typography(0.75),
+  });
+  CHECK(layout.members[0].auxiliary_vital_text == "SP -8/-1");
+  CHECK(layout.members[0].accessibility_text.find(
+      "spell points -8 of -1") != std::string::npos);
+  verify_practical_representative_text_style(
+      layout.members[0].armor_class_text_style);
+  verify_practical_representative_text_style(
+      layout.members[0].stamina_value_text_style);
+  verify_practical_representative_text_style(
+      layout.members[0].auxiliary_vital_text_style);
 }
 
 void test_fallbacks_and_text_fitting() {
@@ -369,6 +583,16 @@ void test_invalid_requests_never_return_partial_layouts() {
     static_cast<void>(compute_party_rail_layout({
         {0.0, 0.0, 300.0, 400.0}, members, bad_type}));
   });
+  auto invalid_vital = members[0];
+  invalid_vital.auxiliary_vital =
+      static_cast<PartyAuxiliaryVitalKind>(127);
+  check_invalid_argument([&] {
+    static_cast<void>(compute_party_rail_layout({
+        {0.0, 0.0, 300.0, 400.0},
+        std::span<const PartyRailMemberModel>(&invalid_vital, 1U),
+        type,
+    }));
+  });
 
   members.clear();
   for (size_t index = 0; index < 6; ++index) {
@@ -387,6 +611,8 @@ int main() {
     test_all_supported_counts_sizes_and_scales();
     test_portrait_slot_is_stable_across_asset_identities();
     test_state_tokens_are_complete_and_non_color();
+    test_attack_cadence_format_is_exhaustive_and_reduced();
+    test_caster_and_signed_vitals_are_exact();
     test_fallbacks_and_text_fitting();
     test_invalid_requests_never_return_partial_layouts();
     std::cout << "PartyRailLayoutTest passed (" << checks_run

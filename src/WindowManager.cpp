@@ -2982,6 +2982,10 @@ void draw_shell_panel_contents(
           placed.level_bounds,
           selected_material ? kSelectedMaterialInk : kMuted, backing_scale,
           placed.level_text_style);
+      draw_shell_text(renderer, font, placed.armor_class_text,
+          placed.armor_class_bounds,
+          selected_material ? kSelectedMaterialInk : kMuted, backing_scale,
+          placed.armor_class_text_style);
       draw_shell_meter(renderer, placed.stamina_meter_bounds,
           member.stamina.fill_fraction,
           member.stamina.maximum > 0);
@@ -2989,6 +2993,10 @@ void draw_shell_panel_contents(
           placed.stamina_value_bounds,
           selected_material ? kSelectedMaterialInk : kMuted, backing_scale,
           placed.stamina_value_text_style);
+      draw_shell_text(renderer, font, placed.auxiliary_vital_text,
+          placed.auxiliary_vital_bounds,
+          selected_material ? kSelectedMaterialInk : kMuted, backing_scale,
+          placed.auxiliary_vital_text_style);
 
       const auto emphasis =
           strongest_shell_state_emphasis(placed.state_tokens);

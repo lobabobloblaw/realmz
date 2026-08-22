@@ -240,6 +240,8 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
         .use_scroll_available =
             (inspell == 0) && (legacy.stamina > 0) &&
             (legacy.armor[13] != 0),
+        .normal_attacks = legacy.normattacks,
+        .attack_bonus = legacy.attackbonus,
     });
   }
   if (selected_index >= 0) {

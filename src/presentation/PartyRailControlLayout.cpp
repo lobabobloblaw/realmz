@@ -60,6 +60,7 @@ std::vector<PartyRailControlPlacement> compute_party_rail_control_layout(
         (placed.member_id != member.id) ||
         !valid_target(placed.card_bounds) ||
         !layout.panel_bounds.contains(placed.card_bounds) ||
+        placed.accessibility_text.empty() ||
         member.focus_identifier.empty() || member.select_command.empty() ||
         !member_ids.emplace(member.id).second ||
         !region_ids.emplace(region.value).second ||
@@ -100,7 +101,8 @@ std::vector<PartyRailControlPlacement> compute_party_rail_control_layout(
         .bounds = placed.card_bounds,
         .member_id = member.id,
         .label = visible_name,
-        .accessibility_label = "Select " + visible_name,
+        .accessibility_label = "Select " + visible_name + "; " +
+            placed.accessibility_text,
         .focus_identifier = member.focus_identifier,
         .command_identifier = member.select_command,
         .tab_order = member.tab_order,

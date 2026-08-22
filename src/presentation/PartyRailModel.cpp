@@ -11,6 +11,8 @@ namespace {
 constexpr int32_t kPartyTabStart = 100;
 constexpr int32_t kActionTabStart = 1000;
 constexpr int32_t kDrawerTabStart = 2000;
+constexpr int16_t kSlowCondition = 6;
+constexpr int16_t kSpeedyCondition = 23;
 
 constexpr std::array<std::string_view, 40> kConditionLabels{
     "In Retreat",
@@ -136,6 +138,20 @@ MeterModel meter_model(const MeterView& meter, std::string_view prefix) {
         "Ready",
         StateEmphasis::positive,
         StateMarker::check);
+  }
+  return result;
+}
+
+int32_t attack_cadence_half_units(const PartyMemberView& member) {
+  int32_t result = static_cast<int32_t>(member.normal_attacks) +
+      static_cast<int32_t>(member.attack_bonus);
+  if (std::ranges::find(member.conditions, kSpeedyCondition) !=
+      member.conditions.end()) {
+    result *= 2;
+  }
+  if (std::ranges::find(member.conditions, kSlowCondition) !=
+      member.conditions.end()) {
+    result /= 2;
   }
   return result;
 }
@@ -1093,6 +1109,7 @@ PartyRailModel build_party_rail_model(const GameSnapshot& snapshot) {
     const auto& member = snapshot.party.members[index];
     const bool selected = result.selected_member == member.id;
     auto stamina = meter_model(member.stamina, "stamina");
+    const bool uses_spell_points = member.spell_points.maximum != 0;
     result.members.emplace_back(PartyRailMemberModel{
         .id = member.id,
         .name = member.name,
@@ -1107,6 +1124,13 @@ PartyRailModel build_party_rail_model(const GameSnapshot& snapshot) {
             std::to_string(member.id) + "." + std::to_string(index),
         .select_command = "party.select." + std::to_string(member.id),
         .tab_order = kPartyTabStart + static_cast<int32_t>(index),
+        .armor_class = member.armor_class,
+        .auxiliary_vital = uses_spell_points
+            ? PartyAuxiliaryVitalKind::spell_points
+            : PartyAuxiliaryVitalKind::attack_cadence,
+        .attack_cadence_half_units = uses_spell_points
+            ? 0
+            : attack_cadence_half_units(member),
     });
   }
   return result;

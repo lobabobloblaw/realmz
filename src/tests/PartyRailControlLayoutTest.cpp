@@ -55,6 +55,9 @@ void check(bool condition, const char* expression, int line) {
             std::to_string(index) + "." + std::to_string(index),
         .select_command = "party.select." + std::to_string(index),
         .tab_order = 100 + static_cast<int32_t>(index),
+        .armor_class = static_cast<int16_t>(-2 + static_cast<int>(index)),
+        .auxiliary_vital = PartyAuxiliaryVitalKind::attack_cadence,
+        .attack_cadence_half_units = static_cast<int32_t>(index),
     });
   }
   return result;
@@ -97,7 +100,11 @@ void verify_controls(ScreenContext screen, size_t count) {
     CHECK(regions.emplace(control.region.value).second);
     CHECK(control.member_id == member.id);
     CHECK(control.label == member.name);
-    CHECK(control.accessibility_label == "Select " + member.name);
+    CHECK(control.accessibility_label ==
+        "Select " + member.name + "; " +
+            layout.members[index].accessibility_text);
+    CHECK(control.accessibility_label.starts_with(
+        "Select " + member.name));
     CHECK(control.focus_identifier == member.focus_identifier);
     CHECK(focus_identifiers.emplace(control.focus_identifier).second);
     CHECK(control.command_identifier == member.select_command);
@@ -117,6 +124,47 @@ void verify_controls(ScreenContext screen, size_t count) {
   CHECK(controls.back().enabled);
   CHECK(std::get<SelectPartyMemberAction>(controls.back().payload).member ==
       model.selected_member);
+}
+
+void test_control_accessibility_includes_complete_unelided_card() {
+  auto model = party(1);
+  auto& one = model.members[0];
+  one.armor_class = -7;
+  one.stamina.current = -4;
+  one.stamina.maximum = 19;
+  one.spell_points.current = 0;
+  one.spell_points.maximum = 31;
+  one.auxiliary_vital = PartyAuxiliaryVitalKind::spell_points;
+  one.states = {
+      {"one", "Conscious", StateEmphasis::positive, StateMarker::check},
+      {"two", "Poisoned", StateEmphasis::critical,
+          StateMarker::condition},
+      {"three", "Protected", StateEmphasis::information,
+          StateMarker::information},
+      {"four", "Hasted", StateEmphasis::positive, StateMarker::check},
+      {"five", "Hidden final state", StateEmphasis::neutral,
+          StateMarker::none},
+  };
+  const auto layout = layout_for(model);
+  CHECK(layout.members[0].state_text.find("Hidden final state") ==
+      std::string::npos);
+
+  for (const auto screen : {
+           ScreenContext::exploration,
+           ScreenContext::dungeon,
+       }) {
+    const auto controls = compute_party_rail_control_layout(
+        {.screen = screen, .selection_available = true}, model, layout);
+    CHECK(controls.size() == 1);
+    CHECK(controls[0].accessibility_label ==
+        "Select Member 1; Member 1, level 1, armor class -7, "
+        "stamina -4 of 19, spell points 0 of 31, states Conscious, "
+        "Poisoned, Protected, Hasted, Hidden final state");
+    for (const auto& state : one.states) {
+      CHECK(controls[0].accessibility_label.find(state.label) !=
+          std::string::npos);
+    }
+  }
 }
 
 void test_one_to_six_controls_on_top_level_gameplay_screens() {
@@ -198,6 +246,8 @@ void test_malformed_semantics_and_geometry_never_return_partials() {
   verify_malformed_input_returns_no_partial_controls(
       [](auto&, auto& layout) { layout.members[1].card_bounds.height = 43.99; });
   verify_malformed_input_returns_no_partial_controls(
+      [](auto&, auto& layout) { layout.members[1].accessibility_text.clear(); });
+  verify_malformed_input_returns_no_partial_controls(
       [](auto& model, auto&) {
         model.members[1].id = model.members[0].id;
       });
@@ -223,6 +273,7 @@ void test_malformed_semantics_and_geometry_never_return_partials() {
 int main() {
   try {
     test_one_to_six_controls_on_top_level_gameplay_screens();
+    test_control_accessibility_includes_complete_unelided_card();
     test_exact_six_member_1360_by_768_draw_and_hit_geometry();
     test_availability_and_screen_exclusions_are_fail_closed();
     test_malformed_semantics_and_geometry_never_return_partials();

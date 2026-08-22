@@ -10018,6 +10018,440 @@ void verify_selected_item_drilldown_window_manager_contract(
   }
 }
 
+void verify_all_member_party_vitals_contract(
+    const fs::path& repository_root) {
+  const std::string snapshot_header = code_only(read_file(
+      repository_root / "src/presentation/GameSnapshot.hpp"));
+  const std::string legacy_snapshot_source = code_only(read_file(
+      repository_root /
+          "src/presentation/LegacyGameSnapshotSource.cpp"));
+  const std::string model_header = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp"));
+  const std::string model_source = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp"));
+  const std::string layout_header = code_only(read_file(
+      repository_root / "src/presentation/PartyRailLayout.hpp"));
+  const std::string raw_layout_source = read_file(
+      repository_root / "src/presentation/PartyRailLayout.cpp");
+  const std::string layout_source = code_only(raw_layout_source);
+  const std::string raw_control_source = read_file(
+      repository_root /
+          "src/presentation/PartyRailControlLayout.cpp");
+  const std::string control_source = code_only(raw_control_source);
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string raw_classic_updatechar = read_file(
+      repository_root / "src/realmz_orig/updatechar.c");
+  const std::string classic_updatechar = code_only(raw_classic_updatechar);
+  const std::string classic_structs = code_only(read_file(
+      repository_root / "src/realmz_orig/structs.h"));
+
+  const std::size_t member_name = find_identifier(
+      snapshot_header, "PartyMemberView");
+  const std::size_t member_open = snapshot_header.find('{', member_name);
+  require(member_name != std::string::npos &&
+          member_open != std::string::npos,
+      "detached party-member snapshot is missing its definition");
+  const std::size_t member_close = matching_delimiter(
+      snapshot_header, member_open, '{', '}');
+  const std::string member_view = snapshot_header.substr(
+      member_open, member_close - member_open + 1U);
+  for (const auto field : {
+           "name", "level", "stamina", "spell_points", "armor_class",
+           "conditions", "normal_attacks", "attack_bonus"}) {
+    require(count_identifier(member_view, field) == 1,
+        std::string("all-member vitals snapshot is missing field ") + field);
+  }
+
+  const std::string capture = function_body(
+      legacy_snapshot_source, "capture");
+  const std::string compact_capture = without_whitespace(capture);
+  for (const auto projection : {
+           ".stamina={legacy.stamina,legacy.staminamax},",
+           ".spell_points={legacy.spellpoints,legacy.spellpointsmax},",
+           ".armor_class=legacy.ac,",
+           ".conditions=active_conditions(legacy.condition),",
+           ".normal_attacks=legacy.normattacks,",
+           ".attack_bonus=legacy.attackbonus,"}) {
+    require(compact_capture.contains(projection),
+        std::string("legacy snapshot must copy exact all-member vital: ") +
+            projection);
+  }
+  require(count_identifier(capture, "PartyMemberView") == 1 &&
+          count_identifier(capture, "updatechar") == 0 &&
+          count_identifier(capture, "UIAction") == 0,
+      "all-member vital capture must stay detached and read-only");
+
+  const std::string classic = function_body(
+      classic_updatechar, "updatechar");
+  const std::string compact_classic = without_whitespace(classic);
+  const std::size_t classic_ac = compact_classic.find(
+      "string(c[who].ac);");
+  const std::size_t classic_color = compact_classic.find(
+      "RGBForeColor(&cyancolor);", classic_ac);
+  const std::size_t classic_caster = compact_classic.find(
+      "if(c[who].spellpointsmax){", classic_color);
+  const std::size_t classic_noncaster = compact_classic.find(
+      "}else{", classic_caster);
+  const std::size_t classic_sum = compact_classic.find(
+      "temp=c[who].normattacks+c[who].attackbonus;",
+      classic_noncaster);
+  const std::size_t classic_speedy = compact_classic.find(
+      "if(c[who].condition[COND_SPEEDY])temp*=2;", classic_sum);
+  const std::size_t classic_slow = compact_classic.find(
+      "if(c[who].condition[COND_SLOW])temp/=2;", classic_speedy);
+  const std::size_t classic_switch = compact_classic.find(
+      "switch(temp){", classic_slow);
+  require(classic_ac != std::string::npos &&
+          classic_color != std::string::npos &&
+          classic_caster != std::string::npos &&
+          classic_noncaster != std::string::npos &&
+          classic_sum != std::string::npos &&
+          classic_speedy != std::string::npos &&
+          classic_slow != std::string::npos &&
+          classic_switch != std::string::npos &&
+          classic_ac < classic_caster &&
+          classic_caster < classic_noncaster &&
+          classic_noncaster < classic_sum &&
+          classic_sum < classic_speedy &&
+          classic_speedy < classic_slow &&
+          classic_slow < classic_switch,
+      "Classic updatechar must remain authoritative for AC, the sole "
+      "spellpointsmax branch, and Speedy-before-Slow attack cadence");
+  require(without_whitespace(classic_structs).contains("COND_SLOW=6,") &&
+          without_whitespace(classic_structs).contains("COND_SPEEDY=23,"),
+      "Classic Slow and Speedy condition identifiers must remain 6 and 23");
+  const std::size_t classic_switch_open = compact_classic.find(
+      '{', classic_switch);
+  require(classic_switch_open != std::string::npos,
+      "Classic cadence switch is missing its body");
+  const std::size_t classic_switch_close = matching_delimiter(
+      compact_classic, classic_switch_open, '{', '}');
+  const std::string classic_switch_body = compact_classic.substr(
+      classic_switch_open,
+      classic_switch_close - classic_switch_open + 1U);
+  for (int value = 0; value <= 19; ++value) {
+    require(classic_switch_body.find(
+                "case" + std::to_string(value) + ":") !=
+            std::string::npos,
+        "Classic updatechar must retain every 0..19 cadence case");
+  }
+  require(count_text(classic_switch_body, "case") == 20 &&
+          count_identifier(classic_switch_body, "default") == 1 &&
+          raw_classic_updatechar.find("MyrDrawCString(\">  10\")") !=
+              std::string::npos,
+      "Classic cadence ownership must retain 20 explicit half-unit cases "
+      "and the greater-than-ten default");
+
+  const std::size_t vital_kind_name = find_identifier(
+      model_header, "PartyAuxiliaryVitalKind");
+  const std::size_t vital_kind_open = model_header.find(
+      '{', vital_kind_name);
+  require(vital_kind_name != std::string::npos &&
+          vital_kind_open != std::string::npos,
+      "party rail is missing its discriminated auxiliary-vital kind");
+  const std::size_t vital_kind_close = matching_delimiter(
+      model_header, vital_kind_open, '{', '}');
+  const std::string vital_kinds = model_header.substr(
+      vital_kind_open, vital_kind_close - vital_kind_open + 1U);
+  require(count_identifier(vital_kinds, "spell_points") == 1 &&
+          count_identifier(vital_kinds, "attack_cadence") == 1,
+      "party auxiliary vital must distinguish exactly SP and attack cadence");
+
+  const std::size_t rail_member_name = find_identifier(
+      model_header, "PartyRailMemberModel");
+  const std::size_t rail_member_open = model_header.find(
+      '{', rail_member_name);
+  require(rail_member_name != std::string::npos &&
+          rail_member_open != std::string::npos,
+      "party-rail member model is missing its definition");
+  const std::size_t rail_member_close = matching_delimiter(
+      model_header, rail_member_open, '{', '}');
+  const std::string rail_member = model_header.substr(
+      rail_member_open, rail_member_close - rail_member_open + 1U);
+  for (const auto field : {
+           "name", "level", "stamina", "spell_points", "states",
+           "armor_class", "auxiliary_vital",
+           "attack_cadence_half_units"}) {
+    require(count_identifier(rail_member, field) == 1,
+        std::string("party-rail member model is missing field ") + field);
+  }
+
+  const std::string compact_model_source = without_whitespace(model_source);
+  require(compact_model_source.contains("constexprint16_tkSlowCondition=6;") &&
+          compact_model_source.contains(
+              "constexprint16_tkSpeedyCondition=23;"),
+      "detached cadence model must pin Classic condition IDs 6 and 23");
+  const std::string cadence = function_body(
+      model_source, "attack_cadence_half_units");
+  const std::string compact_cadence = without_whitespace(cadence);
+  const std::size_t model_sum = compact_cadence.find(
+      "int32_tresult=static_cast<int32_t>(member.normal_attacks)+"
+      "static_cast<int32_t>(member.attack_bonus);");
+  const std::size_t model_speedy = compact_cadence.find(
+      "std::ranges::find(member.conditions,kSpeedyCondition)", model_sum);
+  const std::size_t model_double = compact_cadence.find(
+      "result*=2;", model_speedy);
+  const std::size_t model_slow = compact_cadence.find(
+      "std::ranges::find(member.conditions,kSlowCondition)", model_double);
+  const std::size_t model_half = compact_cadence.find(
+      "result/=2;", model_slow);
+  require(model_sum != std::string::npos &&
+          model_speedy != std::string::npos &&
+          model_double != std::string::npos &&
+          model_slow != std::string::npos &&
+          model_half != std::string::npos &&
+          model_sum < model_speedy &&
+          model_speedy < model_double &&
+          model_double < model_slow &&
+          model_slow < model_half,
+      "detached cadence must add raw attacks, double Speedy first, then "
+      "integer-half Slow");
+
+  const std::string build_rail = function_body(
+      model_source, "build_party_rail_model");
+  const std::string compact_build_rail = without_whitespace(build_rail);
+  require(compact_build_rail.contains(
+              "constbooluses_spell_points="
+              "member.spell_points.maximum!=0;") &&
+          compact_build_rail.contains(
+              ".armor_class=member.armor_class,") &&
+          compact_build_rail.contains(
+              ".auxiliary_vital=uses_spell_points?"
+              "PartyAuxiliaryVitalKind::spell_points:"
+              "PartyAuxiliaryVitalKind::attack_cadence,") &&
+          compact_build_rail.contains(
+              ".attack_cadence_half_units=uses_spell_points?0:"
+              "attack_cadence_half_units(member),"),
+      "party rail must use maximum SP as its sole caster discriminator and "
+      "derive cadence only for the noncaster branch");
+  const std::string build_shell = function_body(
+      model_source, "build_presentation_shell_model");
+  require(count_identifier(build_shell, "build_party_rail_model") == 1,
+      "one shared party rail must be built for every presentation-shell "
+      "snapshot, independent of gameplay surface");
+
+  const std::size_t placed_name = find_identifier(
+      layout_header, "PartyRailMemberLayout");
+  const std::size_t placed_open = layout_header.find('{', placed_name);
+  require(placed_name != std::string::npos &&
+          placed_open != std::string::npos,
+      "party-rail layout member is missing its definition");
+  const std::size_t placed_close = matching_delimiter(
+      layout_header, placed_open, '{', '}');
+  const std::string placed_model = layout_header.substr(
+      placed_open, placed_close - placed_open + 1U);
+  for (const auto field : {
+           "name_bounds", "level_bounds", "armor_class_bounds",
+           "stamina_meter_bounds", "stamina_value_bounds",
+           "auxiliary_vital_bounds", "state_bounds", "name_text",
+           "level_text", "armor_class_text", "stamina_value_text",
+           "auxiliary_vital_text", "state_text", "accessibility_text",
+           "state_tokens"}) {
+    require(count_identifier(placed_model, field) == 1,
+        std::string("party-rail layout is missing field ") + field);
+  }
+  for (const auto forbidden : {
+           "SDL_Renderer", "SDL_Texture", "UIAction",
+           "LegacyCommandBridge", "RuntimeLegacyCommandBridge",
+           "ResourceManager", "ResourceDASM", "dispatch", "PushEvent"}) {
+    require(count_identifier(layout_header, forbidden) == 0 &&
+            count_identifier(layout_source, forbidden) == 0,
+        std::string("read-only party-vitals layout must not depend on ") +
+            forbidden);
+  }
+  require(layout_header.find("SDL_") == std::string::npos &&
+          layout_source.find("SDL_") == std::string::npos,
+      "read-only party-vitals layout must not contain an SDL API path");
+
+  const std::string cadence_text = function_body(
+      layout_source, "attack_cadence_text");
+  const std::string compact_cadence_text = without_whitespace(cadence_text);
+  require(compact_cadence_text.contains(
+              "if((half_units<0)||(half_units>19)){") &&
+          compact_cadence_text.contains(
+              "constint32_tnumerator=(half_units%2==0)?"
+              "half_units/2:half_units;") &&
+          compact_cadence_text.contains(
+              "constint32_tdenominator=(half_units%2==0)?1:2;") &&
+          raw_layout_source.find(".visible = \"> 10\"") !=
+              std::string::npos &&
+          raw_layout_source.find(
+              ".visible = std::format(\"{}/{}\"") !=
+              std::string::npos,
+      "party-rail cadence text must reduce every 0..19 half-unit value and "
+      "map every other value to > 10");
+
+  const std::string layout_member = function_body(
+      layout_source, "layout_member");
+  const std::string compact_layout_member = without_whitespace(layout_member);
+  for (const auto required : {
+           "constLogicalRectname_bounds{text_left,top,name_width,name_height};",
+           "constLogicalRectlevel_bounds{",
+           "constLogicalRectarmor_class_bounds{",
+           "constLogicalRectstamina_meter_bounds{",
+           "constLogicalRectstamina_value_bounds{",
+           "constLogicalRectauxiliary_vital_bounds{",
+           "constLogicalRectstate_bounds{"}) {
+    require(compact_layout_member.contains(required),
+        std::string("three-row party layout is missing geometry: ") +
+            required);
+  }
+  const std::size_t layout_name_bounds = compact_layout_member.find(
+      "constLogicalRectname_bounds{");
+  const std::size_t layout_level_bounds = compact_layout_member.find(
+      "constLogicalRectlevel_bounds{", layout_name_bounds);
+  const std::size_t layout_ac_bounds = compact_layout_member.find(
+      "constLogicalRectarmor_class_bounds{", layout_level_bounds);
+  const std::size_t layout_stamina_bounds = compact_layout_member.find(
+      "constLogicalRectstamina_meter_bounds{", layout_ac_bounds);
+  const std::size_t layout_stamina_value_bounds = compact_layout_member.find(
+      "constLogicalRectstamina_value_bounds{", layout_stamina_bounds);
+  const std::size_t layout_aux_bounds = compact_layout_member.find(
+      "constLogicalRectauxiliary_vital_bounds{",
+      layout_stamina_value_bounds);
+  const std::size_t layout_state_bounds = compact_layout_member.find(
+      "constLogicalRectstate_bounds{", layout_aux_bounds);
+  require(layout_name_bounds < layout_level_bounds &&
+          layout_level_bounds < layout_ac_bounds &&
+          layout_ac_bounds < layout_stamina_bounds &&
+          layout_stamina_bounds < layout_stamina_value_bounds &&
+          layout_stamina_value_bounds < layout_aux_bounds &&
+          layout_aux_bounds < layout_state_bounds,
+      "party-vitals layout must define row 1, row 2, then row 3 geometry");
+  for (const auto visible_format : {
+           "\"Lv {}\"",
+           "\"AC {}\"",
+           "\"ST {}/{}\"",
+           "\"SP {}/{}\"",
+           "auxiliary_vital_text = \"ATK \""}) {
+    require(raw_layout_source.find(visible_format) != std::string::npos,
+        std::string("party-vitals layout is missing visible format: ") +
+            visible_format);
+  }
+  require(count_identifier(layout_member, "PartyAuxiliaryVitalKind") == 2 &&
+          count_identifier(layout_member, "default") == 1 &&
+          count_identifier(layout_member, "invalid_argument") >= 1,
+      "party-vitals layout must handle exactly SP and ATK and reject an "
+      "unknown auxiliary-vital kind");
+
+  const std::string accessible_states = function_body(
+      layout_source, "join_accessible_state_text");
+  const std::string compact_accessible_states =
+      without_whitespace(accessible_states);
+  require(compact_accessible_states.contains(
+              "for(size_tindex=0;index<tokens.size();++index)") &&
+          compact_accessible_states.contains(
+              "result+=tokens[index].label;") &&
+          count_identifier(accessible_states, "utf8_prefix") == 0 &&
+          count_identifier(accessible_states, "elided_state_text") == 0 &&
+          count_identifier(accessible_states, "maximum_bytes") == 0,
+      "party-card accessibility must retain every full state label without "
+      "using the visible elision path");
+  require(compact_layout_member.contains(
+              "join_accessible_state_text(tokens)") &&
+          raw_layout_source.find(
+              "{}, level {}, armor class {}, stamina {} of {}, {}, {}") !=
+              std::string::npos &&
+          raw_control_source.find(
+              ".accessibility_label = \"Select \" + visible_name + \"; \" +") !=
+              std::string::npos &&
+          count_identifier(control_source, "accessibility_text") >= 2,
+      "party-card control accessibility must carry complete row and unelided "
+      "state meaning");
+
+  const std::string draw_panels = function_body(
+      window_source, "draw_shell_panel_contents");
+  const std::string compact_draw_panels = without_whitespace(draw_panels);
+  const std::size_t party_branch_marker = compact_draw_panels.find(
+      "if(kind==ShellPanelKind::party_rail){");
+  const std::size_t party_branch_open = compact_draw_panels.find(
+      '{', party_branch_marker);
+  require(party_branch_marker != std::string::npos &&
+          party_branch_open != std::string::npos,
+      "shared renderer is missing its party-rail branch");
+  const std::size_t party_branch_close = matching_delimiter(
+      compact_draw_panels, party_branch_open, '{', '}');
+  const std::string party_branch = compact_draw_panels.substr(
+      party_branch_open,
+      party_branch_close - party_branch_open + 1U);
+  const std::size_t draw_name = party_branch.find("placed.name_text");
+  const std::size_t draw_level = party_branch.find(
+      "placed.level_text", draw_name);
+  const std::size_t draw_ac = party_branch.find(
+      "placed.armor_class_text", draw_level);
+  const std::size_t draw_stamina_meter = party_branch.find(
+      "draw_shell_meter", draw_ac);
+  const std::size_t draw_stamina = party_branch.find(
+      "placed.stamina_value_text", draw_stamina_meter);
+  const std::size_t draw_auxiliary = party_branch.find(
+      "placed.auxiliary_vital_text", draw_stamina);
+  const std::size_t draw_state = party_branch.find(
+      "placed.state_text", draw_auxiliary);
+  require(draw_name != std::string::npos &&
+          draw_level != std::string::npos &&
+          draw_ac != std::string::npos &&
+          draw_stamina_meter != std::string::npos &&
+          draw_stamina != std::string::npos &&
+          draw_auxiliary != std::string::npos &&
+          draw_state != std::string::npos &&
+          draw_name < draw_level && draw_level < draw_ac &&
+          draw_ac < draw_stamina_meter &&
+          draw_stamina_meter < draw_stamina &&
+          draw_stamina < draw_auxiliary &&
+          draw_auxiliary < draw_state,
+      "one shared party renderer must draw name/Lv/AC, then ST plus SP/ATK, "
+      "then state");
+  require(count_identifier(party_branch, "compute_party_rail_layout") == 1 &&
+          count_identifier(party_branch, "ScreenContext") == 0 &&
+          count_identifier(party_branch, "exploration") == 0 &&
+          count_identifier(party_branch, "dungeon") == 0 &&
+          count_identifier(party_branch, "combat") == 0,
+      "outdoor, dungeon, and combat must share one surface-independent party "
+      "rail renderer");
+  for (const auto forbidden : {
+           "UIAction", "dispatch_remastered_shell_control",
+           "LegacyCommandBridge", "RuntimeLegacyCommandBridge",
+           "SemanticInputBoundary", "PushEvent"}) {
+    require(count_identifier(party_branch, forbidden) == 0,
+        std::string("read-only party-vitals renderer must not use ") +
+            forbidden);
+  }
+
+  std::string semantic_vocabulary = code_only(read_file(
+      repository_root / "src/presentation/UIAction.hpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.h"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/EventManager.h"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/SemanticReplayChild.cpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/replay/ReplayActionDecoder.hpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/replay/ReplayActionDecoder.cpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/replay/ReplayChildConfig.hpp"));
+  semantic_vocabulary += code_only(read_file(
+      repository_root / "src/replay/ReplayChildConfig.cpp"));
+  for (const auto information_only_name : {
+           "PartyAuxiliaryVitalKind", "attack_cadence_half_units",
+           "normal_attacks", "attack_bonus", "armor_class_text",
+           "auxiliary_vital_text", "party_vitals"}) {
+    require(count_identifier(
+                semantic_vocabulary, information_only_name) == 0,
+        std::string("party-vitals information must add no action, tag, input, "
+                    "or replay vocabulary named ") + information_only_name);
+    require(count_identifier(classic_updatechar, information_only_name) == 0,
+        std::string("party-vitals model vocabulary leaked into Classic: ") +
+            information_only_name);
+  }
+}
+
 void verify_selected_party_details_renderer_contract(
     const fs::path& repository_root) {
   const std::string model_header = code_only(read_file(
@@ -10406,7 +10840,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x424182F878B22312ULL") !=
+          coverage_header.find("0x65200BEDCCAF4E03ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -10496,7 +10930,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x424182F878B22312ULL") !=
+          coverage_test.find("0x65200BEDCCAF4E03ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -14308,6 +14742,7 @@ int main(int argc, char** argv) {
     verify_contextual_world_entry_window_manager_contract(repository_root);
     verify_open_money_management_contract(repository_root);
     verify_selected_item_drilldown_window_manager_contract(repository_root);
+    verify_all_member_party_vitals_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

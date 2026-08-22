@@ -105,7 +105,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.info.world_view", Surface::exploration,
         Kind::essential_information, Status::retained_in_crop},
     {"exploration.info.party_vitals", Surface::exploration,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"exploration.info.selected_member_details", Surface::exploration,
         Kind::essential_information, Status::semantic_complete},
     {"exploration.info.party_condition_indicators", Surface::exploration,
@@ -168,7 +168,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.info.world_view", Surface::dungeon,
         Kind::essential_information, Status::retained_in_crop},
     {"dungeon.info.party_vitals", Surface::dungeon,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.selected_member_details", Surface::dungeon,
         Kind::essential_information, Status::semantic_complete},
     {"dungeon.info.party_condition_indicators", Surface::dungeon,
@@ -237,7 +237,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"combat.info.battlefield", Surface::combat,
         Kind::essential_information, Status::retained_in_crop},
     {"combat.info.party_vitals", Surface::combat,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"combat.info.selected_member_details", Surface::combat,
         Kind::essential_information, Status::semantic_complete},
     {"combat.info.party_condition_indicators", Surface::combat,
@@ -498,12 +498,72 @@ void test_manifest_matches_independent_oracle() {
   CHECK(find_manifest_entry(
       manifest, "combat.action.inspect_combatant") == nullptr);
 
-  expect_manifest_entry(manifest, "exploration.info.party_vitals",
-      Surface::exploration, Kind::essential_information, Status::missing);
-  expect_manifest_entry(manifest, "dungeon.info.party_vitals",
-      Surface::dungeon, Kind::essential_information, Status::missing);
-  expect_manifest_entry(manifest, "combat.info.party_vitals",
-      Surface::combat, Kind::essential_information, Status::missing);
+  for (const auto& [stable_id, surface, context_evidence] : std::array{
+           std::tuple{
+               "exploration.info.party_vitals",
+               Surface::exploration,
+               "during outdoor exploration"},
+           std::tuple{
+               "dungeon.info.party_vitals",
+               Surface::dungeon,
+               "during dungeon map and first-person play"},
+           std::tuple{
+               "combat.info.party_vitals",
+               Surface::combat,
+               "during combat"},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::semantic_complete);
+    const auto* vitals = find_manifest_entry(manifest, stable_id);
+    CHECK(vitals != nullptr);
+    for (const auto evidence : {
+             "shared code-native party rail",
+             context_evidence,
+             "row 1 name, Lv, and AC",
+             "row 2 stamina plus SP",
+             "solely by nonzero Classic spellpointsmax",
+             "including zero current SP",
+             "ATK cadence for a noncaster",
+             "row 3 state summary",
+             "ac, spellpoints/max, normattacks, attackbonus, and conditions",
+             "raw normattacks + attackbonus",
+             "Speedy condition 23 doubles first",
+             "Slow condition 6 integer-halves",
+             "0..19 render as reduced half fractions",
+             "every other value renders `> 10`",
+             "Each layout retains complete unelided semantic accessibility text",
+             "no action, tag, input, Classic-source, or replay-vocabulary",
+         }) {
+      CHECK(vitals->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(vitals->source_anchor ==
+        "src/presentation/PartyRailLayout.cpp::"
+        "compute_party_rail_layout/layout_member");
+  }
+
+  for (const auto& [stable_id, surface] : std::array{
+           std::pair{
+               "exploration.info.party_condition_indicators",
+               Surface::exploration},
+           std::pair{
+               "dungeon.info.party_condition_indicators",
+               Surface::dungeon},
+           std::pair{
+               "combat.info.party_condition_indicators",
+               Surface::combat},
+           std::pair{"exploration.info.fatigue", Surface::exploration},
+           std::pair{"dungeon.info.fatigue", Surface::dungeon},
+           std::pair{
+               "exploration.info.pooled_money", Surface::exploration},
+           std::pair{"dungeon.info.pooled_money", Surface::dungeon},
+           std::pair{
+               "combat.info.inspected_combatant", Surface::combat},
+           std::pair{
+               "combat.info.conditions_and_attacks", Surface::combat},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::missing);
+  }
 
   for (const auto& [stable_id, surface] : std::array{
            std::pair{"exploration.action.camp", Surface::exploration},
@@ -776,7 +836,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x424182F878B22312ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x65200BEDCCAF4E03ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -865,7 +925,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x424182F878B22312ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x65200BEDCCAF4E03ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -924,10 +984,10 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 51U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 38U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 54U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 35U);
   CHECK(missing_interaction_count == 15U);
-  CHECK(missing_information_count == 23U);
+  CHECK(missing_information_count == 20U);
 }
 
 void expect_issue(

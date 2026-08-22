@@ -145,6 +145,8 @@ void seed_party() {
   c[0].spellpoints = 9;
   c[0].spellpointsmax = 12;
   c[0].ac = 7;
+  c[0].normattacks = 3;
+  c[0].attackbonus = 2;
   c[0].movement = 4;
   c[0].movementmax = 9;
   c[0].condition[9] = 3;
@@ -155,6 +157,8 @@ void seed_party() {
   c[1].stamina = 0;
   c[1].staminamax = 19;
   c[1].spellpointsmax = 5;
+  c[1].normattacks = -4;
+  c[1].attackbonus = 1;
   c[1].load = 31;
   c[1].loadmax = 80;
   c[1].numitems = 2;
@@ -177,6 +181,10 @@ void test_party_world_and_inventory_capture() {
   CHECK(snapshot.party.members[0].name == "Arin");
   CHECK(snapshot.party.members[0].conditions.size() == 1);
   CHECK(snapshot.party.members[0].conditions[0] == 9);
+  CHECK(snapshot.party.members[0].normal_attacks == 3);
+  CHECK(snapshot.party.members[0].attack_bonus == 2);
+  CHECK(snapshot.party.members[1].normal_attacks == -4);
+  CHECK(snapshot.party.members[1].attack_bonus == 1);
   CHECK(snapshot.party.members[0].conscious);
   CHECK(!snapshot.party.members[1].conscious);
   CHECK(snapshot.party.pooled_money[0] == 123);
@@ -196,8 +204,16 @@ void test_party_world_and_inventory_capture() {
   CHECK(snapshot.inventory->maximum_weight == 80);
 
   set_name(c[0].name, sizeof(c[0].name), "Mutated");
+  c[0].normattacks = 12;
+  c[0].attackbonus = -7;
+  c[1].normattacks = 20;
+  c[1].attackbonus = 9;
   c[1].items[0].id = 999;
   CHECK(snapshot.party.members[0].name == "Arin");
+  CHECK(snapshot.party.members[0].normal_attacks == 3);
+  CHECK(snapshot.party.members[0].attack_bonus == 2);
+  CHECK(snapshot.party.members[1].normal_attacks == -4);
+  CHECK(snapshot.party.members[1].attack_bonus == 1);
   CHECK(snapshot.inventory->items[0].item_id == 901);
 }
 

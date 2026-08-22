@@ -35,20 +35,29 @@ struct PartyRailMemberLayout {
   LogicalRect portrait_bounds;
   LogicalRect name_bounds;
   LogicalRect level_bounds;
+  LogicalRect armor_class_bounds;
   LogicalRect stamina_meter_bounds;
   LogicalRect stamina_value_bounds;
+  LogicalRect auxiliary_vital_bounds;
   LogicalRect state_bounds;
 
   std::string name_text;
   std::string level_text;
+  std::string armor_class_text;
   std::string stamina_value_text;
+  std::string auxiliary_vital_text;
   // A deterministic one-line summary; state_tokens remains the complete,
   // unelided semantic sequence for accessible or expanded renderers.
   std::string state_text;
+  // Complete spoken content for this card. Unlike the compact visible state
+  // summary, accessibility_text always includes every semantic state token.
+  std::string accessibility_text;
 
   TextStyleModel name_text_style;
   TextStyleModel level_text_style;
+  TextStyleModel armor_class_text_style;
   TextStyleModel stamina_value_text_style;
+  TextStyleModel auxiliary_vital_text_style;
   TextStyleModel state_text_style;
   std::vector<PartyRailRenderableStateToken> state_tokens;
 

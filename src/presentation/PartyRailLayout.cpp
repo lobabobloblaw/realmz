@@ -135,6 +135,41 @@ void validate_request(const PartyRailLayoutRequest& request) {
   return result;
 }
 
+[[nodiscard]] std::string join_accessible_state_text(
+    std::span<const PartyRailRenderableStateToken> tokens) {
+  std::string result = tokens.size() == 1U ? "state " : "states ";
+  for (size_t index = 0; index < tokens.size(); ++index) {
+    if (index > 0U) {
+      result += ", ";
+    }
+    result += tokens[index].label;
+  }
+  return result;
+}
+
+struct AttackCadenceText {
+  std::string visible;
+  std::string accessible;
+};
+
+[[nodiscard]] AttackCadenceText attack_cadence_text(
+    int32_t half_units) {
+  if ((half_units < 0) || (half_units > 19)) {
+    return {
+        .visible = "> 10",
+        .accessible = "greater than 10",
+    };
+  }
+  const int32_t numerator = (half_units % 2 == 0)
+      ? half_units / 2
+      : half_units;
+  const int32_t denominator = (half_units % 2 == 0) ? 1 : 2;
+  return {
+      .visible = std::format("{}/{}", numerator, denominator),
+      .accessible = std::format("{} over {}", numerator, denominator),
+  };
+}
+
 [[nodiscard]] std::string utf8_prefix(
     std::string_view text,
     size_t byte_budget) {
@@ -195,12 +230,18 @@ void validate_request(const PartyRailLayoutRequest& request) {
     throw std::invalid_argument("party panel is too small for member cards");
   }
 
-  const double level_width = std::clamp(text_width * 0.25, 42.0, 62.0);
+  const double level_width = std::clamp(text_width * 0.22, 42.0, 56.0);
+  const double armor_class_width =
+      std::clamp(text_width * 0.22, 42.0, 56.0);
   const double column_gap = std::clamp(text_width * 0.025, 3.0, 7.0);
-  const double name_width = text_width - level_width - column_gap;
-  const double value_width = std::clamp(text_width * 0.32, 64.0, 88.0);
-  const double meter_width = text_width - value_width - column_gap;
-  if ((name_width <= 0.0) || (meter_width <= 0.0)) {
+  const double name_width = text_width - level_width - armor_class_width -
+      2.0 * column_gap;
+  const double meter_width = text_width * 0.28;
+  const double stamina_value_width = text_width * 0.30;
+  const double auxiliary_vital_width = text_width - meter_width -
+      stamina_value_width - 2.0 * column_gap;
+  if ((name_width <= 0.0) || (meter_width <= 0.0) ||
+      (stamina_value_width <= 0.0) || (auxiliary_vital_width <= 0.0)) {
     throw std::invalid_argument("party panel is too narrow for member cards");
   }
 
@@ -220,6 +261,12 @@ void validate_request(const PartyRailLayoutRequest& request) {
       level_width,
       name_height,
   };
+  const LogicalRect armor_class_bounds{
+      level_bounds.right() + column_gap,
+      top,
+      armor_class_width,
+      name_height,
+  };
   const double meter_y = top + name_height + row_gap;
   const double meter_height = std::clamp(
       stamina_row_height * 0.50, 5.0, 8.0);
@@ -234,7 +281,13 @@ void validate_request(const PartyRailLayoutRequest& request) {
   const LogicalRect stamina_value_bounds{
       stamina_meter_bounds.right() + column_gap,
       meter_y,
-      value_width,
+      stamina_value_width,
+      stamina_row_height,
+  };
+  const LogicalRect auxiliary_vital_bounds{
+      stamina_value_bounds.right() + column_gap,
+      meter_y,
+      auxiliary_vital_width,
       stamina_row_height,
   };
   const LogicalRect state_bounds{
@@ -248,8 +301,35 @@ void validate_request(const PartyRailLayoutRequest& request) {
       ? std::format("Adventurer {}", member_index + 1U)
       : member.name;
   const std::string level_text = std::format("Lv {}", member.level);
+  const std::string armor_class_text =
+      std::format("AC {}", member.armor_class);
   const std::string stamina_value_text = std::format(
-      "{} / {}", member.stamina.current, member.stamina.maximum);
+      "ST {}/{}", member.stamina.current, member.stamina.maximum);
+
+  std::string auxiliary_vital_text;
+  std::string accessible_auxiliary_vital;
+  switch (member.auxiliary_vital) {
+    case PartyAuxiliaryVitalKind::spell_points:
+      auxiliary_vital_text = std::format(
+          "SP {}/{}",
+          member.spell_points.current,
+          member.spell_points.maximum);
+      accessible_auxiliary_vital = std::format(
+          "spell points {} of {}",
+          member.spell_points.current,
+          member.spell_points.maximum);
+      break;
+    case PartyAuxiliaryVitalKind::attack_cadence: {
+      const auto cadence = attack_cadence_text(
+          member.attack_cadence_half_units);
+      auxiliary_vital_text = "ATK " + cadence.visible;
+      accessible_auxiliary_vital = "attack cadence " + cadence.accessible;
+      break;
+    }
+    default:
+      throw std::invalid_argument(
+          "party member auxiliary vital kind must be supported");
+  }
 
   std::vector<PartyRailRenderableStateToken> tokens;
   tokens.reserve(std::max<size_t>(member.states.size(), 1U));
@@ -261,6 +341,15 @@ void validate_request(const PartyRailLayoutRequest& request) {
     }
   }
   const std::string state_text = elided_state_text(tokens, state_bounds);
+  const std::string accessibility_text = std::format(
+      "{}, level {}, armor class {}, stamina {} of {}, {}, {}",
+      name_text,
+      member.level,
+      member.armor_class,
+      member.stamina.current,
+      member.stamina.maximum,
+      accessible_auxiliary_vital,
+      join_accessible_state_text(tokens));
 
   return {
       .member_index = member_index,
@@ -269,21 +358,34 @@ void validate_request(const PartyRailLayoutRequest& request) {
       .portrait_bounds = portrait_bounds,
       .name_bounds = name_bounds,
       .level_bounds = level_bounds,
+      .armor_class_bounds = armor_class_bounds,
       .stamina_meter_bounds = stamina_meter_bounds,
       .stamina_value_bounds = stamina_value_bounds,
+      .auxiliary_vital_bounds = auxiliary_vital_bounds,
       .state_bounds = state_bounds,
       .name_text = name_text,
       .level_text = level_text,
+      .armor_class_text = armor_class_text,
       .stamina_value_text = stamina_value_text,
+      .auxiliary_vital_text = auxiliary_vital_text,
       .state_text = state_text,
+      .accessibility_text = accessibility_text,
       .name_text_style = fit_text_style(
           request.typography.body, name_bounds, name_text.size()),
       .level_text_style = fit_text_style(
           request.typography.caption, level_bounds, level_text.size()),
+      .armor_class_text_style = fit_text_style(
+          request.typography.caption,
+          armor_class_bounds,
+          armor_class_text.size()),
       .stamina_value_text_style = fit_text_style(
           request.typography.caption,
           stamina_value_bounds,
           stamina_value_text.size()),
+      .auxiliary_vital_text_style = fit_text_style(
+          request.typography.caption,
+          auxiliary_vital_bounds,
+          auxiliary_vital_text.size()),
       .state_text_style = fit_text_style(
           request.typography.caption, state_bounds, state_text.size()),
       .state_tokens = std::move(tokens),

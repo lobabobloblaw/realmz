@@ -61,6 +61,10 @@ struct PartyMemberView {
   // not already in a spell flow, alive, and an equipped case in armor[13].
   // Case-slot contents deliberately remain Classic-owned.
   bool use_scroll_available = false;
+  // Raw Classic attack cadence inputs. Presentation derives the displayed
+  // cadence from these detached values and the active condition identifiers.
+  int16_t normal_attacks = 0;
+  int16_t attack_bonus = 0;
 
   bool operator==(const PartyMemberView&) const = default;
 };
