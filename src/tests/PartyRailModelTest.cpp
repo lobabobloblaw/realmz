@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -121,6 +122,62 @@ void test_selection_fallback_and_meter_bounds() {
   CHECK(build_party_rail_model(snapshot)
             .members[0]
             .spell_points.state.identifier == "spell_points.unavailable");
+}
+
+void test_selected_details_retain_complete_member_status() {
+  auto snapshot = sample_snapshot();
+  auto shell = build_presentation_shell_model(snapshot);
+
+  CHECK(shell.selected_details.member == 2);
+  CHECK(shell.selected_details.name == "Bryn");
+  CHECK(shell.selected_details.level == 4);
+  CHECK(shell.selected_details.armor_class == 5);
+  CHECK(shell.selected_details.movement == 2);
+  CHECK(shell.selected_details.movement_maximum == 8);
+  CHECK(shell.selected_details.stamina == shell.party_rail.members[1].stamina);
+  CHECK(shell.selected_details.spell_points ==
+      shell.party_rail.members[1].spell_points);
+  CHECK(!shell.selected_details.conscious);
+  CHECK(shell.selected_details.states.size() == 3U);
+  CHECK(shell.selected_details.states[0].identifier == "status.unconscious");
+  CHECK(shell.selected_details.states[0].marker == StateMarker::stop);
+  CHECK(shell.selected_details.states[1].identifier == "status.condition.3");
+  CHECK(shell.selected_details.states[2].identifier == "status.condition.7");
+  CHECK(std::ranges::none_of(
+      shell.selected_details.states,
+      [](const StateTokenModel& candidate) {
+        return candidate.identifier == "status.selected";
+      }));
+
+  snapshot.party.selected_member = 1;
+  snapshot.party.members[0].selected = true;
+  snapshot.party.members[1].selected = false;
+  snapshot.party.members[0].conditions = {9, -1, 3, 9, -1};
+  shell = build_presentation_shell_model(snapshot);
+  CHECK(shell.selected_details.member == 1);
+  CHECK(shell.selected_details.conscious);
+  CHECK(shell.selected_details.stamina.current == 21);
+  CHECK(shell.selected_details.stamina.maximum == 24);
+  CHECK(shell.selected_details.spell_points.current == 9);
+  CHECK(shell.selected_details.spell_points.maximum == 12);
+  CHECK(shell.selected_details.states.size() == 4U);
+  CHECK(shell.selected_details.states[0].identifier == "status.conscious");
+  CHECK(shell.selected_details.states[0].label == "Conscious");
+  CHECK(shell.selected_details.states[0].marker == StateMarker::check);
+  CHECK(shell.selected_details.states[1].identifier == "status.condition.-1");
+  CHECK(shell.selected_details.states[2].identifier == "status.condition.3");
+  CHECK(shell.selected_details.states[3].identifier == "status.condition.9");
+
+  snapshot.party.selected_member.reset();
+  for (auto& member : snapshot.party.members) {
+    member.selected = false;
+  }
+  shell = build_presentation_shell_model(snapshot);
+  CHECK(!shell.selected_details.member);
+  CHECK(shell.selected_details.name.empty());
+  CHECK(shell.selected_details.states.empty());
+  CHECK(shell.selected_details.stamina == MeterModel{});
+  CHECK(shell.selected_details.spell_points == MeterModel{});
 }
 
 void test_action_availability_is_conservative() {
@@ -834,6 +891,7 @@ int main() {
   try {
     test_party_rail_and_non_color_states();
     test_selection_fallback_and_meter_bounds();
+    test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();
     test_combat_actions_track_the_active_party_combatant();
     test_events_drawers_motion_and_log_limit();

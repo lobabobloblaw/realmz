@@ -123,7 +123,16 @@ Return or Space activation, suppresses repeat dispatch, and uses a
 high-contrast non-color focus outline. In compact layouts the
 read-only Details and Event Log surfaces open and close through pointer or the
 same keyboard route; their tabs expose an explicit open-state label in addition
-to color. Pointer, popup, text-input, and cursor
+to color. The selected-member Details inspector is a bounded, read-only
+renderer milestone shared by the wide panel and compact Details drawer. It
+shows the detached model's stamina and spell-point values, consciousness,
+armor, movement, and complete normalized condition/status sequence with
+explicit marker text rather than color alone. When compact space cannot display
+every state, the visible summary ends with `+N` for the exact number elided;
+the complete semantic sequence remains retained and no state is silently
+dropped. This inspector adds no command, legacy handoff, or game-state mutation,
+and it does not make the cropped gameplay frame, Event Log, or remaining action
+migration complete. Pointer, popup, text-input, and cursor
 coordinates continue through the embedded Classic frame. Title and modal
 flows—including inventory, spell selection, and the save/load choosers after
 they open, plus shop and encounters—use an intact full-frame compatibility

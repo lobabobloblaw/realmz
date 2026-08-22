@@ -51,6 +51,7 @@
 #include "presentation/PartyRailControlLayout.hpp"
 #include "presentation/PartyRailLayout.hpp"
 #include "presentation/PartyRailModel.hpp"
+#include "presentation/SelectedPartyDetailsLayout.hpp"
 #include "presentation/SemanticInputBoundary.h"
 #include "replay/ReplayRuntime.hpp"
 #include "remaster/assets/PartyPortraitTextureCache.hpp"
@@ -2125,6 +2126,12 @@ struct ShellPanelColors {
   Uint8 blue;
 };
 
+constexpr SDL_Color kHeading{224, 205, 165, 255};
+constexpr SDL_Color kBody{222, 222, 218, 255};
+constexpr SDL_Color kMuted{164, 164, 158, 255};
+constexpr SDL_Color kSelected{231, 188, 105, 255};
+constexpr SDL_Color kSelectedMaterialInk{22, 24, 35, 255};
+
 ShellPanelColors shell_panel_color(
     realmz::presentation::ShellPanelKind panel) {
   using realmz::presentation::ShellPanelKind;
@@ -2400,10 +2407,9 @@ int shell_state_emphasis_priority(
   return 0;
 }
 
+template <typename TokenRange>
 realmz::presentation::StateEmphasis strongest_shell_state_emphasis(
-    const std::vector<
-        realmz::presentation::PartyRailRenderableStateToken>& tokens)
-    noexcept {
+    const TokenRange& tokens) noexcept {
   auto strongest = realmz::presentation::StateEmphasis::neutral;
   for (const auto& token : tokens) {
     if (shell_state_emphasis_priority(token.emphasis) >
@@ -2435,6 +2441,127 @@ void draw_shell_meter(
     SDL_SetRenderDrawColor(renderer, 112, 132, 103, 255);
     SDL_RenderFillRect(renderer, &fill);
   }
+}
+
+void draw_selected_party_details(
+    SDL_Renderer* renderer,
+    TTF_Font* font,
+    const realmz::presentation::LogicalRect& panel,
+    const realmz::presentation::SelectedPartyDetailsModel& details,
+    const realmz::presentation::TypographyModel& typography,
+    realmz::presentation::SelectedPartyDetailsLayoutDensity density,
+    double backing_scale) {
+  using realmz::presentation::SelectedPartyDetailsLayout;
+  using realmz::presentation::SelectedPartyDetailsMeterLayout;
+
+  std::optional<SelectedPartyDetailsLayout> layout;
+  try {
+    layout.emplace(
+        realmz::presentation::compute_selected_party_details_layout({
+            .details_panel = panel,
+            .details = details,
+            .typography = typography,
+            .density = density,
+        }));
+  } catch (...) {
+    draw_shell_text(
+        renderer,
+        font,
+        "DETAILS — Layout unavailable",
+        panel,
+        kMuted,
+        backing_scale,
+        typography.caption);
+    return;
+  }
+
+  draw_shell_text(
+      renderer,
+      font,
+      layout->heading_text,
+      layout->heading_bounds,
+      kHeading,
+      backing_scale,
+      layout->heading_text_style,
+      TTF_STYLE_BOLD);
+  if (!layout->has_selection) {
+    draw_shell_text(
+        renderer,
+        font,
+        layout->empty_message_text,
+        layout->empty_message_bounds,
+        kMuted,
+        backing_scale,
+        layout->empty_message_text_style);
+    return;
+  }
+
+  draw_shell_text(
+      renderer,
+      font,
+      layout->name_text,
+      layout->name_bounds,
+      kBody,
+      backing_scale,
+      layout->name_text_style,
+      TTF_STYLE_BOLD);
+  const auto summary_color = details.conscious
+      ? kMuted
+      : shell_state_color(realmz::presentation::StateEmphasis::critical);
+  draw_shell_text(
+      renderer,
+      font,
+      layout->summary_text,
+      layout->summary_bounds,
+      summary_color,
+      backing_scale,
+      layout->summary_text_style,
+      details.conscious ? TTF_STYLE_NORMAL : TTF_STYLE_BOLD);
+
+  const auto draw_meter = [&](const SelectedPartyDetailsMeterLayout& meter) {
+    draw_shell_text(
+        renderer,
+        font,
+        meter.label_text,
+        meter.label_bounds,
+        shell_state_color(meter.state.emphasis),
+        backing_scale,
+        meter.label_text_style,
+        TTF_STYLE_BOLD);
+    draw_shell_meter(
+        renderer,
+        meter.track_bounds,
+        meter.fill_fraction,
+        meter.state.identifier.find(".unavailable") == std::string::npos);
+    draw_shell_text(
+        renderer,
+        font,
+        meter.value_text,
+        meter.value_bounds,
+        kMuted,
+        backing_scale,
+        meter.value_text_style);
+  };
+  draw_meter(layout->stamina);
+  draw_meter(layout->spell_points);
+
+  const auto state_emphasis = layout->state_tokens.empty()
+      ? (details.conscious
+            ? realmz::presentation::StateEmphasis::positive
+            : realmz::presentation::StateEmphasis::critical)
+      : strongest_shell_state_emphasis(layout->state_tokens);
+  const bool states_elided = layout->hidden_state_count != 0U;
+  draw_shell_text(
+      renderer,
+      font,
+      layout->state_text,
+      layout->state_bounds,
+      shell_state_color(state_emphasis),
+      backing_scale,
+      layout->state_text_style,
+      (!details.conscious || states_elided)
+          ? TTF_STYLE_BOLD
+          : TTF_STYLE_NORMAL);
 }
 
 void draw_shell_focus_corners(
@@ -2483,11 +2610,6 @@ void draw_shell_panel_contents(
   using realmz::presentation::ShellPanelKind;
   using realmz::remaster::assets::ShellSurfaceState;
 
-  constexpr SDL_Color kHeading{224, 205, 165, 255};
-  constexpr SDL_Color kBody{222, 222, 218, 255};
-  constexpr SDL_Color kMuted{164, 164, 158, 255};
-  constexpr SDL_Color kSelected{231, 188, 105, 255};
-  constexpr SDL_Color kSelectedMaterialInk{22, 24, 35, 255};
   const double left = panel.x + 14.0;
   const double width = std::max(0.0, panel.width - 28.0);
   const float heading_size = static_cast<float>(
@@ -3010,28 +3132,14 @@ void draw_shell_panel_contents(
   }
 
   if (kind == ShellPanelKind::details) {
-    draw_shell_text(renderer, font, "DETAILS", {left, panel.y + 11.0, width, 22.0},
-        kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
-    if (!model.selected_details.member) {
-      draw_shell_text(renderer, font, "Select a party member in the game frame.",
-          {left, panel.y + 39.0, width, 44.0},
-          kMuted, backing_scale, body_size);
-      return;
-    }
-    draw_shell_text(renderer, font,
-        model.selected_details.name.empty()
-            ? "Selected party member"
-            : model.selected_details.name,
-        {left, panel.y + 39.0, width, 22.0},
-        kBody, backing_scale, body_size, TTF_STYLE_BOLD);
-    draw_shell_text(renderer, font,
-        std::format("Level {}   ·   Armor {}\nMovement {} / {}",
-            model.selected_details.level,
-            model.selected_details.armor_class,
-            model.selected_details.movement,
-            model.selected_details.movement_maximum),
-        {left, panel.y + 69.0, width, std::max(28.0, panel.height - 79.0)},
-        kMuted, backing_scale, caption_size);
+    draw_selected_party_details(
+        renderer,
+        font,
+        panel,
+        model.selected_details,
+        model.typography,
+        realmz::presentation::SelectedPartyDetailsLayoutDensity::wide,
+        backing_scale);
     return;
   }
 
@@ -3140,22 +3248,14 @@ void draw_shell_panel_contents(
           content, kMuted, backing_scale, caption_size);
     } else if (*model.drawers.active_panel ==
         realmz::presentation::DrawerPanel::details) {
-      if (!model.selected_details.member) {
-        draw_shell_text(renderer, font,
-            "DETAILS — Select a party member in the game frame.",
-            content, kMuted, backing_scale, caption_size);
-      } else {
-        draw_shell_text(renderer, font,
-            std::format("DETAILS — {}\nLevel {} · Armor {} · Move {}/{}",
-                model.selected_details.name.empty()
-                    ? "Selected party member"
-                    : model.selected_details.name,
-                model.selected_details.level,
-                model.selected_details.armor_class,
-                model.selected_details.movement,
-                model.selected_details.movement_maximum),
-            content, kBody, backing_scale, caption_size);
-      }
+      draw_selected_party_details(
+          renderer,
+          font,
+          content,
+          model.selected_details,
+          model.typography,
+          realmz::presentation::SelectedPartyDetailsLayoutDensity::compact,
+          backing_scale);
     } else {
       draw_shell_text(renderer, font,
           model.event_log.entries.empty()

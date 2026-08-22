@@ -79,6 +79,7 @@ set(PRESENTATION_CORE_SOURCES
     src/presentation/PartyRailControlLayout.cpp
     src/presentation/PartyRailLayout.cpp
     src/presentation/PartyRailModel.cpp
+    src/presentation/SelectedPartyDetailsLayout.cpp
     src/presentation/PresentationHost.cpp
     src/presentation/RemasteredInputMapper.cpp
     src/presentation/ResponsiveLayout.cpp
@@ -155,6 +156,14 @@ if(REALMZ_BUILD_CORE_TESTS)
     target_link_libraries(PartyRailLayoutTest PRIVATE realmz_presentation_core)
     realmz_configure_core_target(PartyRailLayoutTest)
     add_test(NAME PartyRailLayoutTest COMMAND PartyRailLayoutTest)
+
+    add_executable(SelectedPartyDetailsLayoutTest
+        src/tests/SelectedPartyDetailsLayoutTest.cpp)
+    target_link_libraries(SelectedPartyDetailsLayoutTest PRIVATE
+        realmz_presentation_core)
+    realmz_configure_core_target(SelectedPartyDetailsLayoutTest)
+    add_test(NAME SelectedPartyDetailsLayoutTest
+        COMMAND SelectedPartyDetailsLayoutTest)
 
     add_executable(PartyRailControlLayoutTest
         src/tests/PartyRailControlLayoutTest.cpp)

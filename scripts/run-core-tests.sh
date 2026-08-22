@@ -87,6 +87,10 @@ run_cpp_test PartyRailLayoutTest \
   src/tests/PartyRailLayoutTest.cpp \
   src/presentation/PartyRailLayout.cpp
 
+run_cpp_test SelectedPartyDetailsLayoutTest \
+  src/tests/SelectedPartyDetailsLayoutTest.cpp \
+  src/presentation/SelectedPartyDetailsLayout.cpp
+
 run_cpp_test PartyRailControlLayoutTest \
   src/tests/PartyRailControlLayoutTest.cpp \
   src/presentation/PartyRailControlLayout.cpp \

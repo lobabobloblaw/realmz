@@ -3847,6 +3847,270 @@ void verify_window_manager_shell_dispatch_freshness(
       "capability");
 }
 
+void verify_selected_party_details_renderer_contract(
+    const fs::path& repository_root) {
+  const std::string model_header = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp"));
+  const std::string model_source = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp"));
+  const std::string layout_header = code_only(read_file(
+      repository_root /
+          "src/presentation/SelectedPartyDetailsLayout.hpp"));
+  const std::string layout_source = code_only(read_file(
+      repository_root /
+          "src/presentation/SelectedPartyDetailsLayout.cpp"));
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+
+  const std::size_t details_name = find_identifier(
+      model_header, "SelectedPartyDetailsModel");
+  require(details_name != std::string::npos,
+      "selected-member Details must retain a detached presentation model");
+  const std::size_t details_open = model_header.find('{', details_name);
+  require(details_open != std::string::npos,
+      "selected-member Details model is missing its definition");
+  const std::size_t details_close = matching_delimiter(
+      model_header, details_open, '{', '}');
+  const std::string details_model = model_header.substr(
+      details_open, details_close - details_open + 1);
+  for (const auto field : {
+           "member", "name", "level", "armor_class", "movement",
+           "movement_maximum", "stamina", "spell_points", "states",
+           "conscious"}) {
+    require(count_identifier(details_model, field) != 0,
+        std::string("selected-member Details model is missing read-only field ") +
+            field);
+  }
+
+  const std::string selected_details = function_body(
+      model_source, "selected_details");
+  const std::string compact_selected_details =
+      without_whitespace(selected_details);
+  const std::size_t stamina_copy = compact_selected_details.find(
+      "result.stamina=rail_member->stamina;");
+  const std::size_t spell_points_copy = compact_selected_details.find(
+      "result.spell_points=rail_member->spell_points;", stamina_copy);
+  const std::size_t states_copy = compact_selected_details.find(
+      "result.states=selected_detail_states(*rail_member);",
+      spell_points_copy);
+  const std::size_t consciousness_copy = compact_selected_details.find(
+      "result.conscious=rail_member->conscious;", states_copy);
+  require(stamina_copy != std::string::npos &&
+          spell_points_copy != std::string::npos &&
+          states_copy != std::string::npos &&
+          consciousness_copy != std::string::npos &&
+          stamina_copy < spell_points_copy &&
+          spell_points_copy < states_copy &&
+          states_copy < consciousness_copy,
+      "selected-member Details must copy both meters, the complete normalized "
+      "state sequence, and consciousness from its detached party-rail model");
+  require(count_identifier(selected_details, "build_actions") == 0 &&
+          count_identifier(selected_details, "UIAction") == 0 &&
+          count_identifier(selected_details, "dispatch") == 0,
+      "selected-member Details projection must not create or dispatch an "
+      "action");
+
+  const std::string normalized_details_states = function_body(
+      model_source, "selected_detail_states");
+  const std::string compact_normalized_details_states =
+      without_whitespace(normalized_details_states);
+  require(compact_normalized_details_states.contains(
+              "for(constauto&state:member.states)") &&
+          compact_normalized_details_states.contains(
+              "state.identifier==") &&
+          compact_normalized_details_states.contains(
+              "std::ranges::find(result,state.identifier,") &&
+          compact_normalized_details_states.contains(
+              "&StateTokenModel::identifier)") &&
+          count_identifier(normalized_details_states, "emplace_back") >= 2,
+      "selected-member Details must visit every normalized party state, "
+      "deduplicate by stable identifier, and retain each distinct state");
+  require(count_identifier(normalized_details_states, "UIAction") == 0 &&
+          count_identifier(normalized_details_states, "dispatch") == 0,
+      "selected-member Details state normalization must remain read-only");
+
+  const std::string member_states = function_body(
+      model_source, "member_states");
+  const std::string compact_member_states = without_whitespace(member_states);
+  const std::size_t copy_conditions = compact_member_states.find(
+      "autocondition_codes=member.conditions;");
+  const std::size_t sort_conditions = compact_member_states.find(
+      "std::ranges::sort(condition_codes);", copy_conditions);
+  const std::size_t unique_conditions = compact_member_states.find(
+      "std::ranges::unique(condition_codes)", sort_conditions);
+  const std::size_t erase_duplicates = compact_member_states.find(
+      "condition_codes.erase(", unique_conditions);
+  require(copy_conditions != std::string::npos &&
+          sort_conditions != std::string::npos &&
+          unique_conditions != std::string::npos &&
+          erase_duplicates != std::string::npos &&
+          copy_conditions < sort_conditions &&
+          sort_conditions < unique_conditions &&
+          unique_conditions < erase_duplicates,
+      "the state sequence copied into Details must derive from an immutable "
+      "sorted and deduplicated condition-code snapshot");
+
+  require(count_identifier(
+              layout_header, "compute_selected_party_details_layout") == 1 &&
+          count_identifier(
+              layout_source, "compute_selected_party_details_layout") == 1,
+      "selected-member Details must expose one pure layout declaration and "
+      "one definition");
+  const std::size_t layout_declaration = find_identifier(
+      layout_header, "compute_selected_party_details_layout");
+  const std::size_t layout_parameters_open = layout_header.find(
+      '(', layout_declaration);
+  require(layout_parameters_open != std::string::npos,
+      "selected-member Details layout declaration has no request parameters");
+  const std::size_t layout_parameters_close = matching_delimiter(
+      layout_header, layout_parameters_open, '(', ')');
+  const std::string compact_layout_parameters = without_whitespace(
+      layout_header.substr(
+          layout_parameters_open,
+          layout_parameters_close - layout_parameters_open + 1));
+  require(compact_layout_parameters.contains(
+              "constSelectedPartyDetailsLayoutRequest&"),
+      "selected-member Details layout must accept its input by const "
+      "reference");
+  const std::size_t density_name = find_identifier(
+      layout_header, "SelectedPartyDetailsLayoutDensity");
+  const std::size_t density_open = layout_header.find('{', density_name);
+  require(density_name != std::string::npos &&
+          density_open != std::string::npos,
+      "selected-member Details layout density is missing its definition");
+  const std::size_t density_close = matching_delimiter(
+      layout_header, density_open, '{', '}');
+  const std::string density_values = layout_header.substr(
+      density_open, density_close - density_open + 1);
+  require(count_identifier(density_values, "wide") == 1 &&
+          count_identifier(density_values, "compact") == 1,
+      "selected-member Details layout must distinguish only wide and compact "
+      "rendering density");
+
+  for (const auto forbidden : {
+           "SDL_Renderer", "SDL_Texture", "UIAction",
+           "LegacyCommandBridge", "RuntimeLegacyCommandBridge",
+           "ResourceManager", "ResourceDASM", "GameSnapshot",
+           "dispatch_remastered_shell_control", "semantic_controls_ready"}) {
+    require(count_identifier(layout_header, forbidden) == 0 &&
+            count_identifier(layout_source, forbidden) == 0,
+        std::string("pure selected-member Details layout must not depend on ") +
+            forbidden);
+  }
+  require(layout_header.find("SDL_") == std::string::npos &&
+          layout_source.find("SDL_") == std::string::npos,
+      "pure selected-member Details layout must not contain an SDL API path");
+
+  const std::string details_layout = function_body(
+      layout_source, "compute_selected_party_details_layout");
+  require(count_identifier(details_layout, "stamina") != 0 &&
+          count_identifier(details_layout, "spell_points") != 0 &&
+          count_identifier(details_layout, "conscious") != 0 &&
+          count_identifier(details_layout, "armor_class") != 0 &&
+          count_identifier(details_layout, "movement") != 0 &&
+          count_identifier(details_layout, "states") != 0,
+      "shared selected-member Details layout must consume both meters, "
+      "consciousness, armor, movement, and the complete state sequence");
+  require(count_identifier(details_layout, "state_tokens") != 0 &&
+          count_identifier(details_layout, "visible_state_count") != 0 &&
+          count_identifier(details_layout, "hidden_state_count") != 0,
+      "shared selected-member Details layout must retain complete renderable "
+      "state tokens and an explicit compact elision count");
+
+  const std::string draw_details = function_body(
+      window_source, "draw_selected_party_details");
+  require(count_identifier(
+              draw_details, "compute_selected_party_details_layout") == 1,
+      "the shared Details renderer must own the sole WindowManager layout "
+      "computation");
+  require(count_identifier(draw_details, "draw_shell_text") != 0 &&
+          count_identifier(draw_details, "draw_shell_meter") == 1 &&
+          count_identifier(draw_details, "draw_meter") == 3 &&
+          count_identifier(draw_details, "state_tokens") != 0 &&
+          count_identifier(draw_details, "state_text") != 0 &&
+          count_identifier(draw_details, "hidden_state_count") != 0,
+      "the shared Details renderer must draw both meters, complete marker-"
+      "bearing state data, and explicit compact elision");
+  require(count_identifier(draw_details, "format") == 0,
+      "the shared Details renderer must consume the pure layout instead of "
+      "rebuilding ad-hoc text");
+  for (const auto forbidden : {
+           "dispatch_remastered_shell_control", "LegacyCommandBridge",
+           "RuntimeLegacyCommandBridge", "UIAction", "GetResource",
+           "ResourceDASM", "PushEvent", "semantic_controls_ready"}) {
+    require(count_identifier(draw_details, forbidden) == 0,
+        std::string("read-only selected-member Details renderer must not use ") +
+            forbidden);
+  }
+
+  const std::size_t draw_details_name = find_identifier(
+      window_source, "draw_selected_party_details");
+  const std::size_t draw_details_parameters_open = window_source.find(
+      '(', draw_details_name);
+  require(draw_details_parameters_open != std::string::npos,
+      "shared selected-member Details renderer has no parameters");
+  const std::size_t draw_details_parameters_close = matching_delimiter(
+      window_source, draw_details_parameters_open, '(', ')');
+  const std::string compact_draw_details_parameters = without_whitespace(
+      window_source.substr(
+          draw_details_parameters_open,
+          draw_details_parameters_close - draw_details_parameters_open + 1));
+  require(compact_draw_details_parameters.contains(
+              "constrealmz::presentation::SelectedPartyDetailsModel&"),
+      "shared selected-member Details renderer must receive its model by "
+      "const reference");
+
+  const std::string panel_draw = function_body(
+      window_source, "draw_shell_panel_contents");
+  const std::string compact_panel_draw = without_whitespace(panel_draw);
+  const auto branch_after = [&compact_panel_draw](std::string_view marker) {
+    const std::size_t marker_position = compact_panel_draw.find(marker);
+    require(marker_position != std::string::npos,
+        std::string("could not find selected-member Details branch: ") +
+            std::string(marker));
+    const std::size_t opening = compact_panel_draw.find('{', marker_position);
+    require(opening != std::string::npos,
+        "selected-member Details branch is missing its body");
+    const std::size_t closing = matching_delimiter(
+        compact_panel_draw, opening, '{', '}');
+    return compact_panel_draw.substr(opening, closing - opening + 1);
+  };
+  const std::string wide_branch = branch_after(
+      "if(kind==ShellPanelKind::details)");
+  const std::string compact_branch = branch_after(
+      "*model.drawers.active_panel=="
+      "realmz::presentation::DrawerPanel::details");
+  require(count_identifier(panel_draw, "draw_selected_party_details") == 2 &&
+          count_identifier(wide_branch, "draw_selected_party_details") == 1 &&
+          count_identifier(compact_branch,
+              "draw_selected_party_details") == 1,
+      "wide Details and compact Details drawer must each delegate exactly "
+      "once to the same renderer");
+  require(wide_branch.contains(
+              "SelectedPartyDetailsLayoutDensity::wide") &&
+          compact_branch.contains(
+              "SelectedPartyDetailsLayoutDensity::compact"),
+      "wide and compact Details branches must declare their density through "
+      "the shared layout contract");
+  for (const auto direct_render : {
+           "compute_selected_party_details_layout", "draw_shell_text",
+           "draw_shell_meter", "format", "stamina", "spell_points",
+           "conscious", "armor_class", "movement", "states"}) {
+    require(count_identifier(wide_branch, direct_render) == 0 &&
+            count_identifier(compact_branch, direct_render) == 0,
+        std::string("wide/compact Details branches must not duplicate ") +
+            direct_render);
+  }
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  require(count_identifier(present, "semantic_controls_ready") == 1 &&
+          compact_present.contains(".semantic_controls_ready=false,"),
+      "the bounded Details renderer milestone must keep the complete Classic "
+      "frame and must not enable the cropped semantic-controls route");
+}
+
 void verify_remastered_runtime_asset_integration(
     const fs::path& repository_root) {
   const std::string raw_source = read_file(
@@ -7113,6 +7377,7 @@ int main(int argc, char** argv) {
     verify_production_call_ownership(repository_root);
     verify_window_manager_named_combat_sinks(repository_root);
     verify_window_manager_shell_dispatch_freshness(repository_root);
+    verify_selected_party_details_renderer_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);
     verify_mode_switch_cancellation(repository_root);
     std::cout << "SemanticTopLevelLoopContractTest passed ("

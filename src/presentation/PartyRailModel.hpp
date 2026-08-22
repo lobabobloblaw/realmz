@@ -95,6 +95,15 @@ struct SelectedPartyDetailsModel {
   int16_t armor_class = 0;
   int16_t movement = 0;
   int16_t movement_maximum = 0;
+  MeterModel stamina;
+  MeterModel spell_points;
+  // This is the complete, unelided semantic state sequence for the selected
+  // member. Its first token is always the explicit Conscious/Unconscious cue;
+  // redundant selection state is omitted. Conditions use deterministic
+  // ascending code order with duplicate condition codes removed. Presentation
+  // layouts may elide only their own visible summary, never this source.
+  std::vector<StateTokenModel> states;
+  bool conscious = true;
 
   bool operator==(const SelectedPartyDetailsModel&) const = default;
 };

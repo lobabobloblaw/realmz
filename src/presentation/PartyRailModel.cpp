@@ -190,6 +190,43 @@ std::vector<StateTokenModel> member_states(
   return result;
 }
 
+std::vector<StateTokenModel> selected_detail_states(
+    const PartyRailMemberModel& member) {
+  std::vector<StateTokenModel> result;
+  result.reserve(member.states.size() + 1U);
+  result.emplace_back(member.conscious
+      ? token(
+            "status.conscious",
+            "Conscious",
+            StateEmphasis::positive,
+            StateMarker::check)
+      : token(
+            "status.unconscious",
+            "Unconscious",
+            StateEmphasis::critical,
+            StateMarker::stop));
+
+  // The member's presence in this model already communicates selection.
+  // Retain every gameplay status while replacing that redundant token with an
+  // explicit, non-color consciousness cue. member_states has already put
+  // conditions in ascending numeric order and removed duplicate codes.
+  for (const auto& state : member.states) {
+    if ((state.identifier == "status.selected") ||
+        (state.identifier == "status.conscious") ||
+        (state.identifier == "status.unconscious")) {
+      continue;
+    }
+    const auto duplicate = std::ranges::find(
+        result,
+        state.identifier,
+        &StateTokenModel::identifier);
+    if (duplicate == result.end()) {
+      result.emplace_back(state);
+    }
+  }
+  return result;
+}
+
 StateTokenModel fatigue_state(int16_t fatigue) {
   if (fatigue <= 0) {
     return token(
@@ -708,13 +745,20 @@ TypographyModel typography(double requested_scale) {
 
 SelectedPartyDetailsModel selected_details(
     const GameSnapshot& snapshot,
-    std::optional<PartyMemberId> selected_member) {
+    const PartyRailModel& party_rail) {
   SelectedPartyDetailsModel result;
-  if (!selected_member) {
+  if (!party_rail.selected_member) {
     return result;
   }
-  const auto* member = snapshot.party.member(*selected_member);
+  const auto* member = snapshot.party.member(*party_rail.selected_member);
   if (!member) {
+    return result;
+  }
+  const auto rail_member = std::ranges::find(
+      party_rail.members,
+      member->id,
+      &PartyRailMemberModel::id);
+  if (rail_member == party_rail.members.end()) {
     return result;
   }
   result.member = member->id;
@@ -723,6 +767,10 @@ SelectedPartyDetailsModel selected_details(
   result.armor_class = member->armor_class;
   result.movement = member->movement;
   result.movement_maximum = member->movement_maximum;
+  result.stamina = rail_member->stamina;
+  result.spell_points = rail_member->spell_points;
+  result.states = selected_detail_states(*rail_member);
+  result.conscious = rail_member->conscious;
   return result;
 }
 
@@ -868,7 +916,7 @@ PresentationShellModel build_presentation_shell_model(
   result.party_rail = build_party_rail_model(snapshot);
   result.selected_details = selected_details(
       snapshot,
-      result.party_rail.selected_member);
+      result.party_rail);
   result.actions = build_actions(snapshot, result.party_rail.selected_member);
   result.event_log = build_event_log(events, preferences.event_log_limit);
   result.drawers = build_drawers(preferences, result.event_log);

@@ -306,11 +306,22 @@ fresh proof of the actual Resource Manager winner; every other portrait remains
 a code-native monogram. The exact approved Tutorial title picture receives its
 reviewed title typography at render time rather than from baked generated text.
 
-Details and log surfaces stay informational, and the complete
-Classic frame remains interactive. Compact Details/Event Log drawer tabs are
-local presentation actions with pointer and wrapping keyboard operation; they
-never cross the legacy mutation bridge. Popup anchors, text-input rectangles, cursor
-warps, and pointer capture use the same central Classic-to-window transform.
+Details and log surfaces stay informational, and the complete Classic frame
+remains interactive. The wide Details panel and compact Details drawer use the
+same pure selected-member layout and rendering path. That path exposes detached
+stamina and spell-point values, consciousness, armor, movement, and the complete
+normalized state-token sequence, with condition identities sorted and
+deduplicated. Every rendered state has an explicit marker or label independent
+of color. Compact visual elision ends with `+N`, where `N` is the exact count
+omitted from the visible summary while the complete semantic token sequence
+remains available to the renderer.
+Compact Details/Event Log drawer tabs are local presentation actions with
+pointer and wrapping keyboard operation; they never cross the legacy mutation
+bridge. The Details inspector itself dispatches no action and mutates neither
+the snapshot nor legacy state. This is a bounded renderer milestone; it does
+not enable the cropped gameplay route or claim Event Log, action, or screen
+migration completeness. Popup anchors, text-input rectangles, cursor warps,
+and pointer capture use the same central Classic-to-window transform.
 
 A narrow legacy-context adapter keeps title/no-gameplay state and nested legacy
 flows safe. Title, inventory, shop, encounter, and other modal screens retain
@@ -342,6 +353,15 @@ Release-candidate tests must include:
 - exact Tutorial `PICT` 32128 key/digest/dimension gating, deterministic
   code-rendered title pixels confined to the reviewed plaque inset, source
   isolation, font-state restoration, and complete Classic fallback on failure;
+- selected-member Details projection and shared wide/compact layout for absent
+  or stale selection, bounded stamina and spell-point meters, consciousness,
+  armor, movement, sorted/deduplicated condition identities, marker/label cues
+  that do not rely on color, deterministic compact `+N` elision, complete
+  retained semantic tokens, finite contained non-overlapping bounds, practical
+  text-size floors, and input immutability; structural coverage must also prove
+  both rendering branches use the shared path, the pure model/layout has no
+  SDL, Resource Manager, action, or legacy-state dependency, and the renderer
+  has no dispatch path;
 - logical/physical coordinate transforms, hit testing, stable semantic focus,
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
@@ -443,6 +463,12 @@ Automated checks do not replace these release decisions:
   rendered typography at both backing scales; in a disposable package, change
   its PNG digest or remove the bundled title font and verify complete Classic
   fallback rather than a blank or partially composed approved picture;
+- selected-member Details at compact and wide layouts, both backing scales,
+  minimum and enlarged text scales, conscious and unconscious members, zero and
+  clamped stamina/spell-point ranges, and long condition sets; verify explicit
+  non-color markers, exact compact `+N` elision, no clipped/overlapping fields,
+  and that opening, closing, or viewing Details changes no gameplay state and
+  dispatches no legacy action;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
   Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat
