@@ -45,6 +45,9 @@ struct ShellControlPlacement {
   std::string focus_identifier;
   int32_t tab_order = 0;
   bool enabled = false;
+  // Selected is orthogonal to enabled: the active combat-deck tab remains an
+  // operable, focusable idempotent target and is rendered as the current page.
+  bool selected = false;
   UIActionPayload payload;
 
   bool operator==(const ShellControlPlacement&) const = default;

@@ -2439,8 +2439,6 @@ void draw_shell_panel_contents(
   }
 
   if (kind == ShellPanelKind::action_bar) {
-    draw_shell_text(renderer, font, "ACTIONS", {left, panel.y + 11.0, width, 22.0},
-        kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
     const bool has_semantic_movement = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -2501,6 +2499,11 @@ void draw_shell_panel_contents(
           return control.kind == realmz::presentation::
               ShellControlKind::combat_action_page;
         });
+    if (!has_semantic_combat_page) {
+      draw_shell_text(renderer, font, "ACTIONS",
+          {left, panel.y + 11.0, width, 22.0},
+          kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
+    }
     const bool has_semantic_switch_weapon = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -2573,23 +2576,22 @@ void draw_shell_panel_contents(
           return control.kind == realmz::presentation::
               ShellControlKind::center_combat_cursor;
         });
-    std::string action_summary =
-        "COMPATIBILITY CONTROLS ACTIVE — use the controls inside the game frame";
+    std::string action_summary = "Use the controls in the game view";
     if (has_semantic_movement) {
-      action_summary = "SEMANTIC MOVEMENT";
+      action_summary = "TRAVEL · MOVEMENT";
       if (has_semantic_inventory) {
-        action_summary += " + ITEMS";
+        action_summary += " · ITEMS";
       }
       if (has_semantic_spellbook) {
-        action_summary += " + SPELLS";
+        action_summary += " · SPELLS";
       }
       if (has_semantic_save) {
-        action_summary += " + SAVE";
+        action_summary += " · SAVE";
       }
       if (has_semantic_load) {
-        action_summary += " + LOAD";
+        action_summary += " · LOAD";
       }
-      action_summary += " — other actions remain in the game frame";
+      action_summary += " · MORE IN GAME VIEW";
     } else if (has_semantic_guard || has_semantic_finish ||
         has_semantic_delay || has_semantic_center ||
         has_semantic_switch_weapon || has_semantic_combat_focus_cycle ||
@@ -2600,55 +2602,7 @@ void draw_shell_panel_contents(
         has_semantic_open_combat_targeting || has_semantic_escape_combat ||
         has_semantic_open_combat_scroll_case ||
         has_semantic_center_combat_cursor) {
-      action_summary = "SEMANTIC COMBAT";
-      if (has_semantic_guard) {
-        action_summary += " + GUARD";
-      }
-      if (has_semantic_finish) {
-        action_summary += " + FINISH";
-      }
-      if (has_semantic_delay) {
-        action_summary += " + DELAY";
-      }
-      if (has_semantic_center) {
-        action_summary += " + CENTER";
-      }
-      if (has_semantic_switch_weapon) {
-        action_summary += " + WEAPON";
-      }
-      if (has_semantic_combat_focus_cycle) {
-        action_summary += " + VIEW";
-      }
-      if (has_semantic_combat_items) {
-        action_summary += " + ITEMS";
-      }
-      if (has_semantic_auto_combatant) {
-        action_summary += " + AUTO";
-      }
-      if (has_semantic_show_combat_range) {
-        action_summary += " + RANGE";
-      }
-      if (has_semantic_bandage_combatant) {
-        action_summary += " + BANDAGE";
-      }
-      if (has_semantic_undo_combatant) {
-        action_summary += " + UNDO";
-      }
-      if (has_semantic_open_combat_spellbook) {
-        action_summary += " + CAST";
-      }
-      if (has_semantic_open_combat_targeting) {
-        action_summary += " + TARGET";
-      }
-      if (has_semantic_escape_combat) {
-        action_summary += " + ESCAPE";
-      }
-      if (has_semantic_open_combat_scroll_case) {
-        action_summary += " + SCROLL";
-      }
-      if (has_semantic_center_combat_cursor) {
-        action_summary += " + CURSOR";
-      }
+      action_summary = "COMBAT";
     }
     double action_summary_width = width;
     for (const auto& control : controls) {
@@ -2659,9 +2613,14 @@ void draw_shell_panel_contents(
             std::max(0.0, control.bounds.x - 8.0 - left));
       }
     }
-    draw_shell_text(renderer, font, action_summary,
-        {left, panel.y + 37.0, action_summary_width, 24.0},
-        kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
+    // The persistent combat tabs own the header row and communicate the
+    // active command group directly. Noncombat surfaces retain a compact,
+    // player-facing summary beneath the ACTIONS heading.
+    if (!has_semantic_combat_page) {
+      draw_shell_text(renderer, font, action_summary,
+          {left, panel.y + 37.0, action_summary_width, 24.0},
+          kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
+    }
     if (has_semantic_movement || has_semantic_guard ||
         has_semantic_finish || has_semantic_delay || has_semantic_center ||
         has_semantic_combat_page || has_semantic_switch_weapon ||
@@ -2723,28 +2682,43 @@ void draw_shell_panel_contents(
             (*pressed_control == control.region);
         const bool focused = focused_control &&
             (*focused_control == control.region);
+        const bool selected_tab = control.selected &&
+            control.kind == realmz::presentation::ShellControlKind::
+                combat_action_page;
         auto button = sdl_rect(control.bounds);
         SDL_SetRenderDrawColor(
             renderer,
-            pressed ? 91 : (control.enabled ? 52 : 39),
-            pressed ? 73 : (control.enabled ? 49 : 39),
-            pressed ? 46 : (control.enabled ? 43 : 42),
+            pressed ? 91 : (selected_tab ? 76 : (control.enabled ? 52 : 39)),
+            pressed ? 73 : (selected_tab ? 61 : (control.enabled ? 49 : 39)),
+            pressed ? 46 : (selected_tab ? 38 : (control.enabled ? 43 : 42)),
             255);
         SDL_RenderFillRect(renderer, &button);
         SDL_SetRenderDrawColor(
             renderer,
-            pressed ? 238 : (control.enabled ? 174 : 92),
-            pressed ? 196 : (control.enabled ? 139 : 87),
-            pressed ? 110 : (control.enabled ? 81 : 77),
+            pressed ? 238 :
+                (selected_tab ? 231 : (control.enabled ? 174 : 92)),
+            pressed ? 196 :
+                (selected_tab ? 188 : (control.enabled ? 139 : 87)),
+            pressed ? 110 :
+                (selected_tab ? 105 : (control.enabled ? 81 : 77)),
             255);
         SDL_RenderRect(renderer, &button);
-        if (pressed) {
+        if (pressed || selected_tab) {
           SDL_FRect inner = button;
           inner.x += 2.0f;
           inner.y += 2.0f;
           inner.w = std::max(0.0f, inner.w - 4.0f);
           inner.h = std::max(0.0f, inner.h - 4.0f);
           SDL_RenderRect(renderer, &inner);
+        }
+        if (selected_tab) {
+          const float indicator_y = button.y + button.h - 5.0f;
+          SDL_RenderLine(renderer,
+              button.x + 7.0f, indicator_y,
+              button.x + button.w - 7.0f, indicator_y);
+          SDL_RenderLine(renderer,
+              button.x + 7.0f, indicator_y - 1.0f,
+              button.x + button.w - 7.0f, indicator_y - 1.0f);
         }
         if (focused) {
           draw_shell_focus_corners(renderer, control.bounds);
@@ -2765,7 +2739,7 @@ void draw_shell_panel_contents(
                     0.0, control.bounds.width - 2.0 * horizontal_label_inset),
                 std::max(0.0, control.bounds.height - 18.0),
             },
-            control.enabled ? kBody : kMuted,
+            selected_tab ? kSelected : (control.enabled ? kBody : kMuted),
             backing_scale,
             caption_size,
             TTF_STYLE_BOLD);
@@ -3502,59 +3476,14 @@ void WindowManager::present_remastered_frame() {
                         *combat_items_combatant,
                         *modeled_combat_items_member}}
               : std::nullopt;
-      std::optional<realmz::presentation::CombatantId> secondary_combatant;
-      bool secondary_combatants_match = true;
-      for (const auto combatant : {
-               switch_weapon_combatant,
-               center_previous_combatant,
-               center_next_combatant,
-               open_combat_items
-                   ? std::optional<realmz::presentation::CombatantId>{
-                         open_combat_items->combatant}
-                   : std::nullopt,
-               auto_combatant,
-               show_combat_range_combatant,
-               bandage_combatant,
-               undo_combatant,
-               open_combat_spellbook,
-               open_combat_targeting,
-               escape_combat,
-               open_combat_scroll_case,
-               center_combat_cursor_combatant,
-           }) {
-        if (!combatant) {
-          continue;
-        }
-        if (secondary_combatant && (*secondary_combatant != *combatant)) {
-          secondary_combatants_match = false;
-          break;
-        }
-        secondary_combatant = combatant;
-      }
-      const bool invalid_paged_combat_actions =
-          !secondary_combatant || !secondary_combatants_match;
-      const bool unavailable_utility_page =
-          this->remastered_combat_action_page ==
-              realmz::presentation::CombatActionPage::utility &&
-          !auto_combatant && !show_combat_range_combatant &&
-          !bandage_combatant && !undo_combatant &&
-          !open_combat_spellbook && !open_combat_targeting &&
-          !escape_combat && !open_combat_scroll_case &&
-          !center_combat_cursor;
-      const bool unavailable_special_page =
-          this->remastered_combat_action_page ==
-              realmz::presentation::CombatActionPage::special &&
-          !open_combat_spellbook && !open_combat_targeting && !escape_combat &&
-          !open_combat_scroll_case && !center_combat_cursor;
-      if ((invalid_paged_combat_actions &&
-              this->remastered_combat_action_page !=
-                  realmz::presentation::CombatActionPage::primary) ||
-          unavailable_utility_page || unavailable_special_page) {
-        this->remastered_combat_action_page =
-            realmz::presentation::CombatActionPage::primary;
-        shell_model->combat_action_page =
-            realmz::presentation::CombatActionPage::primary;
-      }
+      // Page tabs are presentation-local and bind to the fresh active party
+      // actor, not to the presence of an action on any particular page. This
+      // keeps all four direct-selection tabs live for sparse command sets and
+      // allows an intentionally empty page to remain selected.
+      const auto combat_deck_combatant = live_combat_party_actor(
+          snapshot.combat
+              ? snapshot.combat->acting_combatant
+              : std::nullopt);
       const bool switch_weapon_available = switch_weapon_combatant &&
           switch_weapon_action->can_invoke() && snapshot_context_matches &&
           realmz::presentation::legacy_key_message_for_switch_weapon(
@@ -3839,7 +3768,7 @@ void WindowManager::present_remastered_frame() {
             [this, &context, &snapshot, &shell_model,
                 current_combat_action_page,
                 combat_action_panel,
-                secondary_combatant](const auto& control) {
+                combat_deck_combatant](const auto& control) {
               if (!control.enabled) {
                 return true;
               }
@@ -3853,21 +3782,21 @@ void WindowManager::present_remastered_frame() {
                     context.screen !=
                         realmz::presentation::ScreenContext::combat ||
                     !combat_action_panel.contains(control.bounds) ||
-                    !valid_transition || !secondary_combatant ||
-                    (*secondary_combatant < 0) ||
-                    (*secondary_combatant > 0xFF) ||
+                    !valid_transition || !combat_deck_combatant ||
+                    (*combat_deck_combatant < 0) ||
+                    (*combat_deck_combatant > 0xFF) ||
                     !snapshot.combat || !snapshot.combat->active ||
                     snapshot.combat->acting_combatant !=
-                        *secondary_combatant) {
+                        *combat_deck_combatant) {
                   return false;
                 }
                 const auto combatant = std::ranges::find(
                     snapshot.combat->combatants,
-                    *secondary_combatant,
+                    *combat_deck_combatant,
                     &realmz::presentation::CombatantView::id);
                 const auto* member = snapshot.party.member(
                     static_cast<realmz::presentation::PartyMemberId>(
-                        *secondary_combatant));
+                        *combat_deck_combatant));
                 return combatant != snapshot.combat->combatants.end() &&
                     member &&
                     combatant->kind ==

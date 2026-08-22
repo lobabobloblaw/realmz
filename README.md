@@ -108,7 +108,14 @@ range-overlay, bandage-target, spell-selection, target-selection, undo mutation,
 escape confirmation, scroll selection, combat, modal, automation, RNG, turn,
 or save replay;
 other combat commands remain inside the interactive Classic frame.
-The code-native controls share a
+The combat action bar presents these seventeen commands through four
+persistent, directly selectable groups: **Turn**, **Gear**, **Tactics**, and
+**Special**. During an eligible live-party turn, all four named tabs remain
+visible on every combat command page, the current tab has a double border and
+underline in addition to its color, and selecting it again is an idempotent
+presentation action. This replaces the prototype's relative More/Back paging
+without changing any combat payload, combat-command eligibility check, or
+legacy handoff. The code-native controls share a
 keyboard route with wrapping Tab and Shift-Tab focus plus
 Return or Space activation, suppresses repeat dispatch, and uses a
 high-contrast non-color focus outline. In compact layouts the

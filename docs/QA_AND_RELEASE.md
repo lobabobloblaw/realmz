@@ -239,6 +239,15 @@ converts the queued absolute cell back to Classic's current field-relative
 coordinates; the unchanged physical `m` branch still uses `point / 32`.
 All other combat commands remain in the interactive Classic frame.
 
+The seventeen code-native combat commands are organized into four persistent,
+direct-selection tabs: Turn, Gear, Tactics, and Special. During an eligible
+live-party turn, every tab remains visible and keyboard-focusable on every
+combat command page, including the selected tab; selecting the current tab is
+an idempotent presentation action. A double border and underline expose the
+active page without relying on color. This replaces relative More/Back paging
+without changing action payloads, combat-command availability checks, or
+legacy handoffs.
+
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
 local presentation actions with pointer and wrapping keyboard operation; they
@@ -343,7 +352,11 @@ Automated checks do not replace these release decisions:
   Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat
   Target, Combat Escape, Use Scroll, and Center Cursor
   controls at compact and wide layouts,
-  including an inert stale Spells action after selection, consciousness, spell
+  including direct and idempotent selection of the persistent Turn, Gear,
+  Tactics, and Special combat tabs; stable focus across page recomposition;
+  unique non-overlapping targets of at least 44×44 points; and a visible
+  non-color selected-tab indicator; and an inert stale Spells action after
+  selection, consciousness, spell
   points, or surface state changes; inert stale Save and Load actions after
   leaving their gameplay surface; and inert stale Guard, Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting

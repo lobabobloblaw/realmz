@@ -341,25 +341,24 @@ enum class CombatActionPage {
   special,
 };
 
-// Combat pages form a bounded linear navigation path. Keeping this predicate
-// shared makes pointer and keyboard routing reject stale, skipped, self, and
-// invalid transitions through the same constexpr contract.
+// Combat pages are selected directly from a persistent command deck. Keeping
+// this predicate shared makes pointer and keyboard routing accept every valid
+// page (including the already-selected page) while still rejecting malformed
+// enum values through the same constexpr contract.
 [[nodiscard]] constexpr bool is_valid_combat_action_page_transition(
     CombatActionPage from,
     CombatActionPage to) noexcept {
-  switch (from) {
-    case CombatActionPage::primary:
-      return to == CombatActionPage::secondary;
-    case CombatActionPage::secondary:
-      return (to == CombatActionPage::primary) ||
-          (to == CombatActionPage::utility);
-    case CombatActionPage::utility:
-      return (to == CombatActionPage::secondary) ||
-          (to == CombatActionPage::special);
-    case CombatActionPage::special:
-      return to == CombatActionPage::utility;
-  }
-  return false;
+  const auto is_valid_page = [](CombatActionPage page) constexpr {
+    switch (page) {
+      case CombatActionPage::primary:
+      case CombatActionPage::secondary:
+      case CombatActionPage::utility:
+      case CombatActionPage::special:
+        return true;
+    }
+    return false;
+  };
+  return is_valid_page(from) && is_valid_page(to);
 }
 
 // Compact-shell drawers are presentation state only. The desired panel is

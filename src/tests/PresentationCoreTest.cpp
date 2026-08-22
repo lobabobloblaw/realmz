@@ -354,19 +354,6 @@ void test_actions_and_events() {
 }
 
 void test_combat_action_page_transitions() {
-  static_assert(is_valid_combat_action_page_transition(
-      CombatActionPage::primary, CombatActionPage::secondary));
-  static_assert(is_valid_combat_action_page_transition(
-      CombatActionPage::secondary, CombatActionPage::primary));
-  static_assert(is_valid_combat_action_page_transition(
-      CombatActionPage::secondary, CombatActionPage::utility));
-  static_assert(is_valid_combat_action_page_transition(
-      CombatActionPage::utility, CombatActionPage::secondary));
-  static_assert(is_valid_combat_action_page_transition(
-      CombatActionPage::utility, CombatActionPage::special));
-  static_assert(is_valid_combat_action_page_transition(
-      CombatActionPage::special, CombatActionPage::utility));
-
   constexpr std::array pages{
       CombatActionPage::primary,
       CombatActionPage::secondary,
@@ -375,18 +362,7 @@ void test_combat_action_page_transitions() {
   };
   for (const auto from : pages) {
     for (const auto to : pages) {
-      const bool expected =
-          ((from == CombatActionPage::primary) &&
-              (to == CombatActionPage::secondary)) ||
-          ((from == CombatActionPage::secondary) &&
-              ((to == CombatActionPage::primary) ||
-                  (to == CombatActionPage::utility))) ||
-          ((from == CombatActionPage::utility) &&
-              ((to == CombatActionPage::secondary) ||
-                  (to == CombatActionPage::special))) ||
-          ((from == CombatActionPage::special) &&
-              (to == CombatActionPage::utility));
-      CHECK(is_valid_combat_action_page_transition(from, to) == expected);
+      CHECK(is_valid_combat_action_page_transition(from, to));
     }
   }
 

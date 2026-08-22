@@ -100,6 +100,29 @@ static_assert(std::is_same_v<
     decltype(AutoCombatantAction::combatant),
     CombatantId>);
 
+constexpr bool combatDeckSupportsDirectIdempotentSelection() {
+  constexpr std::array pages{
+      CombatActionPage::primary,
+      CombatActionPage::secondary,
+      CombatActionPage::utility,
+      CombatActionPage::special,
+  };
+  for (const auto from : pages) {
+    for (const auto to : pages) {
+      if (!is_valid_combat_action_page_transition(from, to)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+static_assert(combatDeckSupportsDirectIdempotentSelection());
+static_assert(!is_valid_combat_action_page_transition(
+    static_cast<CombatActionPage>(-1), CombatActionPage::primary));
+static_assert(!is_valid_combat_action_page_transition(
+    CombatActionPage::primary, static_cast<CombatActionPage>(-1)));
+
 GameSnapshot makeCompleteSnapshot() {
   GameSnapshot snapshot{
       .revision = 0x1020304050607080ULL,

@@ -218,6 +218,7 @@ if(REALMZ_BUILD_CORE_TESTS)
 
     add_executable(SemanticTopLevelLoopContractTest
         src/tests/SemanticTopLevelLoopContractTest.cpp)
+    target_include_directories(SemanticTopLevelLoopContractTest PRIVATE src)
     realmz_configure_core_target(SemanticTopLevelLoopContractTest)
     add_test(NAME SemanticTopLevelLoopContractTest
         COMMAND SemanticTopLevelLoopContractTest ${CMAKE_SOURCE_DIR})

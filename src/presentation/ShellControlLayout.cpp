@@ -20,22 +20,23 @@ constexpr uint32_t kGuardCombatantRegion = 1104U;
 constexpr uint32_t kFinishCombatantRegion = 1105U;
 constexpr uint32_t kDelayCombatantRegion = 1106U;
 constexpr uint32_t kCenterActiveCombatantRegion = 1107U;
-constexpr uint32_t kCombatActionPageRegion = 1108U;
 constexpr uint32_t kSwitchWeaponSetRegion = 1109U;
 constexpr uint32_t kCenterPreviousCombatantRegion = 1110U;
 constexpr uint32_t kCenterNextCombatantRegion = 1111U;
 constexpr uint32_t kOpenCombatItemsRegion = 1112U;
-constexpr uint32_t kCombatUtilityPageRegion = 1113U;
 constexpr uint32_t kAutoCombatantRegion = 1114U;
 constexpr uint32_t kShowCombatRangeRegion = 1115U;
 constexpr uint32_t kBandageCombatantRegion = 1116U;
 constexpr uint32_t kUndoCombatantRegion = 1117U;
-constexpr uint32_t kCombatSpecialPageRegion = 1118U;
 constexpr uint32_t kOpenCombatSpellbookRegion = 1119U;
 constexpr uint32_t kOpenCombatTargetingRegion = 1120U;
 constexpr uint32_t kEscapeCombatRegion = 1121U;
 constexpr uint32_t kOpenCombatScrollCaseRegion = 1122U;
 constexpr uint32_t kCenterCombatCursorRegion = 1123U;
+constexpr uint32_t kCombatTurnPageRegion = 1200U;
+constexpr uint32_t kCombatGearPageRegion = 1201U;
+constexpr uint32_t kCombatTacticsPageRegion = 1202U;
+constexpr uint32_t kCombatSpecialPageRegion = 1203U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -48,6 +49,41 @@ struct MovementDescriptor {
   std::string_view label;
   std::string_view accessibility_label;
   std::string_view identifier;
+};
+
+struct CombatPageDescriptor {
+  CombatActionPage page;
+  uint32_t region;
+  std::string_view label;
+  std::string_view accessibility_label;
+  std::string_view identifier;
+};
+
+constexpr std::array<CombatPageDescriptor, 4> kCombatPages{
+    CombatPageDescriptor{
+        CombatActionPage::primary,
+        kCombatTurnPageRegion,
+        "TURN",
+        "Turn combat commands",
+        "turn"},
+    CombatPageDescriptor{
+        CombatActionPage::secondary,
+        kCombatGearPageRegion,
+        "GEAR",
+        "Gear and view combat commands",
+        "gear"},
+    CombatPageDescriptor{
+        CombatActionPage::utility,
+        kCombatTacticsPageRegion,
+        "TACTICS",
+        "Tactical combat commands",
+        "tactics"},
+    CombatPageDescriptor{
+        CombatActionPage::special,
+        kCombatSpecialPageRegion,
+        "SPECIAL",
+        "Special combat commands",
+        "special"},
 };
 
 constexpr std::array<MovementDescriptor, 8> kOutdoorMovement{
@@ -216,48 +252,26 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       : (secondary_combat_page ? secondary_combat_control_count
           : (utility_combat_page ? utility_combat_control_count
                                  : special_combat_control_count));
-  const bool has_valid_secondary_action = valid_switch_weapon ||
-      valid_center_previous || valid_center_next || valid_combat_items;
-  const bool has_valid_utility_action =
-      valid_auto_combatant || valid_show_combat_range ||
-      valid_bandage_combatant || valid_undo_combatant;
-  const bool has_valid_special_action = valid_open_combat_spellbook ||
-      valid_open_combat_targeting || valid_escape_combat ||
-      valid_open_combat_scroll_case || valid_center_combat_cursor;
-  const size_t combat_page_control_count = primary_combat_page
-      ? ((has_valid_secondary_action || has_valid_utility_action ||
-              has_valid_special_action)
-                ? 1U
-                : 0U)
-      : (secondary_combat_page
-              ? 1U + ((has_valid_utility_action || has_valid_special_action)
-                            ? 1U
-                            : 0U)
-              : (utility_combat_page
-                        ? 1U + (has_valid_special_action ? 1U : 0U)
-                        : (has_valid_special_action ? 1U : 0U)));
-  const size_t required_combat_page_control_capacity =
-      (has_valid_utility_action || has_valid_special_action)
-      ? std::max<size_t>(2U, combat_page_control_count)
-      : combat_page_control_count;
+  const size_t total_combat_control_count =
+      primary_combat_control_count + secondary_combat_control_count +
+      utility_combat_control_count + special_combat_control_count;
+  const size_t maximum_combat_control_count = std::max({
+      primary_combat_control_count,
+      secondary_combat_control_count,
+      utility_combat_control_count,
+      special_combat_control_count,
+  });
+  constexpr size_t combat_page_control_count = kCombatPages.size();
+  const size_t required_combat_control_capacity = std::max(
+      combat_page_control_count,
+      maximum_combat_control_count);
   const bool has_combatant_request = std::ranges::any_of(
       combatants,
       [](const auto& combatant) { return combatant.has_value(); });
   const bool combat_controls =
       (request.screen == ScreenContext::combat) &&
       !invalid_combatant && !mismatched_combatants &&
-      (primary_combat_page
-              ? ((primary_combat_control_count > 0U) ||
-                    has_valid_secondary_action || has_valid_utility_action ||
-                    has_valid_special_action)
-              : (secondary_combat_page
-                      ? ((secondary_combat_control_count > 0U) ||
-                            has_valid_utility_action ||
-                            has_valid_special_action)
-                      : (utility_combat_page
-                                ? (has_valid_utility_action ||
-                                      has_valid_special_action)
-                                : has_valid_special_action)));
+      (total_combat_control_count > 0U);
   const bool has_combat_request = has_combatant_request ||
       request.guard_available || request.finish_available ||
       request.delay_available || request.center_active_available ||
@@ -342,14 +356,17 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       return {};
     }
   }
-  if ((required_combat_page_control_capacity > 0U) &&
+  // Every combat tab is a live destination. Accept the deck only when the
+  // panel can contain both the persistent tab row and the largest reachable
+  // action row; otherwise a valid page selection could make the deck vanish.
+  if (combat_controls && (required_combat_control_capacity > 0U) &&
       ((request.action_panel.width <
               2.0 * kHorizontalInset +
                   kMinimumTargetExtent *
-                      required_combat_page_control_capacity +
-                  gap * (required_combat_page_control_capacity - 1U)) ||
+                      required_combat_control_capacity +
+                  gap * (required_combat_control_capacity - 1U)) ||
           (request.action_panel.height <
-              kHeaderTopInset + kMinimumTargetExtent))) {
+              kControlsTopInset + kMinimumTargetExtent + kBottomInset))) {
     return {};
   }
 
@@ -434,51 +451,49 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
     return result;
   }
 
-  const auto append_page_control = [
-      &request, &result, gap](
-      CombatActionPage target,
-      uint32_t region,
-      std::string label,
-      std::string accessibility_label,
-      std::string focus_identifier,
-      int32_t tab_order,
-      size_t position_from_right) {
+  const double combat_page_width = std::min(
+      112.0,
+      (available_width - gap * (combat_page_control_count - 1U)) /
+          combat_page_control_count);
+  if (!std::isfinite(combat_page_width) ||
+      (combat_page_width < kMinimumTargetExtent)) {
+    return {};
+  }
+  double combat_page_x = request.action_panel.x + kHorizontalInset;
+  for (size_t index = 0; index < kCombatPages.size(); ++index) {
+    const auto& descriptor = kCombatPages[index];
     if (!is_valid_combat_action_page_transition(
-            request.combat_action_page, target)) {
-      return false;
-    }
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{region},
-        .kind = ShellControlKind::combat_action_page,
-        .bounds = {
-            request.action_panel.right() - kHorizontalInset -
-                kMinimumTargetExtent -
-                position_from_right * (kMinimumTargetExtent + gap),
-            request.action_panel.y + kHeaderTopInset,
-            kMinimumTargetExtent,
-            kMinimumTargetExtent,
-        },
-        .label = std::move(label),
-        .accessibility_label = std::move(accessibility_label),
-        .focus_identifier = std::move(focus_identifier),
-        .tab_order = tab_order,
-        .enabled = true,
-        .payload = SetCombatActionPageAction{target},
-    });
-    return true;
-  };
-
-  if (special_combat_page) {
-    if (!append_page_control(
-            CombatActionPage::utility,
-            kCombatSpecialPageRegion,
-            "BACK",
-            "Return to utility combat actions",
-            "focus.action.combat.special",
-            1118,
-            0U)) {
+            request.combat_action_page, descriptor.page)) {
       return {};
     }
+    const bool selected = request.combat_action_page == descriptor.page;
+    std::string accessibility_label =
+        std::string(descriptor.accessibility_label) + " tab";
+    if (selected) {
+      accessibility_label += ", selected";
+    }
+    result.emplace_back(ShellControlPlacement{
+        .region = ShellRegionId{descriptor.region},
+        .kind = ShellControlKind::combat_action_page,
+        .bounds = {
+            combat_page_x,
+            request.action_panel.y + kHeaderTopInset,
+            combat_page_width,
+            kMinimumTargetExtent,
+        },
+        .label = std::string(descriptor.label),
+        .accessibility_label = std::move(accessibility_label),
+        .focus_identifier =
+            "focus.action.combat.page." + std::string(descriptor.identifier),
+        .tab_order = 1100 + static_cast<int32_t>(index),
+        .enabled = true,
+        .selected = selected,
+        .payload = SetCombatActionPageAction{descriptor.page},
+    });
+    combat_page_x += combat_page_width + gap;
+  }
+
+  if (special_combat_page) {
     if (request.open_combat_spellbook) {
       result.emplace_back(ShellControlPlacement{
           .region = ShellRegionId{kOpenCombatSpellbookRegion},
@@ -555,16 +570,6 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   }
 
   if (utility_combat_page) {
-    if (!append_page_control(
-            CombatActionPage::secondary,
-            kCombatActionPageRegion,
-            "BACK",
-            "Return to more combat actions",
-            "focus.action.combat.more",
-            1108,
-            0U)) {
-      return {};
-    }
     if (request.auto_combatant) {
       result.emplace_back(ShellControlPlacement{
           .region = ShellRegionId{kAutoCombatantRegion},
@@ -621,31 +626,10 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .payload = UndoCombatantAction{*request.undo_combatant},
       });
     }
-    if (has_valid_special_action &&
-        !append_page_control(
-            CombatActionPage::special,
-            kCombatSpecialPageRegion,
-            "MORE",
-            "Open special combat actions",
-            "focus.action.combat.special",
-            1118,
-            1U)) {
-      return {};
-    }
     return result;
   }
 
   if (secondary_combat_page) {
-    if (!append_page_control(
-            CombatActionPage::primary,
-            kCombatActionPageRegion,
-            "BACK",
-            "Return to primary combat actions",
-            "focus.action.combat.more",
-            1108,
-            0U)) {
-      return {};
-    }
     if (request.switch_weapon_combatant) {
       result.emplace_back(ShellControlPlacement{
           .region = ShellRegionId{kSwitchWeaponSetRegion},
@@ -706,17 +690,6 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
           .payload = *request.combat_items,
       });
     }
-    if ((has_valid_utility_action || has_valid_special_action) &&
-        !append_page_control(
-            CombatActionPage::utility,
-            kCombatUtilityPageRegion,
-            "MORE",
-            "Open utility combat actions",
-            "focus.action.combat.utility",
-            1113,
-            1U)) {
-      return {};
-    }
     return result;
   }
 
@@ -775,18 +748,6 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
         .payload = CenterActiveCombatantAction{
             *request.center_active_combatant},
     });
-  }
-  if ((has_valid_secondary_action || has_valid_utility_action ||
-          has_valid_special_action) &&
-      !append_page_control(
-          CombatActionPage::secondary,
-          kCombatActionPageRegion,
-          "MORE",
-          "Open more combat actions",
-          "focus.action.combat.more",
-          1108,
-          0U)) {
-    return {};
   }
   return result;
 }

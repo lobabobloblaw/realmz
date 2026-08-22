@@ -938,7 +938,7 @@ void test_center_payload_orders_dispatches_and_cancels_recomposition() {
   CHECK(bridge.actions().size() == 1U);
 }
 
-void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
+void test_persistent_combat_command_deck_and_recomposition_are_fail_closed() {
   RecordingBridge bridge;
   ProductionKeyboardHarness harness(bridge);
   const ShellControlPlacement guard{
@@ -985,27 +985,53 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = CenterActiveCombatantAction{2},
   };
-  const ShellControlPlacement more{
-      .region = ShellRegionId{1108},
+  const ShellControlPlacement turn_tab{
+      .region = ShellRegionId{1200},
       .kind = ShellControlKind::combat_action_page,
-      .bounds = {500.0, 10.0, 44.0, 44.0},
-      .label = "MORE",
-      .accessibility_label = "Open more combat actions",
-      .focus_identifier = "focus.action.combat.more",
-      .tab_order = 1108,
+      .bounds = {20.0, 10.0, 112.0, 44.0},
+      .label = "TURN",
+      .accessibility_label = "Turn combat commands",
+      .focus_identifier = "focus.action.combat.page.turn",
+      .tab_order = 1100,
       .enabled = true,
+      .selected = true,
+      .payload = SetCombatActionPageAction{CombatActionPage::primary},
+  };
+  const ShellControlPlacement gear_tab{
+      .region = ShellRegionId{1201},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {138.0, 10.0, 112.0, 44.0},
+      .label = "GEAR",
+      .accessibility_label = "Gear and view combat commands",
+      .focus_identifier = "focus.action.combat.page.gear",
+      .tab_order = 1101,
+      .enabled = true,
+      .selected = false,
       .payload = SetCombatActionPageAction{CombatActionPage::secondary},
   };
-  const ShellControlPlacement back{
-      .region = ShellRegionId{1108},
+  const ShellControlPlacement tactics_tab{
+      .region = ShellRegionId{1202},
       .kind = ShellControlKind::combat_action_page,
-      .bounds = {500.0, 10.0, 44.0, 44.0},
-      .label = "BACK",
-      .accessibility_label = "Return to primary combat actions",
-      .focus_identifier = "focus.action.combat.more",
-      .tab_order = 1108,
+      .bounds = {256.0, 10.0, 112.0, 44.0},
+      .label = "TACTICS",
+      .accessibility_label = "Tactical combat commands",
+      .focus_identifier = "focus.action.combat.page.tactics",
+      .tab_order = 1102,
       .enabled = true,
-      .payload = SetCombatActionPageAction{CombatActionPage::primary},
+      .selected = false,
+      .payload = SetCombatActionPageAction{CombatActionPage::utility},
+  };
+  const ShellControlPlacement special_tab{
+      .region = ShellRegionId{1203},
+      .kind = ShellControlKind::combat_action_page,
+      .bounds = {374.0, 10.0, 112.0, 44.0},
+      .label = "SPECIAL",
+      .accessibility_label = "Special combat commands",
+      .focus_identifier = "focus.action.combat.page.special",
+      .tab_order = 1103,
+      .enabled = true,
+      .selected = false,
+      .payload = SetCombatActionPageAction{CombatActionPage::special},
   };
   const ShellControlPlacement weapon{
       .region = ShellRegionId{1109},
@@ -1051,28 +1077,6 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = OpenCombatItemsAction{2, 4},
   };
-  const ShellControlPlacement utility_more{
-      .region = ShellRegionId{1113},
-      .kind = ShellControlKind::combat_action_page,
-      .bounds = {448.0, 10.0, 44.0, 44.0},
-      .label = "MORE",
-      .accessibility_label = "Open utility combat actions",
-      .focus_identifier = "focus.action.combat.utility",
-      .tab_order = 1113,
-      .enabled = true,
-      .payload = SetCombatActionPageAction{CombatActionPage::utility},
-  };
-  const ShellControlPlacement utility_back{
-      .region = ShellRegionId{1108},
-      .kind = ShellControlKind::combat_action_page,
-      .bounds = {500.0, 10.0, 44.0, 44.0},
-      .label = "BACK",
-      .accessibility_label = "Return to more combat actions",
-      .focus_identifier = "focus.action.combat.more",
-      .tab_order = 1108,
-      .enabled = true,
-      .payload = SetCombatActionPageAction{CombatActionPage::secondary},
-  };
   const ShellControlPlacement auto_combatant{
       .region = ShellRegionId{1114},
       .kind = ShellControlKind::auto_combatant,
@@ -1116,28 +1120,6 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .tab_order = 1117,
       .enabled = true,
       .payload = UndoCombatantAction{2},
-  };
-  const ShellControlPlacement special_more{
-      .region = ShellRegionId{1118},
-      .kind = ShellControlKind::combat_action_page,
-      .bounds = {448.0, 10.0, 44.0, 44.0},
-      .label = "MORE",
-      .accessibility_label = "Open special combat actions",
-      .focus_identifier = "focus.action.combat.special",
-      .tab_order = 1118,
-      .enabled = true,
-      .payload = SetCombatActionPageAction{CombatActionPage::special},
-  };
-  const ShellControlPlacement special_back{
-      .region = ShellRegionId{1118},
-      .kind = ShellControlKind::combat_action_page,
-      .bounds = {500.0, 10.0, 44.0, 44.0},
-      .label = "BACK",
-      .accessibility_label = "Return to utility combat actions",
-      .focus_identifier = "focus.action.combat.special",
-      .tab_order = 1118,
-      .enabled = true,
-      .payload = SetCombatActionPageAction{CombatActionPage::utility},
   };
   const ShellControlPlacement cast{
       .region = ShellRegionId{1119},
@@ -1194,17 +1176,83 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       .enabled = true,
       .payload = CenterCombatCursorAction{2, {42, 17}},
   };
-  const std::vector primary{guard, finish, delay, center, more};
-  const std::vector secondary{
-      back, weapon, previous, next, items, utility_more};
-  const std::vector utility{
-      utility_back, auto_combatant, combat_range, bandage, undo, special_more};
-  const std::vector special{
-      special_back, cast, target, escape, scroll, cursor};
+  const auto combat_page_tabs = [
+      &turn_tab, &gear_tab, &tactics_tab, &special_tab](
+      CombatActionPage selected_page) {
+    std::vector tabs{turn_tab, gear_tab, tactics_tab, special_tab};
+    for (auto& tab : tabs) {
+      tab.selected = std::get<SetCombatActionPageAction>(tab.payload).page ==
+          selected_page;
+    }
+    return tabs;
+  };
+  const auto primary_tabs = combat_page_tabs(CombatActionPage::primary);
+  const auto secondary_tabs = combat_page_tabs(CombatActionPage::secondary);
+  const auto utility_tabs = combat_page_tabs(CombatActionPage::utility);
+  const auto special_tabs = combat_page_tabs(CombatActionPage::special);
 
-  // Insertion order cannot disturb the primary combat traversal order.
-  CHECK(!harness.recompose({more, center, delay, finish, guard}));
-  for (const auto& expected : primary) {
+  // Keep the original action offsets in these fixtures so every dispatch and
+  // stale-payload assertion below continues to exercise the same command.
+  const std::vector primary{
+      guard, finish, delay, center,
+      primary_tabs[0], primary_tabs[1], primary_tabs[2], primary_tabs[3]};
+  const std::vector secondary{
+      secondary_tabs[0], weapon, previous, next, items,
+      secondary_tabs[1], secondary_tabs[2], secondary_tabs[3]};
+  const std::vector utility{
+      utility_tabs[0], auto_combatant, combat_range, bandage, undo,
+      utility_tabs[1], utility_tabs[2], utility_tabs[3]};
+  const std::vector special{
+      special_tabs[0], cast, target, escape, scroll, cursor,
+      special_tabs[1], special_tabs[2], special_tabs[3]};
+  const std::vector primary_tab_order{
+      primary_tabs[0], primary_tabs[1], primary_tabs[2], primary_tabs[3],
+      guard, finish, delay, center};
+  const std::vector secondary_tab_order{
+      secondary_tabs[0], secondary_tabs[1], secondary_tabs[2],
+      secondary_tabs[3], weapon, previous, next, items};
+  const std::vector utility_tab_order{
+      utility_tabs[0], utility_tabs[1], utility_tabs[2], utility_tabs[3],
+      auto_combatant, combat_range, bandage, undo};
+  const std::vector special_tab_order{
+      special_tabs[0], special_tabs[1], special_tabs[2], special_tabs[3],
+      cast, target, escape, scroll, cursor};
+  const auto reverse_controls = [](auto controls) {
+    std::ranges::reverse(controls);
+    return controls;
+  };
+  const auto verify_page_tabs = [](const auto& controls,
+                                    CombatActionPage selected_page) {
+    std::vector<const ShellControlPlacement*> tabs;
+    for (const auto& control : controls) {
+      if (control.kind == ShellControlKind::combat_action_page) {
+        tabs.emplace_back(&control);
+      }
+    }
+    CHECK(tabs.size() == 4U);
+    CHECK(std::ranges::count_if(
+              tabs, [](const auto* tab) { return tab->selected; }) == 1);
+    for (size_t first = 0; first < tabs.size(); ++first) {
+      CHECK(tabs[first]->enabled);
+      CHECK(tabs[first]->selected ==
+          (std::get<SetCombatActionPageAction>(tabs[first]->payload).page ==
+              selected_page));
+      for (size_t second = first + 1; second < tabs.size(); ++second) {
+        CHECK(tabs[first]->region != tabs[second]->region);
+        CHECK(tabs[first]->focus_identifier !=
+            tabs[second]->focus_identifier);
+      }
+    }
+  };
+  verify_page_tabs(primary, CombatActionPage::primary);
+  verify_page_tabs(secondary, CombatActionPage::secondary);
+  verify_page_tabs(utility, CombatActionPage::utility);
+  verify_page_tabs(special, CombatActionPage::special);
+
+  // Insertion order cannot disturb the persistent tabs followed by the
+  // current page's combat commands.
+  CHECK(!harness.recompose(reverse_controls(primary)));
+  for (const auto& expected : primary_tab_order) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
     CHECK(harness.keyboard().focused_identifier() ==
@@ -1212,30 +1260,82 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
     release_tab(harness);
   }
 
-  // Page commands are consumed locally by WindowManager and never dispatched
-  // through the legacy bridge.
+  CHECK(harness.keyboard().clear_focus());
+  for (auto expected = primary_tab_order.rbegin();
+       expected != primary_tab_order.rend(); ++expected) {
+    CHECK(harness.handle(
+        key_down(ShellKeyboardKey::tab, kTabToken, true)).shell.consumed);
+    CHECK(harness.keyboard().focused_identifier() ==
+        expected->focus_identifier);
+    release_tab(harness);
+  }
+  CHECK(harness.keyboard().clear_focus());
+
+  // The selected TURN tab remains enabled and keyboard-operable. Selecting the
+  // current page is idempotent presentation state and never crosses the legacy
+  // bridge.
+  CHECK(harness.focus(turn_tab.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
-  const auto open = harness.handle(
+  const auto select_turn = harness.handle(
       key_up(ShellKeyboardKey::enter, kEnterToken), false);
-  CHECK(open.shell.consumed);
-  CHECK(open.shell.invoked_control.has_value());
-  CHECK(!open.dispatch);
+  CHECK(select_turn.shell.consumed);
+  CHECK(select_turn.shell.invoked_control.has_value());
+  CHECK(!select_turn.dispatch);
   CHECK(std::get<SetCombatActionPageAction>(
-      open.shell.invoked_control->payload).page ==
-      CombatActionPage::secondary);
+      select_turn.shell.invoked_control->payload).page ==
+      CombatActionPage::primary);
   CHECK(is_valid_combat_action_page_transition(
       CombatActionPage::primary,
       std::get<SetCombatActionPageAction>(
-          open.shell.invoked_control->payload).page));
+          select_turn.shell.invoked_control->payload).page));
   CHECK(bridge.actions().empty());
-  CHECK(harness.recompose(
-      {utility_more, items, next, previous, weapon, back}));
-  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.recompose(reverse_controls(primary)));
+  CHECK(harness.keyboard().focused_identifier() ==
+      turn_tab.focus_identifier);
 
-  // BACK, WEAPON, PREV, NEXT, ITEMS, MORE is stable even under reversed
-  // insertion.
-  for (const auto& expected : secondary) {
+  // Direct selection may skip pages in either direction. The four tab
+  // descriptors persist across recomposition, so their keyboard focus also
+  // persists while only selected presentation metadata changes.
+  CHECK(harness.focus(special_tab.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto select_special = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(select_special.shell.consumed);
+  CHECK(select_special.shell.invoked_control.has_value());
+  CHECK(!select_special.dispatch);
+  CHECK(std::get<SetCombatActionPageAction>(
+      select_special.shell.invoked_control->payload).page ==
+      CombatActionPage::special);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::primary, CombatActionPage::special));
+  CHECK(bridge.actions().empty());
+  CHECK(!harness.recompose(reverse_controls(special)));
+  CHECK(harness.keyboard().focused_identifier() ==
+      special_tab.focus_identifier);
+
+  CHECK(harness.focus(gear_tab.focus_identifier));
+  CHECK(harness.handle(
+      key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
+  const auto select_gear = harness.handle(
+      key_up(ShellKeyboardKey::enter, kEnterToken), false);
+  CHECK(select_gear.shell.consumed);
+  CHECK(select_gear.shell.invoked_control.has_value());
+  CHECK(!select_gear.dispatch);
+  CHECK(std::get<SetCombatActionPageAction>(
+      select_gear.shell.invoked_control->payload).page ==
+      CombatActionPage::secondary);
+  CHECK(is_valid_combat_action_page_transition(
+      CombatActionPage::special, CombatActionPage::secondary));
+  CHECK(bridge.actions().empty());
+  CHECK(!harness.recompose(reverse_controls(secondary)));
+  CHECK(harness.keyboard().focused_identifier() == gear_tab.focus_identifier);
+
+  // TURN, GEAR, TACTICS, SPECIAL, WEAPON, PREV, NEXT, ITEMS remains stable
+  // even under reversed insertion.
+  CHECK(harness.keyboard().clear_focus());
+  for (const auto& expected : secondary_tab_order) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
     CHECK(harness.keyboard().focused_identifier() ==
@@ -1243,6 +1343,7 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
     release_tab(harness);
   }
 
+  CHECK(harness.keyboard().clear_focus());
   CHECK(harness.focus(items.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
@@ -1331,24 +1432,25 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
   CHECK(bridge.actions().size() == 4U);
 
-  CHECK(harness.focus(back.focus_identifier));
+  CHECK(harness.focus(turn_tab.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
-  const auto close = harness.handle(
+  const auto select_turn_from_gear = harness.handle(
       key_up(ShellKeyboardKey::enter, kEnterToken), false);
-  CHECK(close.shell.consumed);
-  CHECK(close.shell.invoked_control.has_value());
-  CHECK(!close.dispatch);
+  CHECK(select_turn_from_gear.shell.consumed);
+  CHECK(select_turn_from_gear.shell.invoked_control.has_value());
+  CHECK(!select_turn_from_gear.dispatch);
   CHECK(std::get<SetCombatActionPageAction>(
-      close.shell.invoked_control->payload).page ==
+      select_turn_from_gear.shell.invoked_control->payload).page ==
       CombatActionPage::primary);
   CHECK(is_valid_combat_action_page_transition(
       CombatActionPage::secondary,
       std::get<SetCombatActionPageAction>(
-          close.shell.invoked_control->payload).page));
+          select_turn_from_gear.shell.invoked_control->payload).page));
   CHECK(bridge.actions().size() == 4U);
-  CHECK(harness.recompose(primary));
-  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.recompose(primary));
+  CHECK(harness.keyboard().focused_identifier() ==
+      turn_tab.focus_identifier);
 
   // A held relative-focus activation cannot silently retarget after the
   // acting combatant changes.
@@ -1397,8 +1499,9 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!stale_items_member_release.dispatch);
   CHECK(bridge.actions().size() == 4U);
 
-  // Disabling the live descriptor and changing pages both cancel a held key
-  // while retaining ownership of its eventual release.
+  // Disabling the live descriptor and changing pages both cancel a held action
+  // while retaining ownership of its eventual release. The four persistent
+  // tabs do not make a page-specific action descriptor persistent.
   CHECK(!harness.recompose(secondary));
   CHECK(harness.focus(items.focus_identifier));
   CHECK(harness.handle(
@@ -1438,9 +1541,9 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!changed_route_release.dispatch);
   CHECK(bridge.actions().size() == 4U);
 
-  // Secondary MORE advances exactly one valid page and remains local.
+  // TACTICS selects its page directly and remains presentation-local.
   CHECK(!harness.recompose(secondary));
-  CHECK(harness.focus(utility_more.focus_identifier));
+  CHECK(harness.focus(tactics_tab.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
   const auto open_utility = harness.handle(
@@ -1454,14 +1557,13 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(is_valid_combat_action_page_transition(
       CombatActionPage::secondary, utility_page));
   CHECK(bridge.actions().size() == 4U);
-  CHECK(harness.recompose(
-      {special_more, undo, bandage, combat_range, auto_combatant,
-          utility_back}));
-  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.recompose(reverse_controls(utility)));
+  CHECK(harness.keyboard().focused_identifier() ==
+      tactics_tab.focus_identifier);
 
-  // Utility traversal is BACK, AUTO, RANGE, BANDAGE, UNDO, MORE regardless of
-  // insertion order.
-  for (const auto& expected : utility) {
+  // Utility traversal remains deterministic regardless of insertion order.
+  CHECK(harness.keyboard().clear_focus());
+  for (const auto& expected : utility_tab_order) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
     CHECK(harness.keyboard().focused_identifier() ==
@@ -1494,23 +1596,23 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       key_up(ShellKeyboardKey::space, kSpaceToken)).shell.consumed);
   CHECK(bridge.actions().size() == 5U);
 
-  // Utility BACK returns exactly to secondary and never crosses the bridge.
-  CHECK(harness.focus(utility_back.focus_identifier));
+  // GEAR directly selects the secondary page and never crosses the bridge.
+  CHECK(harness.focus(gear_tab.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
-  const auto close_utility = harness.handle(
+  const auto select_gear_from_tactics = harness.handle(
       key_up(ShellKeyboardKey::enter, kEnterToken), false);
-  CHECK(close_utility.shell.consumed);
-  CHECK(close_utility.shell.invoked_control.has_value());
-  CHECK(!close_utility.dispatch);
+  CHECK(select_gear_from_tactics.shell.consumed);
+  CHECK(select_gear_from_tactics.shell.invoked_control.has_value());
+  CHECK(!select_gear_from_tactics.dispatch);
   const auto secondary_page = std::get<SetCombatActionPageAction>(
-      close_utility.shell.invoked_control->payload).page;
+      select_gear_from_tactics.shell.invoked_control->payload).page;
   CHECK(secondary_page == CombatActionPage::secondary);
   CHECK(is_valid_combat_action_page_transition(
       CombatActionPage::utility, secondary_page));
   CHECK(bridge.actions().size() == 5U);
-  CHECK(harness.recompose(secondary));
-  CHECK(!harness.keyboard().focused_identifier());
+  CHECK(!harness.recompose(secondary));
+  CHECK(harness.keyboard().focused_identifier() == gear_tab.focus_identifier);
 
   // Actor, enabled state, page, and route recomposition all cancel a held
   // Auto activation while retaining ownership of the physical release.
@@ -1814,10 +1916,10 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(!undo_route_release.dispatch);
   CHECK(bridge.actions().size() == 8U);
 
-  // Utility MORE advances exactly one page; the special BACK returns exactly
-  // one page. Both are presentation-local.
+  // SPECIAL and TACTICS directly select their pages. Both are
+  // presentation-local, and their persistent identities retain focus.
   CHECK(!harness.recompose(utility));
-  CHECK(harness.focus(special_more.focus_identifier));
+  CHECK(harness.focus(special_tab.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
   const auto open_special = harness.handle(
@@ -1832,9 +1934,11 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
       CombatActionPage::utility, CombatActionPage::special));
   CHECK(bridge.actions().size() == 8U);
 
-  CHECK(harness.recompose(
-      {cursor, scroll, escape, target, cast, special_back}));
-  for (const auto& expected : special) {
+  CHECK(!harness.recompose(reverse_controls(special)));
+  CHECK(harness.keyboard().focused_identifier() ==
+      special_tab.focus_identifier);
+  CHECK(harness.keyboard().clear_focus());
+  for (const auto& expected : special_tab_order) {
     CHECK(harness.handle(
         key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
     CHECK(harness.keyboard().focused_identifier() ==
@@ -1850,26 +1954,29 @@ void test_secondary_combat_actions_and_recomposition_are_fail_closed() {
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::tab, kTabToken)).shell.consumed);
   CHECK(harness.keyboard().focused_identifier() ==
-      special_back.focus_identifier);
+      turn_tab.focus_identifier);
   release_tab(harness);
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::tab, kTabToken, true)).shell.consumed);
   CHECK(harness.keyboard().focused_identifier() ==
       cursor.focus_identifier);
   release_tab(harness);
-  CHECK(harness.focus(special_back.focus_identifier));
+  CHECK(harness.focus(tactics_tab.focus_identifier));
   CHECK(harness.handle(
       key_down(ShellKeyboardKey::enter, kEnterToken)).shell.consumed);
-  const auto close_special = harness.handle(
+  const auto select_tactics_from_special = harness.handle(
       key_up(ShellKeyboardKey::enter, kEnterToken), false);
-  CHECK(close_special.shell.consumed);
-  CHECK(close_special.shell.invoked_control.has_value());
-  CHECK(!close_special.dispatch);
+  CHECK(select_tactics_from_special.shell.consumed);
+  CHECK(select_tactics_from_special.shell.invoked_control.has_value());
+  CHECK(!select_tactics_from_special.dispatch);
   CHECK(std::get<SetCombatActionPageAction>(
-      close_special.shell.invoked_control->payload).page ==
+      select_tactics_from_special.shell.invoked_control->payload).page ==
       CombatActionPage::utility);
   CHECK(is_valid_combat_action_page_transition(
       CombatActionPage::special, CombatActionPage::utility));
+  CHECK(!harness.recompose(utility));
+  CHECK(harness.keyboard().focused_identifier() ==
+      tactics_tab.focus_identifier);
 
   // CAST dispatches once with the stable actor-only payload; Classic owns the
   // spell chooser, targeting, spell mutations, and turn effects.
@@ -2462,7 +2569,7 @@ int main() {
     test_finish_payload_orders_dispatches_and_cancels_stale_actor();
     test_delay_payload_orders_dispatches_and_cancels_recomposition();
     test_center_payload_orders_dispatches_and_cancels_recomposition();
-    test_secondary_combat_actions_and_recomposition_are_fail_closed();
+    test_persistent_combat_command_deck_and_recomposition_are_fail_closed();
     test_descriptor_identity_is_strict_and_fail_closed();
     test_focus_change_clear_and_route_transition_cancel_activation();
     test_tab_route_cancellation_retains_release_ownership();

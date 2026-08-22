@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -8,6 +9,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "presentation/UIAction.hpp"
 
 namespace fs = std::filesystem;
 
@@ -2394,50 +2397,50 @@ void verify_window_manager_shell_dispatch_freshness(
       "rejected before any runtime "
       "legacy bridge dispatch");
 
-  const std::string action_source = code_only(read_file(
-      repository_root / "src/presentation/UIAction.hpp"));
-  const std::size_t transition_name = find_identifier(
-      action_source, "is_valid_combat_action_page_transition");
-  require(transition_name != std::string::npos,
-      "shared combat page transition predicate is missing");
-  const std::size_t transition_open = action_source.find(
-      '{', transition_name);
-  require(transition_open != std::string::npos,
-      "shared combat page transition predicate has no body");
-  const std::size_t transition_close = matching_delimiter(
-      action_source, transition_open, '{', '}');
-  const std::string transition = action_source.substr(
-      transition_open, transition_close - transition_open + 1);
-  const std::string compact_transition = without_whitespace(transition);
-  const std::size_t secondary_case = compact_transition.find(
-      "caseCombatActionPage::secondary:");
-  const std::size_t secondary_to_utility = compact_transition.find(
-      "to==CombatActionPage::utility", secondary_case);
-  const std::size_t utility_case = compact_transition.find(
-      "caseCombatActionPage::utility:", secondary_to_utility);
-  const std::size_t utility_to_secondary = compact_transition.find(
-      "to==CombatActionPage::secondary", utility_case);
-  const std::size_t utility_to_special = compact_transition.find(
-      "to==CombatActionPage::special", utility_to_secondary);
-  const std::size_t special_case = compact_transition.find(
-      "caseCombatActionPage::special:", utility_to_special);
-  const std::size_t special_to_utility = compact_transition.find(
-      "returnto==CombatActionPage::utility;", special_case);
-  require(secondary_case != std::string::npos &&
-          secondary_to_utility != std::string::npos &&
-          utility_case != std::string::npos &&
-          utility_to_secondary != std::string::npos &&
-          utility_to_special != std::string::npos &&
-          special_case != std::string::npos &&
-          special_to_utility != std::string::npos &&
-          secondary_case < secondary_to_utility &&
-          secondary_to_utility < utility_case &&
-          utility_case < utility_to_secondary &&
-          utility_to_secondary < utility_to_special &&
-          utility_to_special < special_case &&
-          special_case < special_to_utility,
-      "shared combat page transition predicate must permit only the bounded "
-      "primary-secondary-utility-special linear path");
+  using realmz::presentation::CombatActionPage;
+  using realmz::presentation::is_valid_combat_action_page_transition;
+  constexpr std::array combat_pages{
+      CombatActionPage::primary,
+      CombatActionPage::secondary,
+      CombatActionPage::utility,
+      CombatActionPage::special,
+  };
+  for (const auto from : combat_pages) {
+    for (const auto to : combat_pages) {
+      require(is_valid_combat_action_page_transition(from, to),
+          "combat deck must accept direct and idempotent selection among "
+          "all four valid pages");
+    }
+  }
+  const auto invalid_combat_page = static_cast<CombatActionPage>(255);
+  for (const auto page : combat_pages) {
+    require(!is_valid_combat_action_page_transition(invalid_combat_page, page) &&
+            !is_valid_combat_action_page_transition(page, invalid_combat_page),
+        "combat deck must reject malformed source and destination pages");
+  }
+
+  const std::string panel_draw = function_body(
+      source, "draw_shell_panel_contents");
+  const std::string compact_panel_draw = without_whitespace(panel_draw);
+  const std::size_t selected_render_state = compact_panel_draw.find(
+      "constboolselected_tab=control.selected&&control.kind=="
+      "realmz::presentation::ShellControlKind::combat_action_page;");
+  const std::size_t selected_inner_border = compact_panel_draw.find(
+      "if(pressed||selected_tab)", selected_render_state);
+  const std::size_t selected_indicator = compact_panel_draw.find(
+      "if(selected_tab)", selected_inner_border);
+  const std::size_t selected_label = compact_panel_draw.find(
+      "selected_tab?kSelected:(control.enabled?kBody:kMuted)",
+      selected_indicator);
+  require(selected_render_state != std::string::npos &&
+          selected_inner_border != std::string::npos &&
+          selected_indicator != std::string::npos &&
+          selected_label != std::string::npos &&
+          selected_render_state < selected_inner_border &&
+          selected_inner_border < selected_indicator &&
+          selected_indicator < selected_label,
+      "WindowManager must render the selected combat tab with a persistent "
+      "active border, indicator, and label state");
   const std::size_t shared_transition_call = compact_dispatch.find(
       "is_valid_combat_action_page_transition("
       "this->remastered_combat_action_page,combat_page->page)");
@@ -2453,12 +2456,26 @@ void verify_window_manager_shell_dispatch_freshness(
           shared_transition_call < transition_rejection &&
           transition_rejection < action && action < page_assignment &&
           page_assignment < bridge_dispatch,
-      "WindowManager page dispatch must reject through the shared transition "
-      "predicate before mutating linear combat page state");
+      "WindowManager page dispatch must reject through the shared direct-page "
+      "predicate before selecting combat page state");
 
   const std::string composition = function_body(
       source, "present_remastered_frame");
   const std::string compact_composition = without_whitespace(composition);
+  const std::size_t combat_deck_actor = compact_composition.find(
+      "constautocombat_deck_combatant=live_combat_party_actor("
+      "snapshot.combat?snapshot.combat->acting_combatant:std::nullopt);");
+  const std::size_t combat_deck_live_gate = compact_composition.find(
+      "!valid_transition||!combat_deck_combatant||",
+      combat_deck_actor);
+  require(combat_deck_actor != std::string::npos &&
+          combat_deck_live_gate != std::string::npos &&
+          combat_deck_actor < combat_deck_live_gate &&
+          count_identifier(composition, "invalid_paged_combat_actions") == 0 &&
+          count_identifier(composition, "unavailable_utility_page") == 0 &&
+          count_identifier(composition, "unavailable_special_page") == 0,
+      "combat deck tabs must bind directly to the fresh active party actor "
+      "and must not snap a valid sparse or empty page back to Turn");
   const std::size_t composed_bandage_eligibility = compact_composition.find(
       "constboolbandage_combatant_available=bandage_combatant&&"
       "snapshot.combat&&snapshot.combat->bandage_available&&");
