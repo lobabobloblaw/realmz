@@ -54,6 +54,8 @@ char charselectnew = -1;
 char charup = -1;
 char monsterup = -1;
 char combatround = 0;
+char numenemy = 0;
+char killmon = 0;
 char up = 0;
 char q[110] = {};
 char head = 1;
@@ -270,6 +272,8 @@ void reset_legacy_globals() {
   charup = -1;
   monsterup = -1;
   combatround = 0;
+  numenemy = 0;
+  killmon = 0;
   up = 0;
   std::memset(q, 0, sizeof(q));
   head = 1;

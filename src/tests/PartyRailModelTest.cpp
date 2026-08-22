@@ -141,6 +141,19 @@ GameSnapshot sample_world_context_snapshot() {
   return snapshot;
 }
 
+GameSnapshot sample_combat_awareness_snapshot() {
+  auto snapshot = sample_snapshot();
+  snapshot.screen = ScreenContext::combat;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
+  snapshot.combat = CombatView{
+      .active = true,
+      .round = -7,
+      .enemies_remaining = -11,
+  };
+  return snapshot;
+}
+
 void test_party_rail_and_non_color_states() {
   const auto snapshot = sample_snapshot();
   const auto model = build_party_rail_model(snapshot);
@@ -752,6 +765,147 @@ void test_world_context_model_is_exact_validated_and_context_independent() {
   snapshot.party.selected_member.reset();
   CHECK(build_world_context_model(snapshot) == expected);
   CHECK(build_presentation_shell_model(snapshot).world_context == expected);
+}
+
+void test_combat_awareness_is_exact_validated_and_context_independent() {
+  auto snapshot = sample_snapshot();
+  CHECK(!build_combat_awareness_model(snapshot).has_value());
+  CHECK(!build_presentation_shell_model(snapshot)
+              .combat_awareness.has_value());
+
+  snapshot.screen = ScreenContext::combat;
+  snapshot.combat = CombatView{.active = true, .round = 19};
+  CHECK(!build_combat_awareness_model(snapshot).has_value());
+  CHECK(!build_presentation_shell_model(snapshot)
+              .combat_awareness.has_value());
+
+  // A missing projection remains absent without imposing new validity
+  // requirements on older synthetic fixtures.
+  snapshot.screen = ScreenContext::title;
+  snapshot.combat->active = false;
+  snapshot.combat->round = std::numeric_limits<int16_t>::max();
+  CHECK(!build_combat_awareness_model(snapshot).has_value());
+
+  snapshot = sample_combat_awareness_snapshot();
+  const auto snapshot_before = snapshot;
+  const auto exact = build_combat_awareness_model(snapshot);
+  CHECK(exact.has_value());
+  CHECK(exact->round == -7);
+  CHECK(exact->enemies_remaining == -11);
+  CHECK(snapshot == snapshot_before);
+  CHECK(build_combat_awareness_model(snapshot) == exact);
+  CHECK(build_presentation_shell_model(snapshot).combat_awareness == exact);
+
+  // Exercise every value in both exact domains, including engaged zero and
+  // both extrema, so no sign, normalization, or optional-truthiness shortcut
+  // can alter the presentation model.
+  snapshot = sample_combat_awareness_snapshot();
+  for (int32_t round = -128; round <= 127; ++round) {
+    for (int32_t enemies_remaining = -255;
+         enemies_remaining <= 255;
+         ++enemies_remaining) {
+      snapshot.combat->round = static_cast<int16_t>(round);
+      snapshot.combat->enemies_remaining =
+          static_cast<int16_t>(enemies_remaining);
+      const auto model = build_combat_awareness_model(snapshot);
+      CHECK(model.has_value());
+      CHECK(model->round == round);
+      CHECK(model->enemies_remaining == enemies_remaining);
+    }
+  }
+
+  constexpr std::array screens{
+      ScreenContext::title,
+      ScreenContext::party_selection,
+      ScreenContext::party_creation,
+      ScreenContext::exploration,
+      ScreenContext::dungeon,
+      ScreenContext::inventory,
+      ScreenContext::shop,
+      ScreenContext::encounter,
+      ScreenContext::ending,
+  };
+  for (const auto screen : screens) {
+    snapshot = sample_combat_awareness_snapshot();
+    snapshot.screen = screen;
+    check_invalid_argument(
+        [&] { static_cast<void>(build_combat_awareness_model(snapshot)); });
+  }
+
+  snapshot = sample_combat_awareness_snapshot();
+  snapshot.combat->active = false;
+  check_invalid_argument(
+      [&] { static_cast<void>(build_combat_awareness_model(snapshot)); });
+
+  for (const int16_t invalid_round : {
+           static_cast<int16_t>(-129),
+           static_cast<int16_t>(128)}) {
+    snapshot = sample_combat_awareness_snapshot();
+    snapshot.combat->round = invalid_round;
+    check_invalid_argument(
+        [&] { static_cast<void>(build_combat_awareness_model(snapshot)); });
+  }
+  for (const int16_t invalid_enemies : {
+           static_cast<int16_t>(-256),
+           static_cast<int16_t>(256)}) {
+    snapshot = sample_combat_awareness_snapshot();
+    snapshot.combat->enemies_remaining = invalid_enemies;
+    check_invalid_argument(
+        [&] { static_cast<void>(build_combat_awareness_model(snapshot)); });
+  }
+
+  snapshot = sample_combat_awareness_snapshot();
+  const auto expected = build_combat_awareness_model(snapshot);
+  snapshot.combat->bandage_available = true;
+  snapshot.combat->undo_available = true;
+  snapshot.combat->cast_spell_available = true;
+  snapshot.combat->target_available = true;
+  snapshot.combat->use_scroll_available = true;
+  snapshot.combat->field_origin_x = std::numeric_limits<int32_t>::min();
+  snapshot.combat->field_origin_y = std::numeric_limits<int32_t>::max();
+  snapshot.combat->combatants = {
+      CombatantView{
+          .id = 10,
+          .kind = CombatantKind::monster,
+          .name = "Detached enemy",
+          .stamina = {-50, 100},
+          .active = true,
+          .targetable = true,
+      },
+  };
+  snapshot.party.fatigue = std::numeric_limits<int16_t>::min();
+  snapshot.party.pooled_money = {
+      std::numeric_limits<int32_t>::min(),
+      0,
+      std::numeric_limits<int32_t>::max(),
+  };
+  snapshot.party.effects[0].raw_value = -99;
+  snapshot.world.in_camp = true;
+  snapshot.world.searching = true;
+
+  const std::array<std::optional<CombatantId>, 3> actors{
+      std::nullopt,
+      std::optional<CombatantId>{1},
+      std::optional<CombatantId>{10},
+  };
+  constexpr std::array pages{
+      CombatActionPage::primary,
+      CombatActionPage::secondary,
+      CombatActionPage::utility,
+      CombatActionPage::special,
+  };
+  for (const auto actor : actors) {
+    snapshot.combat->acting_combatant = actor;
+    CHECK(build_combat_awareness_model(snapshot) == expected);
+    for (const auto page : pages) {
+      ShellViewPreferences preferences;
+      preferences.combat_action_page = page;
+      const auto shell = build_presentation_shell_model(
+          snapshot, {}, preferences);
+      CHECK(shell.combat_awareness == expected);
+      CHECK(shell.combat_action_page == page);
+    }
+  }
 }
 
 void test_selection_fallback_and_meter_bounds() {
@@ -2125,6 +2279,7 @@ int main() {
     test_all_member_vitals_are_exact_and_context_independent();
     test_party_status_is_exact_ordered_and_context_independent();
     test_world_context_model_is_exact_validated_and_context_independent();
+    test_combat_awareness_is_exact_validated_and_context_independent();
     test_selection_fallback_and_meter_bounds();
     test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();

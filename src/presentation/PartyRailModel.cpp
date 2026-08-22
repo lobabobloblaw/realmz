@@ -1322,6 +1322,33 @@ std::optional<WorldContextModel> build_world_context_model(
   };
 }
 
+std::optional<CombatAwarenessModel> build_combat_awareness_model(
+    const GameSnapshot& snapshot) {
+  if (!snapshot.combat || !snapshot.combat->enemies_remaining) {
+    return std::nullopt;
+  }
+
+  const auto& combat = *snapshot.combat;
+  if ((snapshot.screen != ScreenContext::combat) || !combat.active) {
+    throw std::invalid_argument(
+        "combat awareness requires an active combat screen");
+  }
+  if ((combat.round < -128) || (combat.round > 127)) {
+    throw std::invalid_argument(
+        "combat awareness round is outside Classic char range");
+  }
+  if ((*combat.enemies_remaining < -255) ||
+      (*combat.enemies_remaining > 255)) {
+    throw std::invalid_argument(
+        "combat awareness enemies remaining is outside exact difference range");
+  }
+
+  return CombatAwarenessModel{
+      .round = combat.round,
+      .enemies_remaining = *combat.enemies_remaining,
+  };
+}
+
 PartyRailModel build_party_rail_model(const GameSnapshot& snapshot) {
   PartyRailModel result{
       .revision = snapshot.revision,
@@ -1387,6 +1414,7 @@ PresentationShellModel build_presentation_shell_model(
       : CombatActionPage::primary;
   result.party_rail = build_party_rail_model(snapshot);
   result.world_context = build_world_context_model(snapshot);
+  result.combat_awareness = build_combat_awareness_model(snapshot);
   result.selected_details = selected_details(
       snapshot,
       result.party_rail);

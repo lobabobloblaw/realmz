@@ -42,6 +42,8 @@ extern char q[110];
 extern char up;
 extern char monsterup;
 extern char combatround;
+extern char numenemy;
+extern char killmon;
 extern char head;
 extern char encountflag;
 extern char viewtype;
@@ -70,6 +72,10 @@ extern struct encount2 enc2;
 extern Rect lookrect;
 extern struct tm tyme;
 }
+
+static_assert(
+    std::numeric_limits<char>::is_signed,
+    "Classic combat counters require signed char semantics");
 
 namespace realmz::presentation {
 
@@ -370,6 +376,8 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
     combat.use_scroll_available =
         active_party_actor_can_use_scroll(party_count);
     combat.round = static_cast<int16_t>(combatround);
+    combat.enemies_remaining = static_cast<int16_t>(numenemy) -
+        static_cast<int16_t>(killmon);
     combat.field_origin_x = fieldx;
     combat.field_origin_y = fieldy;
     const int32_t visible_width = std::max<int32_t>(

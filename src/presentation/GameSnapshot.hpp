@@ -280,6 +280,10 @@ struct CombatView {
   size_t visible_rows = 0;
   std::optional<CombatantId> acting_combatant;
   std::vector<CombatantView> combatants;
+  // Exact detached value displayed by Classic's combat information panel:
+  // numenemy - killmon. A disengaged value preserves compatibility for
+  // synthetic snapshots that do not project this newly modeled information.
+  std::optional<int16_t> enemies_remaining;
 
   bool operator==(const CombatView&) const = default;
 };

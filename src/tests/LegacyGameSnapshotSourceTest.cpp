@@ -37,6 +37,8 @@ char charselectnew = -1;
 char charup = -1;
 char monsterup = -1;
 char combatround = 0;
+char numenemy = 0;
+char killmon = 0;
 char q[110] = {};
 char up = 0;
 char head = 1;
@@ -71,6 +73,10 @@ struct tm tyme = {};
 }
 
 using namespace realmz::presentation;
+
+static_assert(
+    std::numeric_limits<char>::is_signed,
+    "Classic combat capture tests require signed char semantics");
 
 namespace {
 
@@ -113,6 +119,8 @@ void reset_legacy_state() {
   charnum = -1;
   charselectnew = charup = monsterup = -1;
   combatround = 0;
+  numenemy = 0;
+  killmon = 0;
   std::memset(q, 0, sizeof(q));
   up = 0;
   head = 1;
@@ -714,6 +722,8 @@ void test_combat_capture() {
   incombat = 1;
   canundo = 1;
   combatround = 5;
+  numenemy = 9;
+  killmon = 12;
   fieldx = 12;
   fieldy = 34;
   lookrect = {.top = 8, .left = 16, .bottom = 424, .right = 496};
@@ -758,6 +768,7 @@ void test_combat_capture() {
   CHECK(snapshot.screen == ScreenContext::combat);
   CHECK(snapshot.combat.has_value());
   CHECK(snapshot.combat->round == 5);
+  CHECK(snapshot.combat->enemies_remaining == -3);
   CHECK(snapshot.combat->bandage_available);
   CHECK(snapshot.combat->undo_available);
   CHECK(snapshot.combat->cast_spell_available);
@@ -780,6 +791,31 @@ void test_combat_capture() {
   CHECK(snapshot.combat->combatants[3].kind == CombatantKind::ally);
   CHECK(snapshot.combat->combatants[3].name == "Guard");
   CHECK(snapshot.combat->combatants[3].cell_x == 10);
+
+  // Classic's two signed char counters are captured directly. Their
+  // difference is neither reconstructed from combatants nor clamped at zero,
+  // and an earlier snapshot remains detached after the globals change.
+  combatround = static_cast<char>(-128);
+  numenemy = static_cast<char>(127);
+  killmon = static_cast<char>(-128);
+  auto signed_boundaries = source.capture();
+  CHECK(signed_boundaries.combat->round == -128);
+  CHECK(signed_boundaries.combat->enemies_remaining == 255);
+  CHECK(snapshot.combat->round == 5);
+  CHECK(snapshot.combat->enemies_remaining == -3);
+
+  combatround = static_cast<char>(127);
+  numenemy = static_cast<char>(-128);
+  killmon = static_cast<char>(127);
+  const auto opposite_boundaries = source.capture();
+  CHECK(opposite_boundaries.combat->round == 127);
+  CHECK(opposite_boundaries.combat->enemies_remaining == -255);
+  CHECK(signed_boundaries.combat->round == -128);
+  CHECK(signed_boundaries.combat->enemies_remaining == 255);
+
+  combatround = 5;
+  numenemy = 9;
+  killmon = 12;
 
   fieldx = 44;
   fieldy = 55;

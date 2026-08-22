@@ -45,6 +45,7 @@
 #include "ResourceManagerRemaster.hpp"
 #include "StringConvert.hpp"
 #include "Types.hpp"
+#include "presentation/CombatAwarenessLayout.hpp"
 #include "presentation/DrawerControlLayout.hpp"
 #include "presentation/LegacyGameSnapshotSource.hpp"
 #include "presentation/LegacyPresentationContext.h"
@@ -2843,6 +2844,8 @@ void draw_shell_panel_contents(
     const realmz::presentation::PresentationShellModel& model,
     const std::optional<realmz::presentation::WorldContextLayout>&
         world_context_layout,
+    const std::optional<realmz::presentation::CombatAwarenessLayout>&
+        combat_awareness_layout,
     const std::vector<realmz::presentation::ShellControlPlacement>& controls,
     std::optional<realmz::presentation::ShellRegionId> pressed_control,
     std::optional<realmz::presentation::ShellRegionId> focused_control,
@@ -3054,6 +3057,19 @@ void draw_shell_panel_contents(
             TTF_STYLE_BOLD);
       }
     }
+    if (combat_awareness_layout) {
+      for (const auto& line : combat_awareness_layout->lines) {
+        draw_shell_text(
+            renderer,
+            font,
+            line.text,
+            line.bounds,
+            shell_state_color(line.emphasis),
+            backing_scale,
+            line.text_style,
+            TTF_STYLE_BOLD);
+      }
+    }
     const bool has_semantic_movement = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -3194,7 +3210,11 @@ void draw_shell_panel_contents(
         });
     const bool has_semantic_action_page =
         has_semantic_world_page || has_semantic_combat_page;
-    if (!has_semantic_action_page) {
+    const bool combat_awareness_owns_full_zero_tab_header =
+        combat_awareness_layout &&
+        combat_awareness_layout->owns_full_zero_tab_header;
+    if (!has_semantic_action_page &&
+        !combat_awareness_owns_full_zero_tab_header) {
       draw_shell_text(renderer, font, "ACTIONS",
           {left, panel.y + 11.0, width, 22.0},
           kHeading, backing_scale, heading_size, TTF_STYLE_BOLD);
@@ -3374,7 +3394,8 @@ void draw_shell_panel_contents(
     }
     // Persistent action-deck tabs own the header row and communicate the active
     // command group directly. Unpaged surfaces retain the compact summary.
-    if (!has_semantic_action_page) {
+    if (!has_semantic_action_page &&
+        !combat_awareness_owns_full_zero_tab_header) {
       draw_shell_text(renderer, font, action_summary,
           {left, panel.y + 37.0, action_summary_width, 24.0},
           kSelected, backing_scale, caption_size, TTF_STYLE_BOLD);
@@ -3972,6 +3993,8 @@ void WindowManager::present_remastered_frame() {
   std::optional<realmz::presentation::PresentationShellModel> shell_model;
   std::optional<realmz::presentation::WorldContextLayout>
       world_context_layout;
+  std::optional<realmz::presentation::CombatAwarenessLayout>
+      combat_awareness_layout;
   TTF_Font* shell_font = nullptr;
   bool shell_keyboard_route_enabled = false;
   if (this->adaptive_shell_plan->adaptive_layout && TTF_WasInit()) {
@@ -4963,6 +4986,17 @@ void WindowManager::present_remastered_frame() {
         world_context_layout =
             realmz::presentation::compute_world_context_layout({
                 .world_context = *shell_model->world_context,
+                .screen = shell_model->screen,
+                .action_panel =
+                    this->adaptive_shell_plan->adaptive_layout->action_bar,
+                .typography = shell_model->typography,
+                .action_controls = this->remastered_shell_controls,
+            });
+      }
+      if (shell_model->combat_awareness) {
+        combat_awareness_layout =
+            realmz::presentation::compute_combat_awareness_layout({
+                .combat_awareness = *shell_model->combat_awareness,
                 .screen = shell_model->screen,
                 .action_panel =
                     this->adaptive_shell_plan->adaptive_layout->action_bar,
@@ -6062,6 +6096,7 @@ void WindowManager::present_remastered_frame() {
             panel->destination,
             *shell_model,
             world_context_layout,
+            combat_awareness_layout,
             this->remastered_shell_controls,
             pressed_control,
             focused_control,

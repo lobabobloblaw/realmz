@@ -74,6 +74,7 @@ endfunction()
 
 set(PRESENTATION_CORE_SOURCES
     src/presentation/AdaptiveShell.cpp
+    src/presentation/CombatAwarenessLayout.cpp
     src/presentation/DrawerControlLayout.cpp
     src/presentation/GameplayChromeCoverage.cpp
     src/presentation/LegacyCommandBridge.cpp
@@ -212,6 +213,14 @@ if(REALMZ_BUILD_CORE_TESTS)
         realmz_presentation_core)
     realmz_configure_core_target(WorldContextLayoutTest)
     add_test(NAME WorldContextLayoutTest COMMAND WorldContextLayoutTest)
+
+    add_executable(CombatAwarenessLayoutTest
+        src/tests/CombatAwarenessLayoutTest.cpp)
+    target_link_libraries(CombatAwarenessLayoutTest PRIVATE
+        realmz_presentation_core)
+    realmz_configure_core_target(CombatAwarenessLayoutTest)
+    add_test(NAME CombatAwarenessLayoutTest
+        COMMAND CombatAwarenessLayoutTest)
 
     add_executable(ShellKeyboardInteractionTest
         src/tests/ShellKeyboardInteractionTest.cpp)

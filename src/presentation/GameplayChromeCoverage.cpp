@@ -433,13 +433,13 @@ constexpr auto kGameplayChromeCoverageManifest = std::to_array<Entry>({
         "Complete conditions, carried items, and monster attacks are not presented semantically.",
         "src/realmz_orig/combatinfo-combatchoice.c::combatchoice"},
     {"combat.info.round", Surface::combat,
-        Kind::essential_information, Status::missing,
-        "Combat round is captured but has no complete semantic presentation.",
-        "src/presentation/GameSnapshot.hpp::CombatView/round"},
+        Kind::essential_information, Status::semantic_complete,
+        "The shared responsive, read-only COMBAT AWARENESS passive header presents ROUND with Classic's exact signed char-derived combatround value across -128..127 without clamping or normalization on every selected TURN, GEAR, TACTICS, and SPECIAL action page. On monster or otherwise non-actionable combat turns, an exactly empty control span makes the strip own the full inset header rather than disappear. Classic did not persistently draw a numeric round value; this is a bounded remaster presentation of authoritative engine state, not a claim to reproduce Classic pixels. A disengaged optional CombatView::enemies_remaining source suppresses the complete header rather than fabricating zero. The layout retains complete internal semantic accessibility text, `Combat awareness; round n; enemies remaining n.`, without claiming OS publication. This passive information path adds no action composition, dispatch, tag, input, Classic-source, or replay-vocabulary change.",
+        "src/presentation/CombatAwarenessLayout.cpp::compute_combat_awareness_layout"},
     {"combat.info.enemies_remaining", Surface::combat,
-        Kind::essential_information, Status::missing,
-        "The semantic shell does not summarize remaining enemy combatants.",
-        "src/presentation/GameSnapshot.hpp::CombatView/combatants"},
+        Kind::essential_information, Status::semantic_complete,
+        "The shared responsive, read-only COMBAT AWARENESS passive header presents ENEMIES LEFT with the exact signed int16 difference of Classic's separately promoted raw numenemy and killmon values across -255..255 without clamping, normalization, or reconstruction from combatant records on every selected TURN, GEAR, TACTICS, and SPECIAL action page. On monster or otherwise non-actionable combat turns, an exactly empty control span makes the strip own the full inset header rather than disappear. A disengaged optional CombatView::enemies_remaining source suppresses the complete header rather than fabricating zero. The layout retains complete internal semantic accessibility text, `Combat awareness; round n; enemies remaining n.`, without claiming OS publication. This passive information path adds no action composition, dispatch, tag, input, Classic-source, or replay-vocabulary change.",
+        "src/presentation/CombatAwarenessLayout.cpp::compute_combat_awareness_layout"},
 });
 
 static_assert(

@@ -71,6 +71,22 @@ Explicit non-color markers make both active and inactive states visible. The
 layout keeps complete internal semantic text without claiming OS publication,
 and this information slice adds no action, tag, input, Classic-source, or replay
 path.
+A shared responsive, passive **COMBAT AWARENESS** header presents exact signed
+combat state beside every selected Turn, Gear, Tactics, and Special page. On a
+monster or otherwise non-actionable turn with exactly zero action tabs, the
+strip owns the full inset header instead of disappearing. `ROUND` is the exact
+signed, char-derived `combatround` value across `-128..127` with no clamp or
+normalization. Classic did not persistently draw a numeric round value, so this
+is a bounded remaster presentation of authoritative engine state rather than a
+claim to reproduce Classic pixels. `ENEMIES LEFT` is the exact signed
+`numenemy - killmon` result across `-255..255`; it is never reconstructed from
+combatant records. The remaining-enemy projection is optional, and its absence
+suppresses the whole header instead of fabricating zero. The layout keeps the
+complete internal semantic accessibility text,
+`Combat awareness; round n; enemies remaining n.`, without claiming OS
+publication. This read-only information slice adds no
+action composition, dispatch, tag, input, Classic-source, or replay-vocabulary
+path.
 World commands are organized into persistent, directly
 selectable **Travel**, **Party**, and **Game** pages so every target keeps the
 44-point minimum at the 1024×768 floor. Party contains Items, Equipment,
@@ -354,7 +370,8 @@ contract; or `missing` when either proof is incomplete. A declared action type,
 captured field, placeholder panel, or visually similar summary is not by itself
 `semantic_complete`. The inventory revision covers every manifest field,
 including status and evidence, and every cited Classic UI/control-map source
-anchor; changing any of them requires a new reviewed revision.
+anchor; changing any of them requires a new reviewed revision. This reviewed
+manifest is pinned to content digest `0x0CE587F3694618F2`.
 
 Before a future production call site may request the crop, readiness must be a
 deterministic conjunction over independently established evidence. The static
@@ -380,8 +397,8 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 67 are `semantic_complete`, and 22 remain `missing` (15
-interactions and seven essential-information roles), so
+`retained_in_crop`, 69 are `semantic_complete`, and 20 remain `missing` (15
+interactions and five essential-information roles), so
 cropping stays disabled. Known missing outdoor and dungeon roles include Heal,
 Trade, selected-member condition drilldowns, and the per-member Auto controls.
 Money management, the context-sensitive Shop/Temple/seamless-encounter entry,
@@ -391,16 +408,16 @@ information is instead covered by the separate read-only PARTY STATUS ribbon.
 Known
 missing combat roles include conditional Turn Undead, per-member Auto, and the distinct
 focused-combatant inspection controls for character or monster details, items,
-conditions, and monster attacks. Remaining information gaps are the three
-surface-specific narrative-message rows for Event Log, plus combat
-focused-combatant details, complete conditions and attacks, round, and
-enemies-remaining counts. Those are exactly the seven remaining
-essential-information rows. The common code-native rail covers all-member
-vitals, party-wide effects, world fatigue, and world pooled money; the separate
-world-context strip covers world coordinates, campaign day/time, and combined
-Search/Torch state on exploration and dungeon. Neither implicitly satisfies the
-remaining roles or represents member/bank holdings. The bounded selected-member
-Details renderer likewise remains a separate information surface.
+conditions, and monster attacks. The five remaining information gaps are
+exactly the three surface-specific narrative-message rows for Event Log, combat
+focused-combatant details, and complete combat conditions and attacks. The
+common code-native rail covers all-member vitals, party-wide effects, world
+fatigue, and world pooled money; the separate world-context strip covers world
+coordinates, campaign day/time, and combined Search/Torch state on exploration
+and dungeon; and the combat-awareness header covers only exact round and
+`numenemy - killmon` values. None implicitly satisfies the remaining roles or
+represents member/bank holdings. The bounded selected-member Details renderer
+likewise remains a separate information surface.
 
 Pointer, popup, text-input, and cursor
 coordinates continue through the embedded Classic frame. Title and modal

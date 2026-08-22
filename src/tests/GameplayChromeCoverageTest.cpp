@@ -249,9 +249,9 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"combat.info.conditions_and_attacks", Surface::combat,
         Kind::essential_information, Status::missing},
     {"combat.info.round", Surface::combat,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
     {"combat.info.enemies_remaining", Surface::combat,
-        Kind::essential_information, Status::missing},
+        Kind::essential_information, Status::semantic_complete},
 });
 
 static_assert(kExpectedManifestRows.size() == 95U);
@@ -634,6 +634,67 @@ void test_manifest_matches_independent_oracle() {
         Kind::essential_information, Status::missing);
   }
 
+  constexpr std::string_view kCombatAwarenessAnchor =
+      "src/presentation/CombatAwarenessLayout.cpp::"
+      "compute_combat_awareness_layout";
+
+  const auto* combat_round = find_manifest_entry(
+      manifest, "combat.info.round");
+  expect_manifest_entry(manifest, "combat.info.round", Surface::combat,
+      Kind::essential_information, Status::semantic_complete);
+  CHECK(combat_round != nullptr);
+  for (const auto evidence : std::array<std::string_view, 17>{
+           "shared responsive, read-only COMBAT AWARENESS passive header",
+           "presents ROUND",
+           "exact signed char-derived combatround value across -128..127",
+           "without clamping or normalization",
+           "every selected TURN, GEAR, TACTICS, and SPECIAL action page",
+           "monster or otherwise non-actionable combat turns",
+           "exactly empty control span",
+           "own the full inset header rather than disappear",
+           "Classic did not persistently draw a numeric round value",
+           "bounded remaster presentation of authoritative engine state",
+           "not a claim to reproduce Classic pixels",
+           "disengaged optional CombatView::enemies_remaining source suppresses the complete header",
+           "rather than fabricating zero",
+           "complete internal semantic accessibility text, `Combat awareness; round n; enemies remaining n.`",
+           "without claiming OS publication",
+           "passive information path",
+           "no action composition, dispatch, tag, input, Classic-source, or replay-vocabulary change",
+       }) {
+    CHECK(combat_round->evidence.find(evidence) != std::string_view::npos);
+  }
+  CHECK(combat_round->source_anchor == kCombatAwarenessAnchor);
+
+  const auto* enemies_remaining = find_manifest_entry(
+      manifest, "combat.info.enemies_remaining");
+  expect_manifest_entry(manifest, "combat.info.enemies_remaining",
+      Surface::combat, Kind::essential_information,
+      Status::semantic_complete);
+  CHECK(enemies_remaining != nullptr);
+  for (const auto evidence : std::array<std::string_view, 16>{
+           "shared responsive, read-only COMBAT AWARENESS passive header",
+           "presents ENEMIES LEFT",
+           "exact signed int16 difference",
+           "separately promoted raw numenemy and killmon values",
+           "across -255..255",
+           "without clamping, normalization, or reconstruction from combatant records",
+           "every selected TURN, GEAR, TACTICS, and SPECIAL action page",
+           "monster or otherwise non-actionable combat turns",
+           "exactly empty control span",
+           "own the full inset header rather than disappear",
+           "disengaged optional CombatView::enemies_remaining source",
+           "suppresses the complete header rather than fabricating zero",
+           "complete internal semantic accessibility text, `Combat awareness; round n; enemies remaining n.`",
+           "without claiming OS publication",
+           "passive information path",
+           "no action composition, dispatch, tag, input, Classic-source, or replay-vocabulary change",
+       }) {
+    CHECK(enemies_remaining->evidence.find(evidence) !=
+        std::string_view::npos);
+  }
+  CHECK(enemies_remaining->source_anchor == kCombatAwarenessAnchor);
+
   for (const auto& [stable_id, surface] : std::array{
            std::pair{"exploration.action.camp", Surface::exploration},
            std::pair{"dungeon.action.camp", Surface::dungeon},
@@ -802,10 +863,14 @@ void test_manifest_matches_independent_oracle() {
   }
 
   size_t world_context_anchor_count = 0U;
+  size_t combat_awareness_anchor_count = 0U;
   std::vector<std::string_view> missing_information_ids;
   for (const auto& entry : manifest) {
     if (entry.source_anchor == kWorldContextAnchor) {
       ++world_context_anchor_count;
+    }
+    if (entry.source_anchor == kCombatAwarenessAnchor) {
+      ++combat_awareness_anchor_count;
     }
     if ((entry.kind == Kind::essential_information) &&
         (entry.status == Status::missing)) {
@@ -813,14 +878,13 @@ void test_manifest_matches_independent_oracle() {
     }
   }
   CHECK(world_context_anchor_count == 6U);
+  CHECK(combat_awareness_anchor_count == 2U);
   const std::vector<std::string_view> expected_missing_information_ids{
       "exploration.info.narrative_messages",
       "dungeon.info.narrative_messages",
       "combat.info.narrative_messages",
       "combat.info.inspected_combatant",
       "combat.info.conditions_and_attacks",
-      "combat.info.round",
-      "combat.info.enemies_remaining",
   };
   CHECK(missing_information_ids == expected_missing_information_ids);
 }
@@ -1033,7 +1097,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x593B4959098E4C22ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x0CE587F3694618F2ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -1122,7 +1186,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x593B4959098E4C22ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x0CE587F3694618F2ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -1181,10 +1245,10 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 67U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 22U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 69U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 20U);
   CHECK(missing_interaction_count == 15U);
-  CHECK(missing_information_count == 7U);
+  CHECK(missing_information_count == 5U);
 }
 
 void expect_issue(

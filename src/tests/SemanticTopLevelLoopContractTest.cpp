@@ -11436,25 +11436,25 @@ void verify_party_status_ribbon_contract(
       "pooled money must remain world-only");
   const std::string compact_coverage_test =
       without_whitespace(raw_coverage_test);
-  require(raw_coverage_header.find("0x593B4959098E4C22ULL") !=
+  require(raw_coverage_header.find("0x0CE587F3694618F2ULL") !=
               std::string::npos &&
-          raw_coverage_test.find("0x593B4959098E4C22ULL") !=
+          raw_coverage_test.find("0x0CE587F3694618F2ULL") !=
               std::string::npos &&
           compact_coverage_test.contains(
               "Status::retained_in_crop)]==6U") &&
           compact_coverage_test.contains(
-              "Status::semantic_complete)]==67U") &&
-          compact_coverage_test.contains("Status::missing)]==22U") &&
+              "Status::semantic_complete)]==69U") &&
+          compact_coverage_test.contains("Status::missing)]==20U") &&
           compact_coverage_test.contains(
               "missing_interaction_count==15U") &&
           compact_coverage_test.contains(
-              "missing_information_count==7U") &&
+              "missing_information_count==5U") &&
           compact_coverage_test.contains(
               "kExpectedManifestRows.size()==95U") &&
           count_identifier(code_only(raw_coverage_test),
               "test_manifest_matches_independent_oracle") == 2,
-      "coverage tests must pin the reviewed digest, 95 rows, 6/67/22 "
-      "statuses, 15/7 missing split, and execute the independent oracle");
+      "coverage tests must pin the reviewed digest, 95 rows, 6/69/20 "
+      "statuses, 15/5 missing split, and execute the independent oracle");
 
   const std::string readme = read_file(repository_root / "README.md");
   const std::string qa = read_file(
@@ -11473,8 +11473,8 @@ void verify_party_status_ribbon_contract(
               std::string::npos &&
           compact_readme.contains(
               "95-rowinventoryremainsdeliberatelyincomplete:sixrolesare"
-              "`retained_in_crop`,67are`semantic_complete`,and22remain"
-              "`missing`(15interactionsandseven") &&
+              "`retained_in_crop`,69are`semantic_complete`,and20remain"
+              "`missing`(15interactionsandfive") &&
           readme.find("cropping stays disabled") != std::string::npos,
       "README must document exact PARTY STATUS scope, exclusions, no OS "
       "claim, reviewed totals, and disabled cropping");
@@ -11486,8 +11486,8 @@ void verify_party_status_ribbon_contract(
               "Combatintentionallyomitsfatigueandpool") &&
           qa.find("No OS accessibility publisher") != std::string::npos &&
           compact_qa.contains(
-              "95-rowinventorycurrentlycontainssix`retained_in_crop`,67"
-              "`semantic_complete`,and22`missing`roles:15interactionsandseven") &&
+              "95-rowinventorycurrentlycontainssix`retained_in_crop`,69"
+              "`semantic_complete`,and20`missing`roles:15interactionsandfive") &&
           qa.find("Cropping remains disabled") != std::string::npos &&
           qa.find("semantic_controls_ready = false") != std::string::npos,
       "QA docs must retain exact PARTY STATUS manual scope, reviewed totals, "
@@ -12528,6 +12528,7 @@ void verify_world_context_status_strip_contract(
   require(count_identifier(draw_panels, "world_context_layout") == 2 &&
           compact_present.contains(
               "*shell_model,world_context_layout,"
+              "combat_awareness_layout,"
               "this->remastered_shell_controls,"),
       "present_remastered_frame must pass the precomputed optional World "
       "Context into the common panel renderer");
@@ -12650,25 +12651,25 @@ void verify_world_context_status_strip_contract(
 
   const std::string compact_coverage_test =
       without_whitespace(raw_coverage_test);
-  require(raw_coverage_header.find("0x593B4959098E4C22ULL") !=
+  require(raw_coverage_header.find("0x0CE587F3694618F2ULL") !=
               std::string::npos &&
-          raw_coverage_test.find("0x593B4959098E4C22ULL") !=
+          raw_coverage_test.find("0x0CE587F3694618F2ULL") !=
               std::string::npos &&
           compact_coverage_test.contains(
               "Status::retained_in_crop)]==6U") &&
           compact_coverage_test.contains(
-              "Status::semantic_complete)]==67U") &&
-          compact_coverage_test.contains("Status::missing)]==22U") &&
+              "Status::semantic_complete)]==69U") &&
+          compact_coverage_test.contains("Status::missing)]==20U") &&
           compact_coverage_test.contains(
               "missing_interaction_count==15U") &&
           compact_coverage_test.contains(
-              "missing_information_count==7U") &&
+              "missing_information_count==5U") &&
           compact_coverage_test.contains(
               "kExpectedManifestRows.size()==95U") &&
           count_identifier(code_only(raw_coverage_test),
               "test_manifest_matches_independent_oracle") == 2,
-      "coverage tests must pin digest 0x593B4959098E4C22, 95 rows, "
-      "6/67/22 statuses, the 15/7 missing split, and execute the independent "
+      "coverage tests must pin digest 0x0CE587F3694618F2, 95 rows, "
+      "6/69/20 statuses, the 15/5 missing split, and execute the independent "
       "oracle");
   const std::string compact_missing_ids =
       "conststd::vector<std::string_view>expected_missing_information_ids{"
@@ -12676,16 +12677,15 @@ void verify_world_context_status_strip_contract(
       "\"dungeon.info.narrative_messages\","
       "\"combat.info.narrative_messages\","
       "\"combat.info.inspected_combatant\","
-      "\"combat.info.conditions_and_attacks\","
-      "\"combat.info.round\","
-      "\"combat.info.enemies_remaining\",};";
+      "\"combat.info.conditions_and_attacks\",};";
   require(compact_coverage_test.contains(compact_missing_ids) &&
           compact_coverage_test.contains(
               "world_context_anchor_count==6U") &&
           compact_coverage_test.contains(
               "missing_information_ids==expected_missing_information_ids"),
-      "the independent oracle must pin exactly the seven remaining "
-      "essential-information IDs after six World Context promotions");
+      "the independent oracle must pin exactly the five remaining "
+      "essential-information IDs after the World Context and Combat "
+      "Awareness promotions");
 
   const std::string readme = read_file(repository_root / "README.md");
   const std::string qa = read_file(
@@ -12702,11 +12702,11 @@ void verify_world_context_status_strip_contract(
           readme.find("without claiming OS publication") !=
               std::string::npos &&
           compact_readme.contains(
-              "sixrolesare`retained_in_crop`,67are`semantic_complete`,"
-              "and22remain`missing`(15interactionsandseven") &&
+              "sixrolesare`retained_in_crop`,69are`semantic_complete`,"
+              "and20remain`missing`(15interactionsandfive") &&
           readme.find("cropping stays disabled") != std::string::npos,
       "README must bound World Context truth, raw/hidden behavior, no OS "
-      "claim, reviewed 6/67/22 totals, and disabled cropping");
+      "claim, reviewed 6/69/20 totals, and disabled cropping");
   require(qa.find("**WORLD CONTEXT**") != std::string::npos &&
           qa.find("lookx + partyx") != std::string::npos &&
           qa.find("floorx") != std::string::npos &&
@@ -12717,8 +12717,8 @@ void verify_world_context_status_strip_contract(
           qa.find("without an OS-publication claim") !=
               std::string::npos &&
           compact_qa.contains(
-              "six`retained_in_crop`,67`semantic_complete`,and22`missing`"
-              "roles:15interactionsandsevenessential-informationroles") &&
+              "six`retained_in_crop`,69`semantic_complete`,and20`missing`"
+              "roles:15interactionsandfiveessential-informationroles") &&
           qa.find("Cropping remains disabled") != std::string::npos &&
           qa.find("semantic_controls_ready = false") != std::string::npos,
       "QA docs must retain bounded World Context claims, reviewed totals, "
@@ -12774,6 +12774,697 @@ void verify_world_context_status_strip_contract(
             count_identifier(replay_vocabulary, information_only_name) == 0 &&
             count_identifier(classic_vocabulary, information_only_name) == 0,
         std::string("World Context information leaked into action/input, "
+                    "replay, or Classic vocabulary named ") +
+            information_only_name);
+  }
+}
+
+void verify_combat_awareness_header_contract(
+    const fs::path& repository_root) {
+  const auto braced_definition = [](
+      std::string_view source,
+      std::string_view name) {
+    const std::size_t definition = find_identifier(source, name);
+    require(definition != std::string_view::npos,
+        std::string("missing Combat Awareness structural definition: ") +
+            std::string(name));
+    const std::size_t opening = source.find('{', definition);
+    require(opening != std::string_view::npos,
+        std::string("missing Combat Awareness structural body: ") +
+            std::string(name));
+    const std::size_t closing = matching_delimiter(
+        source, opening, '{', '}');
+    return std::string(
+        source.substr(opening, closing - opening + 1U));
+  };
+
+  const std::string raw_classic_variables = read_file(
+      repository_root / "src/realmz_orig/variables.h");
+  const std::string classic_variables = code_only(raw_classic_variables);
+  const std::string raw_classic_main = read_file(
+      repository_root / "src/realmz_orig/main.c");
+  const std::string classic_main = code_only(raw_classic_main);
+  const std::string raw_classic_combat = read_file(
+      repository_root / "src/realmz_orig/combat.c");
+  const std::string classic_combat = code_only(raw_classic_combat);
+  const std::string classic_getup = code_only(read_file(
+      repository_root / "src/realmz_orig/getup.c"));
+  const std::string raw_classic_number = read_file(
+      repository_root / "src/realmz_orig/number.c");
+  const std::string classic_number = code_only(raw_classic_number);
+
+  const std::string raw_snapshot_header = read_file(
+      repository_root / "src/presentation/GameSnapshot.hpp");
+  const std::string snapshot_header = code_only(raw_snapshot_header);
+  const std::string raw_snapshot_source = read_file(
+      repository_root /
+          "src/presentation/LegacyGameSnapshotSource.cpp");
+  const std::string snapshot_source = code_only(raw_snapshot_source);
+  const std::string raw_snapshot_test = read_file(
+      repository_root /
+          "src/tests/LegacyGameSnapshotSourceTest.cpp");
+  const std::string snapshot_test = code_only(raw_snapshot_test);
+
+  const std::string raw_model_header = read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp");
+  const std::string model_header = code_only(raw_model_header);
+  const std::string raw_model_source = read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp");
+  const std::string model_source = code_only(raw_model_source);
+  const std::string raw_model_test = read_file(
+      repository_root / "src/tests/PartyRailModelTest.cpp");
+  const std::string model_test = code_only(raw_model_test);
+
+  const std::string raw_layout_header = read_file(
+      repository_root / "src/presentation/CombatAwarenessLayout.hpp");
+  const std::string layout_header = code_only(raw_layout_header);
+  const std::string raw_layout_source = read_file(
+      repository_root / "src/presentation/CombatAwarenessLayout.cpp");
+  const std::string layout_source = code_only(raw_layout_source);
+  const std::string raw_layout_test = read_file(
+      repository_root / "src/tests/CombatAwarenessLayoutTest.cpp");
+  const std::string layout_test = code_only(raw_layout_test);
+  const std::string raw_window_source = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string window_source = code_only(raw_window_source);
+
+  // Classic stores all three source values as plain char. The port supports
+  // only signed-char targets, so promotion to int16_t gives an exact, defined
+  // -255..255 difference before the result is detached.
+  const std::string compact_classic_variables =
+      without_whitespace(classic_variables);
+  const std::string compact_classic_main = without_whitespace(classic_main);
+  require(compact_classic_variables.contains(
+              "externcharlastspell[6][2],combatround,lastpix;") &&
+          compact_classic_variables.contains(
+              "externchartrack[maxloop],spellrange,numoftar,targetnum,"
+              "aimindex,numenemy;") &&
+          compact_classic_variables.contains(
+              "externchartarget[7][2],killmon;") &&
+          compact_classic_main.contains(
+              "charlastspell[6][2],combatround,lastpix=-1;") &&
+          compact_classic_main.contains(
+              "chartrack[maxloop],spellrange,numoftar,targetnum,aimindex,"
+              "numenemy;") &&
+          compact_classic_main.contains("chartarget[7][2],killmon;"),
+      "Classic combatround, numenemy, and killmon must remain matching plain "
+      "char declarations and definitions");
+  require(raw_snapshot_source.find(
+              "std::numeric_limits<char>::is_signed") !=
+              std::string::npos &&
+          raw_snapshot_source.find(
+              "Classic combat counters require signed char semantics") !=
+              std::string::npos,
+      "the legacy adapter must reject targets without signed-char Classic "
+      "combat-counter semantics at compile time");
+
+  const std::string combat = function_body(classic_combat, "combat");
+  const std::string getup = function_body(classic_getup, "getup");
+  require(without_whitespace(combat).contains(
+              "incombat=combatround=1;") &&
+          count_identifier(combat, "combatround") == 1 &&
+          without_whitespace(getup).contains("combatround++;") &&
+          count_identifier(getup, "combatround") == 1,
+      "Classic must initialize combatround to one and increment it at the "
+      "authoritative round boundary");
+
+  const std::string number = function_body(classic_number, "number");
+  const std::string compact_number = without_whitespace(number);
+  const std::size_t spell_suppression = compact_number.find(
+      "if(inspell)return;");
+  const std::size_t enemies_label = raw_classic_number.find(
+      "MyrDrawCString(\"Enemies Left\");");
+  const std::size_t enemy_difference = compact_number.find(
+      "string(numenemy-killmon);");
+  require(spell_suppression != std::string::npos &&
+          enemies_label != std::string::npos &&
+          enemy_difference != std::string::npos &&
+          count_identifier(number, "inspell") == 1 &&
+          count_identifier(number, "numenemy") == 1 &&
+          count_identifier(number, "killmon") == 1 &&
+          count_identifier(number, "string") == 1,
+      "Classic number() must suppress itself during inspell and draw exactly "
+      "Enemies Left plus string(numenemy - killmon)");
+
+  std::string classic_render_vocabulary;
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/realmz_orig")) {
+    if (entry.is_regular_file() &&
+        ((entry.path().extension() == ".c") ||
+         (entry.path().extension() == ".h"))) {
+      classic_render_vocabulary += code_only(read_file(entry.path()));
+    }
+  }
+  const std::string compact_classic_render =
+      without_whitespace(classic_render_vocabulary);
+  require(!compact_classic_render.contains("string(combatround)") &&
+          !compact_classic_render.contains(
+              "MyrNumToString(combatround") &&
+          !compact_classic_render.contains(
+              "NumToString(combatround"),
+      "the bounded remaster claim requires Classic to have no persistent "
+      "direct numeric combatround formatting path");
+
+  // The new snapshot field is appended and optional. Capture uses only the
+  // separately promoted raw globals, not a count reconstructed from records.
+  const std::string combat_view = braced_definition(
+      snapshot_header, "CombatView");
+  const std::string compact_combat_view = without_whitespace(combat_view);
+  const std::size_t combatants_field = find_identifier(
+      combat_view, "combatants");
+  const std::size_t remaining_field = find_identifier(
+      combat_view, "enemies_remaining");
+  require(combatants_field != std::string::npos &&
+          remaining_field != std::string::npos &&
+          combatants_field < remaining_field &&
+          compact_combat_view.contains(
+              "std::optional<int16_t>enemies_remaining;") &&
+          count_identifier(combat_view, "enemies_remaining") == 1,
+      "CombatView must append one detached optional<int16_t> enemy "
+      "difference after existing combatant storage");
+
+  const std::string capture = function_body(snapshot_source, "capture");
+  const std::size_t assignment_start = capture.find(
+      "combat.enemies_remaining");
+  require(assignment_start != std::string::npos,
+      "legacy combat capture is missing enemies_remaining");
+  const std::size_t assignment_end = capture.find(';', assignment_start);
+  require(assignment_end != std::string::npos,
+      "legacy combat enemy projection is unterminated");
+  const std::string enemy_assignment = capture.substr(
+      assignment_start, assignment_end - assignment_start + 1U);
+  require(without_whitespace(enemy_assignment) ==
+              "combat.enemies_remaining=static_cast<int16_t>(numenemy)-"
+              "static_cast<int16_t>(killmon);" &&
+          count_identifier(enemy_assignment, "numenemy") == 1 &&
+          count_identifier(enemy_assignment, "killmon") == 1 &&
+          count_identifier(enemy_assignment, "combatants") == 0 &&
+          count_identifier(enemy_assignment, "monster") == 0 &&
+          count_identifier(enemy_assignment, "nummon") == 0,
+      "legacy combat capture must compute the exact widened raw subtraction "
+      "without combatant reconstruction, clamp, or normalization");
+  require(without_whitespace(capture).contains(
+              "combat.round=static_cast<int16_t>(combatround);") &&
+          count_identifier(capture, "combatround") == 1,
+      "legacy capture must retain exact signed combatround independently of "
+      "the enemy difference");
+
+  const std::string capture_test = function_body(
+      snapshot_test, "test_combat_capture");
+  const std::string compact_capture_test = without_whitespace(capture_test);
+  require(count_identifier(snapshot_test, "test_combat_capture") == 2 &&
+          compact_capture_test.contains(
+              "combatround=static_cast<char>(-128);") &&
+          compact_capture_test.contains(
+              "numenemy=static_cast<char>(127);") &&
+          compact_capture_test.contains(
+              "killmon=static_cast<char>(-128);") &&
+          compact_capture_test.contains(
+              "signed_boundaries.combat->round==-128") &&
+          compact_capture_test.contains(
+              "signed_boundaries.combat->enemies_remaining==255") &&
+          compact_capture_test.contains(
+              "combatround=static_cast<char>(127);") &&
+          compact_capture_test.contains(
+              "numenemy=static_cast<char>(-128);") &&
+          compact_capture_test.contains(
+              "killmon=static_cast<char>(127);") &&
+          compact_capture_test.contains(
+              "opposite_boundaries.combat->round==127") &&
+          compact_capture_test.contains(
+              "opposite_boundaries.combat->enemies_remaining==-255") &&
+          compact_capture_test.contains("snapshot.combat->round==5") &&
+          compact_capture_test.contains(
+              "snapshot.combat->enemies_remaining==-3") &&
+          count_identifier(capture_test, "combatants") >= 6,
+      "snapshot tests must execute both signed boundaries, exact negative "
+      "difference, record independence, and post-capture detachment");
+
+  // The pure model remains absent for compatibility until the optional source
+  // is engaged; then it validates only active combat and exact source domains.
+  const std::string awareness_model = braced_definition(
+      model_header, "CombatAwarenessModel");
+  const std::string compact_awareness_model =
+      without_whitespace(awareness_model);
+  require(compact_awareness_model.contains("int16_tround=0;") &&
+          compact_awareness_model.contains(
+              "int16_tenemies_remaining=0;") &&
+          count_identifier(awareness_model, "round") == 1 &&
+          count_identifier(awareness_model, "enemies_remaining") == 1,
+      "CombatAwarenessModel must retain only the two exact signed values");
+  const std::string model_builder = function_body(
+      model_source, "build_combat_awareness_model");
+  const std::string compact_model_builder =
+      without_whitespace(model_builder);
+  require(compact_model_builder.contains(
+              "if(!snapshot.combat||!snapshot.combat->enemies_remaining)"
+              "{returnstd::nullopt;}") &&
+          compact_model_builder.contains(
+              "if((snapshot.screen!=ScreenContext::combat)||!combat.active)") &&
+          compact_model_builder.contains(
+              "if((combat.round<-128)||(combat.round>127))") &&
+          compact_model_builder.contains(
+              "if((*combat.enemies_remaining<-255)||"
+              "(*combat.enemies_remaining>255))") &&
+          compact_model_builder.contains(
+              ".round=combat.round,.enemies_remaining="
+              "*combat.enemies_remaining,") &&
+          count_identifier(model_builder, "combatants") == 0 &&
+          count_identifier(model_builder, "acting_combatant") == 0 &&
+          count_identifier(model_builder, "CombatActionPage") == 0,
+      "Combat Awareness model must preserve engaged values exactly while "
+      "validating active combat and both signed domains only");
+  const std::string shell_builder = function_body(
+      model_source, "build_presentation_shell_model");
+  require(without_whitespace(shell_builder).contains(
+              "result.combat_awareness="
+              "build_combat_awareness_model(snapshot);") &&
+          count_identifier(shell_builder,
+              "build_combat_awareness_model") == 1,
+      "the shared shell model must wire Combat Awareness exactly once");
+
+  const std::string model_contract_test = function_body(
+      model_test,
+      "test_combat_awareness_is_exact_validated_and_context_independent");
+  const std::string compact_model_contract_test =
+      without_whitespace(model_contract_test);
+  require(count_identifier(model_test,
+              "test_combat_awareness_is_exact_validated_and_context_"
+              "independent") == 2 &&
+          count_identifier(model_contract_test,
+              "build_combat_awareness_model") >= 10 &&
+          compact_model_contract_test.contains(
+              "snapshot.combat=CombatView{.active=true,.round=19};") &&
+          compact_model_contract_test.contains(
+              "for(int32_tround=-128;round<=127;++round)") &&
+          compact_model_contract_test.contains(
+              "for(int32_tenemies_remaining=-255;enemies_remaining<=255;"
+              "++enemies_remaining)") &&
+          compact_model_contract_test.contains(
+              "model->round==round") &&
+          compact_model_contract_test.contains(
+              "model->enemies_remaining==enemies_remaining") &&
+          compact_model_contract_test.contains(
+              "snapshot.combat->acting_combatant=actor;") &&
+          compact_model_contract_test.contains(
+              "preferences.combat_action_page=page;") &&
+          compact_model_contract_test.contains(
+              "shell.combat_awareness==expected") &&
+          compact_model_contract_test.contains(
+              "shell.combat_action_page==page"),
+      "model tests must execute optional absence, all exact values, invalid "
+      "contexts/ranges, shell wiring, and actor/page independence");
+
+  // Layout consumes value-only model/control geometry. It may format passive
+  // text, but has no renderer, event, semantic-input, or dispatch route.
+  const std::string layout_request = braced_definition(
+      layout_header, "CombatAwarenessLayoutRequest");
+  const std::string compact_layout_request =
+      without_whitespace(layout_request);
+  require(compact_layout_request.contains(
+              "constCombatAwarenessModel&combat_awareness;") &&
+          compact_layout_request.contains("ScreenContextscreen;") &&
+          compact_layout_request.contains("LogicalRectaction_panel;") &&
+          compact_layout_request.contains("TypographyModeltypography;") &&
+          compact_layout_request.contains(
+              "std::span<constShellControlPlacement>action_controls;"),
+      "Combat Awareness layout request must be an explicit pure value/geometry "
+      "contract");
+  for (const auto forbidden : {
+           "SDL_Renderer", "SDL_Texture", "SDL_Event", "SDL_PushEvent",
+           "UIAction", "SemanticInputBoundary", "LegacyCommandBridge",
+           "dispatch_remastered_shell_control", "EventManager"}) {
+    require(count_identifier(layout_header, forbidden) == 0 &&
+            count_identifier(layout_source, forbidden) == 0,
+        std::string("pure Combat Awareness layout must not use ") +
+            forbidden);
+  }
+  require(layout_header.find("SDL_") == std::string::npos &&
+          layout_source.find("SDL_") == std::string::npos,
+      "pure Combat Awareness layout must contain no SDL API path");
+
+  const std::string compute_layout = function_body(
+      layout_source, "compute_combat_awareness_layout");
+  const std::string compact_compute_layout =
+      without_whitespace(compute_layout);
+  require(raw_layout_source.find("\"ROUND {}\"") !=
+              std::string::npos &&
+          raw_layout_source.find("\"ENEMIES LEFT {}\"") !=
+              std::string::npos &&
+          raw_layout_source.find(
+              "\"Combat awareness; round {}; enemies remaining {}.\"") !=
+              std::string::npos &&
+          compact_compute_layout.contains(
+              "constboolfull_line_fits=fitted_text_style(") &&
+          compact_compute_layout.contains(
+              "full_line_fits?CombatAwarenessLayoutDensity::wide:"
+              "CombatAwarenessLayoutDensity::compact") &&
+          raw_layout_source.find(
+              "kMinimumPracticalPointSize = 8.0") != std::string::npos &&
+          raw_layout_source.find(
+              "kMinimumPracticalLineHeight = 10.0") != std::string::npos,
+      "layout must use exact visible/accessibility wording and choose density "
+      "from actual complete-content fit at the 8-point/10-line floor");
+
+  const std::string header_shape = function_body(
+      layout_source, "validate_header_shape");
+  const std::string compact_header_shape =
+      without_whitespace(header_shape);
+  require(compact_header_shape.contains(
+              "if(request.action_controls.empty()){") &&
+          compact_header_shape.contains(
+              ".owns_full_zero_tab_header=true,") &&
+          compact_header_shape.contains(
+              "if(request.action_controls.size()<4U)") &&
+          compact_header_shape.contains(
+              "CombatActionPage::primary,CombatActionPage::secondary,"
+              "CombatActionPage::utility,CombatActionPage::special,") &&
+          raw_layout_source.find(
+              "\"TURN\", \"GEAR\", \"TACTICS\", \"SPECIAL\"") !=
+              std::string::npos &&
+          compact_header_shape.contains("if(selected_count!=1U)") &&
+          compact_header_shape.contains(
+              "validate_action_row(request,selected_page);") &&
+          count_identifier(header_shape, "contains") >= 2 &&
+          count_identifier(header_shape, "interiors_overlap") >= 2 &&
+          count_identifier(header_shape, "nearly_equal") >= 4,
+      "layout must accept only the exact zero-control header or canonical "
+      "four-tab deck/action geometry, with one selected page and no overlap");
+  const std::string action_row = function_body(
+      layout_source, "validate_action_row");
+  require(count_identifier(action_row, "action_expectation") == 1 &&
+          count_identifier(action_row, "nearly_equal") == 4 &&
+          count_identifier(action_row, "combatant") >= 3 &&
+          count_identifier(action_row, "region") >= 2 &&
+          count_identifier(action_row, "label") >= 2 &&
+          count_identifier(action_row, "accessibility_label") >= 2 &&
+          count_identifier(action_row, "focus_identifier") >= 2 &&
+          count_identifier(action_row, "tab_order") >= 2,
+      "canonical combat action rows must reject identity, payload, ordering, "
+      "metadata, geometry, and combatant forgeries");
+
+  const std::string exhaustive_layout_test = function_body(
+      layout_test,
+      "test_every_supported_width_page_turn_shape_scale_and_extreme");
+  const std::string compact_exhaustive_layout_test =
+      without_whitespace(exhaustive_layout_test);
+  require(count_identifier(layout_test,
+              "test_every_supported_width_page_turn_shape_scale_and_extreme") ==
+              2 &&
+          compact_exhaustive_layout_test.contains(
+              "CombatActionPage::primary,CombatActionPage::secondary,"
+              "CombatActionPage::utility,CombatActionPage::special,") &&
+          compact_exhaustive_layout_test.contains(
+              "CombatAwarenessModel{-128,-255},") &&
+          compact_exhaustive_layout_test.contains(
+              "CombatAwarenessModel{127,255},") &&
+          compact_exhaustive_layout_test.contains(
+              "constexprstd::arraytext_scales{0.75,1.0,2.0};") &&
+          compact_exhaustive_layout_test.contains(
+              "constexprstd::arraybacking_scales{0.75,1.0,2.0};") &&
+          compact_exhaustive_layout_test.contains(
+              "for(intwidth=1024;width<=1600;++width)") &&
+          count_identifier(exhaustive_layout_test,
+              "party_turn_controls") == 1 &&
+          count_identifier(exhaustive_layout_test,
+              "verify_complete_layout") == 2 &&
+          count_identifier(exhaustive_layout_test,
+              "zero_tab_controls") >= 2 &&
+          count_identifier(exhaustive_layout_test,
+              "text_scale") >= 2 &&
+          count_identifier(exhaustive_layout_test,
+              "backing_scale") >= 2,
+      "layout tests must exhaust every 1024..1600 width, all four pages, "
+      "tabbed/zero-tab turn shapes, scales, backing scales, and extrema");
+  const std::string forgery_test = function_body(
+      layout_test,
+      "test_partial_forged_mixed_and_overlapping_controls_fail_closed");
+  require(count_identifier(layout_test,
+              "test_partial_forged_mixed_and_overlapping_controls_"
+              "fail_closed") == 2 &&
+          count_identifier(forgery_test, "expect_invalid") >= 20 &&
+          count_identifier(forgery_test, "bounds") >= 10 &&
+          count_identifier(forgery_test, "payload") >= 5 &&
+          count_identifier(forgery_test, "selected") >= 2,
+      "layout tests must execute partial, forged, mixed, overlapping, and "
+      "noncanonical-geometry rejection");
+
+  // Production precomputes once from the shell model and exact control span,
+  // passes the value through the shared panel renderer, and draws only lines
+  // and styles produced by the layout.
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  const std::size_t controls_computed = find_identifier(
+      present, "compute_shell_control_layout");
+  const std::size_t awareness_computed = find_identifier(
+      present, "compute_combat_awareness_layout");
+  const std::size_t panel_drawn = find_identifier(
+      present, "draw_shell_panel_contents");
+  require(controls_computed != std::string::npos &&
+          awareness_computed != std::string::npos &&
+          panel_drawn != std::string::npos &&
+          controls_computed < awareness_computed &&
+          awareness_computed < panel_drawn &&
+          count_identifier(present,
+              "compute_combat_awareness_layout") == 1 &&
+          compact_present.contains(
+              ".combat_awareness=*shell_model->combat_awareness,") &&
+          compact_present.contains(
+              ".action_controls=this->remastered_shell_controls,") &&
+          count_identifier(present, "combat_awareness_layout") == 3,
+      "production must precompute one Combat Awareness layout after controls "
+      "and pass it into panel drawing");
+
+  const std::string panel_draw = function_body(
+      window_source, "draw_shell_panel_contents");
+  const std::string compact_panel_draw = without_whitespace(panel_draw);
+  const std::size_t awareness_branch_start = compact_panel_draw.find(
+      "if(combat_awareness_layout){");
+  require(awareness_branch_start != std::string::npos,
+      "action-bar renderer is missing its Combat Awareness branch");
+  const std::size_t awareness_branch_open = compact_panel_draw.find(
+      '{', awareness_branch_start);
+  const std::size_t awareness_branch_close = matching_delimiter(
+      compact_panel_draw, awareness_branch_open, '{', '}');
+  const std::string awareness_draw_branch = compact_panel_draw.substr(
+      awareness_branch_open,
+      awareness_branch_close - awareness_branch_open + 1U);
+  require(count_identifier(awareness_draw_branch, "draw_shell_text") == 1 &&
+          count_identifier(awareness_draw_branch, "line") >= 5 &&
+          count_identifier(awareness_draw_branch, "text") == 1 &&
+          count_identifier(awareness_draw_branch, "bounds") == 1 &&
+          count_identifier(awareness_draw_branch, "emphasis") == 1 &&
+          count_identifier(awareness_draw_branch, "text_style") == 1 &&
+          count_identifier(awareness_draw_branch, "round") == 0 &&
+          count_identifier(awareness_draw_branch,
+              "enemies_remaining") == 0 &&
+          count_identifier(awareness_draw_branch, "format") == 0 &&
+          count_identifier(awareness_draw_branch, "to_string") == 0,
+      "renderer must draw model-derived lines/bounds/emphasis/styles without "
+      "reformatting Combat Awareness values");
+  require(compact_panel_draw.contains(
+              "constboolcombat_awareness_owns_full_zero_tab_header="
+              "combat_awareness_layout&&combat_awareness_layout->"
+              "owns_full_zero_tab_header;") &&
+          count_text(compact_panel_draw,
+              "if(!has_semantic_action_page&&!combat_awareness_owns_full_"
+              "zero_tab_header){") == 2 &&
+          count_identifier(panel_draw,
+              "combat_awareness_owns_full_zero_tab_header") == 3 &&
+          count_text(raw_window_source, "\"ACTIONS\"") == 1,
+      "an exact zero-tab Combat Awareness header must suppress both fallback "
+      "ACTIONS heading and action summary");
+
+  const std::string cmake = read_file(repository_root / "CMakeLists.txt");
+  const std::string core_script = read_file(
+      repository_root / "scripts/run-core-tests.sh");
+  require(count_text(cmake,
+              "src/presentation/CombatAwarenessLayout.cpp") == 1 &&
+          count_text(cmake, "add_executable(CombatAwarenessLayoutTest") ==
+              1 &&
+          count_text(cmake, "add_test(NAME CombatAwarenessLayoutTest") ==
+              1 &&
+          count_text(core_script,
+              "run_cpp_test CombatAwarenessLayoutTest") == 1 &&
+          count_text(core_script,
+              "src/presentation/CombatAwarenessLayout.cpp") == 1,
+      "Combat Awareness implementation and tests must be wired into both "
+      "CMake/CTest and the strict core-test script");
+
+  // Exactly two existing information rows are promoted. Totals, independent
+  // oracle, digest, bounded docs, and uncropped production remain pinned.
+  const std::string raw_coverage_header = read_file(
+      repository_root / "src/presentation/GameplayChromeCoverage.hpp");
+  const std::string raw_coverage_source = read_file(
+      repository_root / "src/presentation/GameplayChromeCoverage.cpp");
+  const std::string raw_coverage_test = read_file(
+      repository_root / "src/tests/GameplayChromeCoverageTest.cpp");
+  const auto coverage_row = [&raw_coverage_source](
+      std::string_view stable_id) {
+    const std::string quoted = "\"" + std::string(stable_id) + "\"";
+    const std::size_t start = raw_coverage_source.find(quoted);
+    require(start != std::string::npos,
+        std::string("manifest is missing Combat Awareness role ") +
+            std::string(stable_id));
+    const std::size_t end = raw_coverage_source.find("},", start);
+    require(end != std::string::npos,
+        std::string("manifest Combat Awareness role is unterminated: ") +
+            std::string(stable_id));
+    return raw_coverage_source.substr(start, end - start + 2U);
+  };
+  const std::string awareness_anchor =
+      "src/presentation/CombatAwarenessLayout.cpp::"
+      "compute_combat_awareness_layout";
+  for (const auto stable_id : {
+           std::string_view("combat.info.round"),
+           std::string_view("combat.info.enemies_remaining")}) {
+    const std::string row = coverage_row(stable_id);
+    require(row.find("Kind::essential_information") != std::string::npos &&
+            row.find("Status::semantic_complete") != std::string::npos &&
+            row.find("COMBAT AWARENESS") != std::string::npos &&
+            row.find(awareness_anchor) != std::string::npos &&
+            row.find("without claiming OS publication") !=
+                std::string::npos &&
+            row.find("no action composition, dispatch, tag, input, "
+                     "Classic-source, or replay-vocabulary change") !=
+                std::string::npos,
+        std::string("manifest Combat Awareness row lacks bounded complete ") +
+            "evidence: " + std::string(stable_id));
+  }
+  require(count_text(raw_coverage_source, awareness_anchor) == 2 &&
+          coverage_row("combat.info.round").find(
+              "Classic did not persistently draw a numeric round value") !=
+              std::string::npos &&
+          coverage_row("combat.info.round").find(
+              "not a claim to reproduce Classic pixels") !=
+              std::string::npos &&
+          coverage_row("combat.info.enemies_remaining").find(
+              "without clamping, normalization, or reconstruction from "
+              "combatant records") != std::string::npos,
+      "exactly the two reviewed Combat Awareness rows may use its layout "
+      "anchor, with bounded Classic-round and raw-difference claims");
+
+  const std::string compact_coverage_test =
+      without_whitespace(raw_coverage_test);
+  require(raw_coverage_header.find("0x0CE587F3694618F2ULL") !=
+              std::string::npos &&
+          raw_coverage_test.find("0x0CE587F3694618F2ULL") !=
+              std::string::npos &&
+          compact_coverage_test.contains(
+              "Status::retained_in_crop)]==6U") &&
+          compact_coverage_test.contains(
+              "Status::semantic_complete)]==69U") &&
+          compact_coverage_test.contains("Status::missing)]==20U") &&
+          compact_coverage_test.contains(
+              "missing_interaction_count==15U") &&
+          compact_coverage_test.contains(
+              "missing_information_count==5U") &&
+          compact_coverage_test.contains(
+              "kExpectedManifestRows.size()==95U") &&
+          compact_coverage_test.contains(
+              "combat_awareness_anchor_count==2U"),
+      "coverage must pin digest 0x0CE587F3694618F2, 95 rows, 6/69/20 "
+      "statuses, the 15/5 missing split, and exactly two Combat Awareness "
+      "anchors");
+  const std::string compact_missing_ids =
+      "conststd::vector<std::string_view>expected_missing_information_ids{"
+      "\"exploration.info.narrative_messages\","
+      "\"dungeon.info.narrative_messages\","
+      "\"combat.info.narrative_messages\","
+      "\"combat.info.inspected_combatant\","
+      "\"combat.info.conditions_and_attacks\",};";
+  require(compact_coverage_test.contains(compact_missing_ids) &&
+          compact_coverage_test.contains(
+              "missing_information_ids==expected_missing_information_ids"),
+      "independent coverage oracle must pin exactly the five remaining "
+      "information IDs after Combat Awareness promotion");
+
+  const std::string readme = read_file(repository_root / "README.md");
+  const std::string qa = read_file(
+      repository_root / "docs/QA_AND_RELEASE.md");
+  const std::string compact_readme = without_whitespace(readme);
+  const std::string compact_qa = without_whitespace(qa);
+  require(readme.find("**COMBAT AWARENESS**") != std::string::npos &&
+          readme.find("combatround") != std::string::npos &&
+          readme.find("numenemy - killmon") != std::string::npos &&
+          readme.find(
+              "Classic did not persistently draw a numeric round value") !=
+              std::string::npos &&
+          readme.find("without claiming OS publication") !=
+              std::string::npos &&
+          compact_readme.contains(
+              "sixrolesare`retained_in_crop`,69are`semantic_complete`,"
+              "and20remain`missing`(15interactionsandfive") &&
+          readme.find("cropping stays disabled") != std::string::npos,
+      "README must document exact Combat Awareness truth, bounded round "
+      "claim, no OS publisher, final totals, and disabled crop");
+  require(qa.find("**COMBAT AWARENESS**") != std::string::npos &&
+          qa.find("combatround") != std::string::npos &&
+          qa.find("numenemy - killmon") != std::string::npos &&
+          qa.find(
+              "Classic did not persistently draw a numeric round value") !=
+              std::string::npos &&
+          qa.find("without an OS-publication claim") !=
+              std::string::npos &&
+          compact_qa.contains(
+              "six`retained_in_crop`,69`semantic_complete`,and20`missing`"
+              "roles:15interactionsandfiveessential-informationroles") &&
+          qa.find("Cropping remains disabled") != std::string::npos &&
+          qa.find("semantic_controls_ready = false") !=
+              std::string::npos,
+      "QA docs must pin Combat Awareness verification scope, bounded claims, "
+      "final totals, no OS publisher, and hardcoded uncropped state");
+  require(compact_present.contains(".semantic_controls_ready=false,") &&
+          count_identifier(present, "semantic_controls_ready") == 1,
+      "Combat Awareness completion must leave production crop readiness "
+      "hardcoded false");
+
+  // This slice is passive information. It must add no action alternative,
+  // semantic tag/input path, EventManager route, replay schema, or Classic
+  // source vocabulary.
+  std::string semantic_vocabulary;
+  for (const auto& relative : {
+           fs::path("src/presentation/UIAction.hpp"),
+           fs::path("src/presentation/SemanticInputBoundary.h"),
+           fs::path("src/presentation/SemanticInputBoundary.cpp"),
+           fs::path("src/presentation/RemasteredInputMapper.hpp"),
+           fs::path("src/presentation/RemasteredInputMapper.cpp"),
+           fs::path("src/EventManager.h"),
+           fs::path("src/EventManager.cpp")}) {
+    semantic_vocabulary += code_only(read_file(repository_root / relative));
+  }
+  std::string replay_vocabulary;
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (entry.is_regular_file()) {
+      require(entry.path().filename().string().find("CombatAwareness") ==
+              std::string::npos,
+          "Combat Awareness must not add a replay file");
+      replay_vocabulary += code_only(read_file(entry.path()));
+    }
+  }
+  replay_vocabulary += code_only(read_file(
+      repository_root / "src/SemanticReplayChild.cpp"));
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/realmz_orig")) {
+    if (entry.is_regular_file()) {
+      require(entry.path().filename().string().find("CombatAwareness") ==
+              std::string::npos,
+          "Combat Awareness must not add a Classic source file");
+    }
+  }
+  for (const auto information_only_name : {
+           "CombatAwarenessModel", "CombatAwarenessLayoutDensity",
+           "CombatAwarenessLineLayout", "CombatAwarenessLayoutRequest",
+           "build_combat_awareness_model",
+           "compute_combat_awareness_layout", "combat_awareness"}) {
+    require(count_identifier(
+                semantic_vocabulary, information_only_name) == 0 &&
+            count_identifier(replay_vocabulary, information_only_name) == 0 &&
+            count_identifier(classic_render_vocabulary,
+                information_only_name) == 0,
+        std::string("Combat Awareness information leaked into action/input, "
                     "replay, or Classic vocabulary named ") +
             information_only_name);
   }
@@ -13170,7 +13861,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x593B4959098E4C22ULL") !=
+          coverage_header.find("0x0CE587F3694618F2ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -13260,7 +13951,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x593B4959098E4C22ULL") !=
+          coverage_test.find("0x0CE587F3694618F2ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -17075,6 +17766,7 @@ int main(int argc, char** argv) {
     verify_all_member_party_vitals_contract(repository_root);
     verify_party_status_ribbon_contract(repository_root);
     verify_world_context_status_strip_contract(repository_root);
+    verify_combat_awareness_header_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

@@ -207,6 +207,21 @@ availability data only. Explicit non-color markers expose both active and
 inactive states. Layout retains complete internal semantic text without an OS-
 publication claim. This information-only slice adds no action, tag, input,
 Classic-source, or replay-vocabulary path.
+A shared responsive, passive **COMBAT AWARENESS** header presents exact signed
+combat state beside every selected Turn, Gear, Tactics, and Special page. On a
+monster or otherwise non-actionable turn with exactly zero action tabs, the
+strip owns the full inset header instead of disappearing. `ROUND` is the exact
+signed, char-derived `combatround` value across `-128..127` without clamping or
+normalization. Classic did not persistently draw a numeric round value; this is
+a bounded remaster presentation of authoritative engine state, not a claim to
+reproduce Classic pixels. `ENEMIES LEFT` is the exact signed int16 difference
+of the separately promoted raw `numenemy` and `killmon` values across
+`-255..255` without reconstruction from combatant records. Its snapshot
+projection is optional: absence suppresses the complete header rather than
+fabricating zero. Layout retains complete internal semantic accessibility text,
+`Combat awareness; round n; enemies remaining n.`, without an OS-publication
+claim. This passive information-only slice adds no action
+composition, dispatch, tag, input, Classic-source, or replay-vocabulary path.
 On eligible exploration and dungeon screens, party cards expose typed
 `SelectPartyMemberAction` payloads. Their distinct tagged event is
 late-validated against a fresh party snapshot, then a narrow
@@ -562,7 +577,8 @@ similar. Each surface/role pair has exactly one status:
 The inventory revision covers the complete reviewed contract: every stable ID,
 surface, role kind, status, evidence statement, and cited Classic
 UI/control-map source anchor. Any change to any field or cited anchor requires
-a new revision and review. The inventory and runtime predicate serve different
+a new revision and review. The current reviewed manifest is pinned to content
+digest `0x0CE587F3694618F2`. The inventory and runtime predicate serve different
 purposes. Static coverage proves that the reviewed global role census contains
 no missing, unknown, duplicate, or unaccounted entry. A crop request may proceed
 only if all of the following independently sourced evidence succeeds for the
@@ -592,8 +608,8 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 67
-`semantic_complete`, and 22 `missing` roles: 15 interactions and seven
+The 95-row inventory currently contains six `retained_in_crop`, 69
+`semantic_complete`, and 20 `missing` roles: 15 interactions and five
 essential-information roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
@@ -604,19 +620,19 @@ inventory remains authoritative and must reject an omitted role:
 | Dungeon | The corresponding dungeon Heal, Trade, condition drilldown, and per-member Auto, including dungeon-specific availability and input semantics. Money management, context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and quick Equipment remain distinct covered rows. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
-The seven `missing` essential-information roles are exactly the exploration,
+The five `missing` essential-information roles are exactly the exploration,
 dungeon, and combat narrative-message rows; combat focused-combatant
-information; complete combat conditions and attacks; combat round; and combat
-enemies remaining. The common rail covers the three all-member-vitals rows,
-all three party-condition rows, and the two world fatigue and pooled-money
-rows. The separate world-context strip covers coordinates, campaign day/time,
-and combined Search/Torch state on exploration and dungeon. Those claims remain
-bounded: the pool does not represent member or bank holdings, combat exposes
-neither fatigue, pooled money, nor world context, and none promotes a remaining
-message, focused-combatant, or combat-detail row. Snapshot fields or the current
-placeholder Event Log do not satisfy information completeness merely by
-existing. The selected-member Details inspector remains a distinct bounded
-renderer.
+information; and complete combat conditions and attacks. The common rail covers
+the three all-member-vitals rows, all three party-condition rows, and the two
+world fatigue and pooled-money rows. The separate world-context strip covers
+coordinates, campaign day/time, and combined Search/Torch state on exploration
+and dungeon. The combat-awareness header covers only the exact signed round and
+raw `numenemy - killmon` information rows. Those claims remain bounded: the
+pool does not represent member or bank holdings, combat exposes neither
+fatigue, pooled money, nor world context, and none promotes a remaining message,
+focused-combatant, or combat-detail row. The current placeholder Event Log does
+not satisfy information completeness merely by existing. The selected-member
+Details inspector remains a distinct bounded renderer.
 
 ## Required automated coverage
 
@@ -686,6 +702,20 @@ Release-candidate tests must include:
   non-color markers; complete internal semantic text without an OS-publication
   claim; immutable input; and no new action, tag, input, Classic-source, or
   replay path;
+- COMBAT AWARENESS detached capture, optional model, responsive passive-header
+  layout, and common rendering throughout combat: exact signed char-derived
+  `combatround` retention without clamp or normalization; exact signed int16
+  subtraction after separately promoting raw `numenemy` and `killmon`, without
+  reconstruction from combatant records; an absent optional remaining-enemy
+  projection suppressing the whole awareness model/header rather than
+  fabricating zero; strict active-combat screen validation; persistence across
+  all four combat action pages and non-party turns with zero action tabs;
+  finite contained non-overlapping geometry at compact and wide sizes, minimum
+  and enlarged text, and supported backing scales; complete internal semantic
+  text without an OS-publication claim; immutable input; and no new action,
+  tag, input, Classic-source, or replay path. Treat numeric round as a bounded
+  remaster presentation of authoritative engine state because Classic did not
+  persistently draw it, not as pixel-equivalent Classic replacement evidence;
 - logical/physical coordinate transforms, hit testing, stable semantic focus,
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
@@ -849,6 +879,23 @@ Automated checks do not replace these release decisions:
   complete internal semantic text without assuming an OS publisher, combat
   absence, immutable state, and no new action, tag, input, Classic-source, or
   replay path;
+- COMBAT AWARENESS on disposable combat fixtures. Exercise signed-char
+  boundary, negative, zero, and positive `combatround`, `numenemy`, and
+  `killmon` inputs, including exact signed differences `-255` and `255`; compare
+  `ENEMIES LEFT` directly with separately promoted raw `numenemy - killmon` and
+  prove that changing combatant records cannot reconstruct or alter it.
+  Disengage the optional remaining-enemy projection and confirm the whole
+  model/header is absent instead of displaying a fabricated zero. Across party
+  and non-party turns, all four combat command pages, and the intentional zero-
+  tab branch, confirm the passive header persists with exact signed `ROUND` and
+  `ENEMIES LEFT` text. Record explicitly that Classic did not persistently draw
+  numeric round,
+  so its semantic presentation is bounded remaster state rather than a Classic-
+  pixel equivalence claim. At compact and wide sizes, minimum and enlarged
+  text, and 0.75x/1x/2x backing scales, verify finite containment, no overlap
+  with any present tabs or controls, complete internal semantic text without
+  assuming an OS publisher, immutable state, and no new action, tag, input,
+  Classic-source, or replay path;
 - before accepting any future crop-enabling change, review the globally complete
   versioned outdoor, dungeon, and combat chrome inventory row by row against an
   uncropped Classic reference, including every manifest field and cited source
@@ -863,8 +910,8 @@ Automated checks do not replace these release decisions:
   confirm every role is either wholly retained in the crop or semantically
   complete, every interactive target remains visible and keyboard/pointer
   operable, messages preserve order without loss or duplication, and money,
-  fatigue, world context, and focused-combatant state remain complete and
-  legible. Deliberately
+  fatigue, world context, combat awareness, and focused-combatant state remain
+  complete and legible. Deliberately
   invalidate each readiness input—global coverage, typed context variant,
   granular legacy window/front/full-frame state, inventory revision, nonzero
   snapshot/model revision and model context, model completeness, font, layout,

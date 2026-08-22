@@ -91,6 +91,13 @@ struct WorldContextModel {
   bool operator==(const WorldContextModel&) const = default;
 };
 
+struct CombatAwarenessModel {
+  int16_t round = 0;
+  int16_t enemies_remaining = 0;
+
+  bool operator==(const CombatAwarenessModel&) const = default;
+};
+
 // Stable semantic command identifiers are intentionally separate from physical
 // keys. A later input layer may remap keys without changing this model.
 using CommandIdentifier = std::string;
@@ -339,6 +346,7 @@ struct PresentationShellModel {
   std::vector<AnimationCueModel> animation_cues;
   std::vector<KeyboardTargetModel> keyboard_tab_order;
   std::optional<WorldContextModel> world_context;
+  std::optional<CombatAwarenessModel> combat_awareness;
 
   bool operator==(const PresentationShellModel&) const = default;
 };
@@ -348,6 +356,9 @@ struct PresentationShellModel {
 
 [[nodiscard]] std::optional<WorldContextModel> build_world_context_model(
     const GameSnapshot& snapshot);
+
+[[nodiscard]] std::optional<CombatAwarenessModel>
+build_combat_awareness_model(const GameSnapshot& snapshot);
 
 // The model is deterministic for identical values. Message events are ordered
 // by sequence (stable for ties), while non-message events never become user
