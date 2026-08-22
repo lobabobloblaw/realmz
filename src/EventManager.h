@@ -109,6 +109,7 @@ Boolean PushSemanticOpenLoadGameEvent(uint32_t tagged_message);
 Boolean PushSemanticRestPartyEvent(uint32_t tagged_message);
 Boolean PushSemanticSetCampStateEvent(uint32_t tagged_message);
 Boolean PushSemanticSetSearchStateEvent(uint32_t tagged_message);
+Boolean PushSemanticUseTorchEvent(uint32_t tagged_message);
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticFinishCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticDelayCombatantEvent(uint32_t tagged_message);
@@ -135,6 +136,11 @@ Boolean TakeSemanticOpenCharacterSheetMember(uint8_t* party_member);
 // semantic app1Evt handoff. The strict 0/1 value is one-shot and clears before
 // pointer validation, every subsequent poll, flush, or semantic cancellation.
 Boolean TakeSemanticSetSearchStateDesired(uint8_t* desired_searching);
+
+// Removes and returns the first-usable Torch locator staged for the current
+// neutral semantic app1Evt handoff. It is one-shot and clears before pointer
+// validation, every later poll, flush, or semantic cancellation.
+Boolean TakeSemanticUseTorchSource(uint8_t* member, uint8_t* slot);
 
 // Removes and returns the absolute cell staged for the current semantic
 // lowercase-"m" handoff. The value is one-shot and is cleared before every

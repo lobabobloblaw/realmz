@@ -79,8 +79,9 @@ does not pre-evaluate Classic's historically inverted `cancamp` permission
 remains authoritative for denial feedback,
 music and sound, camp and movement state, time advancement, control refresh,
 and the preserved `revertgame` exits.
-The GAME page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP, and
-SEARCH/STOP SEARCH. Its Search control is available during ordinary outdoor or
+The GAME page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP,
+SEARCH/STOP SEARCH, and TORCH. Its Search control is available during ordinary
+outdoor or
 dungeon navigation with no active encounter, including while camped. It shows
 `SEARCH` with accessibility text `Start searching` when searching is off and
 `STOP SEARCH` with `Stop searching` when searching is on. The typed
@@ -95,6 +96,24 @@ does not mutate search state directly. The preserved `buttonchoice` path with
 `theControl == search` alone owns sound, state, and icon changes. Secret checks and their search
 time cost still occur only when subsequent Classic movement invokes
 `checkforsecret`. The action adds no replay vocabulary.
+The adjacent typed `UseTorchAction` is a one-shot request. Its optional
+`TorchSource` carries the member and slot of the first exact item 805 when that
+item has a positive charge. It is a freshness locator, not a stable item
+identity, and deliberately carries neither charge nor current Light duration.
+An empty or negative-charge first exact match blocks every later match, exactly
+as Classic does. The single-use `0x5754` tag binds that locator to its outdoor
+or dungeon origin. Late validation requires the same
+freshly captured first usable source, exact outdoor or dungeon map/first-person
+presentation, and a live real Classic `torch` control before a neutral
+`app1Evt` enters the preserved `buttonchoice` branch. The action is unavailable
+when no usable source exists, but remains valid while camped, searching, or
+already lit. It forges no key or pointer, performs no direct inventory or Light
+mutation, and adds no `timeclick` or replay vocabulary. Classic alone owns
+charge consumption, item dropping and slot shifts, item/spell loading, RNG,
+sound, Light duration, darkness, and icon updates. Automated tests do not close
+the private manual-QA gap: a disposable private outdoor fixture and both
+dungeon presentations must still confirm those effects without redistributing
+fixture data.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
 Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, Escape, Use Scroll,
 and Center Cursor controls carry the stable active-party combatant ID in typed
@@ -236,10 +255,9 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 41 are `semantic_complete`, and 48 remain `missing`, so
-cropping stays disabled. Known missing outdoor and dungeon roles include
-use/consume Torch, Heal, Make
-Scroll/Area Search, context-sensitive Shop/Temple/seamless-encounter entry,
+`retained_in_crop`, 43 are `semantic_complete`, and 46 remain `missing`, so
+cropping stays disabled. Known missing outdoor and dungeon roles include Heal,
+Make Scroll/Area Search, context-sensitive Shop/Temple/seamless-encounter entry,
 Trade, Money/Swap, active-member inspection, item and
 condition drilldowns, and the per-member Auto controls. Known missing combat
 roles include conditional Turn Undead, per-member Auto, and the distinct
@@ -248,8 +266,8 @@ conditions, and monster attacks. Information gaps include ordered capture and
 retention of Classic messages for Event Log; pooled money and fatigue;
 party-wide condition indicators; complete all-member vitals and combat values,
 including armor class, spell points, and noncaster attack cadence; authoritative
-coordinates, calendar/clock, and complete combined Search/Torch state (Torch
-remains absent); focused-combatant details;
+coordinates, calendar/clock, and complete combined Search/Torch state (the
+persistent Torch-state presentation remains absent); focused-combatant details;
 and combat round and enemies-remaining counts. The bounded selected-member
 Details renderer does not implicitly satisfy those distinct all-member,
 party-wide, or combat roles.

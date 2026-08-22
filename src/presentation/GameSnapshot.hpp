@@ -18,6 +18,17 @@ using PartyMemberId = uint8_t;
 using CombatantId = int32_t;
 using ItemInstanceId = uint32_t;
 
+// Identifies the exact party inventory position that Classic's party-scoped
+// Torch control would consume first. The source is a freshness locator only;
+// Classic remains authoritative for charge use, removal, and every resulting
+// Light effect.
+struct TorchSource {
+  PartyMemberId member = 0;
+  uint8_t slot = 0;
+
+  bool operator==(const TorchSource&) const = default;
+};
+
 struct MeterView {
   int32_t current = 0;
   int32_t maximum = 0;
@@ -113,6 +124,11 @@ struct WorldView {
   // Value-only projection of Classic's persistent Search condition. Any
   // nonzero legacy value is active; presentation cannot normalize or mutate it.
   bool searching = false;
+  // The first exact Torch item that Classic can currently consume, including
+  // its party member and inventory slot. A disengaged value means no usable
+  // first Torch source exists. Appending preserves aggregate source
+  // compatibility for prior WorldView clients.
+  std::optional<TorchSource> usable_torch_source;
 
   bool operator==(const WorldView&) const = default;
 

@@ -8,6 +8,8 @@
 #include <string>
 #include <utility>
 
+#include "LegacyTorchSource.h"
+
 extern "C" {
 #include "realmz_orig/structs.h"
 
@@ -248,6 +250,13 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
   snapshot.world.presentation = world_presentation();
   snapshot.world.in_camp = incamp != 0;
   snapshot.world.searching = partycondition[PARTY_COND_SEARCH] != 0;
+  RealmzTorchSource legacy_torch_source{};
+  if (RealmzFindFirstUsableTorchSource(&legacy_torch_source)) {
+    snapshot.world.usable_torch_source = TorchSource{
+        .member = legacy_torch_source.member,
+        .slot = legacy_torch_source.slot,
+    };
+  }
   snapshot.world.party_x = partyx;
   snapshot.world.party_y = partyy;
   snapshot.world.land_level = landlevel;

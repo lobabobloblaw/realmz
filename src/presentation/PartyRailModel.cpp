@@ -376,6 +376,27 @@ std::vector<ActionControlModel> build_actions(
                 unavailable_token("Search is unavailable now")}));
   result.back().desired_searching = !snapshot.world.searching;
 
+  const std::optional<TorchSource> torch_source =
+      snapshot.world.usable_torch_source &&
+          (snapshot.world.usable_torch_source->member < 6U) &&
+          (snapshot.world.usable_torch_source->slot < 30U)
+      ? snapshot.world.usable_torch_source
+      : std::nullopt;
+  const bool can_use_torch = navigation_context && torch_source.has_value();
+  result.emplace_back(action(
+      ActionIntent::use_torch,
+      "action.party.torch",
+      "Use torch",
+      can_use_torch ? ActionAvailability::deferred_to_engine
+                    : ActionAvailability::unavailable,
+      tab_order++,
+      can_use_torch
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{unavailable_token(
+                navigation_context ? "No usable torch"
+                                   : "Torch use is unavailable now")}));
+  result.back().torch_source = torch_source;
+
   ActionAvailability scroll_availability =
       ActionAvailability::deferred_to_engine;
   std::optional<StateTokenModel> scroll_reason = engine_rules_token();

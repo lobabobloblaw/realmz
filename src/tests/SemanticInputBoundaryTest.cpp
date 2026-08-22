@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -176,6 +177,15 @@ bool consume_set_search_state(
     uint8_t& output) {
   return RealmzConsumeSemanticSetSearchStateEvent(
              expected_surface, tag, &output) != 0;
+}
+
+bool consume_use_torch(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint8_t& member,
+    uint8_t& slot) {
+  return RealmzConsumeSemanticUseTorchEvent(
+             expected_surface, tag, &member, &slot) != 0;
 }
 
 bool consume_guard(
@@ -1783,6 +1793,79 @@ void test_set_search_state_tag_encoding_and_collisions() {
     CHECK(!search_state_tags.contains(other_tag));
     CHECK(RealmzIsSemanticSetSearchStateTag(other_tag) == 0);
   }
+}
+
+void test_use_torch_tag_encoding_and_collisions() {
+  constexpr std::array surfaces{
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+  };
+  constexpr std::array sources{
+      TorchSource{.member = 0, .slot = 0},
+      TorchSource{.member = 1, .slot = 7},
+      TorchSource{.member = 5, .slot = 29},
+  };
+  std::set<uint32_t> torch_tags;
+  for (const auto surface : surfaces) {
+    for (const auto source : sources) {
+      const uint32_t tag = semantic_use_torch_tag(source, surface);
+      const uint32_t packed =
+          (static_cast<uint32_t>(source.member) << 5U) | source.slot;
+      CHECK(tag == (0x57540000U |
+          (static_cast<uint32_t>(surface) << 8U) | packed));
+      CHECK((tag & 0xFFFF0000U) == 0x57540000U);
+      CHECK(RealmzIsSemanticUseTorchTag(tag) != 0);
+      CHECK(RealmzSemanticUseTorchTagSurface(tag) == surface);
+      CHECK(RealmzSemanticUseTorchTagMember(tag) == source.member);
+      CHECK(RealmzSemanticUseTorchTagSlot(tag) == source.slot);
+      CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+      CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticSetSearchStateTag(tag) == 0);
+      CHECK(RealmzIsSemanticSetCampStateTag(tag) == 0);
+      CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+      CHECK(torch_tags.emplace(tag).second);
+    }
+  }
+  CHECK(torch_tags.size() == surfaces.size() * sources.size());
+  CHECK(semantic_use_torch_tag(
+      TorchSource{.member = 1, .slot = 7},
+      REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x57540127U);
+  CHECK(semantic_use_torch_tag(
+      TorchSource{.member = 6, .slot = 0},
+      REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  CHECK(semantic_use_torch_tag(
+      TorchSource{.member = 0, .slot = 30},
+      REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  CHECK(semantic_use_torch_tag(
+      TorchSource{.member = 0, .slot = 0},
+      REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_use_torch_tag(
+      TorchSource{.member = 0, .slot = 0},
+      REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+
+  for (const uint32_t malformed : {
+           0U,
+           0x57530000U,
+           0x57540000U,
+           0x57540300U,
+           0x5754FF00U,
+           0x5754011EU,
+           0x5754011FU,
+           0x575401C0U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticUseTorchTag(malformed) == 0);
+    CHECK(RealmzSemanticUseTorchTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+    CHECK(RealmzSemanticUseTorchTagMember(malformed) == 0);
+    CHECK(RealmzSemanticUseTorchTagSlot(malformed) == 0);
+  }
+
+  const uint32_t search = semantic_set_search_state_tag(
+      true, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(search != 0);
+  CHECK(!torch_tags.contains(search));
+  CHECK(RealmzIsSemanticUseTorchTag(search) == 0);
 }
 
 void test_open_scroll_case_tag_encoding_and_collisions() {
@@ -4259,6 +4342,152 @@ void test_set_search_state_late_validation_and_absolute_handoff() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_use_torch_late_validation_and_source_handoff() {
+  const TorchSource source{.member = 1, .slot = 7};
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.usable_torch_source = source;
+  const uint32_t tag = semantic_use_torch_tag(
+      source, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  uint8_t member = 0xA5;
+  uint8_t slot = 0x5A;
+
+  CHECK(!consume_use_torch(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+  CHECK(member == 0xA5);
+  CHECK(slot == 0x5A);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_use_torch(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+  CHECK(member == source.member);
+  CHECK(slot == source.slot);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // The completed scope is single-use, and invalid output pointers burn it
+  // without consulting either live context source.
+  member = 0xA5;
+  slot = 0x5A;
+  CHECK(!consume_use_torch(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+  CHECK(member == 0xA5);
+  CHECK(slot == 0x5A);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticUseTorchEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            tag,
+            nullptr,
+            &slot) == 0);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // Search/Camp state is deliberately irrelevant to Classic Torch use.
+  captured_snapshot.world.searching = true;
+  captured_snapshot.world.in_camp = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_use_torch(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+
+  for (const auto stale_source : {
+           std::optional<TorchSource>{},
+           std::optional<TorchSource>{TorchSource{.member = 0, .slot = 7}},
+           std::optional<TorchSource>{TorchSource{.member = 1, .slot = 8}},
+       }) {
+    captured_snapshot.world.usable_torch_source = stale_source;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    member = 0xA5;
+    slot = 0x5A;
+    CHECK(!consume_use_torch(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+    CHECK(member == 0xA5);
+    CHECK(slot == 0x5A);
+  }
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    captured_snapshot.world.usable_torch_source = source;
+    const uint32_t dungeon_tag = semantic_use_torch_tag(
+        source, REALMZ_SEMANTIC_INPUT_DUNGEON);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    CHECK(consume_use_torch(
+        REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_tag, member, slot));
+    CHECK(member == source.member);
+    CHECK(slot == source.slot);
+  }
+
+  // Originating surface mismatches fail before context capture.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::dungeon_map);
+  captured_snapshot.world.usable_torch_source = source;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  member = 0xA5;
+  slot = 0x5A;
+  CHECK(!consume_use_torch(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, tag, member, slot));
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  captured_snapshot.world.usable_torch_source = source;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_use_torch(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 0);
+
+  for (const auto& invalid : {
+           std::pair{
+               ScreenContext::dungeon,
+               WorldPresentation::outdoor,
+           },
+           std::pair{
+               ScreenContext::exploration,
+               WorldPresentation::dungeon_map,
+           },
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        invalid.first,
+        invalid.second);
+    captured_snapshot.world.usable_torch_source = source;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    member = 0xA5;
+    slot = 0x5A;
+    CHECK(!consume_use_torch(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+    CHECK(member == 0xA5);
+    CHECK(slot == 0x5A);
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.usable_torch_source = source;
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_use_torch(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, member, slot));
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void test_shared_combat_late_validation_matrix() {
   for (const auto& action : kCombatActionCases) {
     reset_valid_shared_combat();
@@ -5628,6 +5857,7 @@ int main() {
     test_rest_party_tag_encoding_and_collisions();
     test_set_camp_state_tag_encoding_and_collisions();
     test_set_search_state_tag_encoding_and_collisions();
+    test_use_torch_tag_encoding_and_collisions();
     test_open_scroll_case_tag_encoding_and_collisions();
     test_bandage_tag_encoding_collision_and_malformed_rejection();
     test_undo_tag_encoding_collision_and_malformed_rejection();
@@ -5650,6 +5880,7 @@ int main() {
     test_rest_party_late_validation_and_exact_translation();
     test_set_camp_state_late_validation_and_exact_translation();
     test_set_search_state_late_validation_and_absolute_handoff();
+    test_use_torch_late_validation_and_source_handoff();
     test_shared_combat_late_validation_matrix();
     test_show_combat_range_route_boundaries();
     test_bandage_combatant_route_and_canundo_boundaries();

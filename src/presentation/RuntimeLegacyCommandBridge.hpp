@@ -17,6 +17,7 @@ struct RuntimeLegacyCommandContext {
   bool adaptive_eligible = false;
   bool in_camp = false;
   bool searching = false;
+  std::optional<TorchSource> usable_torch_source = std::nullopt;
 
   bool operator==(const RuntimeLegacyCommandContext&) const = default;
 };
@@ -68,6 +69,9 @@ using RuntimeLegacySetCampStateSink = std::function<bool(
     const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacySetSearchStateSink = std::function<bool(
     bool,
+    const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyUseTorchSink = std::function<bool(
+    const TorchSource&,
     const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
@@ -151,6 +155,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacyRestPartySink rest_party;
   RuntimeLegacySetCampStateSink set_camp_state;
   RuntimeLegacySetSearchStateSink set_search_state;
+  RuntimeLegacyUseTorchSink use_torch;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -242,6 +247,13 @@ struct RuntimeLegacyCombatActionSinks {
 // semantic app-event handoff invokes the existing Classic Search control path.
 [[nodiscard]] bool runtime_legacy_context_supports_set_search_state(
     bool desired_searching,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Torch has no preserved keyboard route. The source is a bounded freshness
+// locator and must still equal Classic's freshly projected first usable exact
+// +805 item on a guarded world presentation before the app-event handoff.
+[[nodiscard]] bool runtime_legacy_context_supports_use_torch(
+    const TorchSource& source,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Game > Save Current Game menu selection consumed by the

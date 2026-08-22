@@ -96,6 +96,9 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
     } else if constexpr (std::is_same_v<Action, SetSearchStateAction>) {
       return invoke_handler(
           this->handlers_.set_search_state, payload, "set_search_state");
+    } else if constexpr (std::is_same_v<Action, UseTorchAction>) {
+      return invoke_handler(
+          this->handlers_.use_torch, payload, "use_torch");
     } else if constexpr (std::is_same_v<Action, GuardCombatantAction>) {
       return invoke_handler(
           this->handlers_.guard_combatant, payload, "guard_combatant");

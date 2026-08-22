@@ -846,7 +846,7 @@ LegacyActionHandlers make_handlers(
     return DispatchResult::handled();
   };
   handlers.set_search_state = [
-      context_provider = std::move(context_provider),
+      context_provider,
       set_search_state_sink =
           std::move(world_action_sinks.set_search_state)](
           const SetSearchStateAction& action) {
@@ -873,6 +873,39 @@ LegacyActionHandlers make_handlers(
     if (!set_search_state_sink(action.desired_searching, context)) {
       return DispatchResult::failed(
           "Legacy event queue rejected semantic set-search-state action");
+    }
+    return DispatchResult::handled();
+  };
+  handlers.use_torch = [
+      context_provider = std::move(context_provider),
+      use_torch_sink = std::move(world_action_sinks.use_torch)](
+          const UseTorchAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!use_torch_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy use-torch sink is not available");
+    }
+    if (!action.source) {
+      return DispatchResult::rejected(
+          "Torch use requires a fresh inventory source");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic Torch use");
+    }
+    if (!runtime_legacy_context_supports_use_torch(*action.source, context)) {
+      return DispatchResult::rejected(
+          "Torch use is not supported for this inventory source in the "
+          "current legacy context");
+    }
+    if (!use_torch_sink(*action.source, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic use-torch action");
     }
     return DispatchResult::handled();
   };
@@ -1276,6 +1309,24 @@ bool runtime_legacy_context_supports_set_search_state(
     const RuntimeLegacyCommandContext& context) noexcept {
   if (!context.adaptive_eligible ||
       (context.searching == desired_searching)) {
+    return false;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return true;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  return (context.screen == ScreenContext::dungeon) && dungeon_presentation;
+}
+
+bool runtime_legacy_context_supports_use_torch(
+    const TorchSource& source,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible || (source.member > kMaximumPartyMemberId) ||
+      (source.slot > 29) || !context.usable_torch_source ||
+      (*context.usable_torch_source != source)) {
     return false;
   }
   if ((context.screen == ScreenContext::exploration) &&

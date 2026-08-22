@@ -101,6 +101,15 @@ RealmzSemanticInputSurface RealmzSemanticSetSearchStateTagSurface(
 uint8_t RealmzSemanticSetSearchStateTagDesiredSearching(
     uint32_t tagged_message);
 
+// Use-Torch tags carry the originating world surface plus the bounded party
+// member/inventory slot freshness locator selected by Classic's first exact
+// usable +805 scan. No charge, light strength, key, or pointer is encoded.
+uint8_t RealmzIsSemanticUseTorchTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticUseTorchTagSurface(
+    uint32_t tagged_message);
+uint8_t RealmzSemanticUseTorchTagMember(uint32_t tagged_message);
+uint8_t RealmzSemanticUseTorchTagSlot(uint32_t tagged_message);
+
 // Guard tags carry the acting combatant explicitly and are valid only on the
 // combat surface. This prevents a queued command from applying to a later turn.
 uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
@@ -301,6 +310,15 @@ uint8_t RealmzConsumeSemanticSetSearchStateEvent(
     uint32_t tagged_message,
     uint8_t* desired_searching);
 
+// Revalidates the exact live world context and first usable Torch source, then
+// returns only its locator for EventManager's one-shot neutral app1Evt
+// sideband. Classic's real Torch control remains the sole mutation path.
+uint8_t RealmzConsumeSemanticUseTorchEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint8_t* member,
+    uint8_t* slot);
+
 // Revalidates the live acting party combatant, then returns the preserved
 // Classic "g" key record to the top-level combat loop.
 uint8_t RealmzConsumeSemanticGuardCombatantEvent(
@@ -479,6 +497,10 @@ struct CombatFieldCell;
 
 [[nodiscard]] uint32_t semantic_set_search_state_tag(
     bool desired_searching,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_use_torch_tag(
+    const TorchSource& source,
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_guard_combatant_tag(

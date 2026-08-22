@@ -356,6 +356,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic Search input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticUseTorchEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic Torch input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic guard input");
@@ -741,6 +745,28 @@ void verify_event_manager(const fs::path& repository_root) {
           count_identifier(search_wrapper, "keyDown") == 0 &&
           count_identifier(search_wrapper, "mouseDown") == 0,
       "public semantic Search enqueue must delegate only to its tagged queue");
+
+  const std::string push_torch = function_body(
+      source, "push_semantic_use_torch_event");
+  const std::string compact_push_torch = without_whitespace(push_torch);
+  require(count_identifier(
+              push_torch, "RealmzIsSemanticUseTorchTag") == 1 &&
+          count_identifier(push_torch, "app1Evt") == 1,
+      "semantic Torch enqueue must validate one Torch tag and retain it as "
+      "one app1Evt");
+  require(count_identifier(push_torch, "keyDown") == 0 &&
+          count_identifier(push_torch, "mouseDown") == 0 &&
+          compact_push_torch.contains("ev.what=app1Evt;") &&
+          compact_push_torch.contains("ev.message=tagged_message;"),
+      "semantic Torch enqueue must preserve its source-tagged payload without "
+      "synthesizing Classic input");
+  const std::string torch_wrapper = function_body(
+      source, "PushSemanticUseTorchEvent");
+  require(without_whitespace(torch_wrapper).contains(
+              "returnem.push_semantic_use_torch_event(tagged_message);") &&
+          count_identifier(torch_wrapper, "keyDown") == 0 &&
+          count_identifier(torch_wrapper, "mouseDown") == 0,
+      "public semantic Torch enqueue must delegate only to its tagged queue");
 
   const std::string push_guard = function_body(
       source, "push_semantic_guard_combatant_event");
@@ -1241,6 +1267,10 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must have one late Search consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticUseTorchEvent") == 1,
+      "semantic gameplay wrapper must have one late Torch consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late guard consumer");
   require(count_identifier(
@@ -1310,8 +1340,8 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 27,
-      "semantic gameplay wrapper must recognize all twenty-seven tagged paths");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 28,
+      "semantic gameplay wrapper must recognize all twenty-eight tagged paths");
   require(count_identifier(semantic_wrapper, "keyDown") == 25 &&
           count_text(compact_semantic, "ret->what=keyDown;") == 23 &&
           count_text(
@@ -1373,6 +1403,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticSetSearchStateEvent") == 1,
       "EventManager may consume semantic Search input only inside its gameplay "
+      "wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticUseTorchEvent") == 1,
+      "EventManager may consume semantic Torch input only inside its gameplay "
       "wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
@@ -1674,9 +1708,28 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", search_window);
   const std::size_t search_rejected_message = compact_semantic.find(
       "ret->message=0", search_null);
+  const std::size_t torch_branch = compact_semantic.find(
+      "RealmzIsSemanticUseTorchTag(ret->message)",
+      search_rejected_message);
+  const std::size_t torch_consume = compact_semantic.find(
+      "RealmzConsumeSemanticUseTorchEvent(", torch_branch);
+  const std::size_t torch_stage = compact_semantic.find(
+      "stage_semantic_use_torch_source(member,slot);", torch_consume);
+  const std::size_t torch_message = compact_semantic.find(
+      "ret->message=0", torch_stage);
+  const std::size_t torch_where = compact_semantic.find(
+      "ret->where={};", torch_message);
+  const std::size_t torch_modifiers = compact_semantic.find(
+      "ret->modifiers=0", torch_where);
+  const std::size_t torch_window = compact_semantic.find(
+      "ret->window_port=nullptr", torch_modifiers);
+  const std::size_t torch_null = compact_semantic.find(
+      "ret->what=nullEvent", torch_window);
+  const std::size_t torch_rejected_message = compact_semantic.find(
+      "ret->message=0", torch_null);
   const std::size_t guard_branch = compact_semantic.find(
       "RealmzIsSemanticGuardCombatantTag(ret->message)",
-      search_rejected_message);
+      torch_rejected_message);
   const std::size_t guard_consume = compact_semantic.find(
       "RealmzConsumeSemanticGuardCombatantEvent(", guard_branch);
   const std::size_t guard_keydown = compact_semantic.find(
@@ -1937,6 +1990,15 @@ void verify_event_manager(const fs::path& repository_root) {
           search_window != std::string::npos &&
           search_null != std::string::npos &&
           search_rejected_message != std::string::npos &&
+          torch_branch != std::string::npos &&
+          torch_consume != std::string::npos &&
+          torch_stage != std::string::npos &&
+          torch_message != std::string::npos &&
+          torch_where != std::string::npos &&
+          torch_modifiers != std::string::npos &&
+          torch_window != std::string::npos &&
+          torch_null != std::string::npos &&
+          torch_rejected_message != std::string::npos &&
           guard_branch != std::string::npos &&
           guard_consume != std::string::npos &&
           guard_keydown != std::string::npos &&
@@ -2094,7 +2156,16 @@ void verify_event_manager(const fs::path& repository_root) {
           search_modifiers < search_window &&
           search_window < search_null &&
           search_null < search_rejected_message &&
-          search_rejected_message < guard_branch &&
+          search_rejected_message < torch_branch &&
+          torch_branch < torch_consume &&
+          torch_consume < torch_stage &&
+          torch_stage < torch_message &&
+          torch_message < torch_where &&
+          torch_where < torch_modifiers &&
+          torch_modifiers < torch_window &&
+          torch_window < torch_null &&
+          torch_null < torch_rejected_message &&
+          torch_rejected_message < guard_branch &&
           guard_branch < guard_consume &&
           guard_consume < guard_keydown &&
           guard_keydown < guard_null &&
@@ -2193,10 +2264,15 @@ void verify_event_manager(const fs::path& repository_root) {
       "inert rejection before Search");
   require(scope_block_close < search_branch &&
           search_branch < search_consume && search_consume < search_stage &&
-          search_stage < search_null && search_null < guard_branch,
+          search_stage < search_null && search_null < torch_branch,
       "Search must leave semantic gameplay scope, revalidate its absolute "
       "desired state, and stage only a neutral app1Evt one-shot before combat "
       "routes");
+  require(scope_block_close < torch_branch &&
+          torch_branch < torch_consume && torch_consume < torch_stage &&
+          torch_stage < torch_null && torch_null < guard_branch,
+      "Torch must leave semantic gameplay scope, revalidate its exact source, "
+      "and stage only a neutral app1Evt one-shot before combat routes");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
       "Range must leave semantic gameplay scope before its late Classic key "
@@ -2308,6 +2384,24 @@ void verify_event_manager(const fs::path& repository_root) {
               "clear_pending_semantic_set_search_state_desired();") <
           compact_semantic.find("*ret=em.get_next_semantic_event(0);"),
       "Search one-shot state must clear before every event poll");
+  require(count_identifier(
+              get_next, "clear_pending_semantic_use_torch_source") == 1 &&
+          count_identifier(
+              wait_next, "clear_pending_semantic_use_torch_source") == 1 &&
+          count_identifier(
+              semantic_wrapper, "clear_pending_semantic_use_torch_source") == 1,
+      "every ordinary, raw, or semantic event poll must clear a stale staged "
+      "Torch source before dequeuing another event");
+  require(without_whitespace(get_next).find(
+              "clear_pending_semantic_use_torch_source();") <
+          without_whitespace(get_next).find("*ret=em.get_next_event(0);") &&
+          compact_wait_next.find(
+              "clear_pending_semantic_use_torch_source();") <
+          compact_wait_next.find("*ret=em.get_next_event(sleep);") &&
+          compact_semantic.find(
+              "clear_pending_semantic_use_torch_source();") <
+          compact_semantic.find("*ret=em.get_next_semantic_event(0);"),
+      "Torch one-shot source must clear before every event poll");
   require(compact_wait_next.contains(
               "*ret=em.get_next_event(sleep);"
               "return(ret->what!=nullEvent);"),
@@ -2334,6 +2428,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(cancel,
               "clear_pending_semantic_set_search_state_desired") == 1,
       "semantic cancellation must clear a staged Search state once");
+  require(count_identifier(cancel,
+              "clear_pending_semantic_use_torch_source") == 1,
+      "semantic cancellation must clear a staged Torch source once");
   const std::string take_character_sheet = function_body(
       source, "TakeSemanticOpenCharacterSheetMember");
   const std::string compact_take_character_sheet =
@@ -2379,6 +2476,21 @@ void verify_event_manager(const fs::path& repository_root) {
               compact_take_search.find("if(!pending||!desired_searching)"),
       "the Classic Search handoff must clear before null-output validation and "
       "return a strict absolute boolean at most once");
+  const std::string take_torch = function_body(
+      source, "TakeSemanticUseTorchSource");
+  const std::string compact_take_torch = without_whitespace(take_torch);
+  require(count_identifier(take_torch,
+              "clear_pending_semantic_use_torch_source") == 1 &&
+          compact_take_torch.contains(
+              "constautopending=pending_semantic_use_torch_source;") &&
+          compact_take_torch.contains("if(!pending||!member||!slot)") &&
+          compact_take_torch.contains("*member=pending->member;") &&
+          compact_take_torch.contains("*slot=pending->slot;") &&
+          compact_take_torch.find(
+              "clear_pending_semantic_use_torch_source();") <
+              compact_take_torch.find("if(!pending||!member||!slot)"),
+      "the Classic Torch handoff must clear before null-output validation and "
+      "return its staged locator at most once");
   const std::string flush = function_body(source, "FlushEvents");
   require(count_identifier(flush,
               "clear_pending_semantic_open_character_sheet_member") == 1,
@@ -2391,6 +2503,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(flush,
               "clear_pending_semantic_set_search_state_desired") == 1,
       "Classic event flushing must also make a staged Search state inert");
+  require(count_identifier(flush,
+              "clear_pending_semantic_use_torch_source") == 1,
+      "Classic event flushing must also make a staged Torch source inert");
   const std::size_t invalidate = compact_cancel.find(
       "RealmzInvalidateSemanticInputBoundary()");
   const std::size_t discard = compact_cancel.find(
@@ -5525,9 +5640,11 @@ void verify_rest_party_window_manager_contract(
   require(without_whitespace(legacy_handlers).ends_with(
               "LegacyActionHandler<RestPartyAction>rest_party;"
               "LegacyActionHandler<SetCampStateAction>set_camp_state;"
-              "LegacyActionHandler<SetSearchStateAction>set_search_state;}"),
+              "LegacyActionHandler<SetSearchStateAction>set_search_state;"
+              "LegacyActionHandler<UseTorchAction>use_torch;}"),
       "LegacyActionHandlers must retain Rest and Camp followed by append-only "
-      "Search so positional aggregate clients keep their prior member order");
+      "Search and Torch so positional aggregate clients keep their prior member "
+      "order");
 
   const std::string runtime_source = code_only(read_file(
       repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
@@ -6534,14 +6651,18 @@ void verify_set_search_state_window_manager_contract(
               "handlers.set_camp_state=[context_provider,") &&
           compact_runtime.contains(
               "handlers.set_search_state=["
+              "context_provider,") &&
+          compact_runtime.contains(
+              "handlers.use_torch=["
               "context_provider=std::move(context_provider),") &&
           compact_runtime.contains(
               "runtime_legacy_context_supports_set_search_state("
               "action.desired_searching,context)") &&
           compact_runtime.contains(
               "set_search_state_sink(action.desired_searching,context)"),
-      "Camp must copy the shared provider and only the final Search handler may "
-      "move it, while preserving the typed desired state through its sink");
+      "Camp and Search must copy the shared provider and only final Torch may "
+      "move it, while Search preserves the typed desired state through its "
+      "sink");
 
   const std::string boundary_source = code_only(read_file(
       repository_root / "src/presentation/SemanticInputBoundary.cpp"));
@@ -6696,6 +6817,331 @@ void verify_set_search_state_window_manager_contract(
         "Search slice must not add replay actions, tags, enqueue, consume, or "
         "sideband vocabulary");
   }
+}
+
+void verify_use_torch_window_manager_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string runtime_context = type_body(
+      runtime_header, "RuntimeLegacyCommandContext");
+  const std::string world_sinks_type = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  require(count_identifier(runtime_context, "usable_torch_source") == 1 &&
+          count_identifier(runtime_header, "RuntimeLegacyUseTorchSink") == 2 &&
+          count_identifier(world_sinks_type, "use_torch") == 1,
+      "runtime bridge must carry one optional Torch locator and one named "
+      "typed Torch sink");
+
+  const std::string window_raw = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string window_source = code_only(window_raw);
+  const std::string context_capture = function_body(
+      window_source, "capture_runtime_legacy_command_context");
+  const std::string compact_capture = without_whitespace(context_capture);
+  require(compact_capture.contains(
+              "context.usable_torch_source="
+              "snapshot.world.usable_torch_source;") &&
+          count_identifier(context_capture, "usable_torch_source") == 2,
+      "production runtime context must capture the exact usable Torch "
+      "locator from its fresh snapshot");
+
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t world_sinks_name = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t world_sinks_open = skip_whitespace(
+      create_window,
+      world_sinks_name +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(world_sinks_name != std::string::npos &&
+          world_sinks_open < create_window.size() &&
+          create_window[world_sinks_open] == '{',
+      "WindowManager named world-action sink bundle is missing");
+  const std::size_t world_sinks_close = matching_delimiter(
+      create_window, world_sinks_open, '{', '}');
+  const std::string world_sinks = create_window.substr(
+      world_sinks_open, world_sinks_close - world_sinks_open + 1U);
+  const std::string sink = designated_lambda_body(world_sinks, "use_torch");
+  const std::string compact_sink = without_whitespace(sink);
+  const std::size_t sink_surface = compact_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_match = compact_sink.find(
+      "constboolmatching_surface=", sink_surface);
+  const std::size_t sink_predicate = compact_sink.find(
+      "runtime_legacy_context_supports_use_torch(source,context)",
+      sink_match);
+  const std::size_t sink_tag = compact_sink.find(
+      "semantic_use_torch_tag(source,surface)", sink_predicate);
+  const std::size_t sink_push = compact_sink.find(
+      "returntag&&PushSemanticUseTorchEvent(tag);", sink_tag);
+  require(sink_surface != std::string::npos && sink_match != std::string::npos &&
+          sink_predicate != std::string::npos && sink_tag != std::string::npos &&
+          sink_push != std::string::npos && sink_surface < sink_match &&
+          sink_match < sink_predicate && sink_predicate < sink_tag &&
+          sink_tag < sink_push,
+      "production Torch sink must bind the active matching world surface, "
+      "validate the typed locator, encode it, and enqueue exactly once");
+  require(count_identifier(sink, "keyDown") == 0 &&
+          count_identifier(sink, "mouseDown") == 0 &&
+          count_identifier(sink, "checkforitem") == 0 &&
+          count_identifier(sink, "buttonchoice") == 0,
+      "production Torch sink must not synthesize input, inspect inventory "
+      "again, or enter Classic behavior directly");
+
+  const std::string model_source = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp"));
+  const std::string build_actions = function_body(model_source, "build_actions");
+  const std::string compact_actions = without_whitespace(build_actions);
+  for (const auto needle : {
+           "conststd::optional<TorchSource>torch_source=",
+           "snapshot.world.usable_torch_source->member<6U",
+           "snapshot.world.usable_torch_source->slot<30U",
+           "constboolcan_use_torch=navigation_context&&"
+               "torch_source.has_value()",
+           "ActionIntent::use_torch",
+           "can_use_torch?ActionAvailability::deferred_to_engine:"
+               "ActionAvailability::unavailable",
+           "result.back().torch_source=torch_source",
+       }) {
+    require(compact_actions.contains(needle),
+        std::string("Torch action modeling must retain ") + needle);
+  }
+  require(count_identifier(build_actions, "use_torch") == 1,
+      "Torch must have exactly one always-present modeled action shell");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  const std::size_t action = compact_present.find("ActionIntent::use_torch");
+  const std::size_t visible = compact_present.find(
+      "constbooltorch_control_visible=", action);
+  const std::size_t source = compact_present.find(
+      "conststd::optional<realmz::presentation::TorchSource>torch_source=",
+      visible);
+  const std::size_t available = compact_present.find(
+      "constbooltorch_available=", source);
+  const std::size_t engaged = compact_present.find(
+      "torch_source.has_value()", available);
+  const std::size_t can_invoke = compact_present.find(
+      "torch_action->can_invoke()", engaged);
+  const std::size_t context_match = compact_present.find(
+      "snapshot_context_matches", can_invoke);
+  const std::size_t predicate = compact_present.find(
+      "runtime_legacy_context_supports_use_torch(", context_match);
+  const std::size_t predicate_source = compact_present.find(
+      "*torch_source", predicate);
+  const std::size_t context_source = compact_present.find(
+      ".usable_torch_source=snapshot.world.usable_torch_source",
+      predicate_source);
+  const std::size_t request_visible = compact_present.find(
+      ".torch_control_visible=torch_control_visible", context_source);
+  const std::size_t request_available = compact_present.find(
+      ".torch_available=torch_available", request_visible);
+  const std::size_t request_source = compact_present.find(
+      ".torch_source=torch_source", request_available);
+  require(action != std::string::npos && visible != std::string::npos &&
+          source != std::string::npos && available != std::string::npos &&
+          engaged != std::string::npos && can_invoke != std::string::npos &&
+          context_match != std::string::npos && predicate != std::string::npos &&
+          predicate_source != std::string::npos &&
+          context_source != std::string::npos &&
+          request_visible != std::string::npos &&
+          request_available != std::string::npos &&
+          request_source != std::string::npos && action < visible &&
+          visible < source && source < available && available < engaged &&
+          engaged < can_invoke && can_invoke < context_match &&
+          context_match < predicate && predicate < predicate_source &&
+          predicate_source < context_source && context_source < request_visible &&
+          request_visible < request_available &&
+          request_available < request_source,
+      "Torch composition must carry an engaged modeled locator through fresh "
+      "availability and into the GAME layout request");
+
+  const std::string layout_header = code_only(read_file(
+      repository_root / "src/presentation/ShellControlLayout.hpp"));
+  const std::string request_type = type_body(
+      layout_header, "ShellControlLayoutRequest");
+  require(count_identifier(request_type, "torch_control_visible") == 1 &&
+          count_identifier(request_type, "torch_available") == 1 &&
+          count_identifier(request_type, "torch_source") == 1,
+      "shell layout request must carry one Torch visibility, availability, "
+      "and optional locator field");
+  const std::string layout_source = code_only(read_file(
+      repository_root / "src/presentation/ShellControlLayout.cpp"));
+  const std::string layout = function_body(
+      layout_source, "compute_shell_control_layout");
+  const std::string compact_layout = without_whitespace(layout);
+  const std::size_t layout_torch = compact_layout.find(
+      "if(request.torch_control_visible){");
+  const std::size_t layout_end = compact_layout.find(
+      "}else{return{};}", layout_torch);
+  require(layout_torch != std::string::npos && layout_end != std::string::npos &&
+          layout_torch < layout_end,
+      "GAME shell layout must contain a bounded Torch control branch");
+  const std::string torch_layout = compact_layout.substr(
+      layout_torch, layout_end - layout_torch);
+  for (const auto needle : {
+           "ShellControlKind::use_torch",
+           "request.torch_source.has_value()",
+           ".enabled=request.torch_available&&request.navigation_available&&"
+               "request.torch_source.has_value()",
+           ".payload=UseTorchAction{request.torch_source}",
+       }) {
+    require(torch_layout.contains(needle),
+        std::string("Torch layout must retain ") + needle);
+  }
+
+  const std::size_t live_torch = compact_present.find(
+      "std::get_if<realmz::presentation::UseTorchAction>", request_source);
+  const std::size_t live_torch_end = compact_present.find(
+      "std::get_if<realmz::presentation::GuardCombatantAction>", live_torch);
+  require(live_torch != std::string::npos &&
+          live_torch_end != std::string::npos && live_torch < live_torch_end,
+      "composition-time Torch liveness branch is missing");
+  const std::string live_torch_branch = compact_present.substr(
+      live_torch, live_torch_end - live_torch);
+  for (const auto needle : {
+           "ShellControlKind::use_torch",
+           "WorldActionPage::game",
+           "action_panel.contains(control.bounds)",
+           "snapshot.screen==context.screen",
+           "snapshot.world.presentation==context.world_presentation",
+           "snapshot.world.usable_torch_source==context.usable_torch_source",
+           "torch->source.has_value()",
+           "snapshot.world.usable_torch_source==torch->source",
+           "ActionIntent::use_torch",
+           "modeled_action->can_invoke()",
+           "modeled_action->torch_source==torch->source",
+           "runtime_legacy_context_supports_use_torch(*torch->source,context)",
+       }) {
+    require(live_torch_branch.contains(needle),
+        std::string("composition-time Torch liveness must retain ") + needle);
+  }
+
+  const std::string keyboard = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_torch = compact_keyboard.find(
+      "std::get_if<realmz::presentation::UseTorchAction>");
+  const std::size_t keyboard_torch_end = compact_keyboard.find(
+      "std::get_if<realmz::presentation::GuardCombatantAction>",
+      keyboard_torch);
+  require(keyboard_torch != std::string::npos &&
+          keyboard_torch_end != std::string::npos &&
+          keyboard_torch < keyboard_torch_end,
+      "keyboard Torch liveness branch is missing");
+  const std::string keyboard_torch_branch = compact_keyboard.substr(
+      keyboard_torch, keyboard_torch_end - keyboard_torch);
+  for (const auto needle : {
+           "!surface_matches_context",
+           "!torch->source",
+           "ShellControlKind::use_torch",
+           "WorldActionPage::game",
+           "action_bar.contains(control.bounds)",
+           "runtime_legacy_context_supports_use_torch(*torch->source,context)",
+           "LegacyGameSnapshotSource().capture()",
+           "snapshot->screen!=context.screen",
+           "snapshot->world.presentation!=context.world_presentation",
+           "snapshot->world.usable_torch_source!=context.usable_torch_source",
+           "snapshot->world.usable_torch_source!=torch->source",
+       }) {
+    require(keyboard_torch_branch.contains(needle),
+        std::string("keyboard Torch liveness must retain ") + needle);
+  }
+  require(count_identifier(keyboard_torch_branch, "checkforitem") == 0 &&
+          count_identifier(keyboard_torch_branch, "buttonchoice") == 0 &&
+          count_identifier(keyboard_torch_branch, "SDL_PollEvent") == 0,
+      "WindowManager Torch liveness must be nonmutating and must not pump or "
+      "recursively dispatch input");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::UseTorchAction>(&control.payload)");
+  const std::size_t dispatch_live = compact_dispatch.find(
+      "this->remastered_shell_keyboard_route_is_eligible()", dispatch_payload);
+  const std::size_t dispatch_guard = compact_dispatch.find(
+      "(use_torch&&", dispatch_live);
+  const std::size_t dispatch_source = compact_dispatch.find(
+      "!use_torch->source", dispatch_guard);
+  const std::size_t dispatch_kind = compact_dispatch.find(
+      "ShellControlKind::use_torch", dispatch_source);
+  const std::size_t dispatch_page = compact_dispatch.find(
+      "WorldActionPage::game", dispatch_kind);
+  const std::size_t dispatch_exploration = compact_dispatch.find(
+      "ScreenContext::exploration", dispatch_page);
+  const std::size_t dispatch_dungeon = compact_dispatch.find(
+      "ScreenContext::dungeon", dispatch_exploration);
+  const std::size_t dispatch_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_dungeon);
+  const std::size_t dispatch_action = compact_dispatch.find(
+      "constrealmz::presentation::UIActionaction{", dispatch_panel);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "runtime_legacy_command_bridge->dispatch(action)", dispatch_action);
+  require(dispatch_payload != std::string::npos &&
+          dispatch_live != std::string::npos &&
+          dispatch_guard != std::string::npos &&
+          dispatch_source != std::string::npos &&
+          dispatch_kind != std::string::npos &&
+          dispatch_page != std::string::npos &&
+          dispatch_exploration != std::string::npos &&
+          dispatch_dungeon != std::string::npos &&
+          dispatch_panel != std::string::npos &&
+          dispatch_action != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_payload < dispatch_live && dispatch_live < dispatch_guard &&
+          dispatch_guard < dispatch_source && dispatch_source < dispatch_kind &&
+          dispatch_kind < dispatch_page && dispatch_page < dispatch_exploration &&
+          dispatch_exploration < dispatch_dungeon &&
+          dispatch_dungeon < dispatch_panel && dispatch_panel < dispatch_action &&
+          dispatch_action < dispatch_bridge,
+      "Torch dispatch must require a live source-bearing GAME control on an "
+      "exploration/dungeon world action bar before typed bridge dispatch");
+
+  const std::string renderer = function_body(
+      window_source, "draw_shell_panel_contents");
+  const std::string compact_renderer = without_whitespace(renderer);
+  const std::size_t renderer_presence = compact_renderer.find(
+      "constboolhas_semantic_torch=std::ranges::any_of(");
+  const std::size_t renderer_summary = compact_renderer.find(
+      "if(has_semantic_torch){action_summary+=;}", renderer_presence);
+  const std::size_t renderer_compact_summary = compact_renderer.find(
+      "if(has_semantic_torch){append_summary();}", renderer_summary);
+  const std::size_t renderer_gate = compact_renderer.find(
+      "has_semantic_search||has_semantic_torch||has_semantic_guard",
+      renderer_compact_summary);
+  const std::size_t renderer_allowlist = compact_renderer.find(
+      "control.kind!=realmz::presentation::ShellControlKind::use_torch",
+      renderer_gate);
+  require(renderer_presence != std::string::npos &&
+          renderer_summary != std::string::npos &&
+          renderer_compact_summary != std::string::npos &&
+          renderer_gate != std::string::npos &&
+          renderer_allowlist != std::string::npos &&
+          renderer_presence < renderer_summary &&
+          renderer_summary < renderer_compact_summary &&
+          renderer_compact_summary < renderer_gate &&
+          renderer_gate < renderer_allowlist &&
+          count_identifier(renderer, "has_semantic_torch") == 5 &&
+          count_identifier(renderer, "use_torch") == 2 &&
+          count_text(window_raw, "action_summary += \" · TORCH\"") == 1 &&
+          count_text(window_raw, "append_summary(\"TORCH\")") == 1,
+      "action-bar renderer must summarize Torch in paged and compact world "
+      "chrome and admit only its explicit semantic control kind");
 }
 
 void verify_selected_party_details_renderer_contract(
@@ -7082,7 +7528,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x5C623209F617C588ULL") !=
+          coverage_header.find("0x97D7228BC94A5358ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -7172,7 +7618,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x5C623209F617C588ULL") !=
+          coverage_test.find("0x97D7228BC94A5358ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -8343,6 +8789,10 @@ void verify_top_level_loop(
       std::string(function_name) +
           " must leave tagged Search consumption to EventManager");
   require(count_identifier(
+              body, "RealmzConsumeSemanticUseTorchEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged Torch consumption to EventManager");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must leave tagged guard consumption to EventManager");
@@ -8583,6 +9033,73 @@ void verify_search_outer_loop(
           " must jump out of app1Evt to the existing buttonchoice label");
 }
 
+void verify_torch_outer_loop(
+    std::string_view body,
+    std::string_view function_name,
+    std::string_view handoff_label) {
+  const std::string compact = without_whitespace(body);
+  const std::size_t take = compact.find(
+      "TakeSemanticUseTorchSource(&semantic_torch_member,"
+      "&semantic_torch_slot)");
+  require(take != std::string::npos,
+      std::string(function_name) +
+          " must take one staged Torch source in app1Evt");
+  const std::size_t branch_start = compact.rfind("case", take);
+  const std::size_t branch_end = compact.find("case", take + 1U);
+  require(branch_start != std::string::npos &&
+          branch_end != std::string::npos && branch_start < take &&
+          take < branch_end,
+      std::string(function_name) +
+          " Torch handoff must remain bounded to app1Evt");
+  const std::string branch = compact.substr(
+      branch_start, branch_end - branch_start);
+  require(count_identifier(body, "TakeSemanticUseTorchSource") == 1 &&
+          count_identifier(branch, "TakeSemanticUseTorchSource") == 1 &&
+          count_identifier(
+              branch, "RealmzCurrentFirstUsableTorchSourceMatches") == 1,
+      std::string(function_name) +
+          " must own one Torch take and one fresh nonmutating source check");
+  require(count_identifier(branch, "FindControl") == 0 &&
+          count_identifier(branch, "GlobalToLocal") == 0 &&
+          count_identifier(branch, "mouseDown") == 0 &&
+          count_identifier(branch, "keyDown") == 0 &&
+          count_identifier(branch, "checkforitem") == 0 &&
+          count_identifier(branch, "loaditem") == 0 &&
+          count_identifier(branch, "resolvespell") == 0 &&
+          count_identifier(branch, "partycondition") == 1 &&
+          count_identifier(branch, "buttonchoice") == 0,
+      std::string(function_name) +
+          " Torch app1Evt must not forge input or duplicate Classic item/light "
+          "behavior");
+
+  const std::size_t branch_take = branch.find(
+      "TakeSemanticUseTorchSource(&semantic_torch_member,"
+      "&semantic_torch_slot)");
+  const std::size_t live_control = branch.find("(torch!=NIL)", branch_take);
+  const std::size_t fresh_source = branch.find(
+      "RealmzCurrentFirstUsableTorchSourceMatches(semantic_torch_member,"
+      "semantic_torch_slot)", live_control);
+  const std::size_t control = branch.find("theControl=torch;", fresh_source);
+  const std::size_t reply = branch.find("reply=0;", control);
+  const std::string goto_handoff = "goto" + std::string(handoff_label) + ";";
+  const std::size_t jump = branch.find(goto_handoff, reply);
+  require(live_control != std::string::npos &&
+          fresh_source != std::string::npos &&
+          control != std::string::npos && reply != std::string::npos &&
+          jump != std::string::npos && branch_take != std::string::npos &&
+          branch_take < live_control &&
+          live_control < fresh_source && fresh_source < control &&
+          control < reply && reply < jump,
+      std::string(function_name) +
+          " must burn Torch authorization, then recheck the live real control "
+          "and exact first usable source before the Classic handoff");
+  require(!branch.contains(std::string(handoff_label) + ":") &&
+          compact.contains(
+              std::string(handoff_label) + ":reply=buttonchoice(reply);"),
+      std::string(function_name) +
+          " must jump out of app1Evt to the existing buttonchoice label");
+}
+
 void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const fs::path legacy_root = repository_root / "src/realmz_orig";
   const std::string misc = code_only(read_file(legacy_root / "misc.c"));
@@ -8639,6 +9156,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   verify_character_sheet_outer_loop(threed, "threed", "goback");
   verify_search_outer_loop(mainscreen, "mainscreen", "goback2");
   verify_search_outer_loop(threed, "threed", "goback");
+  verify_torch_outer_loop(mainscreen, "mainscreen", "goback2");
+  verify_torch_outer_loop(threed, "threed", "goback");
   const std::string buttonchoice = function_body(
       buttonchoice_source, "buttonchoice");
   const std::string compact_buttonchoice = without_whitespace(buttonchoice);
@@ -8667,6 +9186,59 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
               "TakeSemanticSetSearchStateDesired") == 0 &&
           count_identifier(classic_search_branch, "app1Evt") == 0,
       "Classic buttonchoice Search behavior must remain semantic-boundary free");
+  const std::size_t classic_bar = compact_buttonchoice.find(
+      "if(theControl==barbut)", classic_torch);
+  require(classic_bar != std::string::npos && classic_torch < classic_bar,
+      "Classic buttonchoice Torch branch must remain bounded before Heal");
+  const std::string classic_torch_branch = compact_buttonchoice.substr(
+      classic_torch, classic_bar - classic_torch);
+  for (const std::string_view required : {
+           "if(checkforitem(805,TRUE,-1))",
+           "loaditem(805);",
+           "loadspell2(item.sp2);",
+           "powerlevel=abs(item.sp1);",
+           "sound(600+spellinfo.sound2);",
+           "resolvespell();",
+       }) {
+    require(classic_torch_branch.contains(required),
+        std::string("Classic Torch behavior must retain ") +
+            std::string(required));
+  }
+  require(count_identifier(classic_torch_branch,
+              "TakeSemanticUseTorchSource") == 0 &&
+          count_identifier(classic_torch_branch, "app1Evt") == 0 &&
+          count_identifier(classic_torch_branch,
+              "RealmzCurrentFirstUsableTorchSourceMatches") == 0,
+      "Classic buttonchoice Torch behavior must remain semantic-boundary free");
+
+  const std::string torch_source_adapter = code_only(read_file(
+      repository_root / "src/presentation/LegacyTorchSource.c"));
+  const std::string find_torch = function_body(
+      torch_source_adapter, "RealmzFindFirstUsableTorchSource");
+  const std::string compact_find_torch = without_whitespace(find_torch);
+  require(compact_find_torch.contains(
+              "if((maximum_member<0)||(maximum_member>5)){return0;}") &&
+          compact_find_torch.contains(
+              "if((item_count<0)||(item_count>30)){return0;}") &&
+          compact_find_torch.contains(
+              "if(c[member].items[slot].id==805){"
+              "if(c[member].items[slot].charge<=0){return0;}") &&
+          compact_find_torch.contains(
+              "source->member=(uint8_t)member;"
+              "source->slot=(uint8_t)slot;return1;") &&
+          count_identifier(find_torch, "checkforitem") == 0 &&
+          count_identifier(find_torch, "loaditem") == 0 &&
+          count_identifier(find_torch, "theItem") == 0,
+      "the shared Torch source scan must fail closed, stop at the first exact "
+      "+805 even when uncharged, and remain nonmutating");
+  const std::string match_torch = function_body(
+      torch_source_adapter, "RealmzCurrentFirstUsableTorchSourceMatches");
+  require(count_identifier(
+              match_torch, "RealmzFindFirstUsableTorchSource") == 1 &&
+          without_whitespace(match_torch).contains(
+              "return(current.member==member)&&(current.slot==slot);"),
+      "the outer-loop Torch freshness helper must reuse the exact shared scan "
+      "and compare both locator components");
   const std::string compact_combat = without_whitespace(combat_raw);
   const std::size_t items_case = compact_combat.find("case'i':");
   const std::size_t items_next_case = compact_combat.find(
@@ -10299,6 +10871,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_save_consumer_count = 0;
   std::size_t global_load_consumer_count = 0;
   std::size_t global_search_consumer_count = 0;
+  std::size_t global_torch_consumer_count = 0;
   std::size_t global_guard_consumer_count = 0;
   std::size_t global_finish_consumer_count = 0;
   std::size_t global_delay_consumer_count = 0;
@@ -10318,8 +10891,10 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_selection_apply_count = 0;
   std::size_t global_character_sheet_take_count = 0;
   std::size_t global_search_take_count = 0;
+  std::size_t global_torch_take_count = 0;
   std::vector<fs::path> character_sheet_take_callers;
   std::vector<fs::path> search_take_callers;
+  std::vector<fs::path> torch_take_callers;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
     if (entry.is_regular_file() && entry.path().extension() == ".c") {
@@ -10351,6 +10926,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenLoadGameEvent");
     global_search_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticSetSearchStateEvent");
+    global_torch_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticUseTorchEvent");
     global_guard_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     global_finish_consumer_count += count_identifier(
@@ -10398,6 +10975,12 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
     if (search_takes != 0) {
       search_take_callers.emplace_back(fs::relative(path, legacy_root));
     }
+    const std::size_t torch_takes = count_identifier(
+        source, "TakeSemanticUseTorchSource");
+    global_torch_take_count += torch_takes;
+    if (torch_takes != 0) {
+      torch_take_callers.emplace_back(fs::relative(path, legacy_root));
+    }
   }
   require(global_wrapper_count == 3,
       "only mainscreen, threed, and combat may call the semantic gameplay "
@@ -10422,6 +11005,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic load input directly");
   require(global_search_consumer_count == 0,
       "legacy loops must not consume tagged semantic Search input directly");
+  require(global_torch_consumer_count == 0,
+      "legacy loops must not consume tagged semantic Torch input directly");
   require(global_guard_consumer_count == 0,
       "legacy loops must not consume tagged semantic guard input directly");
   require(global_finish_consumer_count == 0,
@@ -10473,6 +11058,11 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
           search_take_callers == std::vector<fs::path>{
               fs::path("misc.c"), fs::path("threed.c")},
       "only misc.c mainscreen and threed.c may take the staged Search state");
+  std::ranges::sort(torch_take_callers);
+  require(global_torch_take_count == 2 &&
+          torch_take_callers == std::vector<fs::path>{
+              fs::path("misc.c"), fs::path("threed.c")},
+      "only misc.c mainscreen and threed.c may take the staged Torch source");
 
   const std::string getchoice = function_body(getchoice_source, "getchoice");
   const std::string compact_getchoice = without_whitespace(getchoice);
@@ -10513,6 +11103,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t rest_consume_calls = 0;
   std::size_t camp_consume_calls = 0;
   std::size_t search_consume_calls = 0;
+  std::size_t torch_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
   std::size_t finish_consume_calls = 0;
   std::size_t delay_consume_calls = 0;
@@ -10531,9 +11122,11 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t center_cursor_consume_calls = 0;
   std::size_t character_sheet_take_calls = 0;
   std::size_t search_take_calls = 0;
+  std::size_t torch_take_calls = 0;
   std::vector<fs::path> wrapper_callers;
   std::vector<fs::path> character_sheet_take_callers;
   std::vector<fs::path> search_take_callers;
+  std::vector<fs::path> torch_take_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
     if (!entry.is_regular_file()) {
@@ -10582,6 +11175,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticSetCampStateEvent");
     search_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticSetSearchStateEvent");
+    torch_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticUseTorchEvent");
     guard_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     finish_consume_calls += count_identifier(
@@ -10626,6 +11221,12 @@ void verify_production_call_ownership(const fs::path& repository_root) {
     if (file_search_takes != 0) {
       search_take_callers.emplace_back(relative);
     }
+    const std::size_t file_torch_takes = count_identifier(
+        source, "TakeSemanticUseTorchSource");
+    torch_take_calls += file_torch_takes;
+    if (file_torch_takes != 0) {
+      torch_take_callers.emplace_back(relative);
+    }
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -10669,6 +11270,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticSetCampStateEvent");
   require(search_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticSetSearchStateEvent");
+  require(torch_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticUseTorchEvent");
   require(guard_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
   require(finish_consume_calls == 0,
@@ -10725,6 +11328,13 @@ void verify_production_call_ownership(const fs::path& repository_root) {
               fs::path("realmz_orig/threed.c")},
       "only the outdoor and dungeon top-level loops may take a staged Search "
       "state");
+  std::ranges::sort(torch_take_callers);
+  require(torch_take_calls == 2 &&
+          torch_take_callers == std::vector<fs::path>{
+              fs::path("realmz_orig/misc.c"),
+              fs::path("realmz_orig/threed.c")},
+      "only the outdoor and dungeon top-level loops may take a staged Torch "
+      "source");
 }
 
 } // namespace
@@ -10750,6 +11360,7 @@ int main(int argc, char** argv) {
     verify_rest_party_window_manager_contract(repository_root);
     verify_set_camp_state_window_manager_contract(repository_root);
     verify_set_search_state_window_manager_contract(repository_root);
+    verify_use_torch_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

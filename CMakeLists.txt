@@ -226,6 +226,7 @@ if(REALMZ_BUILD_CORE_TESTS)
         src/tests/SemanticCombatLegacyAdapterTest.cpp
         src/presentation/SemanticInputBoundary.cpp
         src/presentation/LegacyGameSnapshotSource.cpp
+        src/presentation/LegacyTorchSource.c
         src/presentation/LegacyPresentationContext.c)
     target_link_libraries(SemanticCombatLegacyAdapterTest PRIVATE
         realmz_presentation_core)
@@ -346,7 +347,8 @@ if(REALMZ_BUILD_CORE_TESTS)
 
     add_executable(LegacyGameSnapshotSourceTest
         src/tests/LegacyGameSnapshotSourceTest.cpp
-        src/presentation/LegacyGameSnapshotSource.cpp)
+        src/presentation/LegacyGameSnapshotSource.cpp
+        src/presentation/LegacyTorchSource.c)
     target_include_directories(LegacyGameSnapshotSourceTest PRIVATE src)
     realmz_configure_core_target(LegacyGameSnapshotSourceTest)
     add_test(NAME LegacyGameSnapshotSourceTest
@@ -686,6 +688,7 @@ set(SOURCES
     src/presentation/LegacyPresentationContext.c
     src/presentation/LegacyPartySelection.c
     src/presentation/LegacyGameSnapshotSource.cpp
+    src/presentation/LegacyTorchSource.c
     src/presentation/SemanticInputBoundary.cpp
     src/QuickDraw.cpp
     src/remaster/assets/PartyPortraitTextureCache.cpp

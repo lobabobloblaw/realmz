@@ -46,8 +46,13 @@ run_cpp_test() {
     return 0
   fi
   local source
+  local source_path
   for source in "$@"; do
-    if [[ ! -f "$repo/$source" ]]; then
+    source_path="$source"
+    if [[ "$source_path" != /* ]]; then
+      source_path="$repo/$source_path"
+    fi
+    if [[ ! -f "$source_path" ]]; then
       echo "error: $name is present but required source is missing: $source" >&2
       return 1
     fi
@@ -146,6 +151,14 @@ echo "Compiling LegacyPresentationContextTest"
 echo "Running LegacyPresentationContextTest"
 "$tmp_dir/LegacyPresentationContextTest" "$repo"
 
+echo "Compiling LegacyTorchSource"
+(
+  cd "$repo"
+  "$cc" -std=c99 -Wall -Wextra -pedantic -Werror -Isrc \
+    -c src/presentation/LegacyTorchSource.c \
+    -o "$tmp_dir/LegacyTorchSource.o"
+)
+
 echo "Compiling SemanticCombatLegacyAdapterTest"
 (
   cd "$repo"
@@ -156,6 +169,7 @@ echo "Compiling SemanticCombatLegacyAdapterTest"
     src/presentation/RuntimeLegacyCommandBridge.cpp \
     src/presentation/LegacyCommandBridge.cpp \
     "$tmp_dir/LegacyPresentationContext.o" \
+    "$tmp_dir/LegacyTorchSource.o" \
     -o "$tmp_dir/SemanticCombatLegacyAdapterTest"
 )
 echo "Running SemanticCombatLegacyAdapterTest"
@@ -210,7 +224,8 @@ run_cpp_test RuntimePresentationContractTest \
 
 run_cpp_test LegacyGameSnapshotSourceTest \
   src/tests/LegacyGameSnapshotSourceTest.cpp \
-  src/presentation/LegacyGameSnapshotSource.cpp
+  src/presentation/LegacyGameSnapshotSource.cpp \
+  "$tmp_dir/LegacyTorchSource.o"
 
 run_cpp_test LegacyReplayStateSourceTest \
   src/tests/LegacyReplayStateSourceTest.cpp \

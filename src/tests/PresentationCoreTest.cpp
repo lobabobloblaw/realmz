@@ -126,13 +126,18 @@ void test_snapshot_values() {
   CHECK(snapshot.world.has_complete_tile_grid());
   CHECK(snapshot.world.tile_at(1, 1)->terrain_id == 13);
   CHECK(snapshot.world.tile_at(2, 1) == nullptr);
+  snapshot.world.usable_torch_source = TorchSource{.member = 2, .slot = 7};
 
   const GameSnapshot retained = snapshot;
   snapshot.party.members[0].name = "Changed in a later capture";
   snapshot.world.visible_tiles.pop_back();
+  snapshot.world.usable_torch_source.reset();
   CHECK(retained.party.members[0].name == "Myr");
   CHECK(retained.world.has_complete_tile_grid());
+  CHECK((retained.world.usable_torch_source ==
+      std::optional<TorchSource>{TorchSource{.member = 2, .slot = 7}}));
   CHECK(!snapshot.world.has_complete_tile_grid());
+  CHECK(!snapshot.world.usable_torch_source);
 }
 
 void test_actions_and_events() {
@@ -215,6 +220,19 @@ void test_actions_and_events() {
             set_search_state.payload).desired_searching);
   CHECK(set_search_state.payload !=
       UIActionPayload{SetSearchStateAction{.desired_searching = false}});
+
+  const TorchSource torch_source{.member = 2, .slot = 7};
+  UIAction use_torch{
+      .sequence = 16,
+      .payload = UseTorchAction{.source = torch_source},
+  };
+  CHECK(action_name(use_torch.payload) == "use_torch");
+  CHECK(std::get<UseTorchAction>(use_torch.payload).source ==
+      std::optional<TorchSource>{torch_source});
+  CHECK(use_torch.payload !=
+      UIActionPayload{UseTorchAction{.source = std::nullopt}});
+  CHECK((TorchSource{.member = 2, .slot = 7} !=
+      TorchSource{.member = 2, .slot = 8}));
 
   UIAction guard{
       .sequence = 13,

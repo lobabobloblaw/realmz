@@ -40,6 +40,7 @@ enum class ShellControlKind {
   drawer_tab,
   set_camp_state,
   set_search_state,
+  use_torch,
 };
 
 struct ShellControlPlacement {
@@ -120,6 +121,9 @@ struct ShellControlLayoutRequest {
   bool search_control_visible = false;
   bool search_available = false;
   bool search_desired_searching = false;
+  bool torch_control_visible = false;
+  bool torch_available = false;
+  std::optional<TorchSource> torch_source;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

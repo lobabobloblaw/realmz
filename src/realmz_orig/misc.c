@@ -3,6 +3,7 @@
 #include "variables.h"
 #include "SemanticReplayChild.h"
 #include "presentation/SemanticInputBoundary.h"
+#include "presentation/LegacyTorchSource.h"
 
 /****************************** doreg5 **********************************/
 short doreg5(void) {
@@ -2101,6 +2102,8 @@ over:
         case (app1Evt): {
           uint8_t semantic_character_member = 0;
           uint8_t semantic_desired_searching = 0;
+          uint8_t semantic_torch_member = 0;
+          uint8_t semantic_torch_slot = 0;
           const int maximum_member = (int)charnum;
           if (TakeSemanticOpenCharacterSheetMember(
                   &semantic_character_member) &&
@@ -2120,6 +2123,15 @@ over:
               ((partycondition[PARTY_COND_SEARCH] != 0) !=
                   (semantic_desired_searching != 0))) {
             theControl = search;
+            reply = 0;
+            goto goback2;
+          }
+          if (TakeSemanticUseTorchSource(
+                  &semantic_torch_member, &semantic_torch_slot) &&
+              (torch != NIL) &&
+              RealmzCurrentFirstUsableTorchSourceMatches(
+                  semantic_torch_member, semantic_torch_slot)) {
+            theControl = torch;
             reply = 0;
             goto goback2;
           }

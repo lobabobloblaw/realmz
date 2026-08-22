@@ -507,6 +507,9 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .search_control_visible = true,
                  .search_available = true,
                  .search_desired_searching = true,
+                 .torch_control_visible = true,
+                 .torch_available = true,
+                 .torch_source = TorchSource{.member = 2, .slot = 7},
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -533,6 +536,9 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .search_control_visible = true,
                  .search_available = true,
                  .search_desired_searching = true,
+                 .torch_control_visible = true,
+                 .torch_available = true,
+                 .torch_source = TorchSource{.member = 2, .slot = 7},
              },
          }) {
       std::array<std::vector<ShellControlPlacement>, 3> layouts;
@@ -541,7 +547,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
         layouts[page_index] = compute_shell_control_layout(request);
         const size_t action_count = page_index == 0U
             ? (request.screen == ScreenContext::exploration ? 8U : 4U)
-            : (page_index == 1U ? 4U : 5U);
+            : (page_index == 1U ? 4U : 6U);
         CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
         verify_world_tabs(
             layouts[page_index], panel, kWorldPages[page_index]);
@@ -609,6 +615,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       const auto& rest = game[5];
       const auto& camp = game[6];
       const auto& search = game[7];
+      const auto& torch = game[8];
       CHECK(save.region.value == 1102U);
       CHECK(save.kind == ShellControlKind::open_save_game);
       CHECK(save.label == "SAVE");
@@ -649,6 +656,15 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(search.tab_order == 1125);
       CHECK(search.enabled);
       CHECK(search.payload == UIActionPayload{SetSearchStateAction{true}});
+      CHECK(torch.region.value == 1126U);
+      CHECK(torch.kind == ShellControlKind::use_torch);
+      CHECK(torch.label == "TORCH");
+      CHECK(torch.accessibility_label == "Use torch");
+      CHECK(torch.focus_identifier == "focus.action.party.torch");
+      CHECK(torch.tab_order == 1126);
+      CHECK(torch.enabled);
+      CHECK((torch.payload == UIActionPayload{UseTorchAction{
+          .source = TorchSource{.member = 2, .slot = 7}}}));
 
       // Every tab payload is a direct destination, including selecting the
       // already-active page. Recompose each target from every origin.
@@ -893,10 +909,96 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .search_desired_searching = true,
   }).empty());
 
-  // Dungeon Travel, the reserved four-slot Party page, and the five-slot GAME
+  const auto torch_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .torch_control_visible = true,
+      .torch_available = false,
+  });
+  CHECK(torch_disabled.size() == 4U);
+  verify_world_tabs(torch_disabled, panel, WorldActionPage::game);
+  CHECK(torch_disabled.back().region.value == 1126U);
+  CHECK(torch_disabled.back().kind == ShellControlKind::use_torch);
+  CHECK(torch_disabled.back().label == "TORCH");
+  CHECK(torch_disabled.back().accessibility_label ==
+      "Use torch, no usable torch");
+  CHECK(torch_disabled.back().focus_identifier ==
+      "focus.action.party.torch");
+  CHECK(torch_disabled.back().tab_order == 1126);
+  CHECK(!torch_disabled.back().enabled);
+  CHECK(!std::get<UseTorchAction>(torch_disabled.back().payload).source);
+
+  const TorchSource torch_source{.member = 4, .slot = 29};
+  const auto torch_enabled = compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_first_person,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .torch_control_visible = true,
+      .torch_available = true,
+      .torch_source = torch_source,
+  });
+  CHECK(torch_enabled.size() == 4U);
+  verify_world_tabs(torch_enabled, panel, WorldActionPage::game);
+  CHECK(torch_enabled.back().accessibility_label == "Use torch");
+  CHECK(torch_enabled.back().enabled);
+  CHECK(std::get<UseTorchAction>(torch_enabled.back().payload).source ==
+      std::optional<TorchSource>{torch_source});
+
+  const auto sourced_but_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .torch_control_visible = true,
+      .torch_available = false,
+      .torch_source = torch_source,
+  });
+  CHECK(sourced_but_disabled.size() == 4U);
+  CHECK(sourced_but_disabled.back().accessibility_label == "Use torch");
+  CHECK(!sourced_but_disabled.back().enabled);
+  CHECK(std::get<UseTorchAction>(
+      sourced_but_disabled.back().payload).source ==
+      std::optional<TorchSource>{torch_source});
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .torch_available = true,
+      .torch_source = torch_source,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .torch_control_visible = true,
+      .torch_available = true,
+      .torch_source = torch_source,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .torch_control_visible = true,
+      .torch_available = true,
+  }).empty());
+
+  // Dungeon Travel, the reserved four-slot Party page, and the six-slot GAME
   // page are all reachable at this exact 44-point floor. One point less in
   // either dimension fails the whole persistent deck closed on every page.
-  constexpr LogicalRect exact_minimum{0.0, 0.0, 272.0, 120.0};
+  constexpr LogicalRect exact_minimum{0.0, 0.0, 322.0, 120.0};
   for (const auto page : kWorldPages) {
     const ShellControlLayoutRequest exact_request{
         .screen = ScreenContext::dungeon,
@@ -924,12 +1026,23 @@ void test_world_action_controls_at_combined_minimum_layout() {
         .search_control_visible = true,
         .search_available = true,
         .search_desired_searching = true,
+        .torch_control_visible = true,
+        .torch_available = true,
+        .torch_source = TorchSource{.member = 2, .slot = 7},
     };
     const auto exact = compute_shell_control_layout(exact_request);
     CHECK(!exact.empty());
     verify_world_tabs(exact, exact_minimum, page);
+    if (page == WorldActionPage::game) {
+      CHECK(exact.size() == kWorldPages.size() + 6U);
+      for (size_t index = kWorldPages.size(); index < exact.size(); ++index) {
+        CHECK(exact[index].bounds.width == 44.0);
+        CHECK(exact[index].bounds.height == 44.0);
+      }
+      CHECK(exact.back().kind == ShellControlKind::use_torch);
+    }
     auto narrow_request = exact_request;
-    narrow_request.action_panel.width = 271.0;
+    narrow_request.action_panel.width = 321.0;
     CHECK(compute_shell_control_layout(narrow_request).empty());
     auto short_request = exact_request;
     short_request.action_panel.height = 119.0;
@@ -1021,6 +1134,32 @@ void test_fail_closed_inputs() {
       .action_panel = usable,
       .guard_combatant = CombatantId{2},
       .search_control_visible = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = usable,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .torch_control_visible = true,
+      .torch_source = TorchSource{.member = 6, .slot = 0},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_map,
+      .action_panel = usable,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .torch_control_visible = true,
+      .torch_source = TorchSource{.member = 5, .slot = 30},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = usable,
+      .world_action_page = WorldActionPage::travel,
+      .navigation_available = true,
+      .torch_source = TorchSource{.member = 0, .slot = 0},
   }).empty());
 }
 

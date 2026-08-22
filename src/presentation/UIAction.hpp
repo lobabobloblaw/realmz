@@ -116,6 +116,17 @@ struct SetSearchStateAction {
   bool operator==(const SetSearchStateAction&) const = default;
 };
 
+// Requests Classic's party-scoped Torch command. An engaged source binds the
+// request to the first usable Torch observed by the detached model so delayed
+// delivery cannot silently consume a different inventory position. A
+// disengaged source exists only for the shell's visible disabled control and
+// is never dispatchable.
+struct UseTorchAction {
+  std::optional<TorchSource> source;
+
+  bool operator==(const UseTorchAction&) const = default;
+};
+
 // Ends the explicitly identified party combatant's current turn in the
 // preserved Classic combat loop with its Guard command. Carrying the actor
 // prevents a queued action from silently retargeting after the turn advances.
@@ -501,7 +512,8 @@ using UIActionPayload = std::variant<
     SetCombatActionPageAction,
     SetPresentationModeAction,
     SetCampStateAction,
-    SetSearchStateAction>;
+    SetSearchStateAction,
+    UseTorchAction>;
 
 struct UIAction {
   ActionSequence sequence = 0;
@@ -589,6 +601,8 @@ struct UIAction {
       return "set_camp_state";
     } else if constexpr (std::is_same_v<Action, SetSearchStateAction>) {
       return "set_search_state";
+    } else if constexpr (std::is_same_v<Action, UseTorchAction>) {
+      return "use_torch";
     } else {
       return "set_presentation_mode";
     }

@@ -82,7 +82,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.action.search_toggle", Surface::exploration,
         Kind::interaction, Status::semantic_complete},
     {"exploration.action.use_torch", Surface::exploration,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"exploration.action.contextual_overview", Surface::exploration,
         Kind::interaction, Status::missing},
     {"exploration.action.selected_item_drilldown", Surface::exploration,
@@ -145,7 +145,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.action.search_toggle", Surface::dungeon,
         Kind::interaction, Status::semantic_complete},
     {"dungeon.action.use_torch", Surface::dungeon,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"dungeon.action.contextual_overview", Surface::dungeon,
         Kind::interaction, Status::missing},
     {"dungeon.action.selected_item_drilldown", Surface::dungeon,
@@ -396,10 +396,43 @@ void test_manifest_matches_independent_oracle() {
     CHECK(actual.status == expected.status);
   }
 
-  expect_manifest_entry(manifest, "exploration.action.use_torch",
-      Surface::exploration, Kind::interaction, Status::missing);
-  expect_manifest_entry(manifest, "dungeon.action.use_torch",
-      Surface::dungeon, Kind::interaction, Status::missing);
+  for (const auto& [stable_id, surface] : std::array{
+           std::pair{"exploration.action.use_torch", Surface::exploration},
+           std::pair{"dungeon.action.use_torch", Surface::dungeon},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::interaction, Status::semantic_complete);
+    const auto* torch = find_manifest_entry(manifest, stable_id);
+    CHECK(torch != nullptr);
+    CHECK(torch->evidence.find("one-shot Torch command") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("0x5754") != std::string_view::npos);
+    CHECK(torch->evidence.find("member/slot locator") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find(
+        "freshness token rather than a stable item identity") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("late validation requires that same source") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("live real Classic `torch` control") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("neutral `app1Evt`") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("No key, pointer") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("direct inventory or Light mutation") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("`timeclick`") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find(
+        "Classic `buttonchoice` alone owns charge consumption") !=
+        std::string_view::npos);
+    CHECK(torch->evidence.find("RNG, sound, Light duration, darkness") !=
+        std::string_view::npos);
+    CHECK(torch->source_anchor ==
+        "src/presentation/SemanticInputBoundary.cpp::"
+        "semantic_use_torch_tag/RealmzConsumeSemanticUseTorchEvent");
+  }
   CHECK(find_manifest_entry(
       manifest, "exploration.action.torch_toggle") == nullptr);
   CHECK(find_manifest_entry(
@@ -563,7 +596,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x5C623209F617C588ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x97D7228BC94A5358ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -652,7 +685,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x5C623209F617C588ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x97D7228BC94A5358ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -702,8 +735,8 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 41U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 48U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 43U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 46U);
 }
 
 void expect_issue(

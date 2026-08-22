@@ -38,6 +38,7 @@ constexpr uint32_t kOpenCombatScrollCaseRegion = 1122U;
 constexpr uint32_t kCenterCombatCursorRegion = 1123U;
 constexpr uint32_t kSetCampStateRegion = 1124U;
 constexpr uint32_t kSetSearchStateRegion = 1125U;
+constexpr uint32_t kUseTorchRegion = 1126U;
 constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
@@ -238,6 +239,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.center_combat_cursor->cell.y <= 89U;
   const bool valid_character_sheet = request.character_sheet_member &&
       (*request.character_sheet_member < 6U);
+  const bool valid_torch_source = !request.torch_source ||
+      ((request.torch_source->member < 6U) &&
+          (request.torch_source->slot < 30U));
   const std::array party_members{
       request.inventory_member,
       request.spellbook_member,
@@ -324,7 +328,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.load_control_visible ? 1U : 0U) +
       (request.rest_control_visible ? 1U : 0U) +
       (request.camp_control_visible ? 1U : 0U) +
-      (request.search_control_visible ? 1U : 0U);
+      (request.search_control_visible ? 1U : 0U) +
+      (request.torch_control_visible ? 1U : 0U);
   const size_t world_control_count = travel_world_page
       ? travel_world_control_count
       : (party_world_page ? party_world_control_count
@@ -351,10 +356,16 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   // Keep room for all four PARTY commands even when the current snapshot has
   // no selected member and therefore omits one or more disabled controls.
   constexpr size_t kPartyActionCapacity = 4U;
+  // The GAME page always presents Torch, including as a disabled control when
+  // no usable source exists. Reserve all six positions even for partial test
+  // requests so a later fully modeled page cannot make the persistent deck
+  // disappear.
+  constexpr size_t kGameActionCapacity = 6U;
   const size_t required_world_control_capacity = std::max({
       world_page_control_count,
       travel_world_control_count,
       kPartyActionCapacity,
+      kGameActionCapacity,
       game_world_control_count,
   });
   const bool has_combatant_request = std::ranges::any_of(
@@ -395,7 +406,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.save_control_visible || request.load_control_visible ||
               request.rest_control_visible ||
               request.camp_control_visible ||
-              request.search_control_visible)) ||
+              request.search_control_visible ||
+              request.torch_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.scroll_case_available && !request.scroll_case_member) ||
@@ -410,6 +422,13 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.search_available &&
           (!request.search_control_visible ||
               !request.navigation_available)) ||
+      (request.torch_available &&
+          (!request.torch_control_visible ||
+              !request.navigation_available ||
+              !request.torch_source.has_value())) ||
+      (request.torch_source.has_value() &&
+          !request.torch_control_visible) ||
+      !valid_torch_source ||
       (request.guard_available && !valid_guard) ||
       (request.finish_available && !valid_finish) ||
       (request.delay_available && !valid_delay) ||
@@ -691,6 +710,24 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
                 request.navigation_available,
             .payload = SetSearchStateAction{
                 request.search_desired_searching},
+        });
+        x += button_width + gap;
+      }
+      if (request.torch_control_visible) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kUseTorchRegion},
+            .kind = ShellControlKind::use_torch,
+            .bounds = {x, y, button_width, button_height},
+            .label = "TORCH",
+            .accessibility_label = request.torch_source.has_value()
+                ? "Use torch"
+                : "Use torch, no usable torch",
+            .focus_identifier = "focus.action.party.torch",
+            .tab_order = 1126,
+            .enabled = request.torch_available &&
+                request.navigation_available &&
+                request.torch_source.has_value(),
+            .payload = UseTorchAction{request.torch_source},
         });
         x += button_width + gap;
       }

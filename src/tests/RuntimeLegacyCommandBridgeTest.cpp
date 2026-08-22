@@ -94,6 +94,14 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyWorldActionSinks::set_search_state),
     RuntimeLegacySetSearchStateSink>);
+static_assert(std::is_same_v<
+    RuntimeLegacyUseTorchSink,
+    std::function<bool(
+        const TorchSource&,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::use_torch),
+    RuntimeLegacyUseTorchSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -1622,6 +1630,201 @@ void test_set_search_state_context_and_named_sink_dispatch() {
   CHECK(movement_only.dispatch(UIAction{
       .sequence = sequence,
       .payload = SetSearchStateAction{.desired_searching = true},
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_use_torch_context_source_and_named_sink_dispatch() {
+  const TorchSource expected_source{.member = 2, .slot = 7};
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .searching = false,
+      .usable_torch_source = expected_source,
+  };
+  int context_calls = 0;
+  int search_calls = 0;
+  int torch_calls = 0;
+  bool accept_torch = true;
+  TorchSource received_source{};
+  RuntimeLegacyCommandBridge bridge(
+      kRuntimeLegacyNamedActionSinks,
+      [&context, &context_calls] {
+        ++context_calls;
+        return context;
+      },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .set_search_state = [&search_calls](
+              bool,
+              const RuntimeLegacyCommandContext&) {
+            ++search_calls;
+            return true;
+          },
+          .use_torch = [
+              &torch_calls,
+              &accept_torch,
+              &received_source,
+              &context](
+              const TorchSource& source,
+              const RuntimeLegacyCommandContext& captured_context) {
+            ++torch_calls;
+            received_source = source;
+            CHECK(captured_context == context);
+            return accept_torch;
+          },
+      });
+
+  ActionSequence sequence = 128;
+  CHECK(runtime_legacy_context_supports_use_torch(expected_source, context));
+
+  // Search immediately followed by Torch proves the append-only Search
+  // handler retained a copy of the provider for the final Torch handler.
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetSearchStateAction{.desired_searching = true},
+  }).status == DispatchStatus::handled);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = UseTorchAction{.source = expected_source},
+  }).status == DispatchStatus::handled);
+  CHECK(context_calls == 2);
+  CHECK(search_calls == 1);
+  CHECK(torch_calls == 1);
+  CHECK(received_source == expected_source);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    CHECK(runtime_legacy_context_supports_use_torch(expected_source, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = UseTorchAction{.source = expected_source},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(torch_calls == 3);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .usable_torch_source = expected_source,
+  };
+  for (const auto invalid_source : {
+           TorchSource{.member = 1, .slot = 7},
+           TorchSource{.member = 2, .slot = 8},
+           TorchSource{.member = 6, .slot = 0},
+           TorchSource{.member = 0, .slot = 30},
+       }) {
+    CHECK(!runtime_legacy_context_supports_use_torch(invalid_source, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = UseTorchAction{.source = invalid_source},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(torch_calls == 3);
+
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = UseTorchAction{},
+  }).status == DispatchStatus::rejected);
+  CHECK(torch_calls == 3);
+
+  for (const auto& invalid_context : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = false,
+               .usable_torch_source = expected_source,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+               .usable_torch_source = expected_source,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .usable_torch_source = expected_source,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+               .usable_torch_source = expected_source,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+           },
+       }) {
+    context = invalid_context;
+    CHECK(!runtime_legacy_context_supports_use_torch(expected_source, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = UseTorchAction{.source = expected_source},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(torch_calls == 3);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .usable_torch_source = expected_source,
+  };
+  accept_torch = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = UseTorchAction{.source = expected_source},
+  }).status == DispatchStatus::failed);
+  CHECK(torch_calls == 4);
+
+  RuntimeLegacyCommandBridge missing_provider(
+      kRuntimeLegacyNamedActionSinks,
+      {},
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .use_torch = [](
+              const TorchSource&,
+              const RuntimeLegacyCommandContext&) { return true; },
+      });
+  CHECK(missing_provider.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = UseTorchAction{.source = expected_source},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge empty_named_sink(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{});
+  CHECK(empty_named_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = UseTorchAction{.source = expected_source},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = UseTorchAction{.source = expected_source},
   }).status == DispatchStatus::unsupported);
 }
 
@@ -6476,6 +6679,7 @@ int main() {
     test_rest_party_context_and_named_sink_dispatch();
     test_set_camp_state_context_and_named_sink_dispatch();
     test_set_search_state_context_and_named_sink_dispatch();
+    test_use_torch_context_source_and_named_sink_dispatch();
     test_empty_brace_world_sink_compatibility_is_unambiguous();
     test_open_save_game_mapping_and_dispatch();
     test_open_load_game_mapping_and_dispatch();

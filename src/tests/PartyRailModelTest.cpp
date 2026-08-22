@@ -70,6 +70,7 @@ GameSnapshot sample_snapshot() {
           .conscious = false,
       },
   };
+  snapshot.world.usable_torch_source = TorchSource{.member = 1, .slot = 7};
   return snapshot;
 }
 
@@ -236,6 +237,31 @@ void test_action_availability_is_conservative() {
   CHECK(start_search.desired_searching == true);
   CHECK(start_search.tab_order == make_camp.tab_order + 1);
   CHECK(start_search.availability_reason->label == "Game rules apply");
+  const auto& use_torch = action_with(model, ActionIntent::use_torch);
+  CHECK(use_torch.can_invoke());
+  CHECK(use_torch.availability == ActionAvailability::deferred_to_engine);
+  CHECK(use_torch.command == "action.party.torch");
+  CHECK(use_torch.label == "Use torch");
+  CHECK((use_torch.torch_source ==
+      std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
+  CHECK(use_torch.tab_order == start_search.tab_order + 1);
+  CHECK(use_torch.availability_reason->label == "Game rules apply");
+
+  snapshot.world.usable_torch_source.reset();
+  model = build_presentation_shell_model(snapshot);
+  const auto& no_torch = action_with(model, ActionIntent::use_torch);
+  CHECK(!no_torch.can_invoke());
+  CHECK(!no_torch.torch_source);
+  CHECK(no_torch.availability_reason->label == "No usable torch");
+  snapshot.world.usable_torch_source = TorchSource{.member = 6, .slot = 0};
+  model = build_presentation_shell_model(snapshot);
+  CHECK(!action_with(model, ActionIntent::use_torch).can_invoke());
+  CHECK(!action_with(model, ActionIntent::use_torch).torch_source);
+  snapshot.world.usable_torch_source = TorchSource{.member = 5, .slot = 30};
+  model = build_presentation_shell_model(snapshot);
+  CHECK(!action_with(model, ActionIntent::use_torch).can_invoke());
+  CHECK(!action_with(model, ActionIntent::use_torch).torch_source);
+  snapshot.world.usable_torch_source = TorchSource{.member = 1, .slot = 7};
 
   snapshot.world.in_camp = true;
   model = build_presentation_shell_model(snapshot);
@@ -257,6 +283,12 @@ void test_action_availability_is_conservative() {
   CHECK(search_while_camped.can_invoke());
   CHECK(search_while_camped.desired_searching == true);
   CHECK(search_while_camped.tab_order == break_camp.tab_order + 1);
+  const auto& torch_while_camped =
+      action_with(model, ActionIntent::use_torch);
+  CHECK(torch_while_camped.can_invoke());
+  CHECK((torch_while_camped.torch_source ==
+      std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
+  CHECK(torch_while_camped.tab_order == search_while_camped.tab_order + 1);
 
   snapshot.world.searching = true;
   model = build_presentation_shell_model(snapshot);
@@ -265,6 +297,7 @@ void test_action_availability_is_conservative() {
   CHECK(stop_search.can_invoke());
   CHECK(stop_search.label == "Stop search");
   CHECK(stop_search.desired_searching == false);
+  CHECK(action_with(model, ActionIntent::use_torch).can_invoke());
 
   snapshot.screen = ScreenContext::dungeon;
   snapshot.world.searching = false;
@@ -274,6 +307,7 @@ void test_action_availability_is_conservative() {
   CHECK(dungeon_search.can_invoke());
   CHECK(dungeon_search.desired_searching == true);
   CHECK(action_with(model, ActionIntent::rest).can_invoke());
+  CHECK(action_with(model, ActionIntent::use_torch).can_invoke());
   snapshot.screen = ScreenContext::exploration;
   snapshot.world.in_camp = false;
   snapshot.world.searching = false;
@@ -341,13 +375,20 @@ void test_action_availability_is_conservative() {
   CHECK(search_in_encounter.desired_searching == true);
   CHECK(search_in_encounter.availability_reason->label ==
       "Search is unavailable now");
-  CHECK(model.actions.size() == 13);
-  CHECK(model.actions[10].command == "encounter.choice.11");
-  CHECK(model.actions[10].can_invoke());
-  CHECK(model.actions[11].command == "encounter.choice.12");
-  CHECK(!model.actions[11].can_invoke());
-  CHECK(model.actions[12].intent == ActionIntent::cancel);
-  CHECK(model.actions[12].can_invoke());
+  const auto& torch_in_encounter =
+      action_with(model, ActionIntent::use_torch);
+  CHECK(!torch_in_encounter.can_invoke());
+  CHECK((torch_in_encounter.torch_source ==
+      std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
+  CHECK(torch_in_encounter.availability_reason->label ==
+      "Torch use is unavailable now");
+  CHECK(model.actions.size() == 14);
+  CHECK(model.actions[11].command == "encounter.choice.11");
+  CHECK(model.actions[11].can_invoke());
+  CHECK(model.actions[12].command == "encounter.choice.12");
+  CHECK(!model.actions[12].can_invoke());
+  CHECK(model.actions[13].intent == ActionIntent::cancel);
+  CHECK(model.actions[13].can_invoke());
 }
 
 void test_world_action_page_preferences_are_normalized() {
@@ -430,7 +471,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 27U);
+  CHECK(model.actions.size() == 28U);
   const auto& camp_in_combat =
       action_with(model, ActionIntent::set_camp_state);
   CHECK(!camp_in_combat.can_invoke());
@@ -443,6 +484,13 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(search_in_combat.desired_searching == true);
   CHECK(search_in_combat.availability_reason->label ==
       "Search is unavailable now");
+  const auto& torch_in_combat =
+      action_with(model, ActionIntent::use_torch);
+  CHECK(!torch_in_combat.can_invoke());
+  CHECK((torch_in_combat.torch_source ==
+      std::optional<TorchSource>{TorchSource{.member = 1, .slot = 7}}));
+  CHECK(torch_in_combat.availability_reason->label ==
+      "Torch use is unavailable now");
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());

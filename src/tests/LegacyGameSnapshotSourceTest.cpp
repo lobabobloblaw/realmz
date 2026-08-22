@@ -5,6 +5,7 @@
 #include <string>
 
 #include "presentation/LegacyGameSnapshotSource.hpp"
+#include "presentation/LegacyTorchSource.h"
 
 extern "C" {
 #include "realmz_orig/structs.h"
@@ -278,6 +279,61 @@ void test_search_state_capture_is_value_only() {
   partycondition[PARTY_COND_SEARCH] = 0;
   CHECK(!source.capture().world.searching);
   CHECK(persistent_search_snapshot.world.searching);
+}
+
+void test_first_usable_torch_source_capture_is_exact_and_value_only() {
+  reset_legacy_state();
+  LegacyGameSnapshotSource source;
+
+  CHECK(!source.capture().world.usable_torch_source);
+
+  charnum = 1;
+  c[0].numitems = 2;
+  c[0].items[0] = {.id = -805, .charge = 9};
+  c[0].items[1] = {.id = 804, .charge = 9};
+  c[1].numitems = 3;
+  c[1].items[0] = {.id = 1, .charge = 1};
+  c[1].items[1] = {.id = 2, .charge = 1};
+  c[1].items[2] = {.id = 805, .charge = 4};
+  const character party_before_capture[2] = {c[0], c[1]};
+
+  const auto usable = source.capture();
+  CHECK(usable.world.usable_torch_source ==
+      (TorchSource{.member = 1, .slot = 2}));
+  CHECK(std::memcmp(c, party_before_capture, sizeof(party_before_capture)) == 0);
+  CHECK(RealmzCurrentFirstUsableTorchSourceMatches(1, 2));
+  CHECK(!RealmzCurrentFirstUsableTorchSourceMatches(0, 0));
+
+  c[1].items[2].charge = 3;
+  CHECK(usable.world.usable_torch_source ==
+      (TorchSource{.member = 1, .slot = 2}));
+
+  // Classic stops at the first exact +805 even when it cannot spend a charge.
+  // A later charged match must therefore remain unreachable.
+  c[0].items[1] = {.id = 805, .charge = 0};
+  CHECK(!source.capture().world.usable_torch_source);
+  CHECK(!RealmzCurrentFirstUsableTorchSourceMatches(1, 2));
+  c[0].items[1].charge = -1;
+  CHECK(!source.capture().world.usable_torch_source);
+  c[0].items[1].charge = 1;
+  CHECK(source.capture().world.usable_torch_source ==
+      (TorchSource{.member = 0, .slot = 1}));
+
+  // Bounds are fail-closed instead of inheriting Classic's out-of-bounds
+  // behavior. Slot 29 remains a valid source.
+  c[0].numitems = 30;
+  std::memset(c[0].items, 0, sizeof(c[0].items));
+  c[0].items[29] = {.id = 805, .charge = 1};
+  c[1].numitems = 0;
+  CHECK(source.capture().world.usable_torch_source ==
+      (TorchSource{.member = 0, .slot = 29}));
+  c[0].numitems = 31;
+  CHECK(!source.capture().world.usable_torch_source);
+  c[0].numitems = -1;
+  CHECK(!source.capture().world.usable_torch_source);
+  c[0].numitems = 0;
+  charnum = 6;
+  CHECK(!source.capture().world.usable_torch_source);
 }
 
 void test_combat_capture() {
@@ -672,6 +728,7 @@ int main() {
     test_noncombat_scroll_case_eligibility_capture();
     test_camp_state_capture_is_value_only();
     test_search_state_capture_is_value_only();
+    test_first_usable_torch_source_capture_is_exact_and_value_only();
     test_combat_capture();
     test_encounter_and_bounds();
     std::cout << "LegacyGameSnapshotSourceTest passed (" << checks_run

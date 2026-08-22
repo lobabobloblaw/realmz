@@ -231,8 +231,9 @@ remains authoritative for that
 permission and feedback, music and sound, `incamp` and related state changes,
 `moveparty(0)`, time advancement, `updatecontrols()`, and every preserved
 `revertgame` return. No Camp action or delivery vocabulary is added to replay.
-The Game page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP, and
-SEARCH/STOP SEARCH. The member-free Search control remains available during
+The Game page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP,
+SEARCH/STOP SEARCH, and TORCH. The member-free Search control remains available
+during
 ordinary outdoor or dungeon navigation with no active encounter, including
 while camped. It presents `SEARCH` / `Start searching` when the current state is
 off and `STOP SEARCH` / `Stop searching` when it is on. Its typed
@@ -253,6 +254,25 @@ cost remain effects of subsequent Classic movement, not the semantic toggle.
 No Search action or delivery vocabulary is added to replay. Automated tests do
 not close the private manual-QA gap described below; it remains required before
 release.
+The adjacent `UseTorchAction` is a one-shot request carrying an optional
+`TorchSource`. When enabled, the source identifies the member and slot of
+Classic's first exact item 805 with a positive charge. That locator is an
+optimistic freshness token, not a stable item identity, and it carries neither
+the observed charge nor current Light duration. A zero- or negative-charge
+first exact match blocks every later match, matching Classic's early exit. Its
+single-use `0x5754` tag binds the locator to the originating outdoor or dungeon
+surface. Completed-scope
+consumption freshly requires adaptive eligibility, the exact exploration or
+dungeon screen and snapshot, matching outdoor or dungeon-map/first-person
+presentation, and the same first usable locator. The Classic outer loop then
+requires both that fresh source and the live real `torch` control before entering
+the existing `buttonchoice` path with `theControl == torch`. EventManager returns
+a neutral `app1Evt`; no key, pointer, direct inventory or Light mutation, or
+`timeclick` is synthesized. Torch use remains available while camped, searching,
+or already lit. Classic alone owns charge consumption, item dropping and slot
+shifts, item/spell loading, RNG, sound, Light duration, darkness, and icon
+updates. No Torch action or delivery vocabulary is added to replay. Automated
+tests do not close the private manual-QA gap described below.
 Combat exposes seventeen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
@@ -458,15 +478,15 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 41
-`semantic_complete`, and 48 `missing` roles. Cropping remains disabled. The
+The 95-row inventory currently contains six `retained_in_crop`, 43
+`semantic_complete`, and 46 `missing` roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Use/consume Torch, Heal, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
-| Dungeon | The corresponding dungeon use/consume Torch, Heal, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Outdoor | Heal, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
+| Dungeon | The corresponding dungeon Heal, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -474,7 +494,8 @@ ordered capture and retention of the Classic message/flash stream for Event
 Log; pooled-money and fatigue status; party-wide condition indicators; complete
 all-member vitals and combat values, including armor class, spell points, and
 noncaster attack cadence; authoritative coordinates, calendar/clock, and
-complete combined Search/Torch state (Torch remains absent); focused-combatant
+complete combined Search/Torch state (the persistent Torch-state presentation
+remains absent); focused-combatant
 information; and combat round and
 enemies-remaining counts. Snapshot fields or the current placeholder Event Log
 do not satisfy the information-completeness check merely by existing. The
@@ -653,7 +674,7 @@ Automated checks do not replace these release decisions:
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, non-combat Use Scroll, Character, Save, Load, Rest, Camp/Break Camp,
-  Search/Stop Search,
+  Search/Stop Search, Torch,
   Guard, Finish, Delay, Center,
   Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
   Combat Cast, Combat Target, Combat Escape, Use Scroll, and Center Cursor
@@ -703,6 +724,22 @@ Automated checks do not replace these release decisions:
   confirm Classic alone owns sound, state, and icon changes, and that
   `checkforsecret` and its time cost occur only during subsequent Classic
   behavior. Confirm replay schemas and decoders expose no Search vocabulary;
+  close the private manual-QA gap for Torch on disposable outdoor and dungeon
+  fixtures, including dungeon map and first-person presentations and while
+  camped, searching, and already lit. Confirm the GAME order ends in
+  SEARCH/STOP SEARCH, TORCH; that no usable first exact item 805 disables Torch;
+  and that the first zero- or negative-charge match blocks any later charged
+  match. Queue locators made stale by scope, surface, adaptive eligibility,
+  presentation, member/slot movement, depletion, or a missing real Classic
+  control and confirm they are inert. For each accepted pointer and keyboard
+  activation, verify exactly one neutral `app1Evt` reaches the existing
+  `buttonchoice` path with `theControl == torch`, consumes exactly one charge
+  from the bound first source, and preserves Classic's drop and slot-shift
+  behavior. Confirm there is no forged key or pointer, direct inventory or Light
+  mutation, or `timeclick`; Classic alone owns item/spell loading, RNG, sound,
+  Light duration, darkness, and icon updates. Confirm replay schemas and
+  decoders expose no Torch vocabulary, and do not redistribute private fixture
+  data;
   and inert stale Guard,
   Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting

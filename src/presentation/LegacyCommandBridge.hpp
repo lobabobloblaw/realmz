@@ -97,6 +97,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<RestPartyAction> rest_party;
   LegacyActionHandler<SetCampStateAction> set_camp_state;
   LegacyActionHandler<SetSearchStateAction> set_search_state;
+  LegacyActionHandler<UseTorchAction> use_torch;
 };
 
 class InjectedLegacyCommandBridge final : public LegacyCommandBridge {

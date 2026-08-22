@@ -138,6 +138,7 @@ enum class ActionIntent {
   encounter_choice,
   set_camp_state,
   set_search_state,
+  use_torch,
 };
 
 // "deferred_to_engine" means that the snapshot satisfies the prerequisites
@@ -165,6 +166,10 @@ struct ActionControlModel {
   // Only set for the persistent Search command so a queued activation cannot
   // recompute a relative toggle against newer Classic state.
   std::optional<bool> desired_searching;
+  // Only set when Classic's first party-scoped Torch source is currently
+  // usable. A disengaged source keeps the corresponding shell control visible
+  // but disabled without inventing an inventory target.
+  std::optional<TorchSource> torch_source;
 
   bool operator==(const ActionControlModel&) const = default;
 
