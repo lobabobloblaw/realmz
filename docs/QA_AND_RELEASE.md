@@ -197,6 +197,25 @@ outer loop can take that member. The loop rechecks `charnum`, `charselectnew`,
 `charselectold`, and `charmainbut` immediately before entering its existing
 `buttonchoice` route. EventManager never fabricates a mouse event or calls the
 sheet synchronously, and Classic owns all sheet browsing and nested modals.
+The Party page's sixth slot is a single member-free MONEY control carrying an
+empty `OpenMoneyManagementAction`. It is available in ordinary outdoor or
+dungeon navigation, both in camp and outside it, after a fresh valid current
+selection check; the action carries no member identity. Its strict one-shot
+`0x574DSS00` tag accepts outdoor `SS=0x01` or dungeon `SS=0x02` only and
+requires the reserved low byte to be zero. Completed-scope consumption freshly
+requires adaptive eligibility, the exact outdoor or dungeon map/first-person
+presentation, a nonempty party bounded to six, and a current selected member
+bounded to `0..5` whose selected flag is still true. EventManager converts the
+neutral one-shot `app1Evt` only to Classic's exact lowercase `m` keyDown
+`0x00002E6D`, clearing pointer, modifier, and window state; no held-mouse gate
+applies. Camp state, funds, shop, temple, bank, and the serialized but otherwise
+dead `swapavail` flag do not gate opening. Classic's `swapbut` created from
+CNTL 157, outdoor `checkkeypad`, dungeon `threed`, `buttonchoice`, `swap`,
+`pool`, and `share` paths retain the complete modal, bank transfer, pool/share,
+shop/temple availability, and every money mutation. No Classic source or replay
+schema/decoder vocabulary changes. This interaction does not satisfy either
+pooled-money information row, and automated checks leave private,
+no-redistribution manual QA open.
 The Game page's member-free Rest control carries a distinct `RestPartyAction`
 and is available only while the party is already in camp. Its single-use tag
 must be consumed from a completed semantic scope matching the encoded origin.
@@ -523,15 +542,16 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 49
-`semantic_complete`, and 40 `missing` roles. Cropping remains disabled. The
+The 95-row inventory currently contains six `retained_in_crop`, 51
+`semantic_complete`, and 38 `missing` roles: 15 interactions and 23
+essential-information roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Heal, Trade, Money/Swap, selected-member condition drilldown, and per-member Auto. Context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and the distinct quick Equipment popup are covered interaction rows, not evidence for any broader inspection role. |
-| Dungeon | The corresponding dungeon Heal, Trade, Money/Swap, condition drilldown, and per-member Auto, including dungeon-specific availability and input semantics. Context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and quick Equipment remain distinct covered rows. |
+| Outdoor | Heal, Trade, selected-member condition drilldown, and per-member Auto. Money management, context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and the distinct quick Equipment popup are covered interaction rows, not evidence for any broader inspection or information role. |
+| Dungeon | The corresponding dungeon Heal, Trade, condition drilldown, and per-member Auto, including dungeon-specific availability and input semantics. Money management, context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and quick Equipment remain distinct covered rows. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -753,6 +773,25 @@ Automated checks do not replace these release decisions:
   mutation. Confirm replay schemas and decoders expose no Equipment vocabulary,
   keep all fixture data and resulting evidence private, and do not redistribute
   them;
+  close the private manual-QA gap for the sixth PARTY-page MONEY control on
+  disposable outdoor and dungeon fixtures, including dungeon map and
+  first-person presentations and both camp and noncamp states. Confirm there is
+  exactly one member-free `OpenMoneyManagementAction`, with no bound member
+  identity, and accept only strict `0x574DSS00` tags with outdoor `SS=0x01` or
+  dungeon `SS=0x02` and a zero reserved low byte. Queue actions made stale by
+  scope, surface, adaptive eligibility, presentation, empty or oversized party,
+  missing or out-of-range current selection, or a cleared selected flag and
+  confirm they are inert. For each accepted pointer and keyboard activation,
+  verify exactly one neutral `app1Evt` becomes lowercase `m` keyDown
+  `0x00002E6D` with zero pointer, modifier, and window state and no held-mouse
+  gate. Exercise zero and nonzero funds plus shop, temple, bank, and serialized
+  `swapavail` values and confirm none gates opening. Confirm the real
+  `swapbut`/CNTL 157 and preserved `checkkeypad`/`threed`, `buttonchoice`,
+  `swap`, `pool`, and `share` routes alone own modal cancellation, bank
+  transfer, pool/share, availability changes, and every mutation. Confirm no
+  pooled-money information coverage is implied, Classic sources and replay
+  schemas/decoders expose no Money vocabulary, keep all fixtures and resulting
+  evidence private, and do not redistribute them;
   close the private manual-QA gap for the mutually exclusive
   Rest/Shop/Temple/Encounter GAME slot on disposable outdoor and dungeon
   fixtures, exercising both dungeon map and first-person presentations. Confirm

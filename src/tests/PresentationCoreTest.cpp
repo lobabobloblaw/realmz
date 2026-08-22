@@ -301,6 +301,17 @@ void test_actions_and_events() {
           .mode = ContextualWorldEntryMode::shop,
       }}));
 
+  UIAction open_money_management{
+      .sequence = 20,
+      .payload = OpenMoneyManagementAction{},
+  };
+  CHECK(action_name(open_money_management.payload) ==
+      "open_money_management");
+  CHECK(std::holds_alternative<OpenMoneyManagementAction>(
+      open_money_management.payload));
+  CHECK(open_money_management.payload.index() ==
+      contextual_world_entry.payload.index() + 1U);
+
   UIAction guard{
       .sequence = 13,
       .payload = GuardCombatantAction{2},
@@ -547,6 +558,7 @@ void test_command_bridge() {
   PartyMemberId open_scroll_case_member = 0;
   PartyMemberId open_character_sheet_member = 0;
   PartyMemberId open_selected_item_drilldown_member = 0;
+  bool opened_money_management = false;
   CombatantId center_combat_cursor = -1;
   CombatFieldCell center_combat_cursor_cell{};
   LegacyActionHandlers handlers;
@@ -632,6 +644,11 @@ void test_command_bridge() {
       [&open_selected_item_drilldown_member](
           const OpenSelectedItemDrilldownAction& action) {
         open_selected_item_drilldown_member = action.member;
+        return DispatchResult::handled();
+      };
+  handlers.open_money_management =
+      [&opened_money_management](const OpenMoneyManagementAction&) {
+        opened_money_management = true;
         return DispatchResult::handled();
       };
   handlers.center_combat_cursor =
@@ -730,6 +747,13 @@ void test_command_bridge() {
   });
   CHECK(open_selected_item_drilldown_handled.was_handled());
   CHECK(open_selected_item_drilldown_member == 5);
+
+  const auto open_money_management_handled = bridge.dispatch(UIAction{
+      .sequence = 7,
+      .payload = OpenMoneyManagementAction{},
+  });
+  CHECK(open_money_management_handled.was_handled());
+  CHECK(opened_money_management);
 
   const auto save_chooser_unsupported = bridge.dispatch(UIAction{
       .sequence = 8,

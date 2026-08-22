@@ -82,6 +82,10 @@ constexpr uint32_t kSemanticContextualWorldEntryModeMask = 0x000000FFU;
 constexpr uint8_t kSemanticContextualWorldEntryShopMode = 0;
 constexpr uint8_t kSemanticContextualWorldEntryTempleMode = 1;
 constexpr uint8_t kSemanticContextualWorldEntryEncounterMode = 2;
+constexpr uint32_t kSemanticOpenMoneyManagementSignature = 0x574D0000U;
+constexpr uint32_t kSemanticOpenMoneyManagementMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticOpenMoneyManagementSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticOpenMoneyManagementReservedMask = 0x000000FFU;
 constexpr uint32_t kSemanticDelayCombatantSignature = 0x52440000U;
 constexpr uint32_t kSemanticDelayCombatantMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticDelayCombatantSurfaceMask = 0x0000FF00U;
@@ -225,6 +229,10 @@ struct DecodedContextualOverview {
 
 struct DecodedContextualWorldEntry {
   realmz::presentation::ContextualWorldEntryAction action;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedOpenMoneyManagement {
   RealmzSemanticInputSurface surface;
 };
 
@@ -635,6 +643,21 @@ std::optional<DecodedContextualWorldEntry> decode_contextual_world_entry(
       .action = {.mode = mode},
       .surface = surface_value,
   };
+}
+
+std::optional<DecodedOpenMoneyManagement> decode_open_money_management(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticOpenMoneyManagementMask) !=
+          kSemanticOpenMoneyManagementSignature ||
+      (tagged_message & kSemanticOpenMoneyManagementReservedMask) != 0) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticOpenMoneyManagementSurfaceMask) >> 8U;
+  if (!is_world_gameplay_surface(surface_value)) {
+    return std::nullopt;
+  }
+  return DecodedOpenMoneyManagement{.surface = surface_value};
 }
 
 std::optional<DecodedGuardCombatant> decode_guard_combatant(
@@ -1324,6 +1347,15 @@ uint32_t semantic_contextual_world_entry_tag(
       (static_cast<uint32_t>(surface) << 8U) | wire_mode;
 }
 
+uint32_t semantic_open_money_management_tag(
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_world_gameplay_surface(surface)) {
+    return 0;
+  }
+  return kSemanticOpenMoneyManagementSignature |
+      (static_cast<uint32_t>(surface) << 8U);
+}
+
 uint32_t semantic_guard_combatant_tag(
     CombatantId combatant,
     RealmzSemanticInputSurface surface) noexcept {
@@ -1782,6 +1814,17 @@ RealmzSemanticContextualWorldEntryTagSurface(uint32_t tagged_message) {
   return entry ? entry->surface : kNoSemanticInputSurface;
 }
 
+extern "C" uint8_t RealmzIsSemanticOpenMoneyManagementTag(
+    uint32_t tagged_message) {
+  return decode_open_money_management(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticOpenMoneyManagementTagSurface(uint32_t tagged_message) {
+  const auto money = decode_open_money_management(tagged_message);
+  return money ? money->surface : kNoSemanticInputSurface;
+}
+
 extern "C" uint8_t RealmzIsSemanticGuardCombatantTag(
     uint32_t tagged_message) {
   return decode_guard_combatant(tagged_message).has_value() ? 1 : 0;
@@ -1983,6 +2026,7 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
           decode_use_torch(tagged_message) ||
           decode_contextual_overview(tagged_message) ||
           decode_contextual_world_entry(tagged_message) ||
+          decode_open_money_management(tagged_message) ||
           decode_guard_combatant(tagged_message) ||
           decode_finish_combatant(tagged_message) ||
           decode_delay_combatant(tagged_message) ||
@@ -2050,6 +2094,9 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto entry = decode_contextual_world_entry(tagged_message)) {
     return entry->surface;
+  }
+  if (const auto money = decode_open_money_management(tagged_message)) {
+    return money->surface;
   }
   if (const auto guard = decode_guard_combatant(tagged_message)) {
     return guard->surface;
@@ -2759,6 +2806,60 @@ extern "C" uint8_t RealmzConsumeSemanticContextualWorldEntryEvent(
     };
     const auto message = realmz::presentation::
         legacy_key_message_for_contextual_world_entry(entry->action, context);
+    if (!message) {
+      return 0;
+    }
+    *classic_key_message = *message;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticOpenMoneyManagementEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!classic_key_message || !authorized) {
+    return 0;
+  }
+  const auto money = decode_open_money_management(tagged_message);
+  if (!money || (money->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    if ((snapshot.screen != screen) ||
+        !world_presentation_matches_surface(
+            expected_surface, snapshot.world.presentation) ||
+        snapshot.party.members.empty() ||
+        (snapshot.party.members.size() > 6U) ||
+        !snapshot.party.selected_member ||
+        (*snapshot.party.selected_member > 5U)) {
+      return 0;
+    }
+    const auto* selected =
+        snapshot.party.member(*snapshot.party.selected_member);
+    if (!selected || !selected->selected) {
+      return 0;
+    }
+    const realmz::presentation::RuntimeLegacyCommandContext context{
+        .screen = screen,
+        .world_presentation = snapshot.world.presentation,
+        .adaptive_eligible = legacy.adaptive_eligible != 0,
+    };
+    const auto message = realmz::presentation::
+        legacy_key_message_for_open_money_management(context);
     if (!message) {
       return 0;
     }

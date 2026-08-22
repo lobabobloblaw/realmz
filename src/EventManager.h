@@ -113,6 +113,7 @@ Boolean PushSemanticSetSearchStateEvent(uint32_t tagged_message);
 Boolean PushSemanticUseTorchEvent(uint32_t tagged_message);
 Boolean PushSemanticContextualOverviewEvent(uint32_t tagged_message);
 Boolean PushSemanticContextualWorldEntryEvent(uint32_t tagged_message);
+Boolean PushSemanticOpenMoneyManagementEvent(uint32_t tagged_message);
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticFinishCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticDelayCombatantEvent(uint32_t tagged_message);

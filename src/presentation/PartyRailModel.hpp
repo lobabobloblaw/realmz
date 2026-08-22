@@ -142,6 +142,7 @@ enum class ActionIntent {
   contextual_overview,
   selected_item_drilldown,
   contextual_world_entry,
+  open_money_management,
 };
 
 // "deferred_to_engine" means that the snapshot satisfies the prerequisites

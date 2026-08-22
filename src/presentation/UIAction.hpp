@@ -164,6 +164,13 @@ struct ContextualWorldEntryAction {
   bool operator==(const ContextualWorldEntryAction&) const = default;
 };
 
+// Opens Classic's pooled-money management flow. The command is party-scoped:
+// a valid selected member must be verified freshly at composition and
+// delivery for safety, but its identity is deliberately not encoded or bound.
+struct OpenMoneyManagementAction {
+  bool operator==(const OpenMoneyManagementAction&) const = default;
+};
+
 // Ends the explicitly identified party combatant's current turn in the
 // preserved Classic combat loop with its Guard command. Carrying the actor
 // prevents a queued action from silently retargeting after the turn advances.
@@ -553,7 +560,8 @@ using UIActionPayload = std::variant<
     UseTorchAction,
     ContextualOverviewAction,
     OpenSelectedItemDrilldownAction,
-    ContextualWorldEntryAction>;
+    ContextualWorldEntryAction,
+    OpenMoneyManagementAction>;
 
 struct UIAction {
   ActionSequence sequence = 0;
@@ -651,6 +659,9 @@ struct UIAction {
     } else if constexpr (
         std::is_same_v<Action, ContextualWorldEntryAction>) {
       return "contextual_world_entry";
+    } else if constexpr (
+        std::is_same_v<Action, OpenMoneyManagementAction>) {
+      return "open_money_management";
     } else {
       return "set_presentation_mode";
     }

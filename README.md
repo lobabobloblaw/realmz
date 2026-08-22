@@ -24,7 +24,7 @@ selecting the active member never emulates the Classic second click that opens
 the character modal. World commands are organized into persistent, directly
 selectable **Travel**, **Party**, and **Game** pages so every target keeps the
 44-point minimum at the 1024×768 floor. Party contains Items, Equipment,
-Spells, Scroll, and Character; Game contains Save, Load, and Rest. Selecting
+Spells, Scroll, Character, and Money; Game contains Save, Load, and Rest. Selecting
 the current page is an idempotent presentation action.
 A code-native Items control carries the selected member in
 a typed `OpenInventoryAction`. A neighboring Spells control is available only
@@ -66,6 +66,24 @@ dungeon loop alone selects the real `showitembut` before entering preserved
 `wear`/`removeitem` mutation. The route adds no replay vocabulary. Automated
 tests do not replace private, no-redistribution manual QA on disposable outdoor
 and dungeon fixtures.
+The PARTY page's sixth control is one member-free MONEY command carrying an
+empty `OpenMoneyManagementAction`. It is available during ordinary outdoor or
+dungeon navigation, both in camp and outside it, once a fresh valid current
+selection exists; that safety check never binds or encodes member identity.
+Its strict single-use `0x574DSS00` tag uses `SS=0x01` for outdoor or `SS=0x02`
+for dungeon and requires the reserved low byte to remain zero. After the
+semantic scope completes, late validation freshly requires adaptive mode, the
+exact outdoor or dungeon map/first-person presentation, a nonempty party of no
+more than six, and a selected member bounded to `0..5` whose selected flag is
+still true. EventManager then yields only Classic's exact lowercase `m`
+keyDown `0x00002E6D` from a neutral one-shot `app1Evt`, with zero pointer,
+modifier, and window state and no held-mouse gate. Opening is not gated by
+funds, shop, temple, bank, or the serialized but otherwise dead `swapavail`
+flag. Classic's `swapbut` from CNTL 157, outdoor `checkkeypad`, dungeon
+`threed`, `buttonchoice`, `swap`, `pool`, and `share` paths retain the complete
+modal and every money effect. No Classic source or replay vocabulary changes.
+The interaction does not supply the still-missing pooled-money information
+display, and private no-redistribution manual QA remains open.
 The member-free `RestPartyAction` is available only while the party is already
 in camp. Its single-use tag is late-validated against the completed semantic
 scope and freshly captured Legacy and snapshot state: adaptive eligibility,
@@ -312,12 +330,14 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 49 are `semantic_complete`, and 40 remain `missing`, so
+`retained_in_crop`, 51 are `semantic_complete`, and 38 remain `missing` (15
+interactions and 23 essential-information roles), so
 cropping stays disabled. Known missing outdoor and dungeon roles include Heal,
-Trade, Money/Swap, selected-member condition drilldowns, and the per-member
-Auto controls. The context-sensitive Shop/Temple/seamless-encounter entry,
+Trade, selected-member condition drilldowns, and the per-member Auto controls.
+Money management, the context-sensitive Shop/Temple/seamless-encounter entry,
 Character Sheet, and the distinct quick Equipment popup are covered interaction
-rows; none implies a broader inspection role. Known
+rows; none implies a broader inspection or information role, and the two pooled-money
+information rows remain missing. Known
 missing combat roles include conditional Turn Undead, per-member Auto, and the distinct
 focused-combatant inspection controls for character or monster details, items,
 conditions, and monster attacks. Information gaps include ordered capture and

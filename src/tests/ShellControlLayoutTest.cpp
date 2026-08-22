@@ -582,6 +582,95 @@ void test_open_character_sheet_control_is_the_fourth_party_action() {
   }).empty());
 }
 
+void test_money_management_is_member_free_sixth_party_action() {
+  const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
+  for (const auto& request : {
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .money_management_control_visible = true,
+               .money_management_available = true,
+           },
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .money_management_control_visible = true,
+               .money_management_available = true,
+           },
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::dungeon_first_person,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .money_management_control_visible = true,
+               .money_management_available = true,
+           },
+       }) {
+    const auto controls = compute_shell_control_layout(request);
+    CHECK(controls.size() == 4U);
+    verify_world_tabs(controls, panel, WorldActionPage::party);
+    const auto& money = controls.back();
+    CHECK(money.region.value == 1130U);
+    CHECK(money.kind == ShellControlKind::open_money_management);
+    CHECK(money.label == "MONEY");
+    CHECK(money.accessibility_label == "Manage party money");
+    CHECK(money.focus_identifier == "focus.action.party.money");
+    CHECK(money.tab_order == 1130);
+    CHECK(money.enabled);
+    CHECK(action_name(money.payload) == "open_money_management");
+    CHECK(std::holds_alternative<OpenMoneyManagementAction>(money.payload));
+    CHECK(panel.contains(money.bounds));
+    CHECK(money.bounds.width >= 44.0);
+    CHECK(money.bounds.height >= 44.0);
+  }
+
+  const auto disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .money_management_control_visible = true,
+      .money_management_available = false,
+  });
+  CHECK(disabled.size() == 4U);
+  CHECK(disabled.back().kind == ShellControlKind::open_money_management);
+  CHECK(!disabled.back().enabled);
+  CHECK(std::holds_alternative<OpenMoneyManagementAction>(
+      disabled.back().payload));
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .money_management_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = false,
+      .money_management_control_visible = true,
+      .money_management_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .money_management_control_visible = true,
+  }).empty());
+}
+
 void test_contextual_world_entry_reuses_rest_slot_and_fails_closed() {
   const LogicalRect panel{0.0, 0.0, 800.0, 150.0};
   struct EntryCase {
@@ -805,6 +894,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
                      ContextualOverviewMode::area_search,
                  .selected_item_drilldown_member = PartyMemberId{2},
                  .selected_item_drilldown_available = true,
+                 .money_management_control_visible = true,
+                 .money_management_available = true,
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -840,6 +931,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
                      ContextualOverviewMode::area_search,
                  .selected_item_drilldown_member = PartyMemberId{2},
                  .selected_item_drilldown_available = true,
+                 .money_management_control_visible = true,
+                 .money_management_available = true,
              },
          }) {
       std::array<std::vector<ShellControlPlacement>, 3> layouts;
@@ -848,7 +941,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
         layouts[page_index] = compute_shell_control_layout(request);
         const size_t action_count = page_index == 0U
             ? (request.screen == ScreenContext::exploration ? 8U : 4U)
-            : (page_index == 1U ? 5U : 7U);
+            : (page_index == 1U ? 6U : 7U);
         CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
         verify_world_tabs(
             layouts[page_index], panel, kWorldPages[page_index]);
@@ -876,6 +969,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       const auto& spellbook = party[5];
       const auto& scroll = party[6];
       const auto& character = party[7];
+      const auto& money = party[8];
       CHECK(inventory.region.value == 1100U);
       CHECK(inventory.kind == ShellControlKind::open_inventory);
       CHECK(inventory.label == "ITEMS");
@@ -920,6 +1014,14 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(character.tab_order == 1113);
       CHECK(character.enabled);
       CHECK(character.payload == UIActionPayload{OpenCharacterSheetAction{2}});
+      CHECK(money.region.value == 1130U);
+      CHECK(money.kind == ShellControlKind::open_money_management);
+      CHECK(money.label == "MONEY");
+      CHECK(money.accessibility_label == "Manage party money");
+      CHECK(money.focus_identifier == "focus.action.party.money");
+      CHECK(money.tab_order == 1130);
+      CHECK(money.enabled);
+      CHECK(money.payload == UIActionPayload{OpenMoneyManagementAction{}});
 
       const auto& game = layouts[2];
       const auto& save = game[3];
@@ -1526,7 +1628,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
           static_cast<ContextualOverviewMode>(255),
   }).empty());
 
-  // Dungeon Travel, the reserved four-slot Party page, and the seven-slot GAME
+  // Dungeon Travel, the reserved six-slot PARTY page, and the seven-slot GAME
   // page are all reachable at this exact 44-point floor. One point less in
   // either dimension fails the whole persistent deck closed on every page.
   constexpr LogicalRect exact_minimum{0.0, 0.0, 372.0, 120.0};
@@ -1563,6 +1665,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
         .contextual_overview_control_visible = true,
         .contextual_overview_available = true,
         .contextual_overview_mode = ContextualOverviewMode::area_search,
+        .money_management_control_visible = true,
+        .money_management_available = true,
     };
     const auto exact = compute_shell_control_layout(exact_request);
     CHECK(!exact.empty());
@@ -2319,6 +2423,7 @@ int main() {
     test_selected_item_drilldown_control_is_typed_and_fail_closed();
     test_open_scroll_case_control_is_distinct_and_visible_when_disabled();
     test_open_character_sheet_control_is_the_fourth_party_action();
+    test_money_management_is_member_free_sixth_party_action();
     test_contextual_world_entry_reuses_rest_slot_and_fails_closed();
     test_world_action_controls_at_combined_minimum_layout();
     test_combat_command_contracts_are_independent_and_fail_closed();

@@ -846,6 +846,27 @@ public:
     return true;
   }
 
+  bool push_semantic_open_money_management_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticOpenMoneyManagementTag(tagged_message)) {
+      return false;
+    }
+    // Keep the member-free Money request tagged until the originating guarded
+    // world loop freshly validates its party and current selection. Queueing
+    // must not forge any Classic key, pointer, modifier, or window state.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = {};
+    ev.modifiers = 0;
+    ev.window_port = nullptr;
+    em_log.debug_f(
+        "Enqueued tagged semantic open money management (what={}, "
+        "message=0x{:08X}, when=0x{:08X})",
+        name_for_event_type(ev.what), ev.message, ev.when);
+    return true;
+  }
+
   bool push_semantic_guard_combatant_event(uint32_t tagged_message) {
     if (!RealmzIsSemanticGuardCombatantTag(tagged_message)) {
       return false;
@@ -2026,6 +2047,27 @@ Boolean GetNextSemanticGameplayEvent(
       ret->window_port = nullptr;
     }
   } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticOpenMoneyManagementTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered &&
+        RealmzConsumeSemanticOpenMoneyManagementEvent(
+            surface, ret->message, &classic_key_message)) {
+      // The completed world boundary has freshly validated a bounded party
+      // and current selected member. Classic receives only its exact lowercase
+      // m record and owns the complete Money dialog and every mutation.
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+      ret->where = {};
+      ret->modifiers = 0;
+      ret->window_port = nullptr;
+    } else {
+      ret->what = nullEvent;
+      ret->message = 0;
+      ret->where = {};
+      ret->modifiers = 0;
+      ret->window_port = nullptr;
+    }
+  } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticRestPartyTag(ret->message)) {
     uint32_t classic_key_message = 0;
     const bool mouse_button_held =
@@ -2488,6 +2530,10 @@ Boolean PushSemanticContextualOverviewEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticContextualWorldEntryEvent(uint32_t tagged_message) {
   return em.push_semantic_contextual_world_entry_event(tagged_message);
+}
+
+Boolean PushSemanticOpenMoneyManagementEvent(uint32_t tagged_message) {
+  return em.push_semantic_open_money_management_event(tagged_message);
 }
 
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message) {

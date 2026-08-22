@@ -1717,6 +1717,28 @@ void WindowManager::create_sdl_window() {
                         semantic_contextual_world_entry_tag(action, surface);
                     return tag && PushSemanticContextualWorldEntryEvent(tag);
                   },
+              .open_money_management =
+                  [](uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_open_money_management(context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_open_money_management_tag(surface);
+                    return tag && PushSemanticOpenMoneyManagementEvent(tag);
+                  },
           },
           realmz::presentation::RuntimeLegacyCombatActionSinks{
               .guard_combatant =
@@ -3079,6 +3101,12 @@ void draw_shell_panel_contents(
         has_semantic_contextual_world_entry
         ? std::string_view{contextual_world_entry_control->label}
         : std::string_view{};
+    const bool has_semantic_money_management = std::ranges::any_of(
+        controls,
+        [](const auto& control) {
+          return control.kind == realmz::presentation::
+              ShellControlKind::open_money_management;
+        });
     const bool has_semantic_guard = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -3235,6 +3263,9 @@ void draw_shell_panel_contents(
         action_summary += " · ";
         action_summary += contextual_world_entry_summary;
       }
+      if (has_semantic_money_management) {
+        action_summary += " · MONEY";
+      }
       action_summary += " · MORE IN GAME VIEW";
     } else if (has_semantic_guard || has_semantic_finish ||
         has_semantic_delay || has_semantic_center ||
@@ -3250,7 +3281,8 @@ void draw_shell_panel_contents(
     } else if (has_semantic_rest || has_semantic_camp ||
         has_semantic_search || has_semantic_torch ||
         has_semantic_contextual_overview ||
-        has_semantic_contextual_world_entry) {
+        has_semantic_contextual_world_entry ||
+        has_semantic_money_management) {
       action_summary.clear();
       const auto append_summary = [&action_summary](std::string_view label) {
         if (!action_summary.empty()) {
@@ -3276,6 +3308,9 @@ void draw_shell_panel_contents(
       if (has_semantic_contextual_world_entry) {
         append_summary(contextual_world_entry_summary);
       }
+      if (has_semantic_money_management) {
+        append_summary("MONEY");
+      }
     }
     double action_summary_width = width;
     for (const auto& control : controls) {
@@ -3298,7 +3333,8 @@ void draw_shell_panel_contents(
     if (has_semantic_movement || has_semantic_rest || has_semantic_camp ||
         has_semantic_search || has_semantic_torch ||
         has_semantic_contextual_overview ||
-        has_semantic_contextual_world_entry || has_semantic_guard ||
+        has_semantic_contextual_world_entry ||
+        has_semantic_money_management || has_semantic_guard ||
         has_semantic_finish || has_semantic_delay || has_semantic_center ||
         has_semantic_action_page || has_semantic_switch_weapon ||
         has_semantic_combat_focus_cycle || has_semantic_combat_items ||
@@ -3337,6 +3373,8 @@ void draw_shell_panel_contents(
                     contextual_overview) &&
             (control.kind != realmz::presentation::ShellControlKind::
                     contextual_world_entry) &&
+            (control.kind != realmz::presentation::ShellControlKind::
+                    open_money_management) &&
             (control.kind !=
                 realmz::presentation::ShellControlKind::guard_combatant) &&
             (control.kind !=
@@ -4015,6 +4053,35 @@ void WindowManager::present_remastered_frame() {
                   .adaptive_eligible =
                       legacy_context.adaptive_eligible != 0,
               });
+      const auto money_management_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent == realmz::presentation::
+                ActionIntent::open_money_management;
+          });
+      const bool money_management_control_visible =
+          world_action_surface &&
+          money_management_action != shell_model->actions.end();
+      const auto money_management_selected_member =
+          snapshot.party.selected_member;
+      const auto* money_management_member_view =
+          money_management_selected_member
+          ? snapshot.party.member(*money_management_selected_member)
+          : nullptr;
+      const bool money_management_available =
+          money_management_control_visible &&
+          money_management_selected_member.has_value() &&
+          *money_management_selected_member <= 5U &&
+          money_management_member_view &&
+          money_management_member_view->selected &&
+          money_management_action->can_invoke() &&
+          snapshot_context_matches && realmz::presentation::
+              legacy_key_message_for_open_money_management({
+                  .screen = screen,
+                  .world_presentation = snapshot.world.presentation,
+                  .adaptive_eligible =
+                      legacy_context.adaptive_eligible != 0,
+              }).has_value();
       const auto spellbook_action = std::ranges::find_if(
           shell_model->actions,
           [](const auto& action) {
@@ -4837,6 +4904,9 @@ void WindowManager::present_remastered_frame() {
                   contextual_world_entry_available,
               .contextual_world_entry_mode =
                   contextual_world_entry_payload.mode,
+              .money_management_control_visible =
+                  money_management_control_visible,
+              .money_management_available = money_management_available,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -5063,6 +5133,32 @@ void WindowManager::present_remastered_frame() {
                     modeled_action->can_invoke() && realmz::presentation::
                         runtime_legacy_context_supports_selected_item_drilldown(
                             context);
+              }
+              if (std::holds_alternative<realmz::presentation::
+                      OpenMoneyManagementAction>(control.payload)) {
+                const auto selected = snapshot.party.selected_member;
+                const auto* member =
+                    selected ? snapshot.party.member(*selected) : nullptr;
+                const auto modeled_action = std::ranges::find_if(
+                    shell_model->actions,
+                    [](const auto& action) {
+                      return action.intent == realmz::presentation::
+                          ActionIntent::open_money_management;
+                    });
+                return control.kind == realmz::presentation::
+                        ShellControlKind::open_money_management &&
+                    current_world_action_page == realmz::presentation::
+                        WorldActionPage::party &&
+                    action_panel.contains(control.bounds) && selected &&
+                    *selected <= 5U && member && member->selected &&
+                    snapshot.screen == context.screen &&
+                    snapshot.world.presentation ==
+                        context.world_presentation &&
+                    modeled_action != shell_model->actions.end() &&
+                    !modeled_action->party_member &&
+                    modeled_action->can_invoke() && realmz::presentation::
+                        legacy_key_message_for_open_money_management(context)
+                            .has_value();
               }
               if (const auto* spellbook =
                       std::get_if<
@@ -6479,6 +6575,36 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       }
       continue;
     }
+    if (std::holds_alternative<realmz::presentation::
+            OpenMoneyManagementAction>(control.payload)) {
+      if (!surface_matches_context ||
+          control.kind != realmz::presentation::ShellControlKind::
+              open_money_management ||
+          this->remastered_world_action_page !=
+              realmz::presentation::WorldActionPage::party ||
+          !this->adaptive_shell_plan->adaptive_layout->action_bar.contains(
+              control.bounds) || !realmz::presentation::
+              legacy_key_message_for_open_money_management(context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      const auto selected = snapshot->party.selected_member;
+      const auto* member =
+          selected ? snapshot->party.member(*selected) : nullptr;
+      if ((snapshot->screen != context.screen) ||
+          (snapshot->world.presentation != context.world_presentation) ||
+          !selected || (*selected > 5U) || !member || !member->selected) {
+        return false;
+      }
+      continue;
+    }
     if (const auto* spellbook =
             std::get_if<realmz::presentation::OpenSpellbookAction>(
                 &control.payload)) {
@@ -7637,6 +7763,8 @@ void WindowManager::dispatch_remastered_shell_control(
   const auto* open_selected_item_drilldown =
       std::get_if<realmz::presentation::OpenSelectedItemDrilldownAction>(
           &control.payload);
+  const bool open_money_management = std::holds_alternative<
+      realmz::presentation::OpenMoneyManagementAction>(control.payload);
   const auto* rest_party =
       std::get_if<realmz::presentation::RestPartyAction>(&control.payload);
   const auto* set_camp_state =
@@ -7816,6 +7944,19 @@ void WindowManager::dispatch_remastered_shell_control(
             (open_selected_item_drilldown->member > 5U ||
                 control.kind != realmz::presentation::ShellControlKind::
                     selected_item_drilldown ||
+                this->remastered_world_action_page !=
+                    realmz::presentation::WorldActionPage::party ||
+                !this->adaptive_shell_plan ||
+                !this->adaptive_shell_plan->adaptive_layout ||
+                ((this->adaptive_shell_plan->screen != realmz::presentation::
+                        ScreenContext::exploration) &&
+                    (this->adaptive_shell_plan->screen !=
+                        realmz::presentation::ScreenContext::dungeon)) ||
+                !this->adaptive_shell_plan->adaptive_layout->action_bar
+                     .contains(control.bounds))) ||
+        (open_money_management &&
+            (control.kind != realmz::presentation::ShellControlKind::
+                    open_money_management ||
                 this->remastered_world_action_page !=
                     realmz::presentation::WorldActionPage::party ||
                 !this->adaptive_shell_plan ||

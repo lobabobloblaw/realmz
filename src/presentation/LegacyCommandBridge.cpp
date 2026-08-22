@@ -115,6 +115,11 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
           this->handlers_.contextual_world_entry,
           payload,
           "contextual_world_entry");
+    } else if constexpr (std::is_same_v<Action, OpenMoneyManagementAction>) {
+      return invoke_handler(
+          this->handlers_.open_money_management,
+          payload,
+          "open_money_management");
     } else if constexpr (std::is_same_v<Action, GuardCombatantAction>) {
       return invoke_handler(
           this->handlers_.guard_combatant, payload, "guard_combatant");

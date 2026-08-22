@@ -373,6 +373,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic contextual world-entry input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticOpenMoneyManagementEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic Money input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic guard input");
@@ -1294,6 +1298,10 @@ void verify_event_manager(const fs::path& repository_root) {
       "consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticOpenMoneyManagementEvent") == 1,
+      "semantic gameplay wrapper must have one late Money consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late guard consumer");
   require(count_identifier(
@@ -1363,15 +1371,15 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 31,
-      "semantic gameplay wrapper must recognize all thirty-one tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 27 &&
-          count_text(compact_semantic, "ret->what=keyDown;") == 25 &&
+  require(count_identifier(semantic_wrapper, "app1Evt") == 32,
+      "semantic gameplay wrapper must recognize all thirty-two tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 28 &&
+          count_text(compact_semantic, "ret->what=keyDown;") == 26 &&
           count_text(
               compact_semantic, ".kind=(ret->what==keyDown)") == 2,
       "only guarded Classic replay injection or late movement, inventory, "
       "spellbook, non-combat scroll-case, contextual Overview, contextual "
-      "world entry, Rest, Camp, "
+      "world entry, Money, Rest, Camp, "
       "guard, finish, delay, "
       "center, "
       "switch-weapon, cycle-focus, "
@@ -1445,6 +1453,10 @@ void verify_event_manager(const fs::path& repository_root) {
               source, "RealmzConsumeSemanticContextualWorldEntryEvent") == 1,
       "EventManager may consume semantic contextual world-entry input only "
       "inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticOpenMoneyManagementEvent") == 1,
+      "EventManager may consume semantic Money input only inside its gameplay "
+      "wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "EventManager may consume semantic guard input only inside its gameplay wrapper");
@@ -5700,11 +5712,13 @@ void verify_rest_party_window_manager_contract(
               "LegacyActionHandler<OpenSelectedItemDrilldownAction>"
               "open_selected_item_drilldown;"
               "LegacyActionHandler<ContextualWorldEntryAction>"
-              "contextual_world_entry;}"),
+              "contextual_world_entry;"
+              "LegacyActionHandler<OpenMoneyManagementAction>"
+              "open_money_management;}"),
       "LegacyActionHandlers must retain Rest and Camp followed by append-only "
       "Search, Torch, contextual Overview, selected-item drilldown, and "
-      "contextual world entry so positional aggregate clients keep their "
-      "prior member order");
+      "contextual world entry, then Money, so positional aggregate clients "
+      "keep their prior member order");
 
   const std::string runtime_source = code_only(read_file(
       repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
@@ -7187,7 +7201,8 @@ void verify_use_torch_window_manager_contract(
   const std::size_t renderer_gate = compact_renderer.find(
       "has_semantic_search||has_semantic_torch||"
       "has_semantic_contextual_overview||"
-      "has_semantic_contextual_world_entry||has_semantic_guard",
+      "has_semantic_contextual_world_entry||"
+      "has_semantic_money_management||has_semantic_guard",
       renderer_compact_summary);
   const std::size_t renderer_allowlist = compact_renderer.find(
       "control.kind!=realmz::presentation::ShellControlKind::use_torch",
@@ -7862,8 +7877,9 @@ void verify_contextual_world_entry_window_manager_contract(
       "ContextualWorldEntryAction must retain exactly one explicit mode");
   require(without_whitespace(ui_header).contains(
               "ContextualOverviewAction,OpenSelectedItemDrilldownAction,"
-              "ContextualWorldEntryAction>;"),
-      "ContextualWorldEntryAction must remain the append-only UI payload");
+              "ContextualWorldEntryAction,OpenMoneyManagementAction>;"),
+      "ContextualWorldEntryAction must remain immediately before the "
+      "append-only Money UI payload");
   require(without_whitespace(raw_entry_ui_header).contains(
               "return\"contextual_world_entry\";"),
       "ContextualWorldEntryAction must retain its stable action name");
@@ -8279,16 +8295,21 @@ void verify_contextual_world_entry_window_manager_contract(
   const std::size_t delivery_start = compact_delivery_source.find(
       "RealmzIsSemanticContextualWorldEntryTag(ret->message)",
       overview_delivery);
-  const std::size_t delivery_end = compact_delivery_source.find(
-      "RealmzIsSemanticRestPartyTag(ret->message)", delivery_start);
+  const std::size_t money_delivery = compact_delivery_source.find(
+      "RealmzIsSemanticOpenMoneyManagementTag(ret->message)",
+      delivery_start);
+  const std::size_t rest_delivery = compact_delivery_source.find(
+      "RealmzIsSemanticRestPartyTag(ret->message)", money_delivery);
   require(overview_delivery != std::string::npos &&
           delivery_start != std::string::npos &&
-          delivery_end != std::string::npos &&
-          overview_delivery < delivery_start && delivery_start < delivery_end,
+          money_delivery != std::string::npos &&
+          rest_delivery != std::string::npos &&
+          overview_delivery < delivery_start &&
+          delivery_start < money_delivery && money_delivery < rest_delivery,
       "contextual world entry must retain its append-only EventManager branch "
-      "between Overview and Rest");
+      "between Overview and Money, with Rest after Money");
   const std::string delivery = compact_delivery_source.substr(
-      delivery_start, delivery_end - delivery_start);
+      delivery_start, money_delivery - delivery_start);
   require(count_identifier(delivery,
               "RealmzConsumeSemanticContextualWorldEntryEvent") == 1 &&
           count_identifier(delivery, "keyDown") == 1 &&
@@ -8641,6 +8662,753 @@ void verify_contextual_world_entry_window_manager_contract(
   require(qa.find("no-redistribution manual-QA gap") != std::string::npos &&
           qa.find("do not redistribute them") != std::string::npos,
       "release QA must retain the private no-redistribution world-entry gap");
+}
+
+void verify_open_money_management_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string raw_ui_header = read_file(
+      repository_root / "src/presentation/UIAction.hpp");
+  const std::string ui_header = code_only(raw_ui_header);
+  const std::string action_type = type_body(
+      ui_header, "OpenMoneyManagementAction");
+  require(count_identifier(action_type, "PartyMemberId") == 0 &&
+          count_identifier(action_type, "member") == 0 &&
+          count_identifier(action_type, "mode") == 0,
+      "OpenMoneyManagementAction must remain an empty member-free command");
+  require(without_whitespace(ui_header).contains(
+              "ContextualWorldEntryAction,OpenMoneyManagementAction>;") &&
+          without_whitespace(raw_ui_header).contains(
+              "return\"open_money_management\";"),
+      "Money must remain the append-only UI payload with its stable action "
+      "name");
+
+  const std::string model_header = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp"));
+  const std::string action_intents = type_body(model_header, "ActionIntent");
+  const std::size_t entry_intent = find_identifier(
+      action_intents, "contextual_world_entry");
+  const std::size_t money_intent = find_identifier(
+      action_intents, "open_money_management");
+  require(entry_intent != std::string::npos &&
+          money_intent != std::string::npos && entry_intent < money_intent &&
+          count_identifier(action_intents, "open_money_management") == 1,
+      "Money must remain the append-only world ActionIntent");
+  const std::string raw_model_source = read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp");
+  const std::string model_source = code_only(raw_model_source);
+  const std::string build_actions = function_body(model_source, "build_actions");
+  const std::string compact_actions = without_whitespace(build_actions);
+  const std::size_t money_model_start = compact_actions.find(
+      "constboolhas_fresh_selected_member=selected&&selected->selected;");
+  const std::size_t money_model_end = compact_actions.find(
+      "returnresult;", money_model_start);
+  require(money_model_start != std::string::npos &&
+          money_model_end != std::string::npos &&
+          money_model_start < money_model_end,
+      "Money action-model branch is missing");
+  const std::string money_model = compact_actions.substr(
+      money_model_start, money_model_end - money_model_start);
+  for (const auto needle : {
+           "money_management_available="
+               "navigation_context&&has_fresh_selected_member;",
+           "ActionIntent::open_money_management",
+           "ActionAvailability::deferred_to_engine",
+       }) {
+    require(money_model.contains(needle),
+        std::string("Money action model must retain ") + needle);
+  }
+  require(without_whitespace(raw_model_source).find(
+              "\"action.party.money\",\"Money\"") != std::string::npos &&
+          count_identifier(money_model, "party_member") == 0 &&
+          count_identifier(money_model, "in_camp") == 0 &&
+          count_identifier(money_model, "swapavail") == 0 &&
+          count_identifier(money_model, "pooled_money") == 0,
+      "Money modeling must require only ordinary navigation plus a fresh "
+      "selection, without binding identity or pre-gating Classic state");
+
+  const std::string bridge_header = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.hpp"));
+  const std::string handlers = type_body(bridge_header, "LegacyActionHandlers");
+  const std::size_t entry_handler = find_identifier(
+      handlers, "contextual_world_entry");
+  const std::size_t money_handler = find_identifier(
+      handlers, "open_money_management");
+  require(entry_handler != std::string::npos &&
+          money_handler != std::string::npos && entry_handler < money_handler &&
+          count_identifier(handlers, "OpenMoneyManagementAction") == 1,
+      "the injected bridge must append one named Money handler");
+  const std::string bridge_source = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.cpp"));
+  const std::string injected_dispatch = function_body(bridge_source, "dispatch");
+  require(count_identifier(injected_dispatch,
+              "OpenMoneyManagementAction") == 1 &&
+          count_identifier(injected_dispatch,
+              "open_money_management") == 1,
+      "the injected bridge must route Money only through its named handler");
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::size_t money_sink_start = find_identifier(
+      runtime_header, "RuntimeLegacyOpenMoneyManagementSink");
+  const std::size_t money_sink_end = runtime_header.find(';', money_sink_start);
+  require(money_sink_start != std::string::npos &&
+          money_sink_end != std::string::npos,
+      "the runtime Money sink alias is missing");
+  const std::string money_sink = runtime_header.substr(
+      money_sink_start, money_sink_end - money_sink_start + 1U);
+  require(count_identifier(runtime_header,
+              "RuntimeLegacyOpenMoneyManagementSink") == 2 &&
+          count_identifier(money_sink, "uint32_t") == 1 &&
+          count_identifier(money_sink, "RuntimeLegacyCommandContext") == 1 &&
+          count_identifier(money_sink, "PartyMemberId") == 0,
+      "the runtime Money sink must carry only an exact key record and context");
+  const std::string world_sinks = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  const std::size_t entry_sink = find_identifier(
+      world_sinks, "contextual_world_entry");
+  const std::size_t money_sink_field = find_identifier(
+      world_sinks, "open_money_management");
+  require(entry_sink != std::string::npos &&
+          money_sink_field != std::string::npos &&
+          entry_sink < money_sink_field &&
+          count_identifier(runtime_header,
+              "legacy_key_message_for_open_money_management") == 1,
+      "runtime world sinks and Money mapper must remain append-only and named");
+
+  const std::string runtime_source = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string compact_runtime = without_whitespace(runtime_source);
+  require(compact_runtime.contains(
+              "kOpenMoneyManagementMessage=0x00002E6DU;"),
+      "Money must preserve Classic's exact lowercase m key record");
+  const std::string mapper = function_body(
+      runtime_source, "legacy_key_message_for_open_money_management");
+  const std::string compact_mapper = without_whitespace(mapper);
+  for (const auto needle : {
+           "!context.adaptive_eligible",
+           "context.screen==ScreenContext::exploration",
+           "context.world_presentation==WorldPresentation::outdoor",
+           "context.screen==ScreenContext::dungeon",
+           "WorldPresentation::dungeon_map",
+           "WorldPresentation::dungeon_first_person",
+           "returnkOpenMoneyManagementMessage;",
+       }) {
+    require(compact_mapper.contains(needle),
+        std::string("Money exact-key mapper must retain ") + needle);
+  }
+  for (const auto forbidden : {
+           "in_camp", "shop", "temple", "bank", "funds", "swapavail",
+           "PartyMemberId", "keyDown", "app1Evt", "mouseDown",
+       }) {
+    require(count_identifier(mapper, forbidden) == 0,
+        std::string("Money mapper must not pre-gate or forge ") + forbidden);
+  }
+  const std::size_t runtime_bundle = find_identifier(
+      runtime_source, "RuntimeLegacyWorldActionSinks");
+  const std::size_t runtime_bundle_open = runtime_source.find(
+      '{', runtime_bundle +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(runtime_bundle != std::string::npos &&
+          runtime_bundle_open != std::string::npos,
+      "runtime Money handler bundle is missing");
+  const std::size_t runtime_bundle_close = matching_delimiter(
+      runtime_source, runtime_bundle_open, '{', '}');
+  const std::string runtime_handlers = runtime_source.substr(
+      runtime_bundle_open, runtime_bundle_close - runtime_bundle_open + 1U);
+  const std::string compact_runtime_handlers =
+      without_whitespace(runtime_handlers);
+  require(compact_runtime_handlers.contains(
+              "handlers.open_money_management=[") &&
+          compact_runtime_handlers.contains(
+              "legacy_key_message_for_open_money_management(context)") &&
+          compact_runtime_handlers.contains(
+              "open_money_management_sink(*message,context)") &&
+          count_identifier(runtime_handlers, "PartyMemberId") == 0,
+      "runtime Money dispatch must retain its empty action and named exact-key "
+      "sink");
+
+  const std::string layout_header = code_only(read_file(
+      repository_root / "src/presentation/ShellControlLayout.hpp"));
+  const std::string control_kinds = type_body(layout_header, "ShellControlKind");
+  const std::size_t entry_kind = find_identifier(
+      control_kinds, "contextual_world_entry");
+  const std::size_t money_kind = find_identifier(
+      control_kinds, "open_money_management");
+  require(entry_kind != std::string::npos && money_kind != std::string::npos &&
+          entry_kind < money_kind &&
+          count_identifier(control_kinds, "open_money_management") == 1,
+      "Money must remain the append-only shell control kind");
+  const std::string layout_request = type_body(
+      layout_header, "ShellControlLayoutRequest");
+  const std::size_t entry_request = find_identifier(
+      layout_request, "contextual_world_entry_mode");
+  const std::size_t money_visible = find_identifier(
+      layout_request, "money_management_control_visible");
+  const std::size_t money_available = find_identifier(
+      layout_request, "money_management_available");
+  require(entry_request != std::string::npos &&
+          money_visible != std::string::npos &&
+          money_available != std::string::npos &&
+          entry_request < money_visible && money_visible < money_available,
+      "layout request must append Money visibility and availability evidence");
+  const std::string raw_layout_source = read_file(
+      repository_root / "src/presentation/ShellControlLayout.cpp");
+  const std::string layout_source = code_only(raw_layout_source);
+  const std::string layout = function_body(
+      layout_source, "compute_shell_control_layout");
+  const std::string compact_layout = without_whitespace(layout);
+  require(compact_layout.contains("kPartyActionCapacity=6U;") &&
+          compact_layout.contains(
+              "(request.money_management_control_visible?1U:0U)") &&
+          compact_layout.contains(
+              "request.money_management_available&&"
+              "(!request.money_management_control_visible||"
+              "!request.navigation_available)"),
+      "PARTY layout must reserve six slots and fail closed on Money evidence");
+  const std::size_t character_control = compact_layout.find(
+      "if(request.character_sheet_member)");
+  const std::size_t money_control = compact_layout.find(
+      "if(request.money_management_control_visible)", character_control);
+  const std::size_t game_page = compact_layout.find(
+      "elseif(game_world_page)", money_control);
+  require(character_control != std::string::npos &&
+          money_control != std::string::npos && game_page != std::string::npos &&
+          character_control < money_control && money_control < game_page,
+      "MONEY must remain the sixth and final PARTY-page control");
+  const std::string money_placement = compact_layout.substr(
+      money_control, game_page - money_control);
+  for (const auto needle : {
+           ".region=ShellRegionId{kOpenMoneyManagementRegion}",
+           ".kind=ShellControlKind::open_money_management",
+           ".tab_order=1130",
+           ".enabled=request.money_management_available&&"
+               "request.navigation_available",
+           ".payload=OpenMoneyManagementAction{}",
+       }) {
+    require(money_placement.contains(needle),
+        std::string("Money control placement must retain ") + needle);
+  }
+  const std::string compact_raw_layout = without_whitespace(raw_layout_source);
+  require(compact_raw_layout.contains("kOpenMoneyManagementRegion=1130U;") &&
+          compact_raw_layout.find(".label=\"MONEY\"") != std::string::npos &&
+          compact_raw_layout.find(
+              ".accessibility_label=\"Managepartymoney\"") !=
+              std::string::npos &&
+          compact_raw_layout.find(
+              ".focus_identifier=\"focus.action.party.money\"") !=
+              std::string::npos,
+      "MONEY must retain its unique region, visible label, accessibility "
+      "name, focus identity, and tab order");
+
+  const std::string boundary_header = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.h"));
+  for (const auto identifier : {
+           "RealmzIsSemanticOpenMoneyManagementTag",
+           "RealmzSemanticOpenMoneyManagementTagSurface",
+           "RealmzConsumeSemanticOpenMoneyManagementEvent",
+           "semantic_open_money_management_tag",
+       }) {
+    require(count_identifier(boundary_header, identifier) == 1,
+        std::string("semantic Money boundary must expose one ") + identifier);
+  }
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary = without_whitespace(boundary_source);
+  for (const auto constant : {
+           "kSemanticOpenMoneyManagementSignature=0x574D0000U;",
+           "kSemanticOpenMoneyManagementMask=0xFFFF0000U;",
+           "kSemanticOpenMoneyManagementSurfaceMask=0x0000FF00U;",
+           "kSemanticOpenMoneyManagementReservedMask=0x000000FFU;",
+       }) {
+    require(compact_boundary.contains(constant),
+        std::string("strict 0x574DSS00 tag must retain ") + constant);
+  }
+  const std::string decode = function_body(
+      boundary_source, "decode_open_money_management");
+  const std::string compact_decode = without_whitespace(decode);
+  require(compact_decode.contains(
+              "(tagged_message&kSemanticOpenMoneyManagementReservedMask)!=0") &&
+          compact_decode.contains("!is_world_gameplay_surface(surface_value)") &&
+          count_identifier(decode, "PartyMemberId") == 0,
+      "0x574DSS00 decoding must reject a nonzero reserved byte and non-world "
+      "surface without decoding identity");
+  const std::string make_tag = function_body(
+      boundary_source, "semantic_open_money_management_tag");
+  const std::string compact_tag = without_whitespace(make_tag);
+  require(compact_tag.contains("if(!is_world_gameplay_surface(surface))") &&
+          compact_tag.contains(
+              "kSemanticOpenMoneyManagementSignature|"
+              "(static_cast<uint32_t>(surface)<<8U)") &&
+          count_identifier(make_tag, "member") == 0,
+      "Money tag creation must encode only one world surface and a zero low "
+      "byte");
+  const std::string generic_tag = function_body(
+      boundary_source, "RealmzIsSemanticGameplayTag");
+  const std::string generic_surface = function_body(
+      boundary_source, "RealmzSemanticGameplayTagSurface");
+  require(count_identifier(generic_tag, "decode_open_money_management") == 1 &&
+          count_identifier(generic_surface,
+              "decode_open_money_management") == 1,
+      "generic gameplay filtering must include Money tags and their origin");
+  const std::string consume = function_body(
+      boundary_source, "RealmzConsumeSemanticOpenMoneyManagementEvent");
+  const std::string compact_consume = without_whitespace(consume);
+  const std::size_t consume_scope = compact_consume.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t consume_decode = compact_consume.find(
+      "decode_open_money_management(tagged_message)", consume_scope);
+  const std::size_t consume_context = compact_consume.find(
+      "RealmzCaptureLegacyPresentationContext()", consume_decode);
+  const std::size_t consume_snapshot = compact_consume.find(
+      "LegacyGameSnapshotSource().capture()", consume_context);
+  const std::size_t consume_presentation = compact_consume.find(
+      "world_presentation_matches_surface(", consume_snapshot);
+  const std::size_t consume_party = compact_consume.find(
+      "snapshot.party.members.empty()", consume_presentation);
+  const std::size_t consume_selection = compact_consume.find(
+      "snapshot.party.selected_member", consume_party);
+  const std::size_t consume_member = compact_consume.find(
+      "snapshot.party.member(*snapshot.party.selected_member)",
+      consume_selection);
+  const std::size_t consume_mapper = compact_consume.find(
+      "legacy_key_message_for_open_money_management(context)", consume_member);
+  const std::size_t consume_output = compact_consume.find(
+      "*classic_key_message=*message", consume_mapper);
+  require(consume_scope != std::string::npos &&
+          consume_decode != std::string::npos &&
+          consume_context != std::string::npos &&
+          consume_snapshot != std::string::npos &&
+          consume_presentation != std::string::npos &&
+          consume_party != std::string::npos &&
+          consume_selection != std::string::npos &&
+          consume_member != std::string::npos &&
+          consume_mapper != std::string::npos &&
+          consume_output != std::string::npos &&
+          consume_scope < consume_decode && consume_decode < consume_context &&
+          consume_context < consume_snapshot &&
+          consume_snapshot < consume_presentation &&
+          consume_presentation < consume_party &&
+          consume_party < consume_selection &&
+          consume_selection < consume_member && consume_member < consume_mapper &&
+          consume_mapper < consume_output,
+      "late Money consumption must burn one scope and freshly validate exact "
+      "surface, presentation, party, and current selection before mapping");
+  require(compact_consume.contains("snapshot.party.members.size()>6U") &&
+          compact_consume.contains("*snapshot.party.selected_member>5U") &&
+          compact_consume.contains("!selected||!selected->selected") &&
+          count_identifier(consume, "in_camp") == 0 &&
+          count_identifier(consume, "PartyMemberId") == 0 &&
+          count_identifier(consume, "keyDown") == 0 &&
+          count_identifier(consume, "buttonchoice") == 0 &&
+          count_identifier(consume, "swap") == 0 &&
+          count_identifier(consume, "pool") == 0 &&
+          count_identifier(consume, "share") == 0,
+      "Money consumer must enforce fresh bounded safety without identity, camp "
+      "gating, event forgery, or Classic effects");
+
+  const std::string event_source = code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  const std::string push = function_body(
+      event_source, "push_semantic_open_money_management_event");
+  const std::string compact_push = without_whitespace(push);
+  require(count_identifier(push,
+              "RealmzIsSemanticOpenMoneyManagementTag") == 1 &&
+          count_identifier(push, "app1Evt") == 1 &&
+          count_identifier(push, "keyDown") == 0 &&
+          count_identifier(push, "mouseDown") == 0 &&
+          compact_push.contains("ev.what=app1Evt;") &&
+          compact_push.contains("ev.message=tagged_message;") &&
+          compact_push.contains("ev.where={};") &&
+          compact_push.contains("ev.modifiers=0;") &&
+          compact_push.contains("ev.window_port=nullptr;"),
+      "EventManager must validate and queue one neutral Money app1Evt without "
+      "key or pointer forgery");
+  const std::string public_push = function_body(
+      event_source, "PushSemanticOpenMoneyManagementEvent");
+  require(without_whitespace(public_push).contains(
+              "returnem.push_semantic_open_money_management_event("
+              "tagged_message);") &&
+          count_identifier(public_push, "keyDown") == 0 &&
+          count_identifier(public_push, "mouseDown") == 0,
+      "the public Money enqueue must delegate only to its validated queue");
+  const std::string delivery_source = function_body(
+      event_source, "GetNextSemanticGameplayEvent");
+  const std::string compact_delivery_source =
+      without_whitespace(delivery_source);
+  const std::size_t entry_delivery = compact_delivery_source.find(
+      "RealmzIsSemanticContextualWorldEntryTag(ret->message)");
+  const std::size_t delivery_start = compact_delivery_source.find(
+      "RealmzIsSemanticOpenMoneyManagementTag(ret->message)", entry_delivery);
+  const std::size_t delivery_end = compact_delivery_source.find(
+      "RealmzIsSemanticRestPartyTag(ret->message)", delivery_start);
+  require(entry_delivery != std::string::npos &&
+          delivery_start != std::string::npos &&
+          delivery_end != std::string::npos &&
+          entry_delivery < delivery_start && delivery_start < delivery_end,
+      "Money delivery must remain append-only between world entry and Rest");
+  const std::string delivery = compact_delivery_source.substr(
+      delivery_start, delivery_end - delivery_start);
+  require(count_identifier(delivery,
+              "RealmzConsumeSemanticOpenMoneyManagementEvent") == 1 &&
+          count_identifier(delivery, "keyDown") == 1 &&
+          count_identifier(delivery, "nullEvent") == 1 &&
+          count_identifier(delivery,
+              "is_mouse_button_down_without_event_pump") == 0 &&
+          count_identifier(delivery, "Button") == 0 &&
+          count_identifier(delivery, "mouseDown") == 0 &&
+          count_text(delivery, "ret->where={};") == 2 &&
+          count_text(delivery, "ret->modifiers=0;") == 2 &&
+          count_text(delivery, "ret->window_port=nullptr;") == 2 &&
+          delivery.contains(
+              "ret->what=keyDown;ret->message=classic_key_message;") &&
+          delivery.contains("ret->what=nullEvent;ret->message=0;"),
+      "Money delivery must yield one exact neutral keyDown or a fully neutral "
+      "rejection with no held-mouse gate");
+
+  const std::string window_raw = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string window_source = code_only(window_raw);
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::string money_window_sink = designated_lambda_body(
+      create_window, "open_money_management");
+  const std::string compact_window_sink = without_whitespace(money_window_sink);
+  for (const auto needle : {
+           "RealmzCurrentSemanticInputSurface()",
+           "legacy_key_message_for_open_money_management(context)",
+           "message!=*expected",
+           "semantic_open_money_management_tag(surface)",
+           "returntag&&PushSemanticOpenMoneyManagementEvent(tag);",
+       }) {
+    require(compact_window_sink.contains(needle),
+        std::string("WindowManager Money sink must retain ") + needle);
+  }
+  require(count_identifier(money_window_sink, "PartyMemberId") == 0 &&
+          count_identifier(money_window_sink, "keyDown") == 0 &&
+          count_identifier(money_window_sink, "mouseDown") == 0,
+      "WindowManager Money sink must bind the current surface, not member or "
+      "raw input");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  for (const auto needle : {
+           "ActionIntent::open_money_management",
+           "money_management_control_visible=world_action_surface&&",
+           "money_management_selected_member="
+               "snapshot.party.selected_member",
+           "*money_management_selected_member<=5U",
+           "money_management_member_view->selected",
+           "money_management_action->can_invoke()",
+           "legacy_key_message_for_open_money_management({",
+           ".money_management_control_visible="
+               "money_management_control_visible",
+           ".money_management_available=money_management_available",
+       }) {
+    require(compact_present.contains(needle),
+        std::string("Money composition must retain ") + needle);
+  }
+  const std::size_t liveness = compact_present.find(
+      "constboolevery_enabled_control_is_live");
+  const std::size_t live_money = compact_present.find(
+      "if(std::holds_alternative<realmz::presentation::"
+      "OpenMoneyManagementAction>(control.payload))", liveness);
+  const std::size_t live_money_end = compact_present.find(
+      "if(constauto*spellbook=", live_money);
+  require(liveness != std::string::npos && live_money != std::string::npos &&
+          live_money_end != std::string::npos && live_money < live_money_end,
+      "composition-time Money liveness branch is missing");
+  const std::string live_branch = compact_present.substr(
+      live_money, live_money_end - live_money);
+  for (const auto needle : {
+           "ShellControlKind::open_money_management",
+           "WorldActionPage::party",
+           "action_panel.contains(control.bounds)",
+           "snapshot.party.selected_member",
+           "*selected<=5U",
+           "member->selected",
+           "snapshot.world.presentation==context.world_presentation",
+           "ActionIntent::open_money_management",
+           "!modeled_action->party_member",
+           "modeled_action->can_invoke()",
+           "legacy_key_message_for_open_money_management(context)",
+       }) {
+    require(live_branch.contains(needle),
+        std::string("composition-time Money liveness must retain ") + needle);
+  }
+
+  const std::string keyboard = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_money = compact_keyboard.find(
+      "if(std::holds_alternative<realmz::presentation::"
+      "OpenMoneyManagementAction>(control.payload))");
+  const std::size_t keyboard_money_end = compact_keyboard.find(
+      "if(constauto*spellbook=", keyboard_money);
+  require(keyboard_money != std::string::npos &&
+          keyboard_money_end != std::string::npos &&
+          keyboard_money < keyboard_money_end,
+      "keyboard Money liveness branch is missing");
+  const std::string keyboard_branch = compact_keyboard.substr(
+      keyboard_money, keyboard_money_end - keyboard_money);
+  for (const auto needle : {
+           "!surface_matches_context",
+           "ShellControlKind::open_money_management",
+           "WorldActionPage::party",
+           "action_bar.contains(control.bounds)",
+           "legacy_key_message_for_open_money_management(context)",
+           "LegacyGameSnapshotSource().capture()",
+           "snapshot->party.selected_member",
+           "*selected>5U",
+           "!member->selected",
+       }) {
+    require(keyboard_branch.contains(needle),
+        std::string("keyboard Money liveness must retain ") + needle);
+  }
+  require(count_identifier(keyboard_branch, "SDL_PollEvent") == 0 &&
+          count_identifier(keyboard_branch, "buttonchoice") == 0 &&
+          count_identifier(keyboard_branch, "swapbut") == 0,
+      "Money keyboard liveness must stay fresh, read-only, and non-pumping");
+
+  const std::string pointer_release = function_body(
+      window_source, "end_remastered_pointer");
+  const std::string compact_pointer_release =
+      without_whitespace(pointer_release);
+  const std::size_t cancel_capture = compact_pointer_release.find(
+      "this->cancel_remastered_pointer_capture();");
+  const std::size_t pointer_dispatch = compact_pointer_release.find(
+      "this->dispatch_remastered_shell_control(*pressed_control);");
+  require(cancel_capture != std::string::npos &&
+          pointer_dispatch != std::string::npos &&
+          cancel_capture < pointer_dispatch,
+      "pointer activation must release capture before the typed Money-capable "
+      "dispatch path");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_payload = compact_dispatch.find(
+      "constboolopen_money_management=std::holds_alternative<"
+      "realmz::presentation::OpenMoneyManagementAction>(control.payload)");
+  const std::size_t dispatch_live = compact_dispatch.find(
+      "this->remastered_shell_keyboard_route_is_eligible()", dispatch_payload);
+  const std::size_t dispatch_guard = compact_dispatch.find(
+      "(open_money_management&&", dispatch_live);
+  const std::size_t dispatch_kind = compact_dispatch.find(
+      "ShellControlKind::open_money_management", dispatch_guard);
+  const std::size_t dispatch_page = compact_dispatch.find(
+      "WorldActionPage::party", dispatch_kind);
+  const std::size_t dispatch_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_page);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "runtime_legacy_command_bridge->dispatch(action)", dispatch_panel);
+  require(dispatch_payload != std::string::npos &&
+          dispatch_live != std::string::npos &&
+          dispatch_guard != std::string::npos &&
+          dispatch_kind != std::string::npos &&
+          dispatch_page != std::string::npos &&
+          dispatch_panel != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_payload < dispatch_live && dispatch_live < dispatch_guard &&
+          dispatch_guard < dispatch_kind && dispatch_kind < dispatch_page &&
+          dispatch_page < dispatch_panel && dispatch_panel < dispatch_bridge &&
+          count_text(compact_dispatch,
+              "runtime_legacy_command_bridge->dispatch(action)") == 1,
+      "shell dispatch must validate fresh liveness and PARTY placement before "
+      "its sole typed Money bridge dispatch");
+
+  const std::string renderer = function_body(
+      window_source, "draw_shell_panel_contents");
+  require(count_identifier(renderer,
+              "has_semantic_money_management") >= 4 &&
+          count_text(window_raw, "action_summary += \" · MONEY\"") == 1 &&
+          count_text(window_raw, "append_summary(\"MONEY\")") == 1 &&
+          count_identifier(renderer, "open_money_management") >= 2,
+      "wide and compact action chrome must admit and summarize one MONEY "
+      "control");
+
+  const std::string raw_misc = read_file(
+      repository_root / "src/realmz_orig/misc.c");
+  const std::string misc = code_only(raw_misc);
+  const std::string mainscreeninit = function_body(misc, "mainscreeninit");
+  require(without_whitespace(mainscreeninit).contains(
+              "swapbut=GetNewControl(157,screen);") &&
+          count_identifier(mainscreeninit, "swapbut") >= 3,
+      "Classic must retain swapbut creation from CNTL 157");
+  for (const auto& [name, path] : std::array{
+           std::pair{"outdoor", "src/realmz_orig/checkkeypad.c"},
+           std::pair{"dungeon", "src/realmz_orig/threed.c"},
+       }) {
+    const std::string raw = read_file(repository_root / path);
+    const std::size_t money_case = raw.find("case 'm':");
+    const std::size_t money_end = raw.find("case 's':", money_case);
+    require(money_case != std::string::npos &&
+            money_end != std::string::npos && money_case < money_end,
+        std::string("Classic ") + name + " lowercase m route is missing");
+    const std::string money_branch = code_only(
+        raw.substr(money_case, money_end - money_case));
+    require(count_identifier(money_branch, "swapbut") == 1 &&
+            count_identifier(money_branch, "theControl") == 1,
+        std::string("Classic ") + name +
+            " lowercase m must route directly to swapbut");
+    for (const auto forbidden : {
+             "incamp", "shopavail", "templeavail", "bankavailable",
+             "moneypool", "swapavail", "Button", "StillDown",
+         }) {
+      require(count_identifier(money_branch, forbidden) == 0,
+          std::string("Classic ") + name +
+              " m opening route must not gate on " + forbidden);
+    }
+  }
+  const std::string raw_buttons = read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c");
+  const std::string buttons = code_only(raw_buttons);
+  const std::string buttonchoice = function_body(buttons, "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t classic_money = compact_buttonchoice.find(
+      "if(theControl==swapbut){");
+  const std::size_t classic_money_end = compact_buttonchoice.find(
+      "if(theControl==viewspellsbut)", classic_money);
+  require(classic_money != std::string::npos &&
+          classic_money_end != std::string::npos &&
+          classic_money < classic_money_end,
+      "Classic buttonchoice Money branch is missing");
+  const std::string classic_branch = compact_buttonchoice.substr(
+      classic_money, classic_money_end - classic_money);
+  for (const auto needle : {
+           "sound(141)", "in()", "GetControlBounds(swapbut,&r)",
+           "ploticon3(129,r)", "swap()",
+           "characterl=c[charselectnew]", "updatemain(FALSE,-1)",
+       }) {
+    require(classic_branch.contains(needle),
+        std::string("Classic buttonchoice Money effects must retain ") +
+            needle);
+  }
+
+  const std::string swap_source = code_only(read_file(
+      repository_root / "src/realmz_orig/swap.c"));
+  const std::string swap = function_body(swap_source, "swap");
+  for (const auto identifier : {
+           "GetNewDialog", "ModalDialog", "bankavailable", "bank",
+           "shopavail", "templeavail", "pool", "share", "moneypool",
+           "movecalc", "DisposeDialog",
+       }) {
+    require(count_identifier(swap, identifier) != 0,
+        std::string("Classic swap must retain modal/effect ownership for ") +
+            identifier);
+  }
+  const std::string pool_source = code_only(read_file(
+      repository_root / "src/realmz_orig/pool.c"));
+  const std::string pool = function_body(pool_source, "pool");
+  const std::string share_source = code_only(read_file(
+      repository_root / "src/realmz_orig/share-movecost-dialog.c"));
+  const std::string share = function_body(share_source, "share");
+  require(count_identifier(pool, "moneypool") != 0 &&
+          count_identifier(pool, "money") != 0 &&
+          count_identifier(pool, "movecalc") != 0 &&
+          count_identifier(share, "moneypool") != 0 &&
+          count_identifier(share, "money") != 0 &&
+          count_identifier(share, "movecalc") != 0,
+      "Classic pool/share must retain every pooled-money distribution effect");
+  const std::string raw_threed = read_file(
+      repository_root / "src/realmz_orig/threed.c");
+  require(raw_threed.find("if (theControl == swapbut)\n"
+                           "                UpdateWindow(FALSE);") !=
+          std::string::npos,
+      "Classic dungeon pointer route must retain its post-Money refresh");
+
+  for (const auto& [path, expected] : std::array{
+           std::pair{"src/realmz_orig/main.c", std::size_t{1}},
+           std::pair{"src/realmz_orig/variables.h", std::size_t{1}},
+           std::pair{"src/realmz_orig/save-direction-order.c", std::size_t{1}},
+           std::pair{"src/realmz_orig/loadsavedgame.c", std::size_t{1}},
+       }) {
+    const std::string source = code_only(read_file(repository_root / path));
+    require(count_identifier(source, "swapavail") == expected,
+        std::string("dead swapavail must remain limited to declaration or "
+                    "persistence in ") + path);
+  }
+  for (const auto& path : {
+           "src/realmz_orig/checkkeypad.c",
+           "src/realmz_orig/threed.c",
+           "src/realmz_orig/buttonchoice.c",
+           "src/realmz_orig/swap.c",
+           "src/presentation/PartyRailModel.cpp",
+           "src/presentation/RuntimeLegacyCommandBridge.cpp",
+           "src/presentation/SemanticInputBoundary.cpp",
+           "src/WindowManager.cpp",
+       }) {
+    const std::string source = code_only(read_file(repository_root / path));
+    require(count_identifier(source, "swapavail") == 0,
+        std::string("Money opening must ignore dead swapavail in ") + path);
+  }
+
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/realmz_orig")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const auto extension = entry.path().extension();
+    if (extension != ".c" && extension != ".h") {
+      continue;
+    }
+    const std::string classic_source = code_only(read_file(entry.path()));
+    for (const auto forbidden : {
+             "OpenMoneyManagementAction",
+             "semantic_open_money_management_tag",
+             "PushSemanticOpenMoneyManagementEvent",
+             "RealmzConsumeSemanticOpenMoneyManagementEvent",
+         }) {
+      require(count_identifier(classic_source, forbidden) == 0,
+          std::string("Money must add no Classic vocabulary: ") + forbidden);
+    }
+  }
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string replay_source = code_only(read_file(entry.path()));
+    for (const auto forbidden : {
+             "OpenMoneyManagementAction",
+             "open_money_management",
+             "semantic_open_money_management_tag",
+             "PushSemanticOpenMoneyManagementEvent",
+             "RealmzConsumeSemanticOpenMoneyManagementEvent",
+         }) {
+      require(count_identifier(replay_source, forbidden) == 0,
+          std::string("Money must add no replay vocabulary: ") + forbidden);
+    }
+  }
+
+  const std::string readme = read_file(repository_root / "README.md");
+  const std::string qa = read_file(
+      repository_root / "docs/QA_AND_RELEASE.md");
+  for (const auto* evidence : {&readme, &qa}) {
+    for (const auto needle : {
+             "OpenMoneyManagementAction", "0x574DSS00", "0x00002E6D",
+             "swapavail", "no held-mouse gate", "pooled-money information",
+         }) {
+      require(evidence->find(needle) != std::string::npos,
+          std::string("Money documentation must retain ") + needle);
+    }
+  }
+  require(qa.find("private manual-QA gap for the sixth PARTY-page MONEY") !=
+              std::string::npos &&
+          qa.find("do not redistribute them") != std::string::npos,
+      "release QA must keep Money manual validation private and open");
 }
 
 void verify_selected_item_drilldown_window_manager_contract(
@@ -9584,6 +10352,7 @@ void verify_gameplay_chrome_coverage_contract(
            "exploration.action.eight_direction_movement",
            "exploration.action.selected_item_drilldown",
            "exploration.action.contextual_shop_temple_encounter",
+           "exploration.action.pool_money",
            "exploration.action.use_scroll",
            "exploration.action.use_torch",
            "exploration.action.contextual_overview",
@@ -9596,6 +10365,7 @@ void verify_gameplay_chrome_coverage_contract(
            "dungeon.action.relative_movement",
            "dungeon.action.selected_item_drilldown",
            "dungeon.action.contextual_shop_temple_encounter",
+           "dungeon.action.pool_money",
            "dungeon.action.use_scroll",
            "dungeon.action.use_torch",
            "dungeon.action.contextual_overview",
@@ -9636,7 +10406,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x5DDB9787A449A153ULL") !=
+          coverage_header.find("0x424182F878B22312ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -9726,7 +10496,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x5DDB9787A449A153ULL") !=
+          coverage_test.find("0x424182F878B22312ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -13536,6 +14306,7 @@ int main(int argc, char** argv) {
     verify_use_torch_window_manager_contract(repository_root);
     verify_contextual_overview_window_manager_contract(repository_root);
     verify_contextual_world_entry_window_manager_contract(repository_root);
+    verify_open_money_management_contract(repository_root);
     verify_selected_item_drilldown_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);

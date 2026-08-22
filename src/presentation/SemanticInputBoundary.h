@@ -134,6 +134,14 @@ uint8_t RealmzIsSemanticContextualWorldEntryTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticContextualWorldEntryTagSurface(
     uint32_t tagged_message);
 
+// Money-management tags carry only their originating world surface. The low
+// byte is reserved and must remain zero; the guarded consumer validates a
+// fresh bounded party and current selection before yielding Classic's
+// lowercase "m" key record.
+uint8_t RealmzIsSemanticOpenMoneyManagementTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenMoneyManagementTagSurface(
+    uint32_t tagged_message);
+
 // Guard tags carry the acting combatant explicitly and are valid only on the
 // combat surface. This prevents a queued command from applying to a later turn.
 uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
@@ -367,6 +375,14 @@ uint8_t RealmzConsumeSemanticContextualWorldEntryEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the exact adaptive world presentation plus a nonempty bounded
+// party with a valid current selected member. Member identity is deliberately
+// not encoded: Classic owns the party-wide Money dialog and its initial focus.
+uint8_t RealmzConsumeSemanticOpenMoneyManagementEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 // Revalidates the live acting party combatant, then returns the preserved
 // Classic "g" key record to the top-level combat loop.
 uint8_t RealmzConsumeSemanticGuardCombatantEvent(
@@ -563,6 +579,9 @@ struct ContextualWorldEntryAction;
 
 [[nodiscard]] uint32_t semantic_contextual_world_entry_tag(
     const ContextualWorldEntryAction& action,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_money_management_tag(
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_guard_combatant_tag(

@@ -44,6 +44,7 @@ enum class ShellControlKind {
   contextual_overview,
   selected_item_drilldown,
   contextual_world_entry,
+  open_money_management,
 };
 
 struct ShellControlPlacement {
@@ -138,6 +139,8 @@ struct ShellControlLayoutRequest {
   bool contextual_world_entry_available = false;
   ContextualWorldEntryMode contextual_world_entry_mode =
       ContextualWorldEntryMode::unavailable;
+  bool money_management_control_visible = false;
+  bool money_management_available = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

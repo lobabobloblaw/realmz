@@ -212,6 +212,14 @@ bool consume_contextual_world_entry(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_open_money_management(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticOpenMoneyManagementEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 bool consume_guard(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tag,
@@ -2166,9 +2174,12 @@ void test_contextual_world_entry_tag_encoding_and_collisions() {
       const bool valid_surface = (surface_byte == 1U) || (surface_byte == 2U);
       const bool valid_mode = mode_byte <= 2U;
       const bool expected_valid = valid_surface && valid_mode;
-      const RealmzSemanticInputSurface expected_surface = expected_valid
-          ? static_cast<RealmzSemanticInputSurface>(surface_byte)
-          : REALMZ_SEMANTIC_INPUT_NONE;
+      RealmzSemanticInputSurface expected_surface =
+          static_cast<RealmzSemanticInputSurface>(
+              REALMZ_SEMANTIC_INPUT_NONE);
+      if (expected_valid) {
+        expected_surface = surface_byte;
+      }
       CHECK((RealmzIsSemanticContextualWorldEntryTag(tag) != 0) ==
           expected_valid);
       CHECK((RealmzIsSemanticGameplayTag(tag) != 0) == expected_valid);
@@ -2256,6 +2267,126 @@ void test_contextual_world_entry_tag_encoding_and_collisions() {
     CHECK(other_tag != 0);
     CHECK(!entry_tags.contains(other_tag));
     CHECK(RealmzIsSemanticContextualWorldEntryTag(other_tag) == 0);
+  }
+}
+
+void test_open_money_management_tag_encoding_and_collisions() {
+  constexpr std::array surfaces{
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+  };
+  std::set<uint32_t> money_tags;
+  for (const auto surface : surfaces) {
+    const uint32_t tag = semantic_open_money_management_tag(surface);
+    CHECK(tag == (0x574D0000U |
+        (static_cast<uint32_t>(surface) << 8U)));
+    CHECK((tag & 0xFFU) == 0);
+    CHECK(RealmzIsSemanticOpenMoneyManagementTag(tag) != 0);
+    CHECK(RealmzSemanticOpenMoneyManagementTagSurface(tag) == surface);
+    CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+    CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
+    CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+    CHECK(RealmzIsSemanticPartySelectionTag(tag) == 0);
+    CHECK(RealmzIsSemanticOpenInventoryTag(tag) == 0);
+    CHECK(RealmzIsSemanticRestPartyTag(tag) == 0);
+    CHECK(RealmzIsSemanticContextualOverviewTag(tag) == 0);
+    CHECK(RealmzIsSemanticContextualWorldEntryTag(tag) == 0);
+    CHECK(RealmzIsSemanticCenterCombatCursorTag(tag) == 0);
+    CHECK(money_tags.emplace(tag).second);
+  }
+  CHECK(money_tags.size() == 2);
+  CHECK(semantic_open_money_management_tag(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x574D0100U);
+  CHECK(semantic_open_money_management_tag(
+      REALMZ_SEMANTIC_INPUT_DUNGEON) == 0x574D0200U);
+
+  // Exhaust the full SS/RR wire space. Only outdoor/dungeon with the reserved
+  // low byte exactly zero belongs to this decoder or the generic decoder.
+  for (uint32_t surface_byte = 0; surface_byte <= 0xFFU; ++surface_byte) {
+    for (uint32_t reserved_byte = 0;
+         reserved_byte <= 0xFFU;
+         ++reserved_byte) {
+      const uint32_t tag =
+          0x574D0000U | (surface_byte << 8U) | reserved_byte;
+      const bool expected_valid =
+          ((surface_byte == REALMZ_SEMANTIC_INPUT_EXPLORATION) ||
+              (surface_byte == REALMZ_SEMANTIC_INPUT_DUNGEON)) &&
+          (reserved_byte == 0);
+      RealmzSemanticInputSurface expected_surface =
+          static_cast<RealmzSemanticInputSurface>(
+              REALMZ_SEMANTIC_INPUT_NONE);
+      if (expected_valid) {
+        expected_surface = surface_byte;
+      }
+      CHECK((RealmzIsSemanticOpenMoneyManagementTag(tag) != 0) ==
+          expected_valid);
+      CHECK(RealmzSemanticOpenMoneyManagementTagSurface(tag) ==
+          expected_surface);
+      CHECK((RealmzIsSemanticGameplayTag(tag) != 0) == expected_valid);
+      CHECK(RealmzSemanticGameplayTagSurface(tag) == expected_surface);
+    }
+  }
+
+  // Exhaust producer surface inputs independently; unknown surfaces must not
+  // be truncated into a valid tag.
+  for (uint32_t surface_value = 0; surface_value <= 0xFFU; ++surface_value) {
+    const auto surface =
+        static_cast<RealmzSemanticInputSurface>(surface_value);
+    const uint32_t expected =
+        ((surface_value == REALMZ_SEMANTIC_INPUT_EXPLORATION) ||
+            (surface_value == REALMZ_SEMANTIC_INPUT_DUNGEON))
+        ? (0x574D0000U | (surface_value << 8U))
+        : 0U;
+    CHECK(semantic_open_money_management_tag(surface) == expected);
+  }
+
+  for (const uint32_t malformed : {
+           0U,
+           0x574C0100U,
+           0x574D0000U,
+           0x574D0101U,
+           0x574D017FU,
+           0x574D02FFU,
+           0x574D0300U,
+           0x574DFF00U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticOpenMoneyManagementTag(malformed) == 0);
+    CHECK(RealmzSemanticOpenMoneyManagementTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+    CHECK(RealmzIsSemanticGameplayTag(malformed) == 0);
+    CHECK(RealmzSemanticGameplayTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  for (const uint32_t other_tag : {
+           semantic_movement_tag(
+               MovementCommand::north,
+               REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_party_selection_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_inventory_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_rest_party_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_contextual_overview_tag(
+               ContextualOverviewAction{
+                   .mode = ContextualOverviewMode::area_search,
+               },
+               REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_contextual_world_entry_tag(
+               ContextualWorldEntryAction{
+                   .mode = ContextualWorldEntryMode::shop,
+               },
+               REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_guard_combatant_tag(0, REALMZ_SEMANTIC_INPUT_COMBAT),
+           semantic_center_combat_cursor_tag(
+               0, {.x = 0, .y = 0}, REALMZ_SEMANTIC_INPUT_COMBAT),
+       }) {
+    CHECK(other_tag != 0);
+    CHECK(!money_tags.contains(other_tag));
+    CHECK(RealmzIsSemanticOpenMoneyManagementTag(other_tag) == 0);
+    CHECK(RealmzSemanticOpenMoneyManagementTagSurface(other_tag) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
   }
 }
 
@@ -5544,6 +5675,265 @@ void test_contextual_world_entry_late_validation_and_exact_translation() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_open_money_management_late_validation_and_exact_translation() {
+  const uint32_t outdoor_tag = semantic_open_money_management_tag(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  const uint32_t dungeon_tag = semantic_open_money_management_tag(
+      REALMZ_SEMANTIC_INPUT_DUNGEON);
+  uint32_t output = kUnchangedClassicMessage;
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(output == 0x00002E6DU);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // Delivery is one-shot. A null output burns the completed authorization
+  // before either live context source is consulted.
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticOpenMoneyManagementEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            outdoor_tag,
+            nullptr) == 0);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+
+  // The action is intentionally member-free. A newly selected valid member is
+  // the Money dialog's fresh initial focus, not a stale-target rejection.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.members[0].selected = false;
+  captured_snapshot.party.members[2].selected = true;
+  captured_snapshot.party.selected_member = 2;
+  captured_snapshot.party.members[2].conscious = false;
+  captured_snapshot.party.pooled_money = {-10, 0, 999999};
+  captured_snapshot.party.fatigue = 999;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = kUnchangedClassicMessage;
+  CHECK(consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(output == 0x00002E6DU);
+
+  // Camp state does not gate Classic's Money control.
+  for (const bool in_camp : {false, true}) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        WorldPresentation::outdoor);
+    captured_snapshot.world.in_camp = in_camp;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(consume_open_money_management(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+    CHECK(output == 0x00002E6DU);
+  }
+
+  // A valid one-member party is sufficient.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.party.members.resize(1);
+  captured_snapshot.party.selected_member = 0;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = kUnchangedClassicMessage;
+  CHECK(consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(output == 0x00002E6DU);
+
+  // Dungeon map and first-person presentations use the same exact m record.
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    output = kUnchangedClassicMessage;
+    CHECK(consume_open_money_management(
+        REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_tag, output));
+    CHECK(output == 0x00002E6DU);
+  }
+
+  // A mismatched encoded origin is rejected before either live capture.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::dungeon_map);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, outdoor_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  // Malformed and colliding tags likewise burn the scope without capture.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  for (const uint32_t rejected_tag : {
+           0x574D0101U,
+           semantic_rest_party_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+       }) {
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(!consume_open_money_management(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, rejected_tag, output));
+    CHECK(output == kUnchangedClassicMessage);
+  }
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 0);
+
+  // The live legacy screen and fresh snapshot screen/presentation must all
+  // still identify the encoded surface exactly.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(snapshot_capture_calls == 0);
+
+  for (const auto& invalid : {
+           std::pair{ScreenContext::dungeon, WorldPresentation::outdoor},
+           std::pair{
+               ScreenContext::exploration,
+               WorldPresentation::dungeon_map,
+           },
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        invalid.first,
+        invalid.second);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(!consume_open_money_management(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+    CHECK(output == kUnchangedClassicMessage);
+  }
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::outdoor);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, dungeon_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+
+  enum class PartyRejection {
+    empty,
+    oversized,
+    no_selection,
+    missing_selection,
+    out_of_range_selection,
+    selected_flag_clear,
+  };
+  for (const auto rejection : {
+           PartyRejection::empty,
+           PartyRejection::oversized,
+           PartyRejection::no_selection,
+           PartyRejection::missing_selection,
+           PartyRejection::out_of_range_selection,
+           PartyRejection::selected_flag_clear,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        WorldPresentation::outdoor);
+    switch (rejection) {
+      case PartyRejection::empty:
+        captured_snapshot.party.members.clear();
+        captured_snapshot.party.selected_member.reset();
+        break;
+      case PartyRejection::oversized:
+        captured_snapshot.party.members.resize(7);
+        for (size_t index = 0;
+             index < captured_snapshot.party.members.size();
+             ++index) {
+          captured_snapshot.party.members[index].id =
+              static_cast<PartyMemberId>(index);
+        }
+        break;
+      case PartyRejection::no_selection:
+        captured_snapshot.party.selected_member.reset();
+        break;
+      case PartyRejection::missing_selection:
+        captured_snapshot.party.selected_member = 5;
+        break;
+      case PartyRejection::out_of_range_selection:
+        captured_snapshot.party.members.push_back(
+            PartyMemberView{.id = 6, .selected = true});
+        captured_snapshot.party.members[0].selected = false;
+        captured_snapshot.party.selected_member = 6;
+        break;
+      case PartyRejection::selected_flag_clear:
+        captured_snapshot.party.members[0].selected = false;
+        break;
+    }
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(!consume_open_money_management(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+    CHECK(output == kUnchangedClassicMessage);
+
+    // Every rejected attempt consumes its authorization.
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        WorldPresentation::outdoor);
+    CHECK(!consume_open_money_management(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_open_money_management(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void test_shared_combat_late_validation_matrix() {
   for (const auto& action : kCombatActionCases) {
     reset_valid_shared_combat();
@@ -6917,6 +7307,7 @@ int main() {
     test_use_torch_tag_encoding_and_collisions();
     test_contextual_overview_tag_encoding_and_collisions();
     test_contextual_world_entry_tag_encoding_and_collisions();
+    test_open_money_management_tag_encoding_and_collisions();
     test_open_scroll_case_tag_encoding_and_collisions();
     test_bandage_tag_encoding_collision_and_malformed_rejection();
     test_undo_tag_encoding_collision_and_malformed_rejection();
@@ -6943,6 +7334,7 @@ int main() {
     test_use_torch_late_validation_and_source_handoff();
     test_contextual_overview_late_validation_and_exact_translation();
     test_contextual_world_entry_late_validation_and_exact_translation();
+    test_open_money_management_late_validation_and_exact_translation();
     test_shared_combat_late_validation_matrix();
     test_show_combat_range_route_boundaries();
     test_bandage_combatant_route_and_canundo_boundaries();

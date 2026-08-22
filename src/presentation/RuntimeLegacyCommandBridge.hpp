@@ -86,6 +86,9 @@ using RuntimeLegacyContextualWorldEntrySink = std::function<bool(
     const ContextualWorldEntryAction&,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenMoneyManagementSink = std::function<bool(
+    uint32_t,
+    const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
     uint32_t,
@@ -172,6 +175,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacyContextualOverviewSink contextual_overview;
   RuntimeLegacyOpenSelectedItemDrilldownSink open_selected_item_drilldown;
   RuntimeLegacyContextualWorldEntrySink contextual_world_entry;
+  RuntimeLegacyOpenMoneyManagementSink open_money_management;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -262,6 +266,13 @@ struct RuntimeLegacyCombatActionSinks {
 [[nodiscard]] std::optional<uint32_t>
 legacy_key_message_for_contextual_world_entry(
     const ContextualWorldEntryAction& action,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns Classic's lowercase "m" key record for the pooled-money manager.
+// Camp state and every gameplay rule remain authoritative in Classic; only an
+// adaptive top-level outdoor or dungeon presentation is required here.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_open_money_management(
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Classic lowercase "r" key record used by both preserved

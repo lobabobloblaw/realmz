@@ -52,6 +52,7 @@ static_assert(std::is_same_v<
     RuntimeLegacyBandageCombatantSink,
     RuntimeLegacyUndoCombatantSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyWorldActionSinks>);
+static_assert(std::is_empty_v<OpenMoneyManagementAction>);
 static_assert(std::is_same_v<
     RuntimeLegacyOpenScrollCaseSink,
     std::function<bool(
@@ -86,6 +87,14 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyWorldActionSinks::contextual_world_entry),
     RuntimeLegacyContextualWorldEntrySink>);
+static_assert(std::is_same_v<
+    RuntimeLegacyOpenMoneyManagementSink,
+    std::function<bool(
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::open_money_management),
+    RuntimeLegacyOpenMoneyManagementSink>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCommandContext::contextual_world_entry_mode),
     ContextualWorldEntryMode>);
@@ -1499,6 +1508,155 @@ void test_contextual_world_entry_mapping_and_named_sink_dispatch() {
   CHECK(movement_only.dispatch(UIAction{
       .sequence = sequence,
       .payload = shop,
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_open_money_management_mapping_and_named_sink_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  int calls = 0;
+  bool accept = true;
+  uint32_t received_message = 0;
+  const RuntimeLegacyOpenMoneyManagementSink sink =
+      [&calls, &accept, &received_message, &context](
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++calls;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept;
+      };
+  const auto make_bridge = [](RuntimeLegacyContextProvider provider,
+                              RuntimeLegacyOpenMoneyManagementSink value) {
+    return RuntimeLegacyCommandBridge(
+        kRuntimeLegacyNamedActionSinks,
+        std::move(provider),
+        [](MovementCommand,
+            uint32_t,
+            const RuntimeLegacyCommandContext&) { return true; },
+        [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+        RuntimeLegacyWorldActionSinks{
+            .open_money_management = std::move(value),
+        });
+  };
+  auto bridge = make_bridge([&context] { return context; }, sink);
+  ActionSequence sequence = 230;
+
+  for (const bool in_camp : {false, true}) {
+    context = {
+        .screen = ScreenContext::exploration,
+        .world_presentation = WorldPresentation::outdoor,
+        .adaptive_eligible = true,
+        .in_camp = in_camp,
+        .searching = true,
+        .usable_torch_source = TorchSource{.member = 5, .slot = 29},
+        .contextual_world_entry_mode = ContextualWorldEntryMode::temple,
+    };
+    CHECK(legacy_key_message_for_open_money_management(context) ==
+        0x00002E6DU);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenMoneyManagementAction{},
+    }).status == DispatchStatus::handled);
+    CHECK(received_message == 0x00002E6DU);
+  }
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    for (const bool in_camp : {false, true}) {
+      context = {
+          .screen = ScreenContext::dungeon,
+          .world_presentation = presentation,
+          .adaptive_eligible = true,
+          .in_camp = in_camp,
+      };
+      CHECK(legacy_key_message_for_open_money_management(context) ==
+          0x00002E6DU);
+      CHECK(bridge.dispatch(UIAction{
+          .sequence = sequence++,
+          .payload = OpenMoneyManagementAction{},
+      }).status == DispatchStatus::handled);
+      CHECK(received_message == 0x00002E6DU);
+    }
+  }
+  CHECK(calls == 6);
+
+  for (const auto invalid_context : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::title,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = false,
+           },
+       }) {
+    context = invalid_context;
+    CHECK(!legacy_key_message_for_open_money_management(context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = OpenMoneyManagementAction{},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 6);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+  };
+  accept = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenMoneyManagementAction{},
+  }).status == DispatchStatus::failed);
+  CHECK(calls == 7);
+
+  auto missing_provider = make_bridge({}, sink);
+  CHECK(missing_provider.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenMoneyManagementAction{},
+  }).status == DispatchStatus::failed);
+  auto empty_sink = make_bridge(
+      [&context] { return context; },
+      RuntimeLegacyOpenMoneyManagementSink{});
+  CHECK(empty_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = OpenMoneyManagementAction{},
+  }).status == DispatchStatus::failed);
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = OpenMoneyManagementAction{},
   }).status == DispatchStatus::unsupported);
 }
 
@@ -7291,6 +7449,7 @@ int main() {
     test_open_character_sheet_context_and_named_sink_dispatch();
     test_selected_item_drilldown_context_and_named_sink_dispatch();
     test_contextual_world_entry_mapping_and_named_sink_dispatch();
+    test_open_money_management_mapping_and_named_sink_dispatch();
     test_rest_party_context_and_named_sink_dispatch();
     test_set_camp_state_context_and_named_sink_dispatch();
     test_set_search_state_context_and_named_sink_dispatch();

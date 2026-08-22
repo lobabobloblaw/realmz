@@ -42,6 +42,7 @@ constexpr uint32_t kUseTorchRegion = 1126U;
 constexpr uint32_t kContextualOverviewRegion = 1127U;
 constexpr uint32_t kSelectedItemDrilldownRegion = 1128U;
 constexpr uint32_t kContextualWorldEntryRegion = 1129U;
+constexpr uint32_t kOpenMoneyManagementRegion = 1130U;
 constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
@@ -362,7 +363,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.selected_item_drilldown_member ? 1U : 0U) +
       (request.spellbook_member ? 1U : 0U) +
       (request.scroll_case_member ? 1U : 0U) +
-      (request.character_sheet_member ? 1U : 0U);
+      (request.character_sheet_member ? 1U : 0U) +
+      (request.money_management_control_visible ? 1U : 0U);
   const size_t game_world_control_count =
       (request.save_control_visible ? 1U : 0U) +
       (request.load_control_visible ? 1U : 0U) +
@@ -395,9 +397,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       combat_page_control_count,
       maximum_combat_control_count);
   constexpr size_t world_page_control_count = kWorldPages.size();
-  // Keep room for all five PARTY commands even when the current snapshot has
-  // no selected member and therefore omits one or more disabled controls.
-  constexpr size_t kPartyActionCapacity = 5U;
+  // Keep room for all six PARTY commands even when the current snapshot has
+  // no selected member and therefore omits one or more member-bound controls.
+  constexpr size_t kPartyActionCapacity = 6U;
   // The GAME page always presents Torch and the contextual Overview action,
   // including disabled controls when their source or selected member is absent.
   // Rest and contextual world entry share one mutually exclusive position, so
@@ -446,6 +448,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.selected_item_drilldown_member ||
               request.spellbook_member || request.scroll_case_member ||
               request.character_sheet_member ||
+              request.money_management_control_visible ||
               request.save_control_visible || request.load_control_visible ||
               request.rest_control_visible ||
               request.contextual_world_entry_control_visible ||
@@ -463,6 +466,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.scroll_case_available && !request.scroll_case_member) ||
       (request.character_sheet_member && !valid_character_sheet) ||
       (request.character_sheet_available && !valid_character_sheet) ||
+      (request.money_management_available &&
+          (!request.money_management_control_visible ||
+              !request.navigation_available)) ||
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
       (request.rest_available && !request.rest_control_visible) ||
@@ -708,6 +714,21 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             .enabled = request.character_sheet_available,
             .payload = OpenCharacterSheetAction{
                 *request.character_sheet_member},
+        });
+        x += button_width + gap;
+      }
+      if (request.money_management_control_visible) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kOpenMoneyManagementRegion},
+            .kind = ShellControlKind::open_money_management,
+            .bounds = {x, y, button_width, button_height},
+            .label = "MONEY",
+            .accessibility_label = "Manage party money",
+            .focus_identifier = "focus.action.party.money",
+            .tab_order = 1130,
+            .enabled = request.money_management_available &&
+                request.navigation_available,
+            .payload = OpenMoneyManagementAction{},
         });
         x += button_width + gap;
       }

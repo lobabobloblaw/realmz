@@ -25,6 +25,7 @@ constexpr uint32_t kAreaSearchMessage = 0x00000061U;
 constexpr uint32_t kMakeScrollMessage = 0x0000286BU;
 constexpr uint32_t kEnterShopOrTempleMessage = 0x00000567U;
 constexpr uint32_t kCheckLocalEncounterMessage = 0x00000E65U;
+constexpr uint32_t kOpenMoneyManagementMessage = 0x00002E6DU;
 constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
@@ -980,6 +981,39 @@ LegacyActionHandlers make_handlers(
     }
     return DispatchResult::handled();
   };
+  handlers.open_money_management = [
+      context_provider,
+      open_money_management_sink =
+          std::move(world_action_sinks.open_money_management)](
+          const OpenMoneyManagementAction&) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!open_money_management_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy open-money-management sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic money "
+          "management");
+    }
+    const auto message = legacy_key_message_for_open_money_management(context);
+    if (!message) {
+      return DispatchResult::rejected(
+          "Opening money management is not supported in the current legacy "
+          "context");
+    }
+    if (!open_money_management_sink(*message, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic open-money-management "
+          "action");
+    }
+    return DispatchResult::handled();
+  };
   handlers.contextual_overview = [
       context_provider = std::move(context_provider),
       contextual_overview_sink =
@@ -1429,6 +1463,24 @@ std::optional<uint32_t> legacy_key_message_for_contextual_world_entry(
     default:
       return std::nullopt;
   }
+}
+
+std::optional<uint32_t> legacy_key_message_for_open_money_management(
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible) {
+    return std::nullopt;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return kOpenMoneyManagementMessage;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  if ((context.screen == ScreenContext::dungeon) && dungeon_presentation) {
+    return kOpenMoneyManagementMessage;
+  }
+  return std::nullopt;
 }
 
 std::optional<uint32_t> legacy_key_message_for_rest_party(

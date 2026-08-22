@@ -845,6 +845,24 @@ std::vector<ActionControlModel> build_actions(
           : std::optional<StateTokenModel>{
                 unavailable_token("Entry is unavailable now")}));
   result.back().contextual_world_entry_mode = contextual_world_entry_mode;
+
+  const bool has_fresh_selected_member = selected && selected->selected;
+  const bool money_management_available =
+      navigation_context && has_fresh_selected_member;
+  result.emplace_back(action(
+      ActionIntent::open_money_management,
+      "action.party.money",
+      "Money",
+      money_management_available
+          ? ActionAvailability::deferred_to_engine
+          : ActionAvailability::unavailable,
+      tab_order++,
+      money_management_available
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{unavailable_token(
+                has_fresh_selected_member
+                    ? "Money management is unavailable now"
+                    : "Select a party member first")}));
   return result;
 }
 

@@ -91,7 +91,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"exploration.action.contextual_shop_temple_encounter",
         Surface::exploration, Kind::interaction, Status::semantic_complete},
     {"exploration.action.pool_money", Surface::exploration,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"exploration.action.trade", Surface::exploration,
         Kind::interaction, Status::missing},
     {"exploration.action.heal", Surface::exploration,
@@ -154,7 +154,7 @@ constexpr auto kExpectedManifestRows = std::to_array<ExpectedManifestRow>({
     {"dungeon.action.contextual_shop_temple_encounter", Surface::dungeon,
         Kind::interaction, Status::semantic_complete},
     {"dungeon.action.pool_money", Surface::dungeon,
-        Kind::interaction, Status::missing},
+        Kind::interaction, Status::semantic_complete},
     {"dungeon.action.trade", Surface::dungeon,
         Kind::interaction, Status::missing},
     {"dungeon.action.heal", Surface::dungeon,
@@ -658,6 +658,60 @@ void test_contextual_world_entry_rows_are_semantically_complete() {
   }
 }
 
+void test_pool_money_rows_are_semantically_complete_without_information_claim() {
+  const auto manifest = gameplay_chrome_coverage_manifest();
+  for (const auto& [stable_id, surface, surface_evidence] : std::array{
+           std::tuple{
+               "exploration.action.pool_money",
+               Surface::exploration,
+               "outdoor SS=0x01"},
+           std::tuple{
+               "dungeon.action.pool_money",
+               Surface::dungeon,
+               "dungeon SS=0x02"},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::interaction, Status::semantic_complete);
+    const auto* money = find_manifest_entry(manifest, stable_id);
+    CHECK(money != nullptr);
+    for (const auto evidence : {
+             "one member-free MONEY control in its sixth slot",
+             "empty OpenMoneyManagementAction",
+             "0x574DSS00",
+             surface_evidence,
+             "reserved low byte zero",
+             "nonempty party of at most six",
+             "without carrying or binding member identity",
+             "lowercase m keyDown 0x00002E6D",
+             "neutral one-shot app1Evt",
+             "no held-mouse gate",
+             "Camp and noncamp are both valid",
+             "dead swapavail",
+             "funds/shop/temple/bank state do not gate opening",
+             "swapbut/CNTL 157",
+             "retain modal and effect ownership",
+             "No Classic source or replay vocabulary changes",
+             "private no-redistribution manual QA remains open",
+             "does not cover pooled-money information",
+         }) {
+      CHECK(money->evidence.find(evidence) != std::string_view::npos);
+    }
+    CHECK(money->source_anchor ==
+        "src/presentation/SemanticInputBoundary.cpp::"
+        "semantic_open_money_management_tag/"
+        "RealmzConsumeSemanticOpenMoneyManagementEvent");
+  }
+
+  for (const auto& [stable_id, surface] : std::array{
+           std::pair{
+               "exploration.info.pooled_money", Surface::exploration},
+           std::pair{"dungeon.info.pooled_money", Surface::dungeon},
+       }) {
+    expect_manifest_entry(manifest, stable_id, surface,
+        Kind::essential_information, Status::missing);
+  }
+}
+
 void test_manifest_source_anchors_resolve(
     const std::filesystem::path& repository_root) {
   namespace fs = std::filesystem;
@@ -722,7 +776,7 @@ void test_manifest_source_anchors_resolve(
 void test_inventory_revision_covers_every_ordered_manifest_field() {
   const auto manifest = gameplay_chrome_coverage_manifest();
   const auto baseline = gameplay_chrome_inventory_revision(manifest);
-  CHECK(kGameplayChromeInventoryRevision == 0x5DDB9787A449A153ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x424182F878B22312ULL);
   CHECK(baseline == kGameplayChromeInventoryRevision);
 
   for (size_t index = 0; index < manifest.size(); ++index) {
@@ -811,7 +865,7 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   CHECK(first.data() == second.data());
   CHECK(first.size() == second.size());
   CHECK(first.size() == 95U);
-  CHECK(kGameplayChromeInventoryRevision == 0x5DDB9787A449A153ULL);
+  CHECK(kGameplayChromeInventoryRevision == 0x424182F878B22312ULL);
 
   const auto validation = validate_gameplay_chrome_coverage(first);
   CHECK(validation.valid);
@@ -823,6 +877,8 @@ void test_manifest_is_deterministic_explicit_and_valid() {
   std::array<std::array<size_t, kKinds.size()>, kSurfaces.size()> coverage{};
   std::array<bool, 3> statuses_seen{};
   std::array<size_t, 3> status_counts{};
+  size_t missing_interaction_count = 0U;
+  size_t missing_information_count = 0U;
   size_t previous_surface = 0U;
   bool first_entry = true;
   for (size_t index = 0; index < first.size(); ++index) {
@@ -850,6 +906,13 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     const size_t status = static_cast<size_t>(entry.status);
     statuses_seen[status] = true;
     ++status_counts[status];
+    if (entry.status == Status::missing) {
+      if (entry.kind == Kind::interaction) {
+        ++missing_interaction_count;
+      } else {
+        ++missing_information_count;
+      }
+    }
   }
   CHECK(stable_ids.size() == first.size());
   for (size_t surface = 0; surface < kSurfaces.size(); ++surface) {
@@ -861,8 +924,10 @@ void test_manifest_is_deterministic_explicit_and_valid() {
     CHECK(seen);
   }
   CHECK(status_counts[static_cast<size_t>(Status::retained_in_crop)] == 6U);
-  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 49U);
-  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 40U);
+  CHECK(status_counts[static_cast<size_t>(Status::semantic_complete)] == 51U);
+  CHECK(status_counts[static_cast<size_t>(Status::missing)] == 38U);
+  CHECK(missing_interaction_count == 15U);
+  CHECK(missing_information_count == 23U);
 }
 
 void expect_issue(
@@ -1570,6 +1635,7 @@ int main(int argc, char* argv[]) {
     test_manifest_matches_independent_oracle();
     test_selected_item_drilldown_rows_are_semantically_complete();
     test_contextual_world_entry_rows_are_semantically_complete();
+    test_pool_money_rows_are_semantically_complete_without_information_claim();
     test_manifest_source_anchors_resolve(argv[1]);
     test_inventory_revision_covers_every_ordered_manifest_field();
     test_manifest_is_deterministic_explicit_and_valid();

@@ -282,6 +282,16 @@ void test_action_availability_is_conservative() {
           ContextualWorldEntryMode::encounter});
   CHECK(!encounter_entry.party_member);
   CHECK(encounter_entry.availability_reason->label == "Game rules apply");
+  const auto& money_management =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(money_management.can_invoke());
+  CHECK(money_management.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(money_management.command == "action.party.money");
+  CHECK(money_management.label == "Money");
+  CHECK(!money_management.party_member);
+  CHECK(money_management.tab_order == encounter_entry.tab_order + 1);
+  CHECK(money_management.availability_reason->label == "Game rules apply");
 
   snapshot.world.usable_torch_source.reset();
   model = build_presentation_shell_model(snapshot);
@@ -349,6 +359,10 @@ void test_action_availability_is_conservative() {
           ContextualWorldEntryMode::unavailable});
   CHECK(unavailable_entry_in_camp.availability_reason->label ==
       "Entry is unavailable now");
+  const auto& money_management_in_camp =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(money_management_in_camp.can_invoke());
+  CHECK(!money_management_in_camp.party_member);
 
   snapshot.party.members[1].use_scroll_available = false;
   model = build_presentation_shell_model(snapshot);
@@ -370,6 +384,7 @@ void test_action_availability_is_conservative() {
   CHECK(action_with(model, ActionIntent::use_torch).can_invoke());
   CHECK(action_with(model, ActionIntent::contextual_overview).can_invoke());
   CHECK(action_with(model, ActionIntent::selected_item_drilldown).can_invoke());
+  CHECK(action_with(model, ActionIntent::open_money_management).can_invoke());
 
   snapshot.screen = ScreenContext::dungeon;
   snapshot.world.searching = false;
@@ -441,6 +456,12 @@ void test_action_availability_is_conservative() {
   CHECK(area_search_without_selection.contextual_overview_mode ==
       std::optional<ContextualOverviewMode>{
           ContextualOverviewMode::area_search});
+  const auto& money_without_selection =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(!money_without_selection.can_invoke());
+  CHECK(!money_without_selection.party_member);
+  CHECK(money_without_selection.availability_reason->label ==
+      "Select a party member first");
 
   snapshot.world.in_camp = true;
   snapshot.world.contextual_world_entry_mode =
@@ -515,7 +536,13 @@ void test_action_availability_is_conservative() {
   CHECK(entry_in_encounter.contextual_world_entry_mode ==
       std::optional<ContextualWorldEntryMode>{
           ContextualWorldEntryMode::unavailable});
-  CHECK(model.actions.size() == 17);
+  const auto& money_in_encounter =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(!money_in_encounter.can_invoke());
+  CHECK(!money_in_encounter.party_member);
+  CHECK(money_in_encounter.availability_reason->label ==
+      "Select a party member first");
+  CHECK(model.actions.size() == 18);
   CHECK(model.actions[13].command == "encounter.choice.11");
   CHECK(model.actions[13].can_invoke());
   CHECK(model.actions[14].command == "encounter.choice.12");
@@ -523,6 +550,7 @@ void test_action_availability_is_conservative() {
   CHECK(model.actions[15].intent == ActionIntent::cancel);
   CHECK(model.actions[15].can_invoke());
   CHECK(model.actions[16].intent == ActionIntent::contextual_world_entry);
+  CHECK(model.actions[17].intent == ActionIntent::open_money_management);
 }
 
 void test_contextual_world_entry_action_modes_are_explicit() {
@@ -610,6 +638,71 @@ void test_contextual_world_entry_action_modes_are_explicit() {
   CHECK(!action_with(model, ActionIntent::contextual_world_entry).can_invoke());
 }
 
+void test_money_management_requires_only_fresh_world_party_context() {
+  auto snapshot = sample_snapshot();
+  snapshot.party.pooled_money = {0, 0, 0};
+
+  auto model = build_presentation_shell_model(snapshot);
+  const auto& outdoor_money =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(outdoor_money.can_invoke());
+  CHECK(outdoor_money.availability == ActionAvailability::deferred_to_engine);
+  CHECK(outdoor_money.command == "action.party.money");
+  CHECK(outdoor_money.label == "Money");
+  CHECK(!outdoor_money.party_member);
+  CHECK(outdoor_money.tab_order ==
+      action_with(model, ActionIntent::contextual_world_entry).tab_order + 1);
+
+  snapshot.world.in_camp = true;
+  model = build_presentation_shell_model(snapshot);
+  CHECK(action_with(model, ActionIntent::open_money_management).can_invoke());
+
+  snapshot.screen = ScreenContext::dungeon;
+  model = build_presentation_shell_model(snapshot);
+  CHECK(action_with(model, ActionIntent::open_money_management).can_invoke());
+
+  snapshot.encounter = EncounterView{.active = true};
+  model = build_presentation_shell_model(snapshot);
+  const auto& money_during_encounter =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(!money_during_encounter.can_invoke());
+  CHECK(money_during_encounter.availability_reason->label ==
+      "Money management is unavailable now");
+
+  snapshot.encounter.reset();
+  snapshot.party.selected_member = 2;
+  snapshot.party.members[1].selected = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& money_with_stale_selected_id =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(!money_with_stale_selected_id.can_invoke());
+  CHECK(!money_with_stale_selected_id.party_member);
+  CHECK(money_with_stale_selected_id.availability_reason->label ==
+      "Select a party member first");
+
+  snapshot.party.selected_member = 99;
+  for (auto& member : snapshot.party.members) {
+    member.selected = false;
+  }
+  model = build_presentation_shell_model(snapshot);
+  const auto& money_without_valid_selection =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(!money_without_valid_selection.can_invoke());
+  CHECK(!money_without_valid_selection.party_member);
+  CHECK(money_without_valid_selection.availability_reason->label ==
+      "Select a party member first");
+
+  snapshot.party.selected_member = 2;
+  snapshot.party.members[1].selected = true;
+  snapshot.screen = ScreenContext::title;
+  model = build_presentation_shell_model(snapshot);
+  const auto& money_outside_world =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(!money_outside_world.can_invoke());
+  CHECK(money_outside_world.availability_reason->label ==
+      "Money management is unavailable now");
+}
+
 void test_world_action_page_preferences_are_normalized() {
   auto snapshot = sample_snapshot();
   CHECK(build_presentation_shell_model(snapshot).world_action_page ==
@@ -692,7 +785,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 31U);
+  CHECK(model.actions.size() == 32U);
   const auto& camp_in_combat =
       action_with(model, ActionIntent::set_camp_state);
   CHECK(!camp_in_combat.can_invoke());
@@ -728,6 +821,12 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(entry_in_combat.contextual_world_entry_mode ==
       std::optional<ContextualWorldEntryMode>{
           ContextualWorldEntryMode::unavailable});
+  const auto& money_in_combat =
+      action_with(model, ActionIntent::open_money_management);
+  CHECK(!money_in_combat.can_invoke());
+  CHECK(!money_in_combat.party_member);
+  CHECK(money_in_combat.availability_reason->label ==
+      "Money management is unavailable now");
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());
@@ -1331,7 +1430,9 @@ void test_typography_keyboard_order_and_remappable_ids() {
   CHECK(model.keyboard_tab_order.front().command == "party.select.1");
   CHECK(model.keyboard_tab_order[1].command == "party.select.2");
   CHECK(model.drawers.tabs.empty());
-  CHECK(model.keyboard_tab_order.back().command == "action.world.entry");
+  CHECK(model.keyboard_tab_order[model.keyboard_tab_order.size() - 2].command ==
+      "action.world.entry");
+  CHECK(model.keyboard_tab_order.back().command == "action.party.money");
   CHECK(model.keyboard_tab_order[4].command == "action.items.quick");
   CHECK(model.keyboard_tab_order[4].enabled);
   CHECK(!model.keyboard_tab_order[5].enabled);
@@ -1376,6 +1477,7 @@ int main() {
     test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();
     test_contextual_world_entry_action_modes_are_explicit();
+    test_money_management_requires_only_fresh_world_party_context();
     test_world_action_page_preferences_are_normalized();
     test_combat_actions_track_the_active_party_combatant();
     test_events_drawers_motion_and_log_limit();
