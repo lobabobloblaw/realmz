@@ -330,6 +330,77 @@ existing framebuffer uniformly: window growth changes presentation space, not
 the number of visible map or combat tiles. Complete semantic screen migration
 and complete action dispatch remain acceptance work.
 
+## Gameplay-chrome coverage and crop readiness
+
+Cropping the Classic gameplay frame has a bounded, fail-closed coverage
+contract. A versioned static inventory must account for every Classic
+interaction and essential-information role on each of the outdoor, dungeon,
+and combat surfaces. Validation and completeness are global: an invalid,
+unknown, duplicate, omitted, or missing role anywhere rejects cropping for
+every surface. Controls, status fields, messages, inspectors, and other roles
+whose visible pixels or hit areas fall outside the proposed crop may not be
+inferred from an action count or omitted because a nearby native surface looks
+similar. Each surface/role pair has exactly one status:
+
+| Status | Required evidence |
+| --- | --- |
+| `retained_in_crop` | The complete authoritative Classic rendering and hit area remain inside the crop in every applicable state, with no dependency on hidden chrome. |
+| `semantic_complete` | The replacement has a complete detached-model and layout path; interactions additionally have a typed payload, semantic tag, availability rules, guarded production consumer, late validation, and authoritative Classic handoff or bounded native behavior; information additionally has authoritative capture, any required ordered retention, and complete accessible rendering. |
+| `missing` | Any part of the retained or semantic proof is absent, provisional, placeholder-only, stale, or untested. This status always rejects cropping. |
+
+The inventory revision covers the complete reviewed contract: every stable ID,
+surface, role kind, status, evidence statement, and cited Classic
+UI/control-map source anchor. Any change to any field or cited anchor requires
+a new revision and review. The inventory and runtime predicate serve different
+purposes. Static coverage proves that the reviewed global role census contains
+no missing, unknown, duplicate, or unaccounted entry. A crop request may proceed
+only if all of the following independently sourced evidence succeeds for the
+current frame:
+
+| Check | Fail-closed requirement |
+| --- | --- |
+| Context | Typed expected and live surface/context-variant values are equal. Only the ordinary `standard` gameplay variant is currently supported; camp, nested/modal, spell, targeting, and text-entry variants reject cropping. |
+| Legacy window | Granular evidence identifies the expected gameplay window, verifies the required front-window relationship, rejects any nested or conflicting legacy window, and proves that no full-frame safeguard applies. A single optimistic eligibility flag is insufficient. |
+| Inventory revision | The runtime expectation equals the nonzero reviewed inventory revision covering every manifest field and cited Classic UI/control-map anchor; an unknown, zero, or mismatched revision rejects the crop. |
+| Model | Every required detached snapshot field, identity, and capability is present and internally consistent; snapshot and shell-model revisions are equal and nonzero; and shell-model, snapshot, and live contexts match. |
+| Font | Required code-native fonts and accepted metrics exist for the selected text scale; substitution or metric failure cannot silently clip or remove a role. |
+| Layout | The current window, backing scale, text scale, and responsive branch produce finite, contained, non-overlapping information and controls, including minimum 44×44-point targets where applicable. |
+| Control/handler | Every available native interaction has exactly one typed route and registered guarded production consumer, with late context and payload validation; unsupported, stale, ambiguous, or unhandled actions reject the crop. |
+| Information | Every essential-information role has an authoritative source and complete visible or accessible presentation; ordered/history-bearing data is retained without placeholder substitution, loss, duplication, or reordering. |
+
+The model, font, layout, expected-control, live-handler, and information values
+accepted by the current evaluator are fail-closed evidence inputs. The
+evaluator conjoins them but does not independently prove them. No authoritative
+production evidence builder currently derives all of those values from live
+runtime objects, so the evaluator alone is not authorized to set
+`semantic_controls_ready`. Readiness is never inferred from screen dimensions,
+the presence of a `UIAction` alternative, a successful layout, or one completed
+control group. Any false, unknown, absent, zero-revision, or mismatched
+component selects the intact full-frame compatibility route. Production
+continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
+Classic gameplay frame is enabled and this section does not claim runtime
+readiness.
+
+The known incomplete roles include at least the following; the source-derived
+inventory remains authoritative and must reject an omitted role:
+
+| Surface | Known `missing` interaction roles |
+| --- | --- |
+| Outdoor | Search, use/consume Torch, Heal, Rest/Camp, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, non-combat Use Scroll, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
+| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Rest/Camp, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, non-combat Use Scroll, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
+
+Known `missing` essential-information roles across these surfaces include
+ordered capture and retention of the Classic message/flash stream for Event
+Log; pooled-money and fatigue status; party-wide condition indicators; complete
+all-member vitals and combat values, including armor class, spell points, and
+noncaster attack cadence; authoritative coordinates, calendar/clock, and
+Search/Torch state; focused-combatant information; and combat round and
+enemies-remaining counts. Snapshot fields or the current placeholder Event Log
+do not satisfy the information-completeness check merely by existing. The
+selected-member Details inspector remains a distinct bounded renderer and does
+not establish equivalence for these all-member, party-wide, or combat roles.
+
 ## Required automated coverage
 
 Release-candidate tests must include:
@@ -366,6 +437,16 @@ Release-candidate tests must include:
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
   backing scales;
+- versioned gameplay-chrome role inventories for outdoor, dungeon, and combat,
+  with exact global role/order/field/source-anchor and status validation;
+  deterministic crop-readiness checks for typed expected/live standard context,
+  granular legacy window/front/full-frame facts, nonzero inventory and
+  snapshot/model revisions, matching model context, detached-model completeness,
+  fonts/metrics, responsive layout, control-to-handler completeness, and
+  information capture/retention/rendering; and negative tests proving every
+  missing, unknown, unsupported variant, absent window fact, zero/stale revision,
+  mismatched context, unhandled control, or incomplete information component
+  retains the full 800×600 compatibility frame;
 - every semantic `UIAction`, including confirmation and cancellation paths;
 - identical scripted Classic and Remastered action streams with snapshot and save-byte comparisons;
 - retail Mac, current-port, and early-port save fixtures, including the recognized `Data I1` sizes `0x398B`, `0x3979`, and `0x398D`;
@@ -469,6 +550,27 @@ Automated checks do not replace these release decisions:
   non-color markers, exact compact `+N` elision, no clipped/overlapping fields,
   and that opening, closing, or viewing Details changes no gameplay state and
   dispatches no legacy action;
+- before accepting any future crop-enabling change, review the globally complete
+  versioned outdoor, dungeon, and combat chrome inventory row by row against an
+  uncropped Classic reference, including every manifest field and cited source
+  anchor. Exercise the supported typed `standard` variant and prove immediate
+  full-frame fallback for camp, nested/modal, spell, targeting, and text-entry
+  variants; wrong or non-front gameplay windows; outdoor and dungeon
+  availability differences; live and stale party selection; player and
+  non-player combat turns; conditional Turn Undead; and focused party and
+  monster combatants. Compare the uncropped reference with the candidate
+  cropped shell at compact and wide layouts, minimum and enlarged text, and
+  both 1× and 2× backing scales;
+  confirm every role is either wholly retained in the crop or semantically
+  complete, every interactive target remains visible and keyboard/pointer
+  operable, messages preserve order without loss or duplication, and money,
+  fatigue, and focused-combatant state remain complete and legible. Deliberately
+  invalidate each readiness input—global coverage, typed context variant,
+  granular legacy window/front/full-frame state, inventory revision, nonzero
+  snapshot/model revision and model context, model completeness, font, layout,
+  control, handler, and information—and verify immediate full-frame fallback
+  rather than a partial crop. Archive the inventory, captures, failure evidence,
+  and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
   Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat

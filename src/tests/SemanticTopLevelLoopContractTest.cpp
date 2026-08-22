@@ -4111,6 +4111,235 @@ void verify_selected_party_details_renderer_contract(
       "frame and must not enable the cropped semantic-controls route");
 }
 
+void verify_gameplay_chrome_coverage_contract(
+    const fs::path& repository_root) {
+  const std::string coverage_header = code_only(read_file(
+      repository_root /
+          "src/presentation/GameplayChromeCoverage.hpp"));
+  const std::string raw_coverage_source = read_file(
+      repository_root / "src/presentation/GameplayChromeCoverage.cpp");
+  const std::string coverage_source = code_only(raw_coverage_source);
+  const std::string coverage_test = code_only(read_file(
+      repository_root / "src/tests/GameplayChromeCoverageTest.cpp"));
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string legacy_misc = code_only(read_file(
+      repository_root / "src/realmz_orig/misc.c"));
+  const std::string legacy_buttons = code_only(read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c"));
+  const std::string legacy_controls = code_only(read_file(
+      repository_root / "src/realmz_orig/updatecontrols.c"));
+  const std::string legacy_combat_choice = code_only(read_file(
+      repository_root /
+          "src/realmz_orig/combatinfo-combatchoice.c"));
+  const std::string legacy_combat_update = code_only(read_file(
+      repository_root / "src/realmz_orig/combatupdate-2.c"));
+  const std::string legacy_text = code_only(read_file(
+      repository_root / "src/realmz_orig/textbox-time.c"));
+  const std::string legacy_party_conditions = code_only(read_file(
+      repository_root /
+          "src/realmz_orig/tickcheck.c-updatetorch.c"));
+
+  for (const auto value : {
+           "exploration", "dungeon", "combat", "interaction",
+           "essential_information", "retained_in_crop",
+           "semantic_complete", "missing"}) {
+    require(count_identifier(coverage_header, value) != 0,
+        std::string("gameplay-chrome coverage type is missing ") + value);
+  }
+  require(count_identifier(
+              coverage_header, "kGameplayChromeInventoryRevision") != 0 &&
+          count_identifier(
+              coverage_header, "canonical_role_set_matches") != 0,
+      "gameplay-chrome coverage must expose a versioned exact-role-set gate");
+  for (const auto function : {
+           "gameplay_chrome_coverage_manifest",
+           "gameplay_chrome_inventory_revision",
+           "validate_gameplay_chrome_coverage",
+           "assess_gameplay_chrome_coverage",
+           "evaluate_gameplay_crop_readiness",
+           "evaluate_current_gameplay_crop_readiness"}) {
+    require(count_identifier(coverage_header, function) == 1 &&
+            count_identifier(coverage_source, function) >= 1,
+        std::string("gameplay-chrome coverage must declare and implement ") +
+            function);
+  }
+  for (const auto forbidden : {
+           "SDL_Renderer", "SDL_Texture", "UIAction",
+           "LegacyCommandBridge", "dispatch_remastered_shell_control",
+           "GetResource"}) {
+    require(count_identifier(coverage_header, forbidden) == 0 &&
+            count_identifier(coverage_source, forbidden) == 0,
+        std::string("pure gameplay-chrome coverage must not depend on ") +
+            forbidden);
+  }
+  require(coverage_header.find("SDL_") == std::string::npos &&
+          coverage_source.find("SDL_") == std::string::npos,
+      "pure gameplay-chrome coverage must not contain an SDL API path");
+
+  for (const auto role : {
+           "exploration.action.eight_direction_movement",
+           "exploration.action.selected_item_drilldown",
+           "exploration.action.contextual_shop_temple_encounter",
+           "exploration.action.use_scroll",
+           "exploration.action.use_torch",
+           "exploration.info.narrative_messages",
+           "exploration.info.calendar_clock",
+           "exploration.info.fatigue",
+           "exploration.info.pooled_money",
+           "exploration.info.party_vitals",
+           "exploration.info.party_condition_indicators",
+           "dungeon.action.relative_movement",
+           "dungeon.action.selected_item_drilldown",
+           "dungeon.action.contextual_shop_temple_encounter",
+           "dungeon.action.use_scroll",
+           "dungeon.action.use_torch",
+           "dungeon.info.narrative_messages",
+           "dungeon.info.calendar_clock",
+           "dungeon.info.fatigue",
+           "dungeon.info.pooled_money",
+           "dungeon.info.party_vitals",
+           "dungeon.info.party_condition_indicators",
+           "combat.action.guard",
+           "combat.action.center_cursor",
+           "combat.action.inspect_focused_combatant",
+           "combat.action.inspect_party_member",
+           "combat.action.inspect_items",
+           "combat.action.inspect_conditions",
+           "combat.action.inspect_attacks",
+           "combat.action.turn_undead",
+           "combat.action.party_auto_toggles",
+           "combat.info.narrative_messages",
+           "combat.info.inspected_combatant",
+           "combat.info.conditions_and_attacks",
+           "combat.info.round",
+           "combat.info.enemies_remaining",
+           "combat.info.party_vitals",
+           "combat.info.party_condition_indicators"}) {
+    require(raw_coverage_source.find(std::string("\"") + role + "\"") !=
+            std::string::npos,
+        std::string("canonical gameplay-chrome inventory is missing role ") +
+            role);
+  }
+
+  const std::string assessment = function_body(
+      coverage_source, "assess_gameplay_chrome_coverage");
+  require(count_identifier(assessment, "canonical_role_set_matches") >= 2 &&
+          count_identifier(assessment, "inventory_missing_count") >= 2 &&
+          count_identifier(assessment, "complete") != 0,
+      "coverage assessment must require the canonical role set and reject "
+      "inventory-wide missing roles");
+  require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
+          count_identifier(coverage_source, "static_assert") != 0 &&
+          coverage_header.find("0x4B210C95241B6D56ULL") !=
+              std::string::npos,
+      "gameplay-chrome inventory revision must be content-addressed and "
+      "compile-time pinned");
+  const std::string readiness = function_body(
+      coverage_source, "evaluate_gameplay_crop_readiness");
+  const std::string compact_readiness = without_whitespace(readiness);
+  for (const auto prerequisite : {
+           "expected_context_variant_known",
+           "live_context_variant_known", "context_matches_surface",
+           "context_variants_exact_match",
+           "standard_context_variant_supported",
+           "snapshot_matches_context",
+           "shell_model_matches_snapshot_context",
+           "gameplay_window_active", "front_is_gameplay_surface",
+           "legacy_requires_full_frame", "legacy_full_frame_clear",
+           "inventory_revision_matches", "snapshot_revision_nonzero",
+           "snapshot_revision_matches_shell_model", "shell_model_valid",
+           "shell_layout_valid", "shell_font_valid",
+           "expected_controls_present", "live_handlers_present",
+           "informational_surfaces_complete",
+           "runtime_prerequisites_complete"}) {
+    require(count_identifier(readiness, prerequisite) >= 2,
+        std::string("crop readiness must fail closed on ") + prerequisite);
+  }
+  require(compact_readiness.contains(
+              "result.ready=result.coverage.complete&&"
+              "result.runtime_prerequisites_complete;"),
+      "crop readiness must conjoin static coverage and runtime prerequisites");
+
+  const std::string button_choice = function_body(
+      legacy_buttons, "buttonchoice");
+  for (const auto control : {
+           "rest", "search", "torch", "swapbut", "campbut", "itemsbut",
+           "tradebut", "barbut", "shopbut", "viewspellsbut",
+           "castspellsbut", "overviewbut", "charmainbut", "showitembut",
+           "showconditionbut"}) {
+    require(count_identifier(button_choice, control) != 0,
+        std::string("Classic world control census lost ") + control);
+  }
+  require(count_identifier(legacy_misc, "autoone") >= 3 &&
+          count_identifier(legacy_misc, "GetNewControl") != 0,
+      "Classic per-member Auto control creation/handling must remain in the "
+      "coverage census");
+
+  const std::string combat_choice = function_body(
+      legacy_combat_choice, "combatchoice");
+  for (const auto control : {
+           "monsterbut", "showitems", "condition", "attacks", "turn",
+           "combatitem", "melee", "viewspellsbut", "castspellsbut"}) {
+    require(count_identifier(combat_choice, control) != 0,
+        std::string("Classic combat control census lost ") + control);
+  }
+  const std::string update_controls = function_body(
+      legacy_controls, "updatecontrols");
+  require(count_identifier(update_controls, "undead") != 0 &&
+          count_identifier(update_controls, "canpriestturn") != 0 &&
+          count_identifier(update_controls, "hasturned") != 0,
+      "Classic conditional Turn Undead visibility must remain in the census");
+  const std::string combat_update = function_body(
+      legacy_combat_update, "combatupdate2");
+  require(count_identifier(combat_update, "lastshown") != 0,
+      "Classic focused-combatant information must remain in the census");
+  const std::string textbox = function_body(legacy_text, "textbox");
+  require(count_identifier(textbox, "textrect") != 0,
+      "Classic narrative message surface must remain in the census");
+  const std::string update_torch = function_body(
+      legacy_party_conditions, "updatetorch");
+  require(count_identifier(update_torch, "partycondition") != 0 &&
+          count_identifier(legacy_party_conditions, "partycondition") >= 3,
+      "Classic torch and party-wide condition indicators must remain in the "
+      "coverage census");
+
+  for (const auto negative_gate : {
+           "expected_variant", "live_variant", "gameplay_window_active",
+           "front_is_gameplay_surface", "legacy_requires_full_frame",
+           "legacy_full_frame_clear", "expected_inventory_revision",
+           "snapshot_revision_nonzero", "shell_model_revision",
+           "shell_model_context", "shell_model_valid",
+           "shell_layout_valid", "shell_font_valid",
+           "expected_controls_present", "live_handlers_present",
+           "informational_surfaces_complete"}) {
+    require(count_identifier(coverage_test, negative_gate) >= 2,
+        std::string("coverage tests must isolate the negative gate ") +
+            negative_gate);
+  }
+  require(count_identifier(coverage_test, "kExpectedManifestRows") >= 3 &&
+          coverage_test.find("kExpectedManifestRows.size() == 95U") !=
+              std::string::npos &&
+          coverage_test.find("first.size() == 95U") != std::string::npos &&
+          coverage_test.find("0x4B210C95241B6D56ULL") !=
+              std::string::npos &&
+          count_identifier(coverage_test,
+              "test_inventory_revision_covers_every_ordered_manifest_field") >=
+              2 &&
+          count_identifier(coverage_test,
+              "test_manifest_source_anchors_resolve") >= 2,
+      "coverage tests must freeze the complete reviewed manifest, its "
+      "content revision, and source anchors");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  require(count_identifier(present, "semantic_controls_ready") == 1 &&
+          compact_present.contains(".semantic_controls_ready=false,"),
+      "the coverage-contract milestone must keep the complete Classic frame "
+      "and must not enable cropping");
+}
+
 void verify_remastered_runtime_asset_integration(
     const fs::path& repository_root) {
   const std::string raw_source = read_file(
@@ -7378,6 +7607,7 @@ int main(int argc, char** argv) {
     verify_window_manager_named_combat_sinks(repository_root);
     verify_window_manager_shell_dispatch_freshness(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
+    verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);
     verify_mode_switch_cancellation(repository_root);
     std::cout << "SemanticTopLevelLoopContractTest passed ("

@@ -75,6 +75,7 @@ endfunction()
 set(PRESENTATION_CORE_SOURCES
     src/presentation/AdaptiveShell.cpp
     src/presentation/DrawerControlLayout.cpp
+    src/presentation/GameplayChromeCoverage.cpp
     src/presentation/LegacyCommandBridge.cpp
     src/presentation/PartyRailControlLayout.cpp
     src/presentation/PartyRailLayout.cpp
@@ -138,6 +139,14 @@ if(REALMZ_BUILD_CORE_TESTS)
     target_link_libraries(AdaptiveShellTest PRIVATE realmz_presentation_core)
     realmz_configure_core_target(AdaptiveShellTest)
     add_test(NAME AdaptiveShellTest COMMAND AdaptiveShellTest)
+
+    add_executable(GameplayChromeCoverageTest
+        src/tests/GameplayChromeCoverageTest.cpp)
+    target_link_libraries(GameplayChromeCoverageTest PRIVATE
+        realmz_presentation_core)
+    realmz_configure_core_target(GameplayChromeCoverageTest)
+    add_test(NAME GameplayChromeCoverageTest
+        COMMAND GameplayChromeCoverageTest ${CMAKE_CURRENT_SOURCE_DIR})
 
     add_executable(RemasteredInputMapperTest
         src/tests/RemasteredInputMapperTest.cpp)

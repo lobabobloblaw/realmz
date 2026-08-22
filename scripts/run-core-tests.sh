@@ -75,6 +75,10 @@ run_cpp_test AdaptiveShellTest \
   src/presentation/RemasteredInputMapper.cpp \
   src/presentation/ResponsiveLayout.cpp
 
+run_cpp_test GameplayChromeCoverageTest \
+  src/tests/GameplayChromeCoverageTest.cpp \
+  src/presentation/GameplayChromeCoverage.cpp
+
 run_cpp_test RemasteredInputMapperTest \
   src/tests/RemasteredInputMapperTest.cpp \
   src/presentation/RemasteredInputMapper.cpp
