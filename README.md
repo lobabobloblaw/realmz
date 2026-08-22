@@ -21,7 +21,12 @@ legacy event loop. On those eligible exploration and dungeon screens, party
 cards dispatch typed, idempotent
 `SelectPartyMemberAction` commands through the same guarded top-level route;
 selecting the active member never emulates the Classic second click that opens
-the character modal. A code-native Items control carries the selected member in
+the character modal. World commands are organized into persistent, directly
+selectable **Travel**, **Party**, and **Game** pages so every target keeps the
+44-point minimum at the 1024×768 floor. Party contains Items, Spells, Scroll,
+and Character; Game contains Save and Load. Selecting the current page is an
+idempotent presentation action.
+A code-native Items control carries the selected member in
 a typed `OpenInventoryAction`. A neighboring Spells control is available only
 for a conscious selected member with spell points and carries that member in a
 typed `OpenSpellbookAction`. The guarded top-level route revalidates either
@@ -40,6 +45,13 @@ and `OpenLoadGameAction` commands. After late surface validation, they become
 the exact preserved Game > Save Current Game `(129, 3)` and Game > Revert To A
 Previous Game `(129, 2)` choices. Each opens the Classic slot chooser; neither
 semantic action chooses a slot, writes save data, or replaces engine state.
+The Character control carries the exact selected member in an
+`OpenCharacterSheetAction`. After fresh surface and selection checks, its tag
+becomes a neutral one-shot `app1Evt`; the outdoor or dungeon outer loop then
+revalidates both Classic selection variables and enters the existing
+`charmainbut`/`buttonchoice` path. No mouse click, dungeon key shortcut, or
+synchronous modal call is forged. Classic remains authoritative for the sheet,
+all browsing, and every nested modal.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
 Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, Escape, Use Scroll,
 and Center Cursor controls carry the stable active-party combatant ID in typed

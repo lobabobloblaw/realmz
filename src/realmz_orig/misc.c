@@ -2098,8 +2098,23 @@ over:
         case (driverEvt):
           break;
 
-        case (app1Evt):
+        case (app1Evt): {
+          uint8_t semantic_character_member = 0;
+          const int maximum_member = (int)charnum;
+          if (TakeSemanticOpenCharacterSheetMember(
+                  &semantic_character_member) &&
+              (maximum_member >= 0) && (maximum_member <= 5) &&
+              ((int)semantic_character_member <= maximum_member) &&
+              ((int)charselectnew == (int)semantic_character_member) &&
+              ((int)charselectold == (int)semantic_character_member) &&
+              (charmainbut != NIL)) {
+            point.v = 51 * (short)semantic_character_member;
+            theControl = charmainbut;
+            reply = 0;
+            goto goback2;
+          }
           break;
+        }
 
         case (app2Evt):
           break;

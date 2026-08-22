@@ -357,6 +357,27 @@ std::vector<ActionControlModel> build_actions(
       std::move(scroll_reason)));
   result.back().party_member = selected_member;
 
+  ActionAvailability character_sheet_availability =
+      ActionAvailability::deferred_to_engine;
+  std::optional<StateTokenModel> character_sheet_reason =
+      engine_rules_token();
+  if (!selected) {
+    character_sheet_availability = ActionAvailability::unavailable;
+    character_sheet_reason = unavailable_token("Select a party member first");
+  } else if (!navigation_context) {
+    character_sheet_availability = ActionAvailability::unavailable;
+    character_sheet_reason =
+        unavailable_token("Character sheet is unavailable now");
+  }
+  result.emplace_back(action(
+      ActionIntent::open_character_sheet,
+      "action.character_sheet.open",
+      "Character",
+      character_sheet_availability,
+      tab_order++,
+      std::move(character_sheet_reason)));
+  result.back().party_member = selected_member;
+
   if (snapshot.screen == ScreenContext::combat) {
     const CombatantView* acting = nullptr;
     if (snapshot.combat && snapshot.combat->active &&
@@ -924,6 +945,12 @@ PresentationShellModel build_presentation_shell_model(
   PresentationShellModel result;
   result.revision = snapshot.revision;
   result.screen = snapshot.screen;
+  result.world_action_page =
+      has_world_navigation(snapshot.screen) &&
+          is_valid_world_action_page_transition(
+              WorldActionPage::travel, preferences.world_action_page)
+      ? preferences.world_action_page
+      : WorldActionPage::travel;
   result.combat_action_page =
       (snapshot.screen == ScreenContext::combat) &&
           ((preferences.combat_action_page == CombatActionPage::primary) ||

@@ -48,6 +48,9 @@ using RuntimeLegacyOpenScrollCaseSink = std::function<bool(
     PartyMemberId,
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyOpenCharacterSheetSink = std::function<bool(
+    PartyMemberId,
+    const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyOpenSaveGameSink = std::function<bool(
     RuntimeLegacyMenuCommand,
     const RuntimeLegacyCommandContext&)>;
@@ -122,16 +125,17 @@ using RuntimeLegacyCenterCombatCursorSink = std::function<bool(
     uint32_t,
     const RuntimeLegacyCommandContext&)>;
 
-// World-action sinks are named because Inventory, Spells, and Use Scroll have
-// intentionally identical callable shapes while their Classic commands are
-// not interchangeable. Empty functions register the corresponding action but
-// fail closed at dispatch, matching the positional compatibility overloads.
+// World-action sinks are named because several selected-member commands have
+// intentionally similar callable shapes while their Classic routes are not
+// interchangeable. Empty functions register the corresponding action but fail
+// closed at dispatch, matching the positional compatibility overloads.
 struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacyOpenInventorySink open_inventory;
   RuntimeLegacyOpenSpellbookSink open_spellbook;
   RuntimeLegacyOpenScrollCaseSink open_scroll_case;
   RuntimeLegacyOpenSaveGameSink open_save_game;
   RuntimeLegacyOpenLoadGameSink open_load_game;
+  RuntimeLegacyOpenCharacterSheetSink open_character_sheet;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -194,6 +198,13 @@ struct RuntimeLegacyCombatActionSinks {
 // lowercase "p" key record in a dungeon. The selected member is carried by
 // OpenScrollCaseAction; Classic owns the five case slots and the entire chooser.
 [[nodiscard]] std::optional<uint32_t> legacy_key_message_for_open_scroll_case(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Character sheets enter Classic through a typed semantic app event rather
+// than a synthetic key or pointer event. This predicate applies the guarded
+// world-context checks; the bridge range-checks the party slot, and the
+// original loop still revalidates the exact live member before opening it.
+[[nodiscard]] bool runtime_legacy_context_supports_open_character_sheet(
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Game > Save Current Game menu selection consumed by the

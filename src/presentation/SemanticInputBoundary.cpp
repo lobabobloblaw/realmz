@@ -18,6 +18,10 @@ constexpr uint32_t kSemanticPartySelectionSignature = 0x52530000U;
 constexpr uint32_t kSemanticPartySelectionMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticPartySelectionSurfaceMask = 0x0000FF00U;
 constexpr uint32_t kSemanticPartySelectionMemberMask = 0x000000FFU;
+constexpr uint32_t kSemanticOpenCharacterSheetSignature = 0x43530000U;
+constexpr uint32_t kSemanticOpenCharacterSheetMask = 0xFFFF0000U;
+constexpr uint32_t kSemanticOpenCharacterSheetSurfaceMask = 0x0000FF00U;
+constexpr uint32_t kSemanticOpenCharacterSheetMemberMask = 0x000000FFU;
 constexpr uint32_t kSemanticOpenInventorySignature = 0x52490000U;
 constexpr uint32_t kSemanticOpenInventoryMask = 0xFFFF0000U;
 constexpr uint32_t kSemanticOpenInventorySurfaceMask = 0x0000FF00U;
@@ -118,6 +122,11 @@ struct DecodedMovement {
 };
 
 struct DecodedPartySelection {
+  realmz::presentation::PartyMemberId member;
+  RealmzSemanticInputSurface surface;
+};
+
+struct DecodedOpenCharacterSheet {
   realmz::presentation::PartyMemberId member;
   RealmzSemanticInputSurface surface;
 };
@@ -276,6 +285,25 @@ std::optional<DecodedPartySelection> decode_party_selection(
   return DecodedPartySelection{
       .member = static_cast<realmz::presentation::PartyMemberId>(
           tagged_message & kSemanticPartySelectionMemberMask),
+      .surface = surface_value,
+  };
+}
+
+std::optional<DecodedOpenCharacterSheet> decode_open_character_sheet(
+    uint32_t tagged_message) noexcept {
+  if ((tagged_message & kSemanticOpenCharacterSheetMask) !=
+      kSemanticOpenCharacterSheetSignature) {
+    return std::nullopt;
+  }
+  const uint32_t surface_value =
+      (tagged_message & kSemanticOpenCharacterSheetSurfaceMask) >> 8U;
+  if ((surface_value != REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+      (surface_value != REALMZ_SEMANTIC_INPUT_DUNGEON)) {
+    return std::nullopt;
+  }
+  return DecodedOpenCharacterSheet{
+      .member = static_cast<realmz::presentation::PartyMemberId>(
+          tagged_message & kSemanticOpenCharacterSheetMemberMask),
       .surface = surface_value,
   };
 }
@@ -868,6 +896,17 @@ uint32_t semantic_party_selection_tag(
       static_cast<uint32_t>(member);
 }
 
+uint32_t semantic_open_character_sheet_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept {
+  if (!is_world_gameplay_surface(surface)) {
+    return 0;
+  }
+  return kSemanticOpenCharacterSheetSignature |
+      (static_cast<uint32_t>(surface) << 8U) |
+      static_cast<uint32_t>(member);
+}
+
 uint32_t semantic_open_inventory_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept {
@@ -1198,6 +1237,19 @@ RealmzSemanticPartySelectionTagSurface(uint32_t tagged_message) {
   return selection ? selection->surface : kNoSemanticInputSurface;
 }
 
+extern "C" uint8_t RealmzIsSemanticOpenCharacterSheetTag(
+    uint32_t tagged_message) {
+  return decode_open_character_sheet(tagged_message).has_value() ? 1 : 0;
+}
+
+extern "C" RealmzSemanticInputSurface
+RealmzSemanticOpenCharacterSheetTagSurface(uint32_t tagged_message) {
+  const auto character_sheet = decode_open_character_sheet(tagged_message);
+  return character_sheet
+      ? character_sheet->surface
+      : kNoSemanticInputSurface;
+}
+
 extern "C" uint8_t RealmzIsSemanticOpenInventoryTag(
     uint32_t tagged_message) {
   return decode_open_inventory(tagged_message).has_value() ? 1 : 0;
@@ -1441,6 +1493,7 @@ extern "C" uint8_t RealmzIsSemanticGameplayTag(
     uint32_t tagged_message) {
   return (decode_movement(tagged_message) ||
           decode_party_selection(tagged_message) ||
+          decode_open_character_sheet(tagged_message) ||
           decode_open_inventory(tagged_message) ||
           decode_open_spellbook(tagged_message) ||
           decode_open_scroll_case(tagged_message) ||
@@ -1473,6 +1526,10 @@ RealmzSemanticGameplayTagSurface(uint32_t tagged_message) {
   }
   if (const auto selection = decode_party_selection(tagged_message)) {
     return selection->surface;
+  }
+  if (const auto character_sheet =
+          decode_open_character_sheet(tagged_message)) {
+    return character_sheet->surface;
   }
   if (const auto inventory = decode_open_inventory(tagged_message)) {
     return inventory->surface;
@@ -1614,6 +1671,50 @@ extern "C" uint8_t RealmzConsumeSemanticPartySelectionEvent(
       return 0;
     }
     *party_member = selection->member;
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" uint8_t RealmzConsumeSemanticOpenCharacterSheetEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint8_t* party_member) {
+  const bool authorized = authorize_completed_scope(expected_surface);
+  if (!party_member || !authorized) {
+    return 0;
+  }
+  const auto character_sheet = decode_open_character_sheet(tagged_message);
+  if (!character_sheet ||
+      (character_sheet->surface != expected_surface)) {
+    return 0;
+  }
+
+  const auto legacy = RealmzCaptureLegacyPresentationContext();
+  const auto screen = realmz::presentation::screen_context_from_legacy(legacy);
+  if (!legacy.adaptive_eligible ||
+      (screen != screen_for_surface(expected_surface))) {
+    return 0;
+  }
+
+  try {
+    const auto snapshot =
+        realmz::presentation::LegacyGameSnapshotSource().capture();
+    const auto* member = snapshot.party.member(character_sheet->member);
+    const realmz::presentation::RuntimeLegacyCommandContext context{
+        .screen = screen,
+        .world_presentation = snapshot.world.presentation,
+        .adaptive_eligible = legacy.adaptive_eligible != 0,
+    };
+    if ((snapshot.screen != screen) ||
+        !realmz::presentation::
+            runtime_legacy_context_supports_open_character_sheet(context) ||
+        !member || !member->selected ||
+        (snapshot.party.selected_member != character_sheet->member)) {
+      return 0;
+    }
+    *party_member = character_sheet->member;
     return 1;
   } catch (...) {
     return 0;

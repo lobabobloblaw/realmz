@@ -165,6 +165,14 @@ void test_actions_and_events() {
   CHECK(action_name(open_scroll_case.payload) == "open_scroll_case");
   CHECK(std::get<OpenScrollCaseAction>(open_scroll_case.payload).member == 2);
 
+  UIAction open_character_sheet{
+      .sequence = 10,
+      .payload = OpenCharacterSheetAction{2},
+  };
+  CHECK(action_name(open_character_sheet.payload) == "open_character_sheet");
+  CHECK(std::get<OpenCharacterSheetAction>(
+      open_character_sheet.payload).member == 2);
+
   UIAction open_save_game{
       .sequence = 11,
       .payload = OpenSaveGameAction{},
@@ -345,6 +353,14 @@ void test_actions_and_events() {
   CHECK(std::get<SetDrawerPanelAction>(drawer.payload).panel ==
       DrawerPanel::event_log);
 
+  UIAction world_page{
+      .sequence = 18,
+      .payload = SetWorldActionPageAction{WorldActionPage::party},
+  };
+  CHECK(action_name(world_page.payload) == "set_world_action_page");
+  CHECK(std::get<SetWorldActionPageAction>(world_page.payload).page ==
+      WorldActionPage::party);
+
   UIAction combat_page{
       .sequence = 19,
       .payload = SetCombatActionPageAction{CombatActionPage::secondary},
@@ -358,6 +374,26 @@ void test_actions_and_events() {
       .payload = MessageEvent{MessageSeverity::success, "Saved"},
   };
   CHECK(std::get<MessageEvent>(event.payload).text == "Saved");
+}
+
+void test_world_action_page_transitions() {
+  constexpr std::array pages{
+      WorldActionPage::travel,
+      WorldActionPage::party,
+      WorldActionPage::game,
+  };
+  for (const auto from : pages) {
+    for (const auto to : pages) {
+      CHECK(is_valid_world_action_page_transition(from, to));
+    }
+  }
+
+  constexpr auto invalid = static_cast<WorldActionPage>(255);
+  for (const auto page : pages) {
+    CHECK(!is_valid_world_action_page_transition(invalid, page));
+    CHECK(!is_valid_world_action_page_transition(page, invalid));
+  }
+  CHECK(!is_valid_world_action_page_transition(invalid, invalid));
 }
 
 void test_combat_action_page_transitions() {
@@ -397,6 +433,7 @@ void test_command_bridge() {
   CombatantId escape_combat = -1;
   CombatantId open_combat_scroll_case = -1;
   PartyMemberId open_scroll_case_member = 0;
+  PartyMemberId open_character_sheet_member = 0;
   CombatantId center_combat_cursor = -1;
   CombatFieldCell center_combat_cursor_cell{};
   LegacyActionHandlers handlers;
@@ -473,6 +510,11 @@ void test_command_bridge() {
         open_scroll_case_member = action.member;
         return DispatchResult::handled();
       };
+  handlers.open_character_sheet =
+      [&open_character_sheet_member](const OpenCharacterSheetAction& action) {
+        open_character_sheet_member = action.member;
+        return DispatchResult::handled();
+      };
   handlers.center_combat_cursor =
       [&center_combat_cursor, &center_combat_cursor_cell](
           const CenterCombatCursorAction& action) {
@@ -517,6 +559,14 @@ void test_command_bridge() {
   CHECK(local_only.status == DispatchStatus::unsupported);
   CHECK(local_only.detail.find("set_drawer_panel") != std::string::npos);
 
+  const auto world_page_local_only = bridge.dispatch(UIAction{
+      .sequence = 6,
+      .payload = SetWorldActionPageAction{WorldActionPage::party},
+  });
+  CHECK(world_page_local_only.status == DispatchStatus::unsupported);
+  CHECK(world_page_local_only.detail.find("set_world_action_page") !=
+      std::string::npos);
+
   const auto combat_page_local_only = bridge.dispatch(UIAction{
       .sequence = 6,
       .payload = SetCombatActionPageAction{CombatActionPage::secondary},
@@ -547,6 +597,13 @@ void test_command_bridge() {
   });
   CHECK(open_scroll_case_handled.was_handled());
   CHECK(open_scroll_case_member == 4);
+
+  const auto open_character_sheet_handled = bridge.dispatch(UIAction{
+      .sequence = 7,
+      .payload = OpenCharacterSheetAction{3},
+  });
+  CHECK(open_character_sheet_handled.was_handled());
+  CHECK(open_character_sheet_member == 3);
 
   const auto save_chooser_unsupported = bridge.dispatch(UIAction{
       .sequence = 8,
@@ -867,6 +924,7 @@ int main() {
     test_presentation_host_routing();
     test_snapshot_values();
     test_actions_and_events();
+    test_world_action_page_transitions();
     test_combat_action_page_transitions();
     test_command_bridge();
     test_layout_and_transforms();

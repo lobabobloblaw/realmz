@@ -148,6 +148,8 @@ private:
       remastered_shell_keyboard;
   std::optional<realmz::presentation::DrawerPanel>
       remastered_active_drawer;
+  realmz::presentation::WorldActionPage remastered_world_action_page =
+      realmz::presentation::WorldActionPage::travel;
   realmz::presentation::CombatActionPage remastered_combat_action_page =
       realmz::presentation::CombatActionPage::primary;
   struct RemasteredCombatCursorSample {

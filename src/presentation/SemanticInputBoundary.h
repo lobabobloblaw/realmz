@@ -36,6 +36,13 @@ uint8_t RealmzIsSemanticPartySelectionTag(uint32_t tagged_message);
 RealmzSemanticInputSurface RealmzSemanticPartySelectionTagSurface(
     uint32_t tagged_message);
 
+// Character-sheet tags retain the selected member and originating world
+// surface until the guarded top-level loop can revalidate both. The preserved
+// outer loop owns the eventual second-click-equivalent buttonchoice handoff.
+uint8_t RealmzIsSemanticOpenCharacterSheetTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticOpenCharacterSheetTagSurface(
+    uint32_t tagged_message);
+
 // Open-inventory tags carry the selected member explicitly. This keeps a
 // queued action from silently retargeting if selection changes before the
 // guarded top-level loop receives it.
@@ -194,6 +201,14 @@ uint8_t RealmzConsumeSemanticMovementEvent(
 // detached party snapshot, then returns the stable member ID. The caller owns
 // the narrow legacy mutation adapter.
 uint8_t RealmzConsumeSemanticPartySelectionEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint8_t* party_member);
+
+// Revalidates the originating world surface and selected member after the
+// semantic scope ends, then returns that stable member ID. EventManager stages
+// it for a one-shot take by the preserved world loop; no modal runs here.
+uint8_t RealmzConsumeSemanticOpenCharacterSheetEvent(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tagged_message,
     uint8_t* party_member);
@@ -380,6 +395,10 @@ struct CombatFieldCell;
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_party_selection_tag(
+    PartyMemberId member,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_open_character_sheet_tag(
     PartyMemberId member,
     RealmzSemanticInputSurface surface) noexcept;
 

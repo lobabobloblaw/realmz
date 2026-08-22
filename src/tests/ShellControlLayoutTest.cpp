@@ -44,30 +44,89 @@ const LogicalRect& action_panel_for(LogicalSize window) {
   return result;
 }
 
-void verify_layout(
-    const ShellControlLayoutRequest& request,
-    size_t expected_count) {
-  const auto controls = compute_shell_control_layout(request);
-  CHECK(controls.size() == expected_count);
+constexpr std::array kWorldPages{
+    WorldActionPage::travel,
+    WorldActionPage::party,
+    WorldActionPage::game,
+};
+
+void verify_world_tabs(
+    const std::vector<ShellControlPlacement>& controls,
+    LogicalRect panel,
+    WorldActionPage active_page) {
+  constexpr std::array<const char*, 3> labels{
+      "TRAVEL", "PARTY", "GAME"};
+  constexpr std::array<const char*, 3> accessibility_labels{
+      "Travel commands tab",
+      "Party commands tab",
+      "Game commands tab",
+  };
+  constexpr std::array<const char*, 3> focus_identifiers{
+      "focus.action.world.page.travel",
+      "focus.action.world.page.party",
+      "focus.action.world.page.game",
+  };
+
+  CHECK(controls.size() >= kWorldPages.size());
   std::set<uint32_t> regions;
   std::set<std::string> focus_ids;
-  int32_t previous_tab = -1;
+  size_t selected_count = 0U;
+  int32_t previous_tab_order = -1;
   for (size_t index = 0; index < controls.size(); ++index) {
     const auto& control = controls[index];
     CHECK(control.region.is_valid());
     CHECK(regions.emplace(control.region.value).second);
     CHECK(focus_ids.emplace(control.focus_identifier).second);
-    CHECK(request.action_panel.contains(control.bounds));
+    CHECK(panel.contains(control.bounds));
     CHECK(control.bounds.width >= 44.0);
     CHECK(control.bounds.height >= 44.0);
-    CHECK(control.enabled == request.navigation_available);
-    CHECK(control.kind == ShellControlKind::movement);
-    CHECK(std::holds_alternative<MovePartyAction>(control.payload));
-    CHECK(control.tab_order > previous_tab);
-    previous_tab = control.tab_order;
+    CHECK(control.tab_order > previous_tab_order);
+    previous_tab_order = control.tab_order;
     for (size_t prior = 0; prior < index; ++prior) {
       CHECK(!interiors_overlap(control.bounds, controls[prior].bounds));
     }
+  }
+
+  for (size_t index = 0; index < kWorldPages.size(); ++index) {
+    const auto& tab = controls[index];
+    CHECK(tab.region.value == 1210U + index);
+    CHECK(tab.kind == ShellControlKind::world_action_page);
+    CHECK(tab.label == labels[index]);
+    const std::string expected_accessibility_label =
+        std::string(accessibility_labels[index]) +
+        (active_page == kWorldPages[index] ? ", selected" : "");
+    CHECK(tab.accessibility_label == expected_accessibility_label);
+    CHECK(tab.focus_identifier == focus_identifiers[index]);
+    CHECK(tab.tab_order == 900 + static_cast<int32_t>(index));
+    CHECK(tab.enabled);
+    CHECK(tab.selected == (active_page == kWorldPages[index]));
+    CHECK(tab.bounds.width <= 112.0);
+    selected_count += tab.selected ? 1U : 0U;
+    CHECK(std::holds_alternative<SetWorldActionPageAction>(tab.payload));
+    CHECK(action_name(tab.payload) == "set_world_action_page");
+    CHECK(std::get<SetWorldActionPageAction>(tab.payload).page ==
+        kWorldPages[index]);
+    CHECK(is_valid_world_action_page_transition(
+        active_page,
+        std::get<SetWorldActionPageAction>(tab.payload).page));
+  }
+  CHECK(selected_count == 1U);
+  for (size_t index = kWorldPages.size(); index < controls.size(); ++index) {
+    CHECK(!controls[index].selected);
+  }
+}
+
+void verify_layout(
+    const ShellControlLayoutRequest& request,
+    size_t expected_count) {
+  const auto controls = compute_shell_control_layout(request);
+  CHECK(controls.size() == kWorldPages.size() + expected_count);
+  verify_world_tabs(controls, request.action_panel, request.world_action_page);
+  for (size_t index = kWorldPages.size(); index < controls.size(); ++index) {
+    const auto& control = controls[index];
+    CHECK(control.enabled == request.navigation_available);
+    CHECK(control.kind == ShellControlKind::movement);
+    CHECK(std::holds_alternative<MovePartyAction>(control.payload));
   }
 }
 
@@ -117,12 +176,14 @@ void test_payload_order_and_disabled_state() {
   };
   constexpr std::array<uint32_t, 8> expected_outdoor_regions{
       1011, 1004, 1005, 1010, 1006, 1009, 1008, 1007};
-  CHECK(outdoor.size() == expected.size());
+  CHECK(outdoor.size() == kWorldPages.size() + expected.size());
+  verify_world_tabs(outdoor, panel, WorldActionPage::travel);
   for (size_t index = 0; index < expected.size(); ++index) {
-    CHECK(!outdoor[index].enabled);
-    CHECK(std::get<MovePartyAction>(outdoor[index].payload).command ==
+    const auto& movement = outdoor[kWorldPages.size() + index];
+    CHECK(!movement.enabled);
+    CHECK(std::get<MovePartyAction>(movement.payload).command ==
         expected[index]);
-    CHECK(outdoor[index].region.value == expected_outdoor_regions[index]);
+    CHECK(movement.region.value == expected_outdoor_regions[index]);
   }
 
   const auto dungeon = compute_shell_control_layout({
@@ -131,18 +192,20 @@ void test_payload_order_and_disabled_state() {
       .action_panel = panel,
       .navigation_available = true,
   });
-  CHECK(std::get<MovePartyAction>(dungeon[0].payload).command ==
-      MovementCommand::turn_left);
-  CHECK(std::get<MovePartyAction>(dungeon[1].payload).command ==
-      MovementCommand::step_forward);
-  CHECK(std::get<MovePartyAction>(dungeon[2].payload).command ==
-      MovementCommand::step_backward);
+  verify_world_tabs(dungeon, panel, WorldActionPage::travel);
   CHECK(std::get<MovePartyAction>(dungeon[3].payload).command ==
+      MovementCommand::turn_left);
+  CHECK(std::get<MovePartyAction>(dungeon[4].payload).command ==
+      MovementCommand::step_forward);
+  CHECK(std::get<MovePartyAction>(dungeon[5].payload).command ==
+      MovementCommand::step_backward);
+  CHECK(std::get<MovePartyAction>(dungeon[6].payload).command ==
       MovementCommand::turn_right);
   constexpr std::array<uint32_t, 4> expected_dungeon_regions{
       1002, 1000, 1001, 1003};
-  for (size_t index = 0; index < dungeon.size(); ++index) {
-    CHECK(dungeon[index].region.value == expected_dungeon_regions[index]);
+  for (size_t index = 0; index < expected_dungeon_regions.size(); ++index) {
+    CHECK(dungeon[kWorldPages.size() + index].region.value ==
+        expected_dungeon_regions[index]);
   }
 
   const auto first_person = compute_shell_control_layout({
@@ -151,18 +214,22 @@ void test_payload_order_and_disabled_state() {
       .action_panel = panel,
       .navigation_available = true,
   });
-  CHECK(first_person.size() == expected_dungeon_regions.size());
-  for (size_t index = 0; index < first_person.size(); ++index) {
-    CHECK(first_person[index].region.value == expected_dungeon_regions[index]);
-    CHECK(first_person[index].payload == dungeon[index].payload);
+  CHECK(first_person.size() ==
+      kWorldPages.size() + expected_dungeon_regions.size());
+  verify_world_tabs(first_person, panel, WorldActionPage::travel);
+  for (size_t index = 0; index < expected_dungeon_regions.size(); ++index) {
+    const size_t control_index = kWorldPages.size() + index;
+    CHECK(first_person[control_index].region.value ==
+        expected_dungeon_regions[index]);
+    CHECK(first_person[control_index].payload == dungeon[control_index].payload);
   }
 
   std::set<uint32_t> all_semantic_regions;
-  for (const auto& control : outdoor) {
-    CHECK(all_semantic_regions.emplace(control.region.value).second);
+  for (size_t index = kWorldPages.size(); index < outdoor.size(); ++index) {
+    CHECK(all_semantic_regions.emplace(outdoor[index].region.value).second);
   }
-  for (const auto& control : dungeon) {
-    CHECK(all_semantic_regions.emplace(control.region.value).second);
+  for (size_t index = kWorldPages.size(); index < dungeon.size(); ++index) {
+    CHECK(all_semantic_regions.emplace(dungeon[index].region.value).second);
   }
   CHECK(all_semantic_regions.size() == 12);
 }
@@ -182,6 +249,7 @@ void test_open_inventory_control() {
                  .screen = ScreenContext::exploration,
                  .world_presentation = WorldPresentation::outdoor,
                  .action_panel = panel,
+                 .world_action_page = WorldActionPage::party,
                  .navigation_available = true,
                  .inventory_member = PartyMemberId{2},
                  .inventory_available = true,
@@ -190,15 +258,15 @@ void test_open_inventory_control() {
                  .screen = ScreenContext::dungeon,
                  .world_presentation = WorldPresentation::dungeon_map,
                  .action_panel = panel,
+                 .world_action_page = WorldActionPage::party,
                  .navigation_available = true,
                  .inventory_member = PartyMemberId{2},
                  .inventory_available = true,
              },
-         }) {
+      }) {
       const auto controls = compute_shell_control_layout(request);
-      const size_t expected_count =
-          request.screen == ScreenContext::exploration ? 9U : 5U;
-      CHECK(controls.size() == expected_count);
+      CHECK(controls.size() == 4U);
+      verify_world_tabs(controls, request.action_panel, WorldActionPage::party);
       const auto& inventory = controls.back();
       CHECK(inventory.region.value == 1100U);
       CHECK(inventory.kind == ShellControlKind::open_inventory);
@@ -212,10 +280,6 @@ void test_open_inventory_control() {
       CHECK(request.action_panel.contains(inventory.bounds));
       CHECK(inventory.bounds.width >= 44.0);
       CHECK(inventory.bounds.height >= 44.0);
-      for (size_t index = 0; index + 1U < controls.size(); ++index) {
-        CHECK(controls[index].kind == ShellControlKind::movement);
-        CHECK(!interiors_overlap(controls[index].bounds, inventory.bounds));
-      }
     }
   }
 
@@ -224,11 +288,13 @@ void test_open_inventory_control() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
       .navigation_available = true,
       .inventory_member = PartyMemberId{4},
       .inventory_available = false,
   });
-  CHECK(disabled.size() == 9U);
+  CHECK(disabled.size() == 4U);
+  verify_world_tabs(disabled, panel, WorldActionPage::party);
   CHECK(!disabled.back().enabled);
   CHECK(std::get<OpenInventoryAction>(disabled.back().payload).member == 4);
 
@@ -236,6 +302,7 @@ void test_open_inventory_control() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
       .navigation_available = true,
       .inventory_available = true,
   }).empty());
@@ -248,6 +315,7 @@ void test_open_scroll_case_control_is_distinct_and_visible_when_disabled() {
                .screen = ScreenContext::exploration,
                .world_presentation = WorldPresentation::outdoor,
                .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
                .navigation_available = true,
                .scroll_case_member = PartyMemberId{2},
                .scroll_case_available = true,
@@ -256,14 +324,15 @@ void test_open_scroll_case_control_is_distinct_and_visible_when_disabled() {
                .screen = ScreenContext::dungeon,
                .world_presentation = WorldPresentation::dungeon_first_person,
                .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
                .navigation_available = true,
                .scroll_case_member = PartyMemberId{2},
                .scroll_case_available = true,
            },
        }) {
     const auto controls = compute_shell_control_layout(request);
-    CHECK(controls.size() ==
-        (request.screen == ScreenContext::exploration ? 9U : 5U));
+    CHECK(controls.size() == 4U);
+    verify_world_tabs(controls, request.action_panel, WorldActionPage::party);
     const auto& scroll = controls.back();
     CHECK(scroll.region.value == 1108U);
     CHECK(scroll.kind == ShellControlKind::open_scroll_case);
@@ -275,21 +344,19 @@ void test_open_scroll_case_control_is_distinct_and_visible_when_disabled() {
     CHECK(std::holds_alternative<OpenScrollCaseAction>(scroll.payload));
     CHECK(std::get<OpenScrollCaseAction>(scroll.payload).member == 2);
     CHECK(request.action_panel.contains(scroll.bounds));
-    for (size_t index = 0; index + 1U < controls.size(); ++index) {
-      CHECK(controls[index].kind == ShellControlKind::movement);
-      CHECK(!interiors_overlap(controls[index].bounds, scroll.bounds));
-    }
   }
 
   const auto disabled = compute_shell_control_layout({
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
       .navigation_available = true,
       .scroll_case_member = PartyMemberId{4},
       .scroll_case_available = false,
   });
-  CHECK(disabled.size() == 9U);
+  CHECK(disabled.size() == 4U);
+  verify_world_tabs(disabled, panel, WorldActionPage::party);
   CHECK(disabled.back().kind == ShellControlKind::open_scroll_case);
   CHECK(!disabled.back().enabled);
   CHECK(std::get<OpenScrollCaseAction>(disabled.back().payload).member == 4);
@@ -298,6 +365,7 @@ void test_open_scroll_case_control_is_distinct_and_visible_when_disabled() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
       .navigation_available = true,
       .scroll_case_available = true,
   }).empty());
@@ -305,7 +373,100 @@ void test_open_scroll_case_control_is_distinct_and_visible_when_disabled() {
   CHECK(compute_shell_control_layout({
       .screen = ScreenContext::combat,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
       .scroll_case_member = PartyMemberId{4},
+      .guard_combatant = CombatantId{2},
+  }).empty());
+}
+
+void test_open_character_sheet_control_is_the_fourth_party_action() {
+  const LogicalRect panel{16.0, 600.0, 900.0, 150.0};
+  for (const auto& request : {
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .character_sheet_member = PartyMemberId{2},
+               .character_sheet_available = true,
+           },
+           ShellControlLayoutRequest{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::dungeon_first_person,
+               .action_panel = panel,
+               .world_action_page = WorldActionPage::party,
+               .navigation_available = true,
+               .character_sheet_member = PartyMemberId{2},
+               .character_sheet_available = true,
+           },
+       }) {
+    const auto controls = compute_shell_control_layout(request);
+    CHECK(controls.size() == 4U);
+    verify_world_tabs(controls, panel, WorldActionPage::party);
+    const auto& character = controls.back();
+    CHECK(character.region.value == 1113U);
+    CHECK(character.kind == ShellControlKind::open_character_sheet);
+    CHECK(character.label == "CHARACTER");
+    CHECK(character.accessibility_label ==
+        "Open selected party member character sheet");
+    CHECK(character.focus_identifier == "focus.action.character_sheet.open");
+    CHECK(character.tab_order == 1113);
+    CHECK(character.enabled);
+    CHECK(action_name(character.payload) == "open_character_sheet");
+    CHECK(std::holds_alternative<OpenCharacterSheetAction>(
+        character.payload));
+    CHECK(std::get<OpenCharacterSheetAction>(character.payload).member == 2);
+    CHECK(panel.contains(character.bounds));
+    CHECK(character.bounds.width >= 44.0);
+    CHECK(character.bounds.height >= 44.0);
+  }
+
+  const auto disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .character_sheet_member = PartyMemberId{4},
+      .character_sheet_available = false,
+  });
+  CHECK(disabled.size() == 4U);
+  verify_world_tabs(disabled, panel, WorldActionPage::party);
+  CHECK(disabled.back().kind == ShellControlKind::open_character_sheet);
+  CHECK(!disabled.back().enabled);
+  CHECK(std::get<OpenCharacterSheetAction>(disabled.back().payload).member ==
+      4);
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .character_sheet_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_map,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .character_sheet_member = PartyMemberId{6},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .inventory_member = PartyMemberId{2},
+      .character_sheet_member = PartyMemberId{3},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .character_sheet_member = PartyMemberId{2},
       .guard_combatant = CombatantId{2},
   }).empty());
 }
@@ -320,7 +481,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
   };
   for (const auto size : sizes) {
     const auto panel = action_panel_for(size);
-    for (const auto& request : {
+    for (auto request : {
              ShellControlLayoutRequest{
                  .screen = ScreenContext::exploration,
                  .world_presentation = WorldPresentation::outdoor,
@@ -332,6 +493,8 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .spellbook_available = true,
                  .scroll_case_member = PartyMemberId{2},
                  .scroll_case_available = true,
+                 .character_sheet_member = PartyMemberId{2},
+                 .character_sheet_available = true,
                  .save_control_visible = true,
                  .save_available = true,
                  .load_control_visible = true,
@@ -348,22 +511,55 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .spellbook_available = true,
                  .scroll_case_member = PartyMemberId{2},
                  .scroll_case_available = true,
+                 .character_sheet_member = PartyMemberId{2},
+                 .character_sheet_available = true,
                  .save_control_visible = true,
                  .save_available = true,
                  .load_control_visible = true,
                  .load_available = true,
              },
          }) {
-      const auto controls = compute_shell_control_layout(request);
-      const size_t expected_count =
-          request.screen == ScreenContext::exploration ? 13U : 9U;
-      CHECK(controls.size() == expected_count);
-      const auto& inventory = controls[controls.size() - 5U];
-      const auto& spellbook = controls[controls.size() - 4U];
-      const auto& save = controls[controls.size() - 3U];
-      const auto& load = controls[controls.size() - 2U];
-      const auto& scroll = controls.back();
+      std::array<std::vector<ShellControlPlacement>, 3> layouts;
+      for (size_t page_index = 0; page_index < kWorldPages.size(); ++page_index) {
+        request.world_action_page = kWorldPages[page_index];
+        layouts[page_index] = compute_shell_control_layout(request);
+        const size_t action_count = page_index == 0U
+            ? (request.screen == ScreenContext::exploration ? 8U : 4U)
+            : (page_index == 1U ? 4U : 2U);
+        CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
+        verify_world_tabs(
+            layouts[page_index], panel, kWorldPages[page_index]);
+      }
+
+      // Tabs persist with stable geometry and identity on every page. Only the
+      // selected state and its accessibility suffix vary by active page.
+      for (size_t page_index = 0; page_index < kWorldPages.size(); ++page_index) {
+        for (size_t tab_index = 0; tab_index < kWorldPages.size(); ++tab_index) {
+          const auto& reference = layouts[0][tab_index];
+          const auto& tab = layouts[page_index][tab_index];
+          CHECK(tab.region == reference.region);
+          CHECK(tab.bounds == reference.bounds);
+          CHECK(tab.label == reference.label);
+          CHECK(tab.focus_identifier == reference.focus_identifier);
+          CHECK(tab.tab_order == reference.tab_order);
+          CHECK(tab.enabled == reference.enabled);
+          CHECK(tab.payload == reference.payload);
+        }
+      }
+
+      const auto& party = layouts[1];
+      const auto& inventory = party[3];
+      const auto& spellbook = party[4];
+      const auto& scroll = party[5];
+      const auto& character = party[6];
+      CHECK(inventory.region.value == 1100U);
       CHECK(inventory.kind == ShellControlKind::open_inventory);
+      CHECK(inventory.label == "ITEMS");
+      CHECK(inventory.accessibility_label == "Open inventory");
+      CHECK(inventory.focus_identifier == "focus.action.inventory.open");
+      CHECK(inventory.tab_order == 1100);
+      CHECK(inventory.enabled);
+      CHECK(inventory.payload == UIActionPayload{OpenInventoryAction{2}});
       CHECK(spellbook.region.value == 1101U);
       CHECK(spellbook.kind == ShellControlKind::open_spellbook);
       CHECK(spellbook.label == "SPELLS");
@@ -371,34 +567,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(spellbook.focus_identifier == "focus.action.spellbook.open");
       CHECK(spellbook.tab_order == 1101);
       CHECK(spellbook.enabled);
-      CHECK(std::holds_alternative<OpenSpellbookAction>(spellbook.payload));
-      CHECK(std::get<OpenSpellbookAction>(spellbook.payload).member == 2);
-      CHECK(request.action_panel.contains(spellbook.bounds));
-      CHECK(spellbook.bounds.width >= 44.0);
-      CHECK(spellbook.bounds.height >= 44.0);
-      CHECK(!interiors_overlap(inventory.bounds, spellbook.bounds));
-      CHECK(save.region.value == 1102U);
-      CHECK(save.kind == ShellControlKind::open_save_game);
-      CHECK(save.label == "SAVE");
-      CHECK(save.accessibility_label == "Open save dialog");
-      CHECK(save.focus_identifier == "focus.action.save.open");
-      CHECK(save.tab_order == 1102);
-      CHECK(save.enabled);
-      CHECK(std::holds_alternative<OpenSaveGameAction>(save.payload));
-      CHECK(request.action_panel.contains(save.bounds));
-      CHECK(save.bounds.width >= 44.0);
-      CHECK(save.bounds.height >= 44.0);
-      CHECK(load.region.value == 1103U);
-      CHECK(load.kind == ShellControlKind::open_load_game);
-      CHECK(load.label == "LOAD");
-      CHECK(load.accessibility_label == "Open load dialog");
-      CHECK(load.focus_identifier == "focus.action.load.open");
-      CHECK(load.tab_order == 1103);
-      CHECK(load.enabled);
-      CHECK(std::holds_alternative<OpenLoadGameAction>(load.payload));
-      CHECK(request.action_panel.contains(load.bounds));
-      CHECK(load.bounds.width >= 44.0);
-      CHECK(load.bounds.height >= 44.0);
+      CHECK(spellbook.payload == UIActionPayload{OpenSpellbookAction{2}});
       CHECK(scroll.region.value == 1108U);
       CHECK(scroll.kind == ShellControlKind::open_scroll_case);
       CHECK(scroll.label == "SCROLL");
@@ -406,22 +575,50 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(scroll.focus_identifier == "focus.action.scroll_case.open");
       CHECK(scroll.tab_order == 1108);
       CHECK(scroll.enabled);
-      CHECK(std::holds_alternative<OpenScrollCaseAction>(scroll.payload));
-      CHECK(std::get<OpenScrollCaseAction>(scroll.payload).member == 2);
-      CHECK(request.action_panel.contains(scroll.bounds));
-      CHECK(scroll.bounds.width >= 44.0);
-      CHECK(scroll.bounds.height >= 44.0);
-      for (size_t index = 0; index + 4U < controls.size(); ++index) {
-        CHECK(!interiors_overlap(controls[index].bounds, spellbook.bounds));
-      }
-      for (size_t index = 0; index + 3U < controls.size(); ++index) {
-        CHECK(!interiors_overlap(controls[index].bounds, save.bounds));
-      }
-      for (size_t index = 0; index + 2U < controls.size(); ++index) {
-        CHECK(!interiors_overlap(controls[index].bounds, load.bounds));
-      }
-      for (size_t index = 0; index + 1U < controls.size(); ++index) {
-        CHECK(!interiors_overlap(controls[index].bounds, scroll.bounds));
+      CHECK(scroll.payload == UIActionPayload{OpenScrollCaseAction{2}});
+      CHECK(character.region.value == 1113U);
+      CHECK(character.kind == ShellControlKind::open_character_sheet);
+      CHECK(character.label == "CHARACTER");
+      CHECK(character.accessibility_label ==
+          "Open selected party member character sheet");
+      CHECK(character.focus_identifier ==
+          "focus.action.character_sheet.open");
+      CHECK(character.tab_order == 1113);
+      CHECK(character.enabled);
+      CHECK(character.payload == UIActionPayload{OpenCharacterSheetAction{2}});
+
+      const auto& game = layouts[2];
+      const auto& save = game[3];
+      const auto& load = game[4];
+      CHECK(save.region.value == 1102U);
+      CHECK(save.kind == ShellControlKind::open_save_game);
+      CHECK(save.label == "SAVE");
+      CHECK(save.accessibility_label == "Open save dialog");
+      CHECK(save.focus_identifier == "focus.action.save.open");
+      CHECK(save.tab_order == 1102);
+      CHECK(save.enabled);
+      CHECK(save.payload == UIActionPayload{OpenSaveGameAction{}});
+      CHECK(load.region.value == 1103U);
+      CHECK(load.kind == ShellControlKind::open_load_game);
+      CHECK(load.label == "LOAD");
+      CHECK(load.accessibility_label == "Open load dialog");
+      CHECK(load.focus_identifier == "focus.action.load.open");
+      CHECK(load.tab_order == 1103);
+      CHECK(load.enabled);
+      CHECK(load.payload == UIActionPayload{OpenLoadGameAction{}});
+
+      // Every tab payload is a direct destination, including selecting the
+      // already-active page. Recompose each target from every origin.
+      for (size_t origin_index = 0; origin_index < kWorldPages.size(); ++origin_index) {
+        for (size_t tab_index = 0; tab_index < kWorldPages.size(); ++tab_index) {
+          const auto target_page = std::get<SetWorldActionPageAction>(
+              layouts[origin_index][tab_index].payload).page;
+          auto target_request = request;
+          target_request.world_action_page = target_page;
+          const auto target = compute_shell_control_layout(target_request);
+          CHECK(!target.empty());
+          verify_world_tabs(target, panel, target_page);
+        }
       }
     }
   }
@@ -431,11 +628,13 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
       .navigation_available = true,
       .spellbook_member = PartyMemberId{4},
       .spellbook_available = false,
   });
-  CHECK(disabled.size() == 9U);
+  CHECK(disabled.size() == 4U);
+  verify_world_tabs(disabled, panel, WorldActionPage::party);
   CHECK(disabled.back().kind == ShellControlKind::open_spellbook);
   CHECK(!disabled.back().enabled);
   CHECK(std::get<OpenSpellbookAction>(disabled.back().payload).member == 4);
@@ -444,6 +643,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::party,
       .navigation_available = true,
       .spellbook_available = true,
   }).empty());
@@ -452,11 +652,13 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
       .navigation_available = true,
       .save_control_visible = true,
       .save_available = false,
   });
-  CHECK(save_disabled.size() == 9U);
+  CHECK(save_disabled.size() == 4U);
+  verify_world_tabs(save_disabled, panel, WorldActionPage::game);
   CHECK(save_disabled.back().kind == ShellControlKind::open_save_game);
   CHECK(!save_disabled.back().enabled);
   CHECK(std::holds_alternative<OpenSaveGameAction>(
@@ -466,6 +668,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
       .navigation_available = true,
       .save_available = true,
   }).empty());
@@ -474,11 +677,13 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
       .navigation_available = true,
       .load_control_visible = true,
       .load_available = false,
   });
-  CHECK(load_disabled.size() == 9U);
+  CHECK(load_disabled.size() == 4U);
+  verify_world_tabs(load_disabled, panel, WorldActionPage::game);
   CHECK(load_disabled.back().kind == ShellControlKind::open_load_game);
   CHECK(!load_disabled.back().enabled);
   CHECK(std::holds_alternative<OpenLoadGameAction>(
@@ -488,13 +693,53 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .screen = ScreenContext::exploration,
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
       .navigation_available = true,
       .load_available = true,
   }).empty());
+
+  // Dungeon Travel and the reserved four-slot Party page are both reachable
+  // at this exact 44-point floor. One point less in either dimension fails
+  // the whole persistent deck closed on every page.
+  constexpr LogicalRect exact_minimum{0.0, 0.0, 222.0, 120.0};
+  for (const auto page : kWorldPages) {
+    const ShellControlLayoutRequest exact_request{
+        .screen = ScreenContext::dungeon,
+        .world_presentation = WorldPresentation::dungeon_map,
+        .action_panel = exact_minimum,
+        .world_action_page = page,
+        .navigation_available = true,
+        .inventory_member = PartyMemberId{2},
+        .inventory_available = true,
+        .spellbook_member = PartyMemberId{2},
+        .spellbook_available = true,
+        .scroll_case_member = PartyMemberId{2},
+        .scroll_case_available = true,
+        .character_sheet_member = PartyMemberId{2},
+        .character_sheet_available = true,
+        .save_control_visible = true,
+        .save_available = true,
+        .load_control_visible = true,
+        .load_available = true,
+    };
+    const auto exact = compute_shell_control_layout(exact_request);
+    CHECK(!exact.empty());
+    verify_world_tabs(exact, exact_minimum, page);
+    auto narrow_request = exact_request;
+    narrow_request.action_panel.width = 221.0;
+    CHECK(compute_shell_control_layout(narrow_request).empty());
+    auto short_request = exact_request;
+    short_request.action_panel.height = 119.0;
+    CHECK(compute_shell_control_layout(short_request).empty());
+  }
 }
 
 void test_fail_closed_inputs() {
   const LogicalRect usable{0.0, 0.0, 800.0, 150.0};
+  CHECK(!is_valid_world_action_page_transition(
+      static_cast<WorldActionPage>(255), WorldActionPage::travel));
+  CHECK(!is_valid_world_action_page_transition(
+      WorldActionPage::travel, static_cast<WorldActionPage>(255)));
   for (const auto screen : {
            ScreenContext::title,
            ScreenContext::party_selection,
@@ -535,6 +780,38 @@ void test_fail_closed_inputs() {
       .world_presentation = WorldPresentation::outdoor,
       .action_panel = {0.0, 0.0, -1.0, 150.0},
       .navigation_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = usable,
+      .world_action_page = static_cast<WorldActionPage>(255),
+      .navigation_available = true,
+  }).empty());
+
+  // Malformed fields fail the whole request closed even when their owning
+  // page is hidden, so page selection cannot expose a partially wired action.
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = usable,
+      .world_action_page = WorldActionPage::travel,
+      .navigation_available = true,
+      .spellbook_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_map,
+      .action_panel = usable,
+      .world_action_page = WorldActionPage::party,
+      .navigation_available = true,
+      .save_available = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = usable,
+      .world_action_page = WorldActionPage::game,
+      .guard_combatant = CombatantId{2},
   }).empty());
 }
 
@@ -1140,6 +1417,7 @@ int main() {
     test_payload_order_and_disabled_state();
     test_open_inventory_control();
     test_open_scroll_case_control_is_distinct_and_visible_when_disabled();
+    test_open_character_sheet_control_is_the_fourth_party_action();
     test_world_action_controls_at_combined_minimum_layout();
     test_combat_command_contracts_are_independent_and_fail_closed();
     test_persistent_named_combat_command_deck();

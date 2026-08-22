@@ -56,6 +56,9 @@ static_assert(std::is_same_v<
     decltype(OpenScrollCaseAction::member),
     PartyMemberId>);
 static_assert(std::is_same_v<
+    decltype(OpenCharacterSheetAction::member),
+    PartyMemberId>);
+static_assert(std::is_same_v<
     decltype(DelayCombatantAction::combatant),
     CombatantId>);
 static_assert(std::is_same_v<
@@ -328,6 +331,7 @@ void testModeSwitchIsOutsideEngineAndSaveState() {
   handlers.select_party_member = mutateEngine;
   handlers.open_inventory = mutateEngine;
   handlers.open_spellbook = mutateEngine;
+  handlers.open_character_sheet = mutateEngine;
   handlers.open_save_game = mutateEngine;
   handlers.open_load_game = mutateEngine;
   handlers.guard_combatant = mutateEngine;

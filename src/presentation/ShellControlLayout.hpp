@@ -10,11 +10,13 @@
 namespace realmz::presentation {
 
 enum class ShellControlKind {
+  world_action_page,
   movement,
   party_member,
   open_inventory,
   open_spellbook,
   open_scroll_case,
+  open_character_sheet,
   open_save_game,
   open_load_game,
   guard_combatant,
@@ -46,7 +48,7 @@ struct ShellControlPlacement {
   std::string focus_identifier;
   int32_t tab_order = 0;
   bool enabled = false;
-  // Selected is orthogonal to enabled: the active combat-deck tab remains an
+  // Selected is orthogonal to enabled: the active action-deck tab remains an
   // operable, focusable idempotent target and is rendered as the current page.
   bool selected = false;
   UIActionPayload payload;
@@ -58,6 +60,7 @@ struct ShellControlLayoutRequest {
   ScreenContext screen = ScreenContext::title;
   WorldPresentation world_presentation = WorldPresentation::none;
   LogicalRect action_panel;
+  WorldActionPage world_action_page = WorldActionPage::travel;
   bool navigation_available = false;
   std::optional<PartyMemberId> inventory_member;
   bool inventory_available = false;
@@ -65,6 +68,8 @@ struct ShellControlLayoutRequest {
   bool spellbook_available = false;
   std::optional<PartyMemberId> scroll_case_member;
   bool scroll_case_available = false;
+  std::optional<PartyMemberId> character_sheet_member;
+  bool character_sheet_available = false;
   bool save_control_visible = false;
   bool save_available = false;
   bool load_control_visible = false;

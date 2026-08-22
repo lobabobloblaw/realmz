@@ -113,6 +113,7 @@ enum class ActionIntent {
   open_inventory,
   cast_spell,
   open_scroll_case,
+  open_character_sheet,
   save_game,
   load_game,
   guard,
@@ -247,6 +248,7 @@ struct ShellViewPreferences {
   bool reduced_motion = false;
   bool panels_collapsed = false;
   std::optional<DrawerPanel> active_drawer;
+  WorldActionPage world_action_page = WorldActionPage::travel;
   CombatActionPage combat_action_page = CombatActionPage::primary;
   size_t event_log_limit = 100;
 
@@ -256,6 +258,7 @@ struct ShellViewPreferences {
 struct PresentationShellModel {
   SnapshotRevision revision = 0;
   ScreenContext screen = ScreenContext::title;
+  WorldActionPage world_action_page = WorldActionPage::travel;
   CombatActionPage combat_action_page = CombatActionPage::primary;
   PartyRailModel party_rail;
   SelectedPartyDetailsModel selected_details;

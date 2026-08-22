@@ -68,6 +68,15 @@ struct OpenScrollCaseAction {
   bool operator==(const OpenScrollCaseAction&) const = default;
 };
 
+// Opens the preserved Classic character-sheet flow for the explicitly
+// selected party member. Browsing the sheet and every nested modal remain
+// owned by the compatibility flow.
+struct OpenCharacterSheetAction {
+  PartyMemberId member = 0;
+
+  bool operator==(const OpenCharacterSheetAction&) const = default;
+};
+
 // Opens the preserved Classic save-slot chooser. Selecting a slot and writing
 // data remain separate SaveGameAction concerns owned by the compatibility
 // flow.
@@ -344,6 +353,31 @@ enum class DrawerPanel {
   event_log,
 };
 
+enum class WorldActionPage {
+  travel,
+  party,
+  game,
+};
+
+// World pages are selected directly from a persistent command deck. The
+// already-selected page remains a valid idempotent destination, while
+// malformed enum values fail the same shared transition contract used by
+// pointer and keyboard routing.
+[[nodiscard]] constexpr bool is_valid_world_action_page_transition(
+    WorldActionPage from,
+    WorldActionPage to) noexcept {
+  const auto is_valid_page = [](WorldActionPage page) constexpr {
+    switch (page) {
+      case WorldActionPage::travel:
+      case WorldActionPage::party:
+      case WorldActionPage::game:
+        return true;
+    }
+    return false;
+  };
+  return is_valid_page(from) && is_valid_page(to);
+}
+
 enum class CombatActionPage {
   primary,
   secondary,
@@ -380,6 +414,14 @@ struct SetDrawerPanelAction {
   bool operator==(const SetDrawerPanelAction&) const = default;
 };
 
+// The world action page is presentation state only. Carrying the desired page
+// makes recorded shell input deterministic and avoids a state-relative toggle.
+struct SetWorldActionPageAction {
+  WorldActionPage page = WorldActionPage::travel;
+
+  bool operator==(const SetWorldActionPageAction&) const = default;
+};
+
 // The combat action page is presentation state only. Carrying the desired page
 // makes recorded shell input deterministic and avoids a state-relative toggle.
 struct SetCombatActionPageAction {
@@ -402,6 +444,7 @@ using UIActionPayload = std::variant<
     OpenInventoryAction,
     OpenSpellbookAction,
     OpenScrollCaseAction,
+    OpenCharacterSheetAction,
     OpenSaveGameAction,
     OpenLoadGameAction,
     GuardCombatantAction,
@@ -428,6 +471,7 @@ using UIActionPayload = std::variant<
     ConfirmAction,
     CancelAction,
     SetDrawerPanelAction,
+    SetWorldActionPageAction,
     SetCombatActionPageAction,
     SetPresentationModeAction>;
 
@@ -451,6 +495,8 @@ struct UIAction {
       return "open_spellbook";
     } else if constexpr (std::is_same_v<Action, OpenScrollCaseAction>) {
       return "open_scroll_case";
+    } else if constexpr (std::is_same_v<Action, OpenCharacterSheetAction>) {
+      return "open_character_sheet";
     } else if constexpr (std::is_same_v<Action, OpenSaveGameAction>) {
       return "open_save_game";
     } else if constexpr (std::is_same_v<Action, OpenLoadGameAction>) {
@@ -505,6 +551,8 @@ struct UIAction {
       return "cancel";
     } else if constexpr (std::is_same_v<Action, SetDrawerPanelAction>) {
       return "set_drawer_panel";
+    } else if constexpr (std::is_same_v<Action, SetWorldActionPageAction>) {
+      return "set_world_action_page";
     } else if constexpr (std::is_same_v<Action, SetCombatActionPageAction>) {
       return "set_combat_action_page";
     } else {

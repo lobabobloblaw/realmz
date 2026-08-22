@@ -319,6 +319,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic party selection");
   require(count_identifier(
+              body, "RealmzConsumeSemanticOpenCharacterSheetEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic Character Sheet input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticOpenInventoryEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic inventory");
@@ -478,6 +482,36 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(selection_wrapper, "keyDown") == 0 &&
           count_identifier(selection_wrapper, "mouseDown") == 0,
       "public semantic party selection enqueue must not synthesize Classic input");
+
+  const std::string push_character_sheet = function_body(
+      source, "push_semantic_open_character_sheet_event");
+  const std::string compact_push_character_sheet =
+      without_whitespace(push_character_sheet);
+  require(count_identifier(push_character_sheet,
+              "RealmzIsSemanticOpenCharacterSheetTag") == 1,
+      "semantic Character Sheet enqueue must validate exactly one tag");
+  require(count_identifier(push_character_sheet, "app1Evt") == 1,
+      "semantic Character Sheet enqueue must use app1Evt exactly once");
+  require(count_identifier(push_character_sheet, "keyDown") == 0 &&
+          count_identifier(push_character_sheet, "mouseDown") == 0 &&
+          count_identifier(push_character_sheet, "FindControl") == 0 &&
+          count_identifier(push_character_sheet, "viewcharacter") == 0,
+      "semantic Character Sheet enqueue must not synthesize Classic input or "
+      "enter the character modal");
+  require(compact_push_character_sheet.contains("ev.what=app1Evt;") &&
+          compact_push_character_sheet.contains(
+              "ev.message=tagged_message;"),
+      "semantic Character Sheet must retain its tagged app1Evt payload");
+
+  const std::string character_sheet_wrapper = function_body(
+      source, "PushSemanticOpenCharacterSheetEvent");
+  require(without_whitespace(character_sheet_wrapper).contains(
+              "returnem.push_semantic_open_character_sheet_event("
+              "tagged_message);"),
+      "public Character Sheet enqueue must delegate to its tagged queue");
+  require(count_identifier(character_sheet_wrapper, "keyDown") == 0 &&
+          count_identifier(character_sheet_wrapper, "mouseDown") == 0,
+      "public Character Sheet enqueue must not synthesize Classic input");
 
   const std::string push_inventory = function_body(
       source, "push_semantic_open_inventory_event");
@@ -1066,6 +1100,10 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must have one late selection consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticOpenCharacterSheetEvent") == 1,
+      "semantic gameplay wrapper must have one late Character Sheet consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticOpenInventoryEvent") == 1,
       "semantic gameplay wrapper must have one late inventory consumer");
   require(count_identifier(
@@ -1156,8 +1194,8 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 23,
-      "semantic gameplay wrapper must recognize all twenty-three tagged paths");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 24,
+      "semantic gameplay wrapper must recognize all twenty-four tagged paths");
   require(count_identifier(semantic_wrapper, "keyDown") == 23 &&
           count_text(compact_semantic, "ret->what=keyDown;") == 21 &&
           count_text(
@@ -1172,6 +1210,7 @@ void verify_event_manager(const fs::path& repository_root) {
       "only late save/load validation may produce menu mouseDown events");
   require(count_identifier(semantic_wrapper, "MenuSelect") == 0 &&
           count_identifier(semantic_wrapper, "HandleMenuChoice") == 0 &&
+          count_identifier(semantic_wrapper, "FindControl") == 0 &&
           count_identifier(semantic_wrapper, "viewcharacter") == 0 &&
           count_identifier(semantic_wrapper, "buttonchoice") == 0 &&
           count_identifier(semantic_wrapper, "updatemain") == 0 &&
@@ -1186,6 +1225,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticPartySelectionEvent") == 1,
       "EventManager may consume semantic selection only inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticOpenCharacterSheetEvent") == 1,
+      "EventManager may consume Character Sheet input only inside its gameplay "
+      "wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticOpenInventoryEvent") == 1,
       "EventManager may consume semantic inventory only inside its gameplay wrapper");
@@ -1333,8 +1376,30 @@ void verify_event_manager(const fs::path& repository_root) {
           selection_apply < semantic_selection_ack,
       "semantic replay selection must acknowledge only after late consume "
       "and adapter application");
+  const std::size_t character_sheet_branch = compact_semantic.find(
+      "RealmzIsSemanticOpenCharacterSheetTag(ret->message)",
+      selection_message);
+  const std::size_t character_sheet_consume = compact_semantic.find(
+      "RealmzConsumeSemanticOpenCharacterSheetEvent(",
+      character_sheet_branch);
+  const std::size_t character_sheet_stage = compact_semantic.find(
+      "stage_semantic_open_character_sheet_member(party_member);",
+      character_sheet_consume);
+  const std::size_t character_sheet_message = compact_semantic.find(
+      "ret->message=0", character_sheet_stage);
+  const std::size_t character_sheet_where = compact_semantic.find(
+      "ret->where={};", character_sheet_message);
+  const std::size_t character_sheet_modifiers = compact_semantic.find(
+      "ret->modifiers=0", character_sheet_where);
+  const std::size_t character_sheet_window = compact_semantic.find(
+      "ret->window_port=nullptr", character_sheet_modifiers);
+  const std::size_t character_sheet_rejected_null = compact_semantic.find(
+      "ret->what=nullEvent", character_sheet_window);
+  const std::size_t character_sheet_rejected_message = compact_semantic.find(
+      "ret->message=0", character_sheet_rejected_null);
   const std::size_t inventory_branch = compact_semantic.find(
-      "RealmzIsSemanticOpenInventoryTag(ret->message)", selection_message);
+      "RealmzIsSemanticOpenInventoryTag(ret->message)",
+      character_sheet_rejected_message);
   const std::size_t inventory_consume = compact_semantic.find(
       "RealmzConsumeSemanticOpenInventoryEvent(", inventory_branch);
   const std::size_t inventory_keydown = compact_semantic.find(
@@ -1343,6 +1408,40 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", inventory_keydown);
   const std::size_t inventory_message = compact_semantic.find(
       "ret->message=0", inventory_null);
+  require(character_sheet_branch != std::string::npos &&
+          inventory_branch != std::string::npos &&
+          character_sheet_branch < inventory_branch,
+      "Character Sheet must remain a distinct late route before inventory");
+  const std::size_t character_sheet_route_start = compact_semantic.rfind(
+      "ret->what==app1Evt", character_sheet_branch);
+  const std::size_t character_sheet_route_end = compact_semantic.rfind(
+      "ret->what==app1Evt", inventory_branch);
+  require(character_sheet_route_start != std::string::npos &&
+          character_sheet_route_end != std::string::npos &&
+          character_sheet_route_start < character_sheet_branch &&
+          character_sheet_branch < character_sheet_route_end,
+      "Character Sheet structural route must include its own app1Evt guard "
+      "and exclude the following inventory guard");
+  const std::string character_sheet_route = compact_semantic.substr(
+      character_sheet_route_start,
+      character_sheet_route_end - character_sheet_route_start);
+  require(count_identifier(character_sheet_route, "app1Evt") == 1 &&
+          count_identifier(character_sheet_route, "keyDown") == 0 &&
+          count_identifier(character_sheet_route, "mouseDown") == 0 &&
+          count_identifier(character_sheet_route, "FindControl") == 0 &&
+          count_identifier(character_sheet_route, "viewcharacter") == 0 &&
+          count_identifier(character_sheet_route, "buttonchoice") == 0 &&
+          count_identifier(character_sheet_route, "charmainbut") == 0,
+      "Character Sheet late validation must not forge a click, key, control, "
+      "or direct modal call");
+  require(count_text(character_sheet_route, "ret->what=nullEvent;") == 1 &&
+          count_text(character_sheet_route, "ret->what=app1Evt;") == 0 &&
+          character_sheet_route.contains(
+              "stage_semantic_open_character_sheet_member(party_member);"
+              "ret->message=0;ret->where={};ret->modifiers=0;"
+              "ret->window_port=nullptr;"),
+      "successful Character Sheet delivery must retain a neutral app1Evt and "
+      "clear every transport field; only rejection may assign nullEvent");
   const std::size_t spellbook_branch = compact_semantic.find(
       "RealmzIsSemanticOpenSpellbookTag(ret->message)", inventory_message);
   const std::size_t spellbook_consume = compact_semantic.find(
@@ -1599,6 +1698,15 @@ void verify_event_manager(const fs::path& repository_root) {
           selection_apply != std::string::npos &&
           selection_null != std::string::npos &&
           selection_message != std::string::npos &&
+          character_sheet_branch != std::string::npos &&
+          character_sheet_consume != std::string::npos &&
+          character_sheet_stage != std::string::npos &&
+          character_sheet_message != std::string::npos &&
+          character_sheet_where != std::string::npos &&
+          character_sheet_modifiers != std::string::npos &&
+          character_sheet_window != std::string::npos &&
+          character_sheet_rejected_null != std::string::npos &&
+          character_sheet_rejected_message != std::string::npos &&
           inventory_branch != std::string::npos &&
           inventory_consume != std::string::npos &&
           inventory_keydown != std::string::npos &&
@@ -1724,7 +1832,17 @@ void verify_event_manager(const fs::path& repository_root) {
           selection_consume < selection_apply &&
           selection_apply < selection_null &&
           selection_null < selection_message &&
-          selection_message < inventory_branch &&
+          selection_message < character_sheet_branch &&
+          character_sheet_branch < character_sheet_consume &&
+          character_sheet_consume < character_sheet_stage &&
+          character_sheet_stage < character_sheet_message &&
+          character_sheet_message < character_sheet_where &&
+          character_sheet_where < character_sheet_modifiers &&
+          character_sheet_modifiers < character_sheet_window &&
+          character_sheet_window < character_sheet_rejected_null &&
+          character_sheet_rejected_null <
+              character_sheet_rejected_message &&
+          character_sheet_rejected_message < inventory_branch &&
           inventory_branch < inventory_consume &&
           inventory_consume < inventory_keydown &&
           inventory_keydown < inventory_null &&
@@ -1868,6 +1986,11 @@ void verify_event_manager(const fs::path& repository_root) {
       "Non-combat Use Scroll must leave semantic gameplay scope before its "
       "surface-specific lowercase l/p handoff, leaving the five-slot chooser "
       "and all scroll behavior in Classic");
+  require(scope_block_close < character_sheet_branch &&
+          character_sheet_branch < character_sheet_consume &&
+          character_sheet_consume < character_sheet_stage,
+      "Character Sheet must leave semantic gameplay scope before staging its "
+      "one-shot selected-member handoff to the preserved world loop");
   require(scope_block_close < escape_branch &&
           escape_branch < escape_consume &&
           escape_consume < escape_keydown,
@@ -1897,6 +2020,24 @@ void verify_event_manager(const fs::path& repository_root) {
       "GetNextEvent must use the guarded EventManager dequeue path");
   require(count_identifier(wait_next, "get_next_event") == 1,
       "WaitNextEvent must use the guarded EventManager dequeue path");
+  require(count_identifier(get_next,
+              "clear_pending_semantic_open_character_sheet_member") == 1 &&
+          count_identifier(wait_next,
+              "clear_pending_semantic_open_character_sheet_member") == 1 &&
+          count_identifier(semantic_wrapper,
+              "clear_pending_semantic_open_character_sheet_member") == 1,
+      "every ordinary, raw, or semantic event poll must clear a stale staged "
+      "Character Sheet member before dequeuing another event");
+  require(without_whitespace(get_next).find(
+              "clear_pending_semantic_open_character_sheet_member();") <
+          without_whitespace(get_next).find("*ret=em.get_next_event(0);") &&
+          compact_wait_next.find(
+              "clear_pending_semantic_open_character_sheet_member();") <
+          compact_wait_next.find("*ret=em.get_next_event(sleep);") &&
+          compact_semantic.find(
+              "clear_pending_semantic_open_character_sheet_member();") <
+          compact_semantic.find("*ret=em.get_next_semantic_event(0);"),
+      "Character Sheet one-shot state must clear before every event poll");
   require(count_identifier(
               get_next, "clear_pending_semantic_center_combat_cursor_cell") ==
           1 &&
@@ -1926,6 +2067,26 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               cancel, "clear_pending_semantic_center_combat_cursor_cell") == 1,
       "semantic cancellation must clear a staged center-cursor cell once");
+  require(count_identifier(cancel,
+              "clear_pending_semantic_open_character_sheet_member") == 1,
+      "semantic cancellation must clear a staged Character Sheet member once");
+  const std::string take_character_sheet = function_body(
+      source, "TakeSemanticOpenCharacterSheetMember");
+  const std::string compact_take_character_sheet =
+      without_whitespace(take_character_sheet);
+  require(count_identifier(take_character_sheet,
+              "clear_pending_semantic_open_character_sheet_member") == 1 &&
+          compact_take_character_sheet.contains(
+              "constautopending="
+              "pending_semantic_open_character_sheet_member;") &&
+          compact_take_character_sheet.contains("if(!pending||!party_member)") &&
+          compact_take_character_sheet.contains("*party_member=*pending;") &&
+          compact_take_character_sheet.find(
+              "clear_pending_semantic_open_character_sheet_member();") <
+              compact_take_character_sheet.find(
+                  "if(!pending||!party_member)"),
+      "the Classic Character Sheet handoff must clear before null-output "
+      "validation and return its staged member at most once");
   const std::string take_cursor = function_body(
       source, "TakeSemanticCenterCombatCursorCell");
   const std::string compact_take_cursor = without_whitespace(take_cursor);
@@ -1939,6 +2100,10 @@ void verify_event_manager(const fs::path& repository_root) {
       "the Classic center-cursor cell handoff must clear before validating "
       "outputs and return the staged absolute coordinates at most once");
   const std::string flush = function_body(source, "FlushEvents");
+  require(count_identifier(flush,
+              "clear_pending_semantic_open_character_sheet_member") == 1,
+      "Classic event flushing must also make a staged Character Sheet member "
+      "inert");
   require(count_identifier(flush,
               "clear_pending_semantic_center_combat_cursor_cell") == 1,
       "Classic event flushing must also make any staged semantic cursor cell "
@@ -1969,6 +2134,34 @@ void verify_event_manager(const fs::path& repository_root) {
   require(without_whitespace(compatibility_cancel).contains(
               "CancelSemanticGameplayInput();"),
       "legacy movement cancellation name must delegate to the full stream");
+
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string character_consumer = function_body(
+      boundary_source, "RealmzConsumeSemanticOpenCharacterSheetEvent");
+  const std::string compact_character_consumer =
+      without_whitespace(character_consumer);
+  const std::size_t character_snapshot = compact_character_consumer.find(
+      "LegacyGameSnapshotSource().capture()");
+  const std::size_t character_world_context =
+      compact_character_consumer.find(
+          ".world_presentation=snapshot.world.presentation",
+          character_snapshot);
+  const std::size_t character_world_gate = compact_character_consumer.find(
+      "runtime_legacy_context_supports_open_character_sheet(context)",
+      character_world_context);
+  const std::size_t character_output = compact_character_consumer.find(
+      "*party_member=character_sheet->member", character_world_gate);
+  require(character_snapshot != std::string::npos &&
+          character_world_context != std::string::npos &&
+          character_world_gate != std::string::npos &&
+          character_output != std::string::npos &&
+          character_snapshot < character_world_context &&
+          character_world_context < character_world_gate &&
+          character_world_gate < character_output,
+      "late Character Sheet consumption must recapture the exact world "
+      "presentation and pass the shared runtime predicate before releasing "
+      "its selected member");
 }
 
 void verify_party_selection_adapter(const fs::path& repository_root) {
@@ -3128,8 +3321,10 @@ void verify_window_manager_shell_dispatch_freshness(
       source, "draw_shell_panel_contents");
   const std::string compact_panel_draw = without_whitespace(panel_draw);
   const std::size_t selected_render_state = compact_panel_draw.find(
-      "constboolselected_tab=control.selected&&control.kind=="
-      "realmz::presentation::ShellControlKind::combat_action_page;");
+      "constboolselected_tab=control.selected&&(control.kind=="
+      "realmz::presentation::ShellControlKind::world_action_page||"
+      "control.kind==realmz::presentation::ShellControlKind::"
+      "combat_action_page);");
   const std::size_t selected_material_state = compact_panel_draw.find(
       "constboolselected_material=material_drawn&&"
       "(surface_state==ShellSurfaceState::selected);",
@@ -3151,8 +3346,8 @@ void verify_window_manager_shell_dispatch_freshness(
           selected_material_state < selected_inner_border &&
           selected_inner_border < selected_indicator &&
           selected_indicator < selected_label,
-      "WindowManager must render the selected combat tab with a persistent "
-      "active border, indicator, and label state");
+      "WindowManager must render selected world and combat tabs through the "
+      "same persistent active border, indicator, and label state");
   const std::size_t shared_transition_call = compact_dispatch.find(
       "is_valid_combat_action_page_transition("
       "this->remastered_combat_action_page,combat_page->page)");
@@ -4516,6 +4711,502 @@ void verify_window_manager_shell_dispatch_freshness(
       "capability");
 }
 
+void verify_character_sheet_window_manager_contract(
+    const fs::path& repository_root) {
+  const std::string header = code_only(read_file(
+      repository_root / "src/WindowManager.hpp"));
+  const std::string source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string compact_header = without_whitespace(header);
+  require(compact_header.contains(
+              "realmz::presentation::WorldActionPage"
+              "remastered_world_action_page="
+              "realmz::presentation::WorldActionPage::travel;"),
+      "WindowManager must persist world action-page state with a Travel "
+      "default");
+
+  const std::string composition = function_body(
+      source, "present_remastered_frame");
+  const std::string compact_composition = without_whitespace(composition);
+  const std::size_t legacy_context = compact_composition.find(
+      "legacy_context=RealmzCaptureLegacyPresentationContext()");
+  const std::size_t stable_world_screen = compact_composition.find(
+      "constboolstable_world_screen=", legacy_context);
+  const std::size_t stable_world_screen_end = compact_composition.find(
+      ';', stable_world_screen);
+  require(stable_world_screen != std::string::npos &&
+          stable_world_screen_end != std::string::npos,
+      "world-page reset must derive a stable legacy-screen predicate");
+  const std::string stable_world_clause = compact_composition.substr(
+      stable_world_screen,
+      stable_world_screen_end - stable_world_screen + 1U);
+  require(count_identifier(stable_world_clause, "legacy_context") == 1 &&
+          count_identifier(stable_world_clause, "adaptive_eligible") == 1 &&
+          count_identifier(stable_world_clause, "screen") == 2 &&
+          count_identifier(stable_world_clause, "exploration") == 1 &&
+          count_identifier(stable_world_clause, "dungeon") == 1 &&
+          count_identifier(
+              stable_world_clause, "RealmzCurrentSemanticInputSurface") == 0 &&
+          count_identifier(stable_world_clause, "snapshot") == 0,
+      "stable world-screen eligibility must use only captured legacy adaptive "
+      "and screen state, never a transient semantic scope");
+  const std::size_t stable_world_reset = compact_composition.find(
+      "if(!stable_world_screen){this->remastered_world_action_page="
+      "realmz::presentation::WorldActionPage::travel;}",
+      stable_world_screen_end);
+  const std::size_t snapshot_capture = compact_composition.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      stable_world_reset);
+  const std::size_t snapshot_context = compact_composition.find(
+      "constboolsnapshot_context_matches=snapshot.screen==screen;",
+      snapshot_capture);
+  const std::size_t world_action_surface = compact_composition.find(
+      "constboolworld_action_surface=", snapshot_context);
+  const std::size_t world_action_surface_end = compact_composition.find(
+      ';', world_action_surface);
+  require(world_action_surface != std::string::npos &&
+          world_action_surface_end != std::string::npos,
+      "world action composition must derive a fresh snapshot predicate");
+  const std::string world_action_clause = compact_composition.substr(
+      world_action_surface,
+      world_action_surface_end - world_action_surface + 1U);
+  require(count_identifier(
+              world_action_clause, "snapshot_context_matches") == 1 &&
+          count_identifier(world_action_clause, "legacy_context") == 1 &&
+          count_identifier(world_action_clause, "adaptive_eligible") == 1 &&
+          count_identifier(world_action_clause, "snapshot") == 3 &&
+          count_identifier(world_action_clause, "outdoor") == 1 &&
+          count_identifier(world_action_clause, "dungeon_map") == 1 &&
+          count_identifier(
+              world_action_clause, "dungeon_first_person") == 1 &&
+          count_identifier(
+              world_action_clause, "RealmzCurrentSemanticInputSurface") == 0,
+      "world actions must require a context-matching fresh snapshot and exact "
+      "outdoor/map/first-person presentation without semantic-scope coupling");
+  const std::size_t snapshot_world_reset = compact_composition.find(
+      "if(!world_action_surface){this->remastered_world_action_page="
+      "realmz::presentation::WorldActionPage::travel;}",
+      world_action_surface_end);
+  const std::size_t snapshot_screen_overwrite = compact_composition.find(
+      "snapshot.screen=screen;", snapshot_world_reset);
+  require(legacy_context != std::string::npos &&
+          stable_world_reset != std::string::npos &&
+          snapshot_capture != std::string::npos &&
+          snapshot_context != std::string::npos &&
+          snapshot_world_reset != std::string::npos &&
+          snapshot_screen_overwrite != std::string::npos &&
+          legacy_context < stable_world_screen &&
+          stable_world_screen < stable_world_reset &&
+          stable_world_reset < snapshot_capture &&
+          snapshot_capture < snapshot_context &&
+          snapshot_context < world_action_surface &&
+          world_action_surface < snapshot_world_reset &&
+          snapshot_world_reset < snapshot_screen_overwrite,
+      "world page state must reset only after stable legacy or fresh snapshot "
+      "world eligibility fails");
+  require(count_text(compact_composition,
+              "this->remastered_world_action_page="
+              "realmz::presentation::WorldActionPage::travel;") == 3 &&
+          compact_composition.contains(
+              "catch(conststd::exception&e){"
+              "this->remastered_shell_controls.clear();"
+              "this->remastered_combat_cursor_sample.reset();"
+              "this->remastered_world_action_page="
+              "realmz::presentation::WorldActionPage::travel;"),
+      "world pages may reset only for unstable legacy context, mismatched "
+      "snapshot presentation, or failed composition; valid frames must "
+      "preserve the selected page");
+
+  const std::size_t stable_combat_reset = compact_composition.find(
+      "if(screen!=realmz::presentation::ScreenContext::combat||"
+      "legacy_context.adaptive_eligible==0){"
+      "this->remastered_combat_action_page="
+      "realmz::presentation::CombatActionPage::primary;",
+      stable_world_reset);
+  const std::size_t combat_action_surface = compact_composition.find(
+      "constboolcombat_action_surface=", snapshot_world_reset);
+  const std::size_t combat_action_surface_end = compact_composition.find(
+      ';', combat_action_surface);
+  const std::string combat_action_clause = compact_composition.substr(
+      combat_action_surface,
+      combat_action_surface_end - combat_action_surface + 1U);
+  const std::size_t snapshot_combat_reset = compact_composition.find(
+      "if(!combat_action_surface){this->remastered_combat_action_page="
+      "realmz::presentation::CombatActionPage::primary;}",
+      combat_action_surface_end);
+  const std::size_t cursor_scope_guard = compact_composition.find(
+      "if(!snapshot_context_matches||RealmzCurrentSemanticInputSurface()!="
+      "REALMZ_SEMANTIC_INPUT_COMBAT||",
+      snapshot_combat_reset);
+  require(stable_combat_reset != std::string::npos &&
+          combat_action_surface != std::string::npos &&
+          combat_action_surface_end != std::string::npos &&
+          snapshot_combat_reset != std::string::npos &&
+          cursor_scope_guard != std::string::npos &&
+          stable_world_reset < stable_combat_reset &&
+          stable_combat_reset < snapshot_capture &&
+          snapshot_world_reset < combat_action_surface &&
+          combat_action_surface < snapshot_combat_reset &&
+          snapshot_combat_reset < cursor_scope_guard &&
+          count_identifier(
+              combat_action_clause, "snapshot_context_matches") == 1 &&
+          count_identifier(combat_action_clause, "legacy_context") == 1 &&
+          count_identifier(combat_action_clause, "adaptive_eligible") == 1 &&
+          count_identifier(combat_action_clause, "screen") == 1 &&
+          count_identifier(combat_action_clause, "snapshot") == 2 &&
+          count_identifier(combat_action_clause, "combat") == 3 &&
+          count_identifier(
+              combat_action_clause, "RealmzCurrentSemanticInputSurface") == 0,
+      "combat page persistence must use stable legacy and fresh active-combat "
+      "snapshot state; only the cursor-sample guard may depend on semantic "
+      "scope");
+
+  const std::size_t modeled_world_page = compact_composition.find(
+      ".world_action_page=this->remastered_world_action_page",
+      snapshot_screen_overwrite);
+  const std::size_t character_action = compact_composition.find(
+      "constautocharacter_sheet_action=std::ranges::find_if(",
+      modeled_world_page);
+  const std::size_t character_intent = compact_composition.find(
+      "ActionIntent::open_character_sheet", character_action);
+  const std::size_t character_member = compact_composition.find(
+      "character_sheet_member=(world_action_surface&&"
+      "(character_sheet_action!=shell_model->actions.end()))?"
+      "character_sheet_action->party_member:std::nullopt;",
+      character_intent);
+  const std::size_t character_member_view = compact_composition.find(
+      "snapshot.party.member(*character_sheet_member)", character_member);
+  const std::size_t character_available = compact_composition.find(
+      "constboolcharacter_sheet_available=character_sheet_member&&",
+      character_member_view);
+  const std::size_t character_member_bound = compact_composition.find(
+      "*character_sheet_member<=5U", character_available);
+  const std::size_t character_selected = compact_composition.find(
+      "character_sheet_member_view->selected", character_member_bound);
+  const std::size_t character_exact_selection = compact_composition.find(
+      "snapshot.party.selected_member==*character_sheet_member",
+      character_selected);
+  const std::size_t character_can_invoke = compact_composition.find(
+      "character_sheet_action->can_invoke()", character_exact_selection);
+  const std::size_t character_context = compact_composition.find(
+      "runtime_legacy_context_supports_open_character_sheet({",
+      character_can_invoke);
+  const std::size_t layout_world_page = compact_composition.find(
+      ".world_action_page=shell_model->world_action_page", character_context);
+  const std::size_t requested_character_member = compact_composition.find(
+      ".character_sheet_member=character_sheet_member", layout_world_page);
+  const std::size_t requested_character_available = compact_composition.find(
+      ".character_sheet_available=character_sheet_available",
+      requested_character_member);
+  require(modeled_world_page != std::string::npos &&
+          character_action != std::string::npos &&
+          character_intent != std::string::npos &&
+          character_member != std::string::npos &&
+          character_member_view != std::string::npos &&
+          character_available != std::string::npos &&
+          character_member_bound != std::string::npos &&
+          character_selected != std::string::npos &&
+          character_exact_selection != std::string::npos &&
+          character_can_invoke != std::string::npos &&
+          character_context != std::string::npos &&
+          layout_world_page != std::string::npos &&
+          requested_character_member != std::string::npos &&
+          requested_character_available != std::string::npos &&
+          modeled_world_page < character_action &&
+          character_action < character_intent &&
+          character_intent < character_member &&
+          character_member < character_member_view &&
+          character_member_view < character_available &&
+          character_available < character_member_bound &&
+          character_member_bound < character_selected &&
+          character_selected < character_exact_selection &&
+          character_exact_selection < character_can_invoke &&
+          character_can_invoke < character_context &&
+          character_context < layout_world_page &&
+          layout_world_page < requested_character_member &&
+          requested_character_member < requested_character_available,
+      "Character Sheet composition must bind its modeled action to a stable "
+      "selected member and carry the exact member/availability into layout");
+
+  const std::size_t live_controls = compact_composition.find(
+      "constboolevery_enabled_control_is_live=std::ranges::all_of(",
+      requested_character_available);
+  const std::size_t live_character = compact_composition.find(
+      "std::get_if<realmz::presentation::OpenCharacterSheetAction>"
+      "(&control.payload)",
+      live_controls);
+  const std::size_t live_character_member = compact_composition.find(
+      "snapshot.party.member(character_sheet->member)", live_character);
+  const std::size_t live_character_modeled = compact_composition.find(
+      "constautomodeled_action=std::ranges::find_if(",
+      live_character_member);
+  const std::size_t live_character_kind = compact_composition.find(
+      "control.kind==realmz::presentation::ShellControlKind::"
+      "open_character_sheet",
+      live_character_modeled);
+  const std::size_t live_character_page = compact_composition.find(
+      "current_world_action_page=="
+      "realmz::presentation::WorldActionPage::party",
+      live_character_kind);
+  const std::size_t live_character_panel = compact_composition.find(
+      "action_panel.contains(control.bounds)", live_character_page);
+  const std::size_t live_character_bound = compact_composition.find(
+      "character_sheet->member<=5U", live_character_panel);
+  const std::size_t live_character_selected = compact_composition.find(
+      "member->selected", live_character_bound);
+  const std::size_t live_character_exact = compact_composition.find(
+      "snapshot.party.selected_member==character_sheet->member",
+      live_character_selected);
+  const std::size_t live_character_screen = compact_composition.find(
+      "snapshot.screen==context.screen", live_character_exact);
+  const std::size_t live_character_modeled_member = compact_composition.find(
+      "modeled_action->party_member==character_sheet->member",
+      live_character_screen);
+  const std::size_t live_character_invocable = compact_composition.find(
+      "modeled_action->can_invoke()", live_character_modeled_member);
+  const std::size_t live_character_context = compact_composition.find(
+      "runtime_legacy_context_supports_open_character_sheet(context)",
+      live_character_invocable);
+  require(live_controls != std::string::npos &&
+          live_character != std::string::npos &&
+          live_character_member != std::string::npos &&
+          live_character_modeled != std::string::npos &&
+          live_character_kind != std::string::npos &&
+          live_character_page != std::string::npos &&
+          live_character_panel != std::string::npos &&
+          live_character_bound != std::string::npos &&
+          live_character_selected != std::string::npos &&
+          live_character_exact != std::string::npos &&
+          live_character_screen != std::string::npos &&
+          live_character_modeled_member != std::string::npos &&
+          live_character_invocable != std::string::npos &&
+          live_character_context != std::string::npos &&
+          live_controls < live_character &&
+          live_character < live_character_member &&
+          live_character_member < live_character_modeled &&
+          live_character_modeled < live_character_kind &&
+          live_character_kind < live_character_page &&
+          live_character_page < live_character_panel &&
+          live_character_panel < live_character_bound &&
+          live_character_bound < live_character_selected &&
+          live_character_selected < live_character_exact &&
+          live_character_exact < live_character_screen &&
+          live_character_screen < live_character_modeled_member &&
+          live_character_modeled_member < live_character_invocable &&
+          live_character_invocable < live_character_context,
+      "recomposition must retain only a PARTY-page Character Sheet control "
+      "whose bounded member, exact selection, model, context, and action-bar "
+      "placement are still live");
+
+  const std::string keyboard = function_body(
+      source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_character = compact_keyboard.find(
+      "std::get_if<realmz::presentation::OpenCharacterSheetAction>"
+      "(&control.payload)");
+  const std::size_t keyboard_surface = compact_keyboard.find(
+      "if(!surface_matches_context||", keyboard_character);
+  const std::size_t keyboard_kind = compact_keyboard.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "open_character_sheet",
+      keyboard_surface);
+  const std::size_t keyboard_page = compact_keyboard.find(
+      "this->remastered_world_action_page!="
+      "realmz::presentation::WorldActionPage::party",
+      keyboard_kind);
+  const std::size_t keyboard_panel = compact_keyboard.find(
+      "action_bar.contains(control.bounds)", keyboard_page);
+  const std::size_t keyboard_bound = compact_keyboard.find(
+      "character_sheet->member>5U", keyboard_panel);
+  const std::size_t keyboard_context = compact_keyboard.find(
+      "runtime_legacy_context_supports_open_character_sheet(context)",
+      keyboard_bound);
+  const std::size_t keyboard_snapshot = compact_keyboard.find(
+      "realmz::presentation::LegacyGameSnapshotSource().capture()",
+      keyboard_context);
+  const std::size_t keyboard_member = compact_keyboard.find(
+      "snapshot->party.member(character_sheet->member)", keyboard_snapshot);
+  const std::size_t keyboard_screen = compact_keyboard.find(
+      "snapshot->screen!=context.screen", keyboard_member);
+  const std::size_t keyboard_selected = compact_keyboard.find(
+      "!member->selected", keyboard_screen);
+  const std::size_t keyboard_exact = compact_keyboard.find(
+      "snapshot->party.selected_member!=character_sheet->member",
+      keyboard_selected);
+  const std::size_t keyboard_accept = compact_keyboard.find(
+      "continue;", keyboard_exact);
+  require(keyboard_character != std::string::npos &&
+          keyboard_surface != std::string::npos &&
+          keyboard_kind != std::string::npos &&
+          keyboard_page != std::string::npos &&
+          keyboard_panel != std::string::npos &&
+          keyboard_bound != std::string::npos &&
+          keyboard_context != std::string::npos &&
+          keyboard_snapshot != std::string::npos &&
+          keyboard_member != std::string::npos &&
+          keyboard_screen != std::string::npos &&
+          keyboard_selected != std::string::npos &&
+          keyboard_exact != std::string::npos &&
+          keyboard_accept != std::string::npos &&
+          keyboard_character < keyboard_surface &&
+          keyboard_surface < keyboard_kind && keyboard_kind < keyboard_page &&
+          keyboard_page < keyboard_panel && keyboard_panel < keyboard_bound &&
+          keyboard_bound < keyboard_context &&
+          keyboard_context < keyboard_snapshot &&
+          keyboard_snapshot < keyboard_member &&
+          keyboard_member < keyboard_screen &&
+          keyboard_screen < keyboard_selected &&
+          keyboard_selected < keyboard_exact &&
+          keyboard_exact < keyboard_accept,
+      "keyboard liveness must revalidate Character Sheet surface, PARTY page, "
+      "action-bar placement, bounded member, fresh snapshot, and exact "
+      "selection before accepting the control");
+
+  const std::string dispatch = function_body(
+      source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_character = compact_dispatch.find(
+      "std::get_if<realmz::presentation::OpenCharacterSheetAction>"
+      "(&control.payload)");
+  const std::size_t dispatch_live = compact_dispatch.find(
+      "returncandidate.enabled&&candidate==control;", dispatch_character);
+  const std::size_t dispatch_fresh = compact_dispatch.find(
+      "!this->remastered_shell_keyboard_route_is_eligible()", dispatch_live);
+  const std::size_t dispatch_character_guard = compact_dispatch.find(
+      "(open_character_sheet&&", dispatch_fresh);
+  const std::size_t dispatch_character_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "open_character_sheet",
+      dispatch_character_guard);
+  const std::size_t dispatch_character_page = compact_dispatch.find(
+      "this->remastered_world_action_page!="
+      "realmz::presentation::WorldActionPage::party",
+      dispatch_character_kind);
+  const std::size_t dispatch_character_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_character_page);
+  const std::size_t dispatch_action = compact_dispatch.find(
+      "constrealmz::presentation::UIActionaction{", dispatch_character_panel);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "this->runtime_legacy_command_bridge->dispatch(action)",
+      dispatch_action);
+  require(dispatch_character != std::string::npos &&
+          dispatch_live != std::string::npos &&
+          dispatch_fresh != std::string::npos &&
+          dispatch_character_guard != std::string::npos &&
+          dispatch_character_kind != std::string::npos &&
+          dispatch_character_page != std::string::npos &&
+          dispatch_character_panel != std::string::npos &&
+          dispatch_action != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_character < dispatch_live && dispatch_live < dispatch_fresh &&
+          dispatch_fresh < dispatch_character_guard &&
+          dispatch_character_guard < dispatch_character_kind &&
+          dispatch_character_kind < dispatch_character_page &&
+          dispatch_character_page < dispatch_character_panel &&
+          dispatch_character_panel < dispatch_action &&
+          dispatch_action < dispatch_bridge,
+      "Character Sheet dispatch must validate the exact enabled descriptor, "
+      "fresh route, control kind, PARTY page, and action-bar containment "
+      "before constructing or bridging an action");
+  require(count_identifier(dispatch, "semantic_open_character_sheet_tag") == 0 &&
+          count_identifier(
+              dispatch, "PushSemanticOpenCharacterSheetEvent") == 0 &&
+          count_identifier(dispatch, "viewcharacter") == 0 &&
+          count_identifier(dispatch, "FindControl") == 0,
+      "WindowManager dispatch must leave Character Sheet semantic tagging and "
+      "Classic modal ownership to the production sink and preserved loop");
+
+  const std::size_t world_page_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::SetWorldActionPageAction>"
+      "(&control.payload)");
+  const std::size_t world_page_transition = compact_dispatch.find(
+      "is_valid_world_action_page_transition("
+      "this->remastered_world_action_page,world_page->page)",
+      world_page_payload);
+  const std::size_t world_page_kind = compact_dispatch.find(
+      "control.kind!=realmz::presentation::ShellControlKind::"
+      "world_action_page",
+      world_page_transition);
+  const std::size_t world_page_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", world_page_kind);
+  const std::size_t world_page_assignment = compact_dispatch.find(
+      "this->remastered_world_action_page=world_page->page",
+      dispatch_action);
+  const std::size_t world_page_return = compact_dispatch.find(
+      "return;", world_page_assignment);
+  require(world_page_payload != std::string::npos &&
+          world_page_transition != std::string::npos &&
+          world_page_kind != std::string::npos &&
+          world_page_panel != std::string::npos &&
+          world_page_assignment != std::string::npos &&
+          world_page_return != std::string::npos &&
+          world_page_payload < world_page_transition &&
+          world_page_transition < world_page_kind &&
+          world_page_kind < world_page_panel &&
+          world_page_panel < dispatch_action &&
+          dispatch_action < world_page_assignment &&
+          world_page_assignment < world_page_return &&
+          world_page_return < dispatch_bridge,
+      "world-page dispatch must validate transition, kind, and action-bar "
+      "placement, persist the selected page, and return before the legacy "
+      "bridge");
+
+  const std::string create_window = function_body(source, "create_sdl_window");
+  const std::size_t world_sinks_name = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t world_sinks_open = skip_whitespace(
+      create_window,
+      world_sinks_name +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(world_sinks_name != std::string::npos &&
+          world_sinks_open < create_window.size() &&
+          create_window[world_sinks_open] == '{',
+      "WindowManager must construct a named world-action sink bundle");
+  const std::size_t world_sinks_close = matching_delimiter(
+      create_window, world_sinks_open, '{', '}');
+  const std::string world_sinks = create_window.substr(
+      world_sinks_open, world_sinks_close - world_sinks_open + 1U);
+  const std::string character_sink = designated_lambda_body(
+      world_sinks, "open_character_sheet");
+  const std::string compact_character_sink =
+      without_whitespace(character_sink);
+  const std::size_t sink_surface = compact_character_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_matching_surface = compact_character_sink.find(
+      "constboolmatching_surface=", sink_surface);
+  const std::size_t sink_context = compact_character_sink.find(
+      "runtime_legacy_context_supports_open_character_sheet(context)",
+      sink_matching_surface);
+  const std::size_t sink_tag = compact_character_sink.find(
+      "semantic_open_character_sheet_tag(member,surface)", sink_context);
+  const std::size_t sink_push = compact_character_sink.find(
+      "returntag&&PushSemanticOpenCharacterSheetEvent(tag);", sink_tag);
+  require(sink_surface != std::string::npos &&
+          sink_matching_surface != std::string::npos &&
+          sink_context != std::string::npos &&
+          sink_tag != std::string::npos && sink_push != std::string::npos &&
+          sink_surface < sink_matching_surface &&
+          sink_matching_surface < sink_context && sink_context < sink_tag &&
+          sink_tag < sink_push,
+      "the production Character Sheet sink must bind the active matching "
+      "world surface, validate its runtime context, encode member/surface, "
+      "and enqueue exactly one semantic event");
+  require(count_identifier(
+              character_sink, "RealmzCurrentSemanticInputSurface") == 1 &&
+          count_identifier(character_sink,
+              "runtime_legacy_context_supports_open_character_sheet") == 1 &&
+          count_identifier(
+              character_sink, "semantic_open_character_sheet_tag") == 1 &&
+          count_identifier(
+              character_sink, "PushSemanticOpenCharacterSheetEvent") == 1 &&
+          count_identifier(character_sink, "mouseDown") == 0 &&
+          count_identifier(character_sink, "keyDown") == 0 &&
+          count_identifier(character_sink, "FindControl") == 0 &&
+          count_identifier(character_sink, "viewcharacter") == 0,
+      "the Character Sheet sink must have one typed tag/push path and no "
+      "synthetic Classic input or modal shortcut");
+}
+
 void verify_selected_party_details_renderer_contract(
     const fs::path& repository_root) {
   const std::string model_header = code_only(read_file(
@@ -4900,7 +5591,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0x3C04B103D888E062ULL") !=
+          coverage_header.find("0x4E2C63DB45F7295CULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -4990,7 +5681,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0x3C04B103D888E062ULL") !=
+          coverage_test.find("0x4E2C63DB45F7295CULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -6137,6 +6828,10 @@ void verify_top_level_loop(
       std::string(function_name) +
           " must leave tagged selection consumption to EventManager");
   require(count_identifier(
+              body, "RealmzConsumeSemanticOpenCharacterSheetEvent") == 0,
+      std::string(function_name) +
+          " must leave Character Sheet tag consumption to EventManager");
+  require(count_identifier(
               body, "RealmzConsumeSemanticOpenInventoryEvent") == 0,
       std::string(function_name) +
           " must leave tagged inventory consumption to EventManager");
@@ -6221,7 +6916,7 @@ void verify_top_level_loop(
           " must leave selection mutation to EventManager's narrow adapter");
   require(count_identifier(body, "app1Evt") == 1,
       std::string(function_name) +
-          " must retain one inert app1Evt case for the legacy switch");
+          " must retain one app1Evt case for guarded one-shot handoffs");
 
   const std::string compact = without_whitespace(body);
   const std::string wrapper_call =
@@ -6238,6 +6933,93 @@ void verify_top_level_loop(
   require(wrapper < app_event && app_event < keydown_case,
       std::string(function_name) +
           " must poll through the wrapper before its preserved event switch");
+}
+
+void verify_character_sheet_outer_loop(
+    std::string_view body,
+    std::string_view function_name,
+    std::string_view handoff_label) {
+  const std::string compact = without_whitespace(body);
+  const std::size_t take = compact.find(
+      "TakeSemanticOpenCharacterSheetMember(&semantic_character_member)");
+  require(take != std::string::npos,
+      std::string(function_name) +
+          " must take one staged Character Sheet member in app1Evt");
+  const std::size_t branch_start = compact.rfind("case", take);
+  const std::size_t branch_end = compact.find("case", take + 1U);
+  require(branch_start != std::string::npos &&
+          branch_end != std::string::npos && branch_start < take &&
+          take < branch_end,
+      std::string(function_name) +
+          " Character Sheet handoff must remain bounded to app1Evt");
+  const std::string branch = compact.substr(
+      branch_start, branch_end - branch_start);
+
+  require(count_identifier(body, "TakeSemanticOpenCharacterSheetMember") == 1 &&
+          count_identifier(branch,
+              "TakeSemanticOpenCharacterSheetMember") == 1,
+      std::string(function_name) +
+          " must own exactly one Character Sheet one-shot take");
+  require(count_identifier(branch, "FindControl") == 0 &&
+          count_identifier(branch, "GlobalToLocal") == 0 &&
+          count_identifier(branch, "mouseDown") == 0 &&
+          count_identifier(branch, "keyDown") == 0 &&
+          count_identifier(branch, "viewcharacter") == 0 &&
+          count_identifier(branch, "buttonchoice") == 0,
+      std::string(function_name) +
+          " app1Evt must not forge a click or enter Character Sheet directly");
+
+  const std::size_t maximum = branch.find(
+      "constintmaximum_member=(int)charnum;");
+  const std::size_t branch_take = branch.find(
+      "TakeSemanticOpenCharacterSheetMember(&semantic_character_member)");
+  const std::size_t bounded_maximum = branch.find(
+      "(maximum_member>=0)&&(maximum_member<=5)", branch_take);
+  const std::size_t member_in_range = branch.find(
+      "((int)semantic_character_member<=maximum_member)", bounded_maximum);
+  const std::size_t selected_new = branch.find(
+      "((int)charselectnew==(int)semantic_character_member)",
+      member_in_range);
+  const std::size_t selected_old = branch.find(
+      "((int)charselectold==(int)semantic_character_member)", selected_new);
+  const std::size_t live_control = branch.find(
+      "(charmainbut!=NIL)", selected_old);
+  const std::size_t point = branch.find(
+      "point.v=51*(short)semantic_character_member;", live_control);
+  const std::size_t control = branch.find(
+      "theControl=charmainbut;", point);
+  const std::size_t reply = branch.find("reply=0;", control);
+  const std::string goto_handoff = "goto" + std::string(handoff_label) + ";";
+  const std::size_t jump = branch.find(goto_handoff, reply);
+  require(maximum != std::string::npos &&
+          branch_take != std::string::npos &&
+          bounded_maximum != std::string::npos &&
+          member_in_range != std::string::npos &&
+          selected_new != std::string::npos &&
+          selected_old != std::string::npos &&
+          live_control != std::string::npos &&
+          point != std::string::npos &&
+          control != std::string::npos &&
+          reply != std::string::npos &&
+          jump != std::string::npos,
+      std::string(function_name) +
+          " Character Sheet handoff is missing a late identity or control "
+          "guard");
+  require(maximum < branch_take && branch_take < bounded_maximum &&
+          bounded_maximum < member_in_range &&
+          member_in_range < selected_new && selected_new < selected_old &&
+          selected_old < live_control && live_control < point &&
+          point < control && control < reply && reply < jump,
+      std::string(function_name) +
+          " must validate member identity and live control before staging the "
+          "existing buttonchoice path");
+
+  const std::string shared_handoff =
+      std::string(handoff_label) + ":reply=buttonchoice(reply);";
+  require(!branch.contains(std::string(handoff_label) + ":") &&
+          compact.contains(shared_handoff),
+      std::string(function_name) +
+          " must jump out of app1Evt to an existing shared buttonchoice label");
 }
 
 void verify_legacy_loop_ownership(const fs::path& repository_root) {
@@ -6290,6 +7072,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       combat,
       "combat",
       "REALMZ_SEMANTIC_INPUT_COMBAT");
+  verify_character_sheet_outer_loop(mainscreen, "mainscreen", "goback2");
+  verify_character_sheet_outer_loop(threed, "threed", "goback");
   const std::string compact_combat = without_whitespace(combat_raw);
   const std::size_t items_case = compact_combat.find("case'i':");
   const std::size_t items_next_case = compact_combat.find(
@@ -7916,6 +8700,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_end_count = 0;
   std::size_t global_consumer_count = 0;
   std::size_t global_selection_consumer_count = 0;
+  std::size_t global_character_sheet_consumer_count = 0;
   std::size_t global_inventory_consumer_count = 0;
   std::size_t global_spellbook_consumer_count = 0;
   std::size_t global_save_consumer_count = 0;
@@ -7937,6 +8722,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_scroll_case_consumer_count = 0;
   std::size_t global_center_cursor_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
+  std::size_t global_character_sheet_take_count = 0;
+  std::vector<fs::path> character_sheet_take_callers;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
     if (entry.is_regular_file() && entry.path().extension() == ".c") {
@@ -7956,6 +8743,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticMovementEvent");
     global_selection_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticPartySelectionEvent");
+    global_character_sheet_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticOpenCharacterSheetEvent");
     global_inventory_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenInventoryEvent");
     global_spellbook_consumer_count += count_identifier(
@@ -7998,6 +8787,13 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticCenterCombatCursorEvent");
     global_selection_apply_count += count_identifier(
         source, "RealmzApplyPartyMemberSelection");
+    const std::size_t character_sheet_takes = count_identifier(
+        source, "TakeSemanticOpenCharacterSheetMember");
+    global_character_sheet_take_count += character_sheet_takes;
+    if (character_sheet_takes != 0) {
+      character_sheet_take_callers.emplace_back(
+          fs::relative(path, legacy_root));
+    }
   }
   require(global_wrapper_count == 3,
       "only mainscreen, threed, and combat may call the semantic gameplay "
@@ -8010,6 +8806,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic movement directly");
   require(global_selection_consumer_count == 0,
       "legacy loops must not consume tagged semantic selection directly");
+  require(global_character_sheet_consumer_count == 0,
+      "legacy loops must not consume Character Sheet tags directly");
   require(global_inventory_consumer_count == 0,
       "legacy loops must not consume tagged semantic inventory directly");
   require(global_spellbook_consumer_count == 0,
@@ -8059,6 +8857,11 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "directly");
   require(global_selection_apply_count == 0,
       "legacy loops must not apply semantic selection directly");
+  require(global_character_sheet_take_count == 2 &&
+          character_sheet_take_callers == std::vector<fs::path>{
+              fs::path("misc.c"), fs::path("threed.c")},
+      "only misc.c mainscreen and threed.c may take the staged Character "
+      "Sheet member");
 
   const std::string getchoice = function_body(getchoice_source, "getchoice");
   const std::string compact_getchoice = without_whitespace(getchoice);
@@ -8090,6 +8893,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t end_calls = 0;
   std::size_t consume_calls = 0;
   std::size_t selection_consume_calls = 0;
+  std::size_t character_sheet_consume_calls = 0;
   std::size_t inventory_consume_calls = 0;
   std::size_t spellbook_consume_calls = 0;
   std::size_t world_scroll_case_consume_calls = 0;
@@ -8111,7 +8915,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t escape_consume_calls = 0;
   std::size_t scroll_case_consume_calls = 0;
   std::size_t center_cursor_consume_calls = 0;
+  std::size_t character_sheet_take_calls = 0;
   std::vector<fs::path> wrapper_callers;
+  std::vector<fs::path> character_sheet_take_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
     if (!entry.is_regular_file()) {
@@ -8142,6 +8948,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticMovementEvent");
     selection_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticPartySelectionEvent");
+    character_sheet_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticOpenCharacterSheetEvent");
     inventory_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticOpenInventoryEvent");
     spellbook_consume_calls += count_identifier(
@@ -8184,6 +8992,12 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenCombatScrollCaseEvent");
     center_cursor_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticCenterCombatCursorEvent");
+    const std::size_t file_character_sheet_takes = count_identifier(
+        source, "TakeSemanticOpenCharacterSheetMember");
+    character_sheet_take_calls += file_character_sheet_takes;
+    if (file_character_sheet_takes != 0) {
+      character_sheet_take_callers.emplace_back(relative);
+    }
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
     }
@@ -8208,6 +9022,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticMovementEvent");
   require(selection_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticPartySelectionEvent");
+  require(character_sheet_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticOpenCharacterSheetEvent");
   require(inventory_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticOpenInventoryEvent");
   require(spellbook_consume_calls == 0,
@@ -8260,6 +9077,13 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   require(center_cursor_consume_calls == 0,
       "only EventManager may call "
       "RealmzConsumeSemanticCenterCombatCursorEvent");
+  std::ranges::sort(character_sheet_take_callers);
+  require(character_sheet_take_calls == 2 &&
+          character_sheet_take_callers == std::vector<fs::path>{
+              fs::path("realmz_orig/misc.c"),
+              fs::path("realmz_orig/threed.c")},
+      "only the outdoor and dungeon top-level loops may take a staged "
+      "Character Sheet member");
 }
 
 } // namespace
@@ -8281,6 +9105,7 @@ int main(int argc, char** argv) {
     verify_production_call_ownership(repository_root);
     verify_window_manager_named_combat_sinks(repository_root);
     verify_window_manager_shell_dispatch_freshness(repository_root);
+    verify_character_sheet_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

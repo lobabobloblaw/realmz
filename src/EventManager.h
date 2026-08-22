@@ -100,6 +100,7 @@ void PushMenuEvent(int16_t menu_id, int16_t item_id);
 // them at consumption time.
 Boolean PushSemanticMovementEvent(uint32_t tagged_message);
 Boolean PushSemanticPartySelectionEvent(uint32_t tagged_message);
+Boolean PushSemanticOpenCharacterSheetEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenInventoryEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenSpellbookEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenScrollCaseEvent(uint32_t tagged_message);
@@ -121,6 +122,11 @@ Boolean PushSemanticOpenCombatTargetingEvent(uint32_t tagged_message);
 Boolean PushSemanticEscapeCombatEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenCombatScrollCaseEvent(uint32_t tagged_message);
 Boolean PushSemanticCenterCombatCursorEvent(uint32_t tagged_message);
+
+// Removes and returns the selected member staged for the current semantic
+// Character Sheet handoff. The value is one-shot and is cleared before every
+// subsequent event poll, FlushEvents, or semantic-input cancellation.
+Boolean TakeSemanticOpenCharacterSheetMember(uint8_t* party_member);
 
 // Removes and returns the absolute cell staged for the current semantic
 // lowercase-"m" handoff. The value is one-shot and is cleared before every

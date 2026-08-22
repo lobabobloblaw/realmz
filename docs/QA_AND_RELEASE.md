@@ -162,7 +162,10 @@ On eligible exploration and dungeon screens, party cards expose typed
 late-validated against a fresh party snapshot, then a narrow
 legacy adapter changes `charselectnew` exactly once or performs an idempotent
 no-op for the selected member; it never synthesizes a portrait click or opens a
-modal. The Items and Spells actions carry that selected member in distinct typed
+modal. The non-combat action bar uses persistent Travel, Party, and Game tabs;
+their direct, idempotent page actions keep movement, four selected-member
+commands, and Save/Load at the 44-point target floor. The Items and Spells
+actions carry that selected member in distinct typed
 and tagged commands; Spells is available only while the member is conscious and
 has spell points. The same guarded top-level loop revalidates the member, live
 selection, eligibility, and screen before returning the exact Classic `i` or
@@ -187,6 +190,13 @@ the semantic boundary. The neighboring typed Load action follows an independent
 member-free tag and translates only to Game menu ID 129, item 2 (Revert To A
 Previous Game). It opens the preserved in-game chooser without identifying a
 slot; selection and live-state replacement remain inside the Classic flow.
+The Party page's Character control carries the selected member in a distinct
+`OpenCharacterSheetAction`. A fresh adaptive surface and exact-selection check
+authorizes a one-shot neutral `app1Evt`; only the preserved outdoor or dungeon
+outer loop can take that member. The loop rechecks `charnum`, `charselectnew`,
+`charselectold`, and `charmainbut` immediately before entering its existing
+`buttonchoice` route. EventManager never fabricates a mouse event or calls the
+sheet synchronously, and Classic owns all sheet browsing and nested modals.
 Combat exposes seventeen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
@@ -583,19 +593,23 @@ Automated checks do not replace these release decisions:
   rather than a partial crop. Archive the inventory, captures, failure evidence,
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
-  Spells, non-combat Use Scroll, Save, Load, Guard, Finish, Delay, Center,
+  Spells, non-combat Use Scroll, Character, Save, Load, Guard, Finish, Delay, Center,
   Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
   Combat Cast, Combat Target, Combat Escape, Use Scroll, and Center Cursor
   controls at compact and wide layouts,
-  including direct and idempotent selection of the persistent Turn, Gear,
-  Tactics, and Special combat tabs; stable focus across page recomposition;
+  including direct and idempotent selection of the persistent Travel, Party,
+  and Game world tabs and Turn, Gear, Tactics, and Special combat tabs; stable
+  focus across page recomposition;
   unique non-overlapping targets of at least 44×44 points; and a visible
   non-color selected-tab indicator; and an inert stale Spells action after
   selection, consciousness, spell points, or surface state changes; verify
   non-combat Use Scroll emits outdoor `l` and dungeon `p`, remains available
   for an equipped case whose five entries are empty, and becomes inert after
   selection, stamina, equipment, or surface state changes; inert stale Save and
-  Load actions after leaving their gameplay surface; and inert stale Guard,
+  Load actions after leaving their gameplay surface; verify Character is inert
+  after selection, member, or surface changes and otherwise reaches only the
+  existing Classic character-sheet path through the neutral one-shot handoff;
+  and inert stale Guard,
   Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting
   combatant, eligibility, or combat surface changes; verify Combat Items is

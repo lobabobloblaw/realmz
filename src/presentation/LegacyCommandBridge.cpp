@@ -76,6 +76,11 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
     } else if constexpr (std::is_same_v<Action, OpenScrollCaseAction>) {
       return invoke_handler(
           this->handlers_.open_scroll_case, payload, "open_scroll_case");
+    } else if constexpr (std::is_same_v<Action, OpenCharacterSheetAction>) {
+      return invoke_handler(
+          this->handlers_.open_character_sheet,
+          payload,
+          "open_character_sheet");
     } else if constexpr (std::is_same_v<Action, OpenSaveGameAction>) {
       return invoke_handler(
           this->handlers_.open_save_game, payload, "open_save_game");
@@ -167,6 +172,10 @@ DispatchResult InjectedLegacyCommandBridge::dispatch(const UIAction& action) {
     } else if constexpr (std::is_same_v<Action, SetDrawerPanelAction>) {
       return DispatchResult::unsupported(
           "Presentation-local set_drawer_panel cannot cross the legacy bridge");
+    } else if constexpr (std::is_same_v<Action, SetWorldActionPageAction>) {
+      return DispatchResult::unsupported(
+          "Presentation-local set_world_action_page cannot cross the legacy "
+          "bridge");
     } else if constexpr (std::is_same_v<Action, SetCombatActionPageAction>) {
       return DispatchResult::unsupported(
           "Presentation-local set_combat_action_page cannot cross the legacy "

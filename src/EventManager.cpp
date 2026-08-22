@@ -86,6 +86,17 @@ static void stage_semantic_center_combat_cursor_cell(
   };
 }
 
+static std::optional<uint8_t> pending_semantic_open_character_sheet_member;
+
+static void clear_pending_semantic_open_character_sheet_member() noexcept {
+  pending_semantic_open_character_sheet_member.reset();
+}
+
+static void stage_semantic_open_character_sheet_member(
+    uint8_t party_member) noexcept {
+  pending_semantic_open_character_sheet_member = party_member;
+}
+
 static constexpr uint16_t EVMOD_RIGHT_CONTROL_KEY_DOWN = 0x8000;
 static constexpr uint16_t EVMOD_RIGHT_OPTION_KEY_DOWN = 0x4000;
 static constexpr uint16_t EVMOD_RIGHT_SHIFT_KEY_DOWN = 0x2000;
@@ -495,6 +506,28 @@ public:
     ev.window_port = FrontWindow();
     em_log.debug_f(
         "Enqueued tagged semantic party selection (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
+  bool push_semantic_open_character_sheet_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticOpenCharacterSheetTag(tagged_message)) {
+      return false;
+    }
+    // Keep member and surface encoded until the guarded world loop can reject
+    // stale selection. Never expose this tag to a nested Classic modal.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic open character sheet (what={}, "
         "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
         "modifiers=0x{:04X})",
         name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
@@ -1367,6 +1400,7 @@ void FlushEvents(int16_t which_mask, uint16_t stop_mask) {
   }
 
   em_log.debug_f("FlushEvents(0x{:04X}, 0x{:04X})", which_mask, stop_mask);
+  clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
   em.flush_events();
 }
@@ -1378,6 +1412,7 @@ Boolean GetNextEvent(int16_t which_mask, EventRecord* ret) {
     throw std::logic_error(std::format("which_mask ({:04X}) masks out some events in GetNextEvent", which_mask));
   }
 
+  clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
   *ret = em.get_next_event(0);
   return (ret->what != nullEvent);
@@ -1402,6 +1437,7 @@ Boolean GetNextSemanticGameplayEvent(
         "GetNextSemanticGameplayEvent requires a gameplay surface");
   }
 
+  clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
 
   const realmz::presentation::UIAction* replay_semantic_action = nullptr;
@@ -1619,6 +1655,24 @@ Boolean GetNextSemanticGameplayEvent(
     // legacy switch as a repeated portrait click or application-defined event.
     ret->what = nullEvent;
     ret->message = 0;
+  } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticOpenCharacterSheetTag(ret->message)) {
+    uint8_t party_member = 0;
+    if (still_remastered && RealmzConsumeSemanticOpenCharacterSheetEvent(
+            surface, ret->message, &party_member)) {
+      // Keep app1Evt as a guarded outer-loop signal while moving its authorized
+      // member into a one-shot slot. The preserved loop owns charmainbut,
+      // charselectold, and the existing buttonchoice path; no click is forged.
+      stage_semantic_open_character_sheet_member(party_member);
+      ret->message = 0;
+      ret->where = {};
+      ret->modifiers = 0;
+      ret->window_port = nullptr;
+    } else {
+      // A stale member, selection, or surface is inert before Classic input.
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
   } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticOpenInventoryTag(ret->message)) {
     uint32_t classic_key_message = 0;
@@ -1963,6 +2017,7 @@ Boolean WaitNextEvent(int16_t which_mask, EventRecord* ret, uint32_t sleep, RgnH
     throw std::logic_error("mouse_rgn must be null");
   }
 
+  clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
   *ret = em.get_next_event(sleep);
   return (ret->what != nullEvent);
@@ -2023,6 +2078,10 @@ Boolean PushSemanticMovementEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticPartySelectionEvent(uint32_t tagged_message) {
   return em.push_semantic_party_selection_event(tagged_message);
+}
+
+Boolean PushSemanticOpenCharacterSheetEvent(uint32_t tagged_message) {
+  return em.push_semantic_open_character_sheet_event(tagged_message);
 }
 
 Boolean PushSemanticOpenInventoryEvent(uint32_t tagged_message) {
@@ -2109,6 +2168,16 @@ Boolean PushSemanticCenterCombatCursorEvent(uint32_t tagged_message) {
   return em.push_semantic_center_combat_cursor_event(tagged_message);
 }
 
+Boolean TakeSemanticOpenCharacterSheetMember(uint8_t* party_member) {
+  const auto pending = pending_semantic_open_character_sheet_member;
+  clear_pending_semantic_open_character_sheet_member();
+  if (!pending || !party_member) {
+    return 0;
+  }
+  *party_member = *pending;
+  return 1;
+}
+
 Boolean TakeSemanticCenterCombatCursorCell(
     uint8_t* absolute_x,
     uint8_t* absolute_y) {
@@ -2123,6 +2192,7 @@ Boolean TakeSemanticCenterCombatCursorCell(
 }
 
 void CancelSemanticGameplayInput(void) {
+  clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
   RealmzInvalidateSemanticInputBoundary();
   em.discard_semantic_gameplay_events();

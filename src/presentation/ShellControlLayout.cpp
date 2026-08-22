@@ -25,6 +25,7 @@ constexpr uint32_t kSwitchWeaponSetRegion = 1109U;
 constexpr uint32_t kCenterPreviousCombatantRegion = 1110U;
 constexpr uint32_t kCenterNextCombatantRegion = 1111U;
 constexpr uint32_t kOpenCombatItemsRegion = 1112U;
+constexpr uint32_t kOpenCharacterSheetRegion = 1113U;
 constexpr uint32_t kAutoCombatantRegion = 1114U;
 constexpr uint32_t kShowCombatRangeRegion = 1115U;
 constexpr uint32_t kBandageCombatantRegion = 1116U;
@@ -38,6 +39,9 @@ constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
 constexpr uint32_t kCombatSpecialPageRegion = 1203U;
+constexpr uint32_t kWorldTravelPageRegion = 1210U;
+constexpr uint32_t kWorldPartyPageRegion = 1211U;
+constexpr uint32_t kWorldGamePageRegion = 1212U;
 constexpr double kHorizontalInset = 14.0;
 constexpr double kHeaderTopInset = 10.0;
 constexpr double kControlsTopInset = 64.0;
@@ -58,6 +62,35 @@ struct CombatPageDescriptor {
   std::string_view label;
   std::string_view accessibility_label;
   std::string_view identifier;
+};
+
+struct WorldPageDescriptor {
+  WorldActionPage page;
+  uint32_t region;
+  std::string_view label;
+  std::string_view accessibility_label;
+  std::string_view identifier;
+};
+
+constexpr std::array<WorldPageDescriptor, 3> kWorldPages{
+    WorldPageDescriptor{
+        WorldActionPage::travel,
+        kWorldTravelPageRegion,
+        "TRAVEL",
+        "Travel commands",
+        "travel"},
+    WorldPageDescriptor{
+        WorldActionPage::party,
+        kWorldPartyPageRegion,
+        "PARTY",
+        "Party commands",
+        "party"},
+    WorldPageDescriptor{
+        WorldActionPage::game,
+        kWorldGamePageRegion,
+        "GAME",
+        "Game commands",
+        "game"},
 };
 
 constexpr std::array<CombatPageDescriptor, 4> kCombatPages{
@@ -131,6 +164,14 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   }
   const auto descriptors = descriptors_for(request);
   const bool world_controls = !descriptors.empty();
+  const bool valid_world_page = is_valid_world_action_page_transition(
+      WorldActionPage::travel, request.world_action_page);
+  const bool travel_world_page =
+      request.world_action_page == WorldActionPage::travel;
+  const bool party_world_page =
+      request.world_action_page == WorldActionPage::party;
+  const bool game_world_page =
+      request.world_action_page == WorldActionPage::game;
   const bool primary_combat_page =
       request.combat_action_page == CombatActionPage::primary;
   const bool secondary_combat_page =
@@ -139,8 +180,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       request.combat_action_page == CombatActionPage::utility;
   const bool special_combat_page =
       request.combat_action_page == CombatActionPage::special;
-  if (!primary_combat_page && !secondary_combat_page &&
-      !utility_combat_page && !special_combat_page) {
+  if (!valid_world_page ||
+      (!primary_combat_page && !secondary_combat_page &&
+          !utility_combat_page && !special_combat_page)) {
     return {};
   }
   const auto valid_combatant = [](CombatantId combatant) {
@@ -191,6 +233,26 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       valid_combatant(request.center_combat_cursor->combatant) &&
       request.center_combat_cursor->cell.x <= 89U &&
       request.center_combat_cursor->cell.y <= 89U;
+  const bool valid_character_sheet = request.character_sheet_member &&
+      (*request.character_sheet_member < 6U);
+  const std::array party_members{
+      request.inventory_member,
+      request.spellbook_member,
+      request.scroll_case_member,
+      request.character_sheet_member,
+  };
+  std::optional<PartyMemberId> common_party_member;
+  bool mismatched_party_members = false;
+  for (const auto member : party_members) {
+    if (!member) {
+      continue;
+    }
+    if (common_party_member && (*common_party_member != *member)) {
+      mismatched_party_members = true;
+    } else {
+      common_party_member = member;
+    }
+  }
   const std::array combatants{
       request.guard_combatant,
       request.finish_combatant,
@@ -248,6 +310,19 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.escape_combat ? 1U : 0U) +
       (request.open_combat_scroll_case ? 1U : 0U) +
       (request.center_combat_cursor ? 1U : 0U);
+  const size_t travel_world_control_count = descriptors.size();
+  const size_t party_world_control_count =
+      (request.inventory_member ? 1U : 0U) +
+      (request.spellbook_member ? 1U : 0U) +
+      (request.scroll_case_member ? 1U : 0U) +
+      (request.character_sheet_member ? 1U : 0U);
+  const size_t game_world_control_count =
+      (request.save_control_visible ? 1U : 0U) +
+      (request.load_control_visible ? 1U : 0U);
+  const size_t world_control_count = travel_world_page
+      ? travel_world_control_count
+      : (party_world_page ? party_world_control_count
+                          : game_world_control_count);
   const size_t combat_control_count = primary_combat_page
       ? primary_combat_control_count
       : (secondary_combat_page ? secondary_combat_control_count
@@ -266,6 +341,16 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const size_t required_combat_control_capacity = std::max(
       combat_page_control_count,
       maximum_combat_control_count);
+  constexpr size_t world_page_control_count = kWorldPages.size();
+  // Keep room for all four PARTY commands even when the current snapshot has
+  // no selected member and therefore omits one or more disabled controls.
+  constexpr size_t kPartyActionCapacity = 4U;
+  const size_t required_world_control_capacity = std::max({
+      world_page_control_count,
+      travel_world_control_count,
+      kPartyActionCapacity,
+      game_world_control_count,
+  });
   const bool has_combatant_request = std::ranges::any_of(
       combatants,
       [](const auto& combatant) { return combatant.has_value(); });
@@ -295,13 +380,18 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       special_combat_page;
   if ((!world_controls && !combat_controls) ||
       (world_controls && has_combat_request) ||
+      mismatched_party_members ||
       (combat_controls &&
-          (request.navigation_available || request.inventory_member ||
+          ((request.world_action_page != WorldActionPage::travel) ||
+              request.navigation_available || request.inventory_member ||
               request.spellbook_member || request.scroll_case_member ||
+              request.character_sheet_member ||
               request.save_control_visible || request.load_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.scroll_case_available && !request.scroll_case_member) ||
+      (request.character_sheet_member && !valid_character_sheet) ||
+      (request.character_sheet_available && !valid_character_sheet) ||
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
       (request.guard_available && !valid_guard) ||
@@ -332,12 +422,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
 
   const size_t control_count = combat_controls
       ? combat_control_count
-      : descriptors.size() +
-          (request.inventory_member ? 1U : 0U) +
-          (request.spellbook_member ? 1U : 0U) +
-          (request.scroll_case_member ? 1U : 0U) +
-          (request.save_control_visible ? 1U : 0U) +
-          (request.load_control_visible ? 1U : 0U);
+      : world_control_count;
 
   const double available_width =
       request.action_panel.width - 2.0 * kHorizontalInset;
@@ -372,99 +457,177 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               kControlsTopInset + kMinimumTargetExtent + kBottomInset))) {
     return {};
   }
+  // The world tabs are likewise persistent direct destinations. Validate the
+  // largest reachable action row before returning any partial page.
+  if (world_controls &&
+      ((request.action_panel.width <
+              2.0 * kHorizontalInset +
+                  kMinimumTargetExtent * required_world_control_capacity +
+                  gap * (required_world_control_capacity - 1U)) ||
+          (request.action_panel.height <
+              kControlsTopInset + kMinimumTargetExtent + kBottomInset))) {
+    return {};
+  }
 
   std::vector<ShellControlPlacement> result;
-  result.reserve(control_count + combat_page_control_count);
+  result.reserve(control_count +
+      (world_controls ? world_page_control_count : combat_page_control_count));
   double x = request.action_panel.x + kHorizontalInset;
   const double y = request.action_panel.y + kControlsTopInset;
-  for (size_t index = 0; index < descriptors.size(); ++index) {
-    const auto& descriptor = descriptors[index];
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{
-            kMovementRegionBase + descriptor.semantic_region_offset},
-        .kind = ShellControlKind::movement,
-        .bounds = {x, y, button_width, button_height},
-        .label = std::string(descriptor.label),
-        .accessibility_label = std::string(descriptor.accessibility_label),
-        .focus_identifier =
-            "focus.action.move." + std::string(descriptor.identifier),
-        .tab_order = 1000 + static_cast<int32_t>(index),
-        .enabled = request.navigation_available,
-        .payload = MovePartyAction{descriptor.command},
-    });
-    x += button_width + gap;
-  }
-  if (request.inventory_member) {
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{kInventoryRegion},
-        .kind = ShellControlKind::open_inventory,
-        .bounds = {x, y, button_width, button_height},
-        .label = "ITEMS",
-        .accessibility_label = "Open inventory",
-        .focus_identifier = "focus.action.inventory.open",
-        .tab_order = 1100,
-        .enabled = request.inventory_available,
-        .payload = OpenInventoryAction{*request.inventory_member},
-    });
-    x += button_width + gap;
-  }
-  if (request.spellbook_member) {
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{kSpellbookRegion},
-        .kind = ShellControlKind::open_spellbook,
-        .bounds = {x, y, button_width, button_height},
-        .label = "SPELLS",
-        .accessibility_label = "Cast spell",
-        .focus_identifier = "focus.action.spellbook.open",
-        .tab_order = 1101,
-        .enabled = request.spellbook_available,
-        .payload = OpenSpellbookAction{*request.spellbook_member},
-    });
-    x += button_width + gap;
-  }
-  if (request.save_control_visible) {
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{kSaveGameRegion},
-        .kind = ShellControlKind::open_save_game,
-        .bounds = {x, y, button_width, button_height},
-        .label = "SAVE",
-        .accessibility_label = "Open save dialog",
-        .focus_identifier = "focus.action.save.open",
-        .tab_order = 1102,
-        .enabled = request.save_available,
-        .payload = OpenSaveGameAction{},
-    });
-    x += button_width + gap;
-  }
-  if (request.load_control_visible) {
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{kLoadGameRegion},
-        .kind = ShellControlKind::open_load_game,
-        .bounds = {x, y, button_width, button_height},
-        .label = "LOAD",
-        .accessibility_label = "Open load dialog",
-        .focus_identifier = "focus.action.load.open",
-        .tab_order = 1103,
-        .enabled = request.load_available,
-        .payload = OpenLoadGameAction{},
-    });
-    x += button_width + gap;
-  }
-  if (request.scroll_case_member) {
-    result.emplace_back(ShellControlPlacement{
-        .region = ShellRegionId{kOpenScrollCaseRegion},
-        .kind = ShellControlKind::open_scroll_case,
-        .bounds = {x, y, button_width, button_height},
-        .label = "SCROLL",
-        .accessibility_label = "Use scroll",
-        .focus_identifier = "focus.action.scroll_case.open",
-        .tab_order = 1108,
-        .enabled = request.scroll_case_available,
-        .payload = OpenScrollCaseAction{*request.scroll_case_member},
-    });
-    x += button_width + gap;
-  }
-  if (!combat_controls) {
+  if (world_controls) {
+    const double world_page_width = std::min(
+        112.0,
+        (available_width - gap * (world_page_control_count - 1U)) /
+            world_page_control_count);
+    if (!std::isfinite(world_page_width) ||
+        (world_page_width < kMinimumTargetExtent)) {
+      return {};
+    }
+    double world_page_x = request.action_panel.x + kHorizontalInset;
+    for (size_t index = 0; index < kWorldPages.size(); ++index) {
+      const auto& descriptor = kWorldPages[index];
+      if (!is_valid_world_action_page_transition(
+              request.world_action_page, descriptor.page)) {
+        return {};
+      }
+      const bool selected = request.world_action_page == descriptor.page;
+      std::string accessibility_label =
+          std::string(descriptor.accessibility_label) + " tab";
+      if (selected) {
+        accessibility_label += ", selected";
+      }
+      result.emplace_back(ShellControlPlacement{
+          .region = ShellRegionId{descriptor.region},
+          .kind = ShellControlKind::world_action_page,
+          .bounds = {
+              world_page_x,
+              request.action_panel.y + kHeaderTopInset,
+              world_page_width,
+              kMinimumTargetExtent,
+          },
+          .label = std::string(descriptor.label),
+          .accessibility_label = std::move(accessibility_label),
+          .focus_identifier =
+              "focus.action.world.page." +
+              std::string(descriptor.identifier),
+          .tab_order = 900 + static_cast<int32_t>(index),
+          .enabled = true,
+          .selected = selected,
+          .payload = SetWorldActionPageAction{descriptor.page},
+      });
+      world_page_x += world_page_width + gap;
+    }
+
+    if (travel_world_page) {
+      for (size_t index = 0; index < descriptors.size(); ++index) {
+        const auto& descriptor = descriptors[index];
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{
+                kMovementRegionBase + descriptor.semantic_region_offset},
+            .kind = ShellControlKind::movement,
+            .bounds = {x, y, button_width, button_height},
+            .label = std::string(descriptor.label),
+            .accessibility_label =
+                std::string(descriptor.accessibility_label),
+            .focus_identifier =
+                "focus.action.move." + std::string(descriptor.identifier),
+            .tab_order = 1000 + static_cast<int32_t>(index),
+            .enabled = request.navigation_available,
+            .payload = MovePartyAction{descriptor.command},
+        });
+        x += button_width + gap;
+      }
+    } else if (party_world_page) {
+      if (request.inventory_member) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kInventoryRegion},
+            .kind = ShellControlKind::open_inventory,
+            .bounds = {x, y, button_width, button_height},
+            .label = "ITEMS",
+            .accessibility_label = "Open inventory",
+            .focus_identifier = "focus.action.inventory.open",
+            .tab_order = 1100,
+            .enabled = request.inventory_available,
+            .payload = OpenInventoryAction{*request.inventory_member},
+        });
+        x += button_width + gap;
+      }
+      if (request.spellbook_member) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kSpellbookRegion},
+            .kind = ShellControlKind::open_spellbook,
+            .bounds = {x, y, button_width, button_height},
+            .label = "SPELLS",
+            .accessibility_label = "Cast spell",
+            .focus_identifier = "focus.action.spellbook.open",
+            .tab_order = 1101,
+            .enabled = request.spellbook_available,
+            .payload = OpenSpellbookAction{*request.spellbook_member},
+        });
+        x += button_width + gap;
+      }
+      if (request.scroll_case_member) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kOpenScrollCaseRegion},
+            .kind = ShellControlKind::open_scroll_case,
+            .bounds = {x, y, button_width, button_height},
+            .label = "SCROLL",
+            .accessibility_label = "Use scroll",
+            .focus_identifier = "focus.action.scroll_case.open",
+            .tab_order = 1108,
+            .enabled = request.scroll_case_available,
+            .payload = OpenScrollCaseAction{*request.scroll_case_member},
+        });
+        x += button_width + gap;
+      }
+      if (request.character_sheet_member) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kOpenCharacterSheetRegion},
+            .kind = ShellControlKind::open_character_sheet,
+            .bounds = {x, y, button_width, button_height},
+            .label = "CHARACTER",
+            .accessibility_label =
+                "Open selected party member character sheet",
+            .focus_identifier = "focus.action.character_sheet.open",
+            .tab_order = 1113,
+            .enabled = request.character_sheet_available,
+            .payload = OpenCharacterSheetAction{
+                *request.character_sheet_member},
+        });
+        x += button_width + gap;
+      }
+    } else if (game_world_page) {
+      if (request.save_control_visible) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kSaveGameRegion},
+            .kind = ShellControlKind::open_save_game,
+            .bounds = {x, y, button_width, button_height},
+            .label = "SAVE",
+            .accessibility_label = "Open save dialog",
+            .focus_identifier = "focus.action.save.open",
+            .tab_order = 1102,
+            .enabled = request.save_available,
+            .payload = OpenSaveGameAction{},
+        });
+        x += button_width + gap;
+      }
+      if (request.load_control_visible) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kLoadGameRegion},
+            .kind = ShellControlKind::open_load_game,
+            .bounds = {x, y, button_width, button_height},
+            .label = "LOAD",
+            .accessibility_label = "Open load dialog",
+            .focus_identifier = "focus.action.load.open",
+            .tab_order = 1103,
+            .enabled = request.load_available,
+            .payload = OpenLoadGameAction{},
+        });
+        x += button_width + gap;
+      }
+    } else {
+      return {};
+    }
     return result;
   }
 

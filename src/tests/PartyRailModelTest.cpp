@@ -204,6 +204,15 @@ void test_action_availability_is_conservative() {
   CHECK(unavailable_scroll.label == "Use scroll");
   CHECK(unavailable_scroll.availability_reason->label ==
       "Scroll use is unavailable now");
+  const auto& character_sheet =
+      action_with(model, ActionIntent::open_character_sheet);
+  CHECK(character_sheet.can_invoke());
+  CHECK(character_sheet.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(character_sheet.party_member == 2);
+  CHECK(character_sheet.command == "action.character_sheet.open");
+  CHECK(character_sheet.label == "Character");
+  CHECK(character_sheet.availability_reason->label == "Game rules apply");
 
   snapshot.party.members[1].use_scroll_available = true;
   model = build_presentation_shell_model(snapshot);
@@ -229,6 +238,12 @@ void test_action_availability_is_conservative() {
   CHECK(!scroll_without_selection.party_member);
   CHECK(scroll_without_selection.availability_reason->label ==
       "Select a party member first");
+  const auto& character_without_selection =
+      action_with(model, ActionIntent::open_character_sheet);
+  CHECK(!character_without_selection.can_invoke());
+  CHECK(!character_without_selection.party_member);
+  CHECK(character_without_selection.availability_reason->label ==
+      "Select a party member first");
 
   snapshot.screen = ScreenContext::encounter;
   snapshot.encounter = EncounterView{
@@ -243,13 +258,66 @@ void test_action_availability_is_conservative() {
   };
   model = build_presentation_shell_model(snapshot);
   CHECK(!action_with(model, ActionIntent::navigate).can_invoke());
-  CHECK(model.actions.size() == 9);
-  CHECK(model.actions[6].command == "encounter.choice.11");
-  CHECK(model.actions[6].can_invoke());
-  CHECK(model.actions[7].command == "encounter.choice.12");
-  CHECK(!model.actions[7].can_invoke());
-  CHECK(model.actions[8].intent == ActionIntent::cancel);
-  CHECK(model.actions[8].can_invoke());
+  const auto& character_in_encounter =
+      action_with(model, ActionIntent::open_character_sheet);
+  CHECK(!character_in_encounter.can_invoke());
+  CHECK(character_in_encounter.availability_reason->label ==
+      "Select a party member first");
+  CHECK(model.actions.size() == 10);
+  CHECK(model.actions[7].command == "encounter.choice.11");
+  CHECK(model.actions[7].can_invoke());
+  CHECK(model.actions[8].command == "encounter.choice.12");
+  CHECK(!model.actions[8].can_invoke());
+  CHECK(model.actions[9].intent == ActionIntent::cancel);
+  CHECK(model.actions[9].can_invoke());
+}
+
+void test_world_action_page_preferences_are_normalized() {
+  auto snapshot = sample_snapshot();
+  CHECK(build_presentation_shell_model(snapshot).world_action_page ==
+      WorldActionPage::travel);
+
+  for (const auto page : {
+           WorldActionPage::travel,
+           WorldActionPage::party,
+           WorldActionPage::game,
+       }) {
+    const auto exploration = build_presentation_shell_model(
+        snapshot,
+        {},
+        ShellViewPreferences{.world_action_page = page});
+    CHECK(exploration.world_action_page == page);
+
+    snapshot.screen = ScreenContext::dungeon;
+    const auto dungeon = build_presentation_shell_model(
+        snapshot,
+        {},
+        ShellViewPreferences{.world_action_page = page});
+    CHECK(dungeon.world_action_page == page);
+    snapshot.screen = ScreenContext::exploration;
+  }
+
+  const auto invalid = build_presentation_shell_model(
+      snapshot,
+      {},
+      ShellViewPreferences{
+          .world_action_page = static_cast<WorldActionPage>(255),
+      });
+  CHECK(invalid.world_action_page == WorldActionPage::travel);
+
+  for (const auto screen : {
+           ScreenContext::title,
+           ScreenContext::combat,
+           ScreenContext::inventory,
+           ScreenContext::encounter,
+       }) {
+    snapshot.screen = screen;
+    const auto non_world = build_presentation_shell_model(
+        snapshot,
+        {},
+        ShellViewPreferences{.world_action_page = WorldActionPage::game});
+    CHECK(non_world.world_action_page == WorldActionPage::travel);
+  }
 }
 
 void test_combat_actions_track_the_active_party_combatant() {
@@ -284,13 +352,19 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 23U);
+  CHECK(model.actions.size() == 24U);
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());
   CHECK(noncombat_scroll.party_member == 2);
   CHECK(noncombat_scroll.availability_reason->label ==
       "Scroll use is unavailable now");
+  const auto& noncombat_character_sheet =
+      action_with(model, ActionIntent::open_character_sheet);
+  CHECK(!noncombat_character_sheet.can_invoke());
+  CHECK(noncombat_character_sheet.party_member == 2);
+  CHECK(noncombat_character_sheet.availability_reason->label ==
+      "Character sheet is unavailable now");
   const auto& guard = action_with(model, ActionIntent::guard);
   CHECK(guard.can_invoke());
   CHECK(guard.availability == ActionAvailability::deferred_to_engine);
@@ -882,7 +956,8 @@ void test_typography_keyboard_order_and_remappable_ids() {
   CHECK(model.keyboard_tab_order.front().command == "party.select.1");
   CHECK(model.keyboard_tab_order[1].command == "party.select.2");
   CHECK(model.drawers.tabs.empty());
-  CHECK(model.keyboard_tab_order.back().command == "action.scroll_case.open");
+  CHECK(model.keyboard_tab_order.back().command ==
+      "action.character_sheet.open");
   CHECK(!model.keyboard_tab_order[4].enabled);
 }
 
@@ -924,6 +999,7 @@ int main() {
     test_selection_fallback_and_meter_bounds();
     test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();
+    test_world_action_page_preferences_are_normalized();
     test_combat_actions_track_the_active_party_combatant();
     test_events_drawers_motion_and_log_limit();
     test_typography_keyboard_order_and_remappable_ids();

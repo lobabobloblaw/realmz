@@ -39,6 +39,7 @@ constexpr uint32_t kCenterCombatCursorMessage = 0x00002E6DU;
 constexpr int16_t kGameMenuId = 129;
 constexpr int16_t kRevertToPreviousGameItemId = 2;
 constexpr int16_t kSaveCurrentGameItemId = 3;
+constexpr PartyMemberId kMaximumPartyMemberId = 5;
 
 std::string_view movement_name(MovementCommand command) noexcept {
   switch (command) {
@@ -718,7 +719,7 @@ LegacyActionHandlers make_handlers(
       std::move(world_action_sinks.open_load_game),
       std::move(combat_action_sinks));
   handlers.open_scroll_case = [
-      context_provider = std::move(context_provider),
+      context_provider,
       open_scroll_case_sink =
           std::move(world_action_sinks.open_scroll_case)](
           const OpenScrollCaseAction& action) {
@@ -745,6 +746,38 @@ LegacyActionHandlers make_handlers(
     if (!open_scroll_case_sink(action.member, *message, context)) {
       return DispatchResult::failed(
           "Legacy event queue rejected semantic open-scroll-case action");
+    }
+    return DispatchResult::handled();
+  };
+  handlers.open_character_sheet = [
+      context_provider = std::move(context_provider),
+      open_character_sheet_sink =
+          std::move(world_action_sinks.open_character_sheet)](
+          const OpenCharacterSheetAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!open_character_sheet_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy open-character-sheet sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic character "
+          "sheets");
+    }
+    if ((action.member > kMaximumPartyMemberId) ||
+        !runtime_legacy_context_supports_open_character_sheet(context)) {
+      return DispatchResult::rejected(
+          "Opening the character sheet is not supported for this party "
+          "member in the current legacy context");
+    }
+    if (!open_character_sheet_sink(action.member, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic open-character-sheet action");
     }
     return DispatchResult::handled();
   };
@@ -1088,6 +1121,21 @@ std::optional<uint32_t> legacy_key_message_for_open_scroll_case(
     return kOpenDungeonScrollCaseMessage;
   }
   return std::nullopt;
+}
+
+bool runtime_legacy_context_supports_open_character_sheet(
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible) {
+    return false;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return true;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  return (context.screen == ScreenContext::dungeon) && dungeon_presentation;
 }
 
 std::optional<RuntimeLegacyMenuCommand>
