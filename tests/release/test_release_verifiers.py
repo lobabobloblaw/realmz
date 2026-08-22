@@ -11,12 +11,144 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACT_VERIFIER = REPO / "scripts" / "verify-macos-artifact.sh"
+APP_STAGER = REPO / "scripts" / "stage-macos-app.sh"
 SOURCE_VERIFIER = REPO / "scripts" / "verify-source-baseline.sh"
 
 
 def write_executable(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+class MacAppStagerTest(unittest.TestCase):
+    PRODUCT = "Realmz Remastered — Unofficial"
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.build = self.root / "configured-build"
+        self.output = self.root / "staged-output"
+        self.tools = self.root / "tools"
+        self.build.mkdir()
+        self.tools.mkdir()
+
+        plist = {
+            "CFBundleName": self.PRODUCT,
+            "CFBundleExecutable": self.PRODUCT,
+            "CFBundleIconFile": "AppIcon.icns",
+        }
+        with (self.build / "Info.plist").open("wb") as output:
+            plistlib.dump(plist, output)
+        write_executable(self.build / "Realmz", "synthetic universal executable\n")
+
+        self.fake_cmake = self.tools / "cmake"
+        write_executable(
+            self.fake_cmake,
+            """#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == "--install" ]]
+prefix=""
+while (($#)); do
+  if [[ "$1" == "--prefix" ]]; then
+    prefix="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+[[ -n "$prefix" ]]
+mkdir -p "$prefix/Data Files" "$prefix/lib"
+printf 'installed resource\n' > "$prefix/Data Files/Data I1"
+if [[ "${MOCK_CMAKE_INSTALL_FAILURE:-0}" == "1" ]]; then
+  exit 17
+fi
+printf 'synthetic dylib\n' > "$prefix/lib/libSDL3.dylib"
+""",
+        )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def run_stager(self, env=None) -> subprocess.CompletedProcess:
+        merged_env = os.environ.copy()
+        if env:
+            merged_env.update(env)
+        return subprocess.run(
+            [
+                "bash",
+                str(APP_STAGER),
+                "--build-dir",
+                str(self.build),
+                "--output-dir",
+                str(self.output),
+                "--configuration",
+                "Release",
+                "--cmake",
+                str(self.fake_cmake),
+            ],
+            text=True,
+            capture_output=True,
+            env=merged_env,
+        )
+
+    def test_stages_complete_expanded_bundle_without_dmg(self) -> None:
+        result = self.run_stager()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        app = self.output / f"{self.PRODUCT}.app"
+        executable = app / "Contents" / "MacOS" / self.PRODUCT
+        resources = app / "Contents" / "Resources"
+        self.assertEqual(result.stdout.strip(), str(app))
+        self.assertEqual(
+            (app / "Contents" / "Info.plist").read_bytes(),
+            (self.build / "Info.plist").read_bytes(),
+        )
+        self.assertEqual(
+            (resources / "AppIcon.icns").read_bytes(),
+            (REPO / "bundle" / "AppIcon.icns").read_bytes(),
+        )
+        self.assertEqual(
+            executable.read_text(encoding="utf-8"),
+            "synthetic universal executable\n",
+        )
+        self.assertTrue(executable.stat().st_mode & stat.S_IXUSR)
+        self.assertEqual(
+            (resources / "Data Files" / "Data I1").read_text(encoding="utf-8"),
+            "installed resource\n",
+        )
+        self.assertEqual(list(self.output.glob(".realmz-app-stage.*")), [])
+
+    def test_existing_destination_is_preserved_and_rejected(self) -> None:
+        app = self.output / f"{self.PRODUCT}.app"
+        app.mkdir(parents=True)
+        marker = app / "owner-data"
+        marker.write_text("preserve\n", encoding="utf-8")
+
+        result = self.run_stager()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("destination application already exists", result.stderr)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "preserve\n")
+
+    def test_failed_install_does_not_publish_partial_bundle(self) -> None:
+        result = self.run_stager(env={"MOCK_CMAKE_INSTALL_FAILURE": "1"})
+
+        self.assertEqual(result.returncode, 17)
+        self.assertFalse((self.output / f"{self.PRODUCT}.app").exists())
+        self.assertEqual(list(self.output.glob(".realmz-app-stage.*")), [])
+
+    def test_unsafe_plist_executable_name_is_rejected(self) -> None:
+        with (self.build / "Info.plist").open("rb") as source:
+            plist = plistlib.load(source)
+        plist["CFBundleExecutable"] = "../Realmz"
+        with (self.build / "Info.plist").open("wb") as output:
+            plistlib.dump(plist, output)
+
+        result = self.run_stager()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("CFBundleExecutable must be a filename", result.stderr)
+        self.assertFalse(self.output.exists())
 
 
 class MacArtifactVerifierTest(unittest.TestCase):

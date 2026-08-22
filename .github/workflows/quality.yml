@@ -32,6 +32,7 @@ jobs:
           bash -n scripts/run-core-tests.sh
           bash -n scripts/bootstrap-macos-dependencies.sh
           bash -n scripts/build-placeholder-app-icon.sh
+          bash -n scripts/stage-macos-app.sh
 
       - name: Verify reviewed source baseline and provenance
         shell: bash
@@ -103,12 +104,131 @@ jobs:
           python3 -m unittest discover -s tests/semantic
           -p 'test_semantic_replay_*.py' -v
 
-  full-application-build-bootstrap:
-    name: Full application build bootstrap status
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
+  full-macos-application:
+    name: Full macOS application (universal burn-in)
+    runs-on: macos-14
+    timeout-minutes: 90
+    # Keep this strict job outside the required branch ruleset while it burns
+    # in. App/DMG publication remains blocked by the content and release gates.
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_15.4.app/Contents/Developer
+      REALMZ_BUILD_JOBS: "3"
+      REALMZ_DEPENDENCY_WORK: ${{ runner.temp }}/realmz-dependencies
+      REALMZ_DEPENDENCY_PREFIX: ${{ runner.temp }}/realmz-dependencies/install
+      REALMZ_FULL_BUILD: ${{ runner.temp }}/realmz-full-build
+      REALMZ_APP_STAGE: ${{ runner.temp }}/realmz-app-stage
+      REALMZ_FULL_BUILD_LOGS: ${{ runner.temp }}/realmz-full-build-logs
     steps:
-      - name: Record intentionally deferred gate
+      - name: Check out source without retained credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+
+      - name: Record pinned build toolchain
+        shell: bash
         run: |
-          echo "A hash-pinned universal dependency bootstrap is available."
-          echo "Keep the full artifact job non-required until its macOS runner path is proven reliable."
+          set -euo pipefail
+          mkdir -p "$REALMZ_FULL_BUILD_LOGS"
+          test -d "$DEVELOPER_DIR"
+          {
+            xcodebuild -version
+            clang --version
+            cmake --version
+            python3 --version
+          } | tee "$REALMZ_FULL_BUILD_LOGS/toolchain.log"
+          cmake_version="$(cmake --version | awk 'NR == 1 { print $3 }')"
+          python3 - "$cmake_version" <<'PY'
+          import sys
+
+          parts = tuple(int(part) for part in sys.argv[1].split(".")[:3])
+          if parts < (3, 27, 0):
+              raise SystemExit(f"CMake 3.27+ required, found {sys.argv[1]}")
+          PY
+
+      - name: Initialize required pinned SDL sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            git submodule sync -- \
+              vendored/SDL vendored/SDL_image vendored/SDL_ttf
+            git submodule update --init --checkout --depth 1 -- \
+              vendored/SDL vendored/SDL_image vendored/SDL_ttf
+            git -C vendored/SDL_ttf submodule sync -- external/freetype
+            git -C vendored/SDL_ttf submodule update \
+              --init --checkout --depth 1 -- external/freetype
+          } 2>&1 | tee "$REALMZ_FULL_BUILD_LOGS/submodules.log"
+
+      - name: Bootstrap pinned universal dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/bootstrap-macos-dependencies.sh \
+            --work-dir "$REALMZ_DEPENDENCY_WORK" \
+            --prefix "$REALMZ_DEPENDENCY_PREFIX" \
+            --architectures 'x86_64;arm64' \
+            --deployment-target 13.3 \
+            --build-type Release \
+            --jobs "$REALMZ_BUILD_JOBS" \
+            2>&1 | tee "$REALMZ_FULL_BUILD_LOGS/dependency-bootstrap.log"
+
+      - name: Configure universal Release-configuration application
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --fresh -S . -B "$REALMZ_FULL_BUILD" \
+            -G 'Unix Makefiles' \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$REALMZ_DEPENDENCY_PREFIX" \
+            -DCMAKE_OSX_ARCHITECTURES='x86_64;arm64' \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
+            -DREALMZ_BUILD_CORE_TESTS=ON \
+            -DREALMZ_ENABLE_CORE_SANITIZERS=OFF \
+            -DREALMZ_ENABLE_APP_SANITIZERS=OFF \
+            -DREALMZ_COPY_DEVELOPMENT_RESOURCES=OFF \
+            2>&1 | tee "$REALMZ_FULL_BUILD_LOGS/configure.log"
+
+      - name: Build full application and linked tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build "$REALMZ_FULL_BUILD" \
+            --parallel "$REALMZ_BUILD_JOBS" \
+            2>&1 | tee "$REALMZ_FULL_BUILD_LOGS/build.log"
+
+      - name: Run configured full-build tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir "$REALMZ_FULL_BUILD" \
+            --output-on-failure \
+            --parallel "$REALMZ_BUILD_JOBS" \
+            --timeout 180 \
+            2>&1 | tee "$REALMZ_FULL_BUILD_LOGS/ctest.log"
+
+      - name: Stage expanded unsigned application
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/stage-macos-app.sh \
+            --build-dir "$REALMZ_FULL_BUILD" \
+            --output-dir "$REALMZ_APP_STAGE" \
+            --configuration Release \
+            2>&1 | tee "$REALMZ_FULL_BUILD_LOGS/stage.log"
+
+      - name: Verify expanded development application
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$REALMZ_APP_STAGE/Realmz Remastered — Unofficial.app"
+          scripts/verify-macos-artifact.sh --mode development "$app" \
+            2>&1 | tee "$REALMZ_FULL_BUILD_LOGS/artifact-verifier.log"
+          {
+            echo '### Universal macOS application burn-in'
+            echo
+            echo '- Full linked tests passed.'
+            echo '- The unsigned expanded app passed development verification.'
+            echo '- No application, DMG, or auxiliary artifact was uploaded or published.'
+          } >> "$GITHUB_STEP_SUMMARY"

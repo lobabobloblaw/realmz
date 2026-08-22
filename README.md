@@ -186,8 +186,16 @@ scripts/bootstrap-macos-dependencies.sh \
   --work-dir build/dependencies \
   --prefix build/dependencies/install
 cmake --preset macOS \
-  -DCMAKE_PREFIX_PATH="$PWD/build/dependencies/install"
-cmake --build --preset macOS
+  -DCMAKE_PREFIX_PATH="$PWD/build/dependencies/install" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DREALMZ_ENABLE_APP_SANITIZERS=OFF
+cmake --build build_mac --parallel
+ctest --test-dir build_mac --output-on-failure
+scripts/stage-macos-app.sh \
+  --build-dir build_mac \
+  --output-dir build/staged
+scripts/verify-macos-artifact.sh --mode development \
+  "build/staged/Realmz Remastered — Unofficial.app"
 ```
 
 The bootstrap uses fresh CMake caches, rejects modified or incorrectly pinned
@@ -199,6 +207,11 @@ phosg `b2e0c12edb7e274a5e20c460f44eee44f49f57ef` and resource_dasm
 Run `scripts/run-core-tests.sh` for the dependency-free contracts. A configured
 full build additionally registers a resource-fork integration test that parses
 all five phase-one forks and verifies all 1,520 immutable selected payloads.
+The staging command creates only the expanded unsigned development app. It does
+not sign, notarize, publish, or invoke the `hdiutil`-backed DMG target. With the
+same Release-configured development tree, `cmake --build --preset macOS`
+invokes the current DMG path on a capable Mac. That remains unsigned
+development packaging, not the final release build.
 
 ## Cross-compiling for Windows from Mac
 

@@ -62,7 +62,17 @@ verifies a complete backup under the isolated `Realmz Remastered` destination
 before it publishes any new live file, never overwrites an existing file, and
 records a hash-bound manifest and completion marker.
 
-CI mirrors the dependency-free checks on Linux and macOS. `scripts/bootstrap-macos-dependencies.sh` supplies the hash-pinned universal phosg/resource_file bootstrap for a full macOS 13.3 application build. The bootstrap has passed locally; keep a full artifact job non-required until it also completes reliably on the selected runner image and its disk-image service supports `hdiutil`.
+CI mirrors the dependency-free checks on Linux and macOS.
+`scripts/bootstrap-macos-dependencies.sh` supplies the hash-pinned universal
+phosg/resource_file bootstrap for a full macOS 13.3 application build. An
+strict macOS 14/Xcode 15.4 burn-in job now runs that bootstrap, builds the
+universal Release-configuration application and linked tests, stages an
+expanded unsigned `.app` without invoking CPack or `hdiutil`, and applies the
+development artifact verifier. The app is ephemeral and is not uploaded or
+published, and the workflow creates no auxiliary artifact archive. Keep the
+job outside the required branch ruleset until repeated runs establish
+reliability. Final DMG creation remains a separate gate that requires a
+disk-image-capable runner.
 
 ## Build configurations
 
