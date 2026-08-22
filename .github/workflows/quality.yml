@@ -113,11 +113,6 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_15.4.app/Contents/Developer
       REALMZ_BUILD_JOBS: "3"
-      REALMZ_DEPENDENCY_WORK: ${{ runner.temp }}/realmz-dependencies
-      REALMZ_DEPENDENCY_PREFIX: ${{ runner.temp }}/realmz-dependencies/install
-      REALMZ_FULL_BUILD: ${{ runner.temp }}/realmz-full-build
-      REALMZ_APP_STAGE: ${{ runner.temp }}/realmz-app-stage
-      REALMZ_FULL_BUILD_LOGS: ${{ runner.temp }}/realmz-full-build-logs
     steps:
       - name: Check out source without retained credentials
         uses: actions/checkout@v4
@@ -126,11 +121,23 @@ jobs:
           submodules: false
           persist-credentials: false
 
+      - name: Initialize ephemeral build paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "REALMZ_DEPENDENCY_WORK=$RUNNER_TEMP/realmz-dependencies"
+            echo "REALMZ_DEPENDENCY_PREFIX=$RUNNER_TEMP/realmz-dependencies/install"
+            echo "REALMZ_FULL_BUILD=$RUNNER_TEMP/realmz-full-build"
+            echo "REALMZ_APP_STAGE=$RUNNER_TEMP/realmz-app-stage"
+            echo "REALMZ_FULL_BUILD_LOGS=$RUNNER_TEMP/realmz-full-build-logs"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/realmz-full-build-logs"
+
       - name: Record pinned build toolchain
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$REALMZ_FULL_BUILD_LOGS"
           test -d "$DEVELOPER_DIR"
           {
             xcodebuild -version
