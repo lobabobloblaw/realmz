@@ -319,7 +319,7 @@ void test_utf8_name_elision_stays_well_formed() {
   }
   CHECK(valid_utf8(details.name));
 
-  for (const auto [panel, density] : std::array{
+  for (const auto& [panel, density] : std::array{
            std::pair{
                LogicalRect{0.0, 0.0, 280.0, 160.0},
                SelectedPartyDetailsLayoutDensity::wide},
@@ -349,7 +349,7 @@ void test_zero_through_forty_conditions_keep_exact_hidden_counts() {
           LogicalRect{0.0, 0.0, 200.0, 64.0},
           SelectedPartyDetailsLayoutDensity::compact},
   };
-  for (const auto [panel, density] : cases) {
+  for (const auto& [panel, density] : cases) {
     for (size_t condition_count = 0; condition_count <= 40U;
          ++condition_count) {
       auto details = selected_details();
@@ -444,7 +444,7 @@ void test_state_elision_is_explicit_and_tokens_stay_complete() {
 
 void test_empty_selection_and_state_fallbacks() {
   const SelectedPartyDetailsModel empty;
-  for (const auto [panel, density] : std::array{
+  for (const auto& [panel, density] : std::array{
            std::pair{
                LogicalRect{10.0, 20.0, 280.0, 160.0},
                SelectedPartyDetailsLayoutDensity::wide},
