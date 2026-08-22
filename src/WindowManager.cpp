@@ -94,6 +94,8 @@ capture_runtime_legacy_command_context() noexcept {
     context.in_camp = snapshot.world.in_camp;
     context.searching = snapshot.world.searching;
     context.usable_torch_source = snapshot.world.usable_torch_source;
+    context.contextual_world_entry_mode =
+        snapshot.world.contextual_world_entry_mode;
   } catch (...) {
     // Any snapshot failure makes semantic input ineligible; the embedded
     // Classic frame remains the complete fallback interaction route.
@@ -1690,6 +1692,31 @@ void WindowManager::create_sdl_window() {
                     return tag &&
                         PushSemanticSelectedItemDrilldownEvent(tag);
                   },
+              .contextual_world_entry =
+                  [](const realmz::presentation::ContextualWorldEntryAction&
+                          action,
+                      uint32_t message,
+                      const realmz::presentation::
+                          RuntimeLegacyCommandContext& context) {
+                    const auto surface = RealmzCurrentSemanticInputSurface();
+                    const bool matching_surface =
+                        ((surface == REALMZ_SEMANTIC_INPUT_EXPLORATION) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::exploration)) ||
+                        ((surface == REALMZ_SEMANTIC_INPUT_DUNGEON) &&
+                            (context.screen == realmz::presentation::
+                                ScreenContext::dungeon));
+                    const auto expected = realmz::presentation::
+                        legacy_key_message_for_contextual_world_entry(
+                            action, context);
+                    if (!matching_surface || !expected ||
+                        (message != *expected)) {
+                      return false;
+                    }
+                    const uint32_t tag = realmz::presentation::
+                        semantic_contextual_world_entry_tag(action, surface);
+                    return tag && PushSemanticContextualWorldEntryEvent(tag);
+                  },
           },
           realmz::presentation::RuntimeLegacyCombatActionSinks{
               .guard_combatant =
@@ -3040,6 +3067,18 @@ void draw_shell_panel_contents(
         contextual_overview_summary = "MAKE SCROLL";
       }
     }
+    const auto contextual_world_entry_control = std::ranges::find_if(
+        controls,
+        [](const auto& control) {
+          return control.kind == realmz::presentation::
+              ShellControlKind::contextual_world_entry;
+        });
+    const bool has_semantic_contextual_world_entry =
+        contextual_world_entry_control != controls.end();
+    const std::string_view contextual_world_entry_summary =
+        has_semantic_contextual_world_entry
+        ? std::string_view{contextual_world_entry_control->label}
+        : std::string_view{};
     const bool has_semantic_guard = std::ranges::any_of(
         controls,
         [](const auto& control) {
@@ -3192,6 +3231,10 @@ void draw_shell_panel_contents(
         action_summary += " · ";
         action_summary += contextual_overview_summary;
       }
+      if (has_semantic_contextual_world_entry) {
+        action_summary += " · ";
+        action_summary += contextual_world_entry_summary;
+      }
       action_summary += " · MORE IN GAME VIEW";
     } else if (has_semantic_guard || has_semantic_finish ||
         has_semantic_delay || has_semantic_center ||
@@ -3206,7 +3249,8 @@ void draw_shell_panel_contents(
       action_summary = "COMBAT";
     } else if (has_semantic_rest || has_semantic_camp ||
         has_semantic_search || has_semantic_torch ||
-        has_semantic_contextual_overview) {
+        has_semantic_contextual_overview ||
+        has_semantic_contextual_world_entry) {
       action_summary.clear();
       const auto append_summary = [&action_summary](std::string_view label) {
         if (!action_summary.empty()) {
@@ -3229,6 +3273,9 @@ void draw_shell_panel_contents(
       if (has_semantic_contextual_overview) {
         append_summary(contextual_overview_summary);
       }
+      if (has_semantic_contextual_world_entry) {
+        append_summary(contextual_world_entry_summary);
+      }
     }
     double action_summary_width = width;
     for (const auto& control : controls) {
@@ -3250,7 +3297,8 @@ void draw_shell_panel_contents(
     }
     if (has_semantic_movement || has_semantic_rest || has_semantic_camp ||
         has_semantic_search || has_semantic_torch ||
-        has_semantic_contextual_overview || has_semantic_guard ||
+        has_semantic_contextual_overview ||
+        has_semantic_contextual_world_entry || has_semantic_guard ||
         has_semantic_finish || has_semantic_delay || has_semantic_center ||
         has_semantic_action_page || has_semantic_switch_weapon ||
         has_semantic_combat_focus_cycle || has_semantic_combat_items ||
@@ -3287,6 +3335,8 @@ void draw_shell_panel_contents(
                     use_torch) &&
             (control.kind != realmz::presentation::ShellControlKind::
                     contextual_overview) &&
+            (control.kind != realmz::presentation::ShellControlKind::
+                    contextual_world_entry) &&
             (control.kind !=
                 realmz::presentation::ShellControlKind::guard_combatant) &&
             (control.kind !=
@@ -4040,7 +4090,8 @@ void WindowManager::present_remastered_frame() {
             return action.intent == realmz::presentation::ActionIntent::rest;
           });
       const bool rest_control_visible =
-          world_action_surface && rest_action != shell_model->actions.end();
+          world_action_surface && snapshot.world.in_camp &&
+          rest_action != shell_model->actions.end();
       const bool rest_available = rest_control_visible &&
           snapshot.world.in_camp && rest_action->can_invoke() &&
           snapshot_context_matches && realmz::presentation::
@@ -4186,6 +4237,48 @@ void WindowManager::present_remastered_frame() {
                       .in_camp = snapshot.world.in_camp,
                   })
               .has_value();
+      const auto contextual_world_entry_action = std::ranges::find_if(
+          shell_model->actions,
+          [](const auto& action) {
+            return action.intent == realmz::presentation::
+                ActionIntent::contextual_world_entry;
+          });
+      const std::optional<realmz::presentation::ContextualWorldEntryMode>
+          contextual_world_entry_mode =
+              (world_action_surface &&
+                  (contextual_world_entry_action !=
+                      shell_model->actions.end()))
+              ? contextual_world_entry_action->contextual_world_entry_mode
+              : std::nullopt;
+      const realmz::presentation::ContextualWorldEntryAction
+          contextual_world_entry_payload{
+              .mode = contextual_world_entry_mode.value_or(
+                  realmz::presentation::
+                      ContextualWorldEntryMode::unavailable),
+          };
+      const bool contextual_world_entry_control_visible =
+          contextual_world_entry_mode.has_value() &&
+          (*contextual_world_entry_mode != realmz::presentation::
+              ContextualWorldEntryMode::unavailable) &&
+          !snapshot.world.in_camp;
+      const bool contextual_world_entry_available =
+          contextual_world_entry_control_visible &&
+          contextual_world_entry_action->can_invoke() &&
+          snapshot_context_matches &&
+          snapshot.world.contextual_world_entry_mode ==
+              contextual_world_entry_payload.mode &&
+          realmz::presentation::
+              runtime_legacy_context_supports_contextual_world_entry(
+                  contextual_world_entry_payload,
+                  {
+                      .screen = screen,
+                      .world_presentation = snapshot.world.presentation,
+                      .adaptive_eligible =
+                          legacy_context.adaptive_eligible != 0,
+                      .in_camp = snapshot.world.in_camp,
+                      .contextual_world_entry_mode =
+                          snapshot.world.contextual_world_entry_mode,
+                  });
       const auto guard_action = std::ranges::find_if(
           shell_model->actions,
           [](const auto& action) {
@@ -4738,6 +4831,12 @@ void WindowManager::present_remastered_frame() {
                   selected_item_drilldown_member,
               .selected_item_drilldown_available =
                   selected_item_drilldown_available,
+              .contextual_world_entry_control_visible =
+                  contextual_world_entry_control_visible,
+              .contextual_world_entry_available =
+                  contextual_world_entry_available,
+              .contextual_world_entry_mode =
+                  contextual_world_entry_payload.mode,
           });
       if (!shell_model->party_rail.members.empty()) {
         const auto party_layout =
@@ -4805,6 +4904,8 @@ void WindowManager::present_remastered_frame() {
             .in_camp = snapshot.world.in_camp,
             .searching = snapshot.world.searching,
             .usable_torch_source = snapshot.world.usable_torch_source,
+            .contextual_world_entry_mode =
+                snapshot.world.contextual_world_entry_mode,
         };
         const auto current_world_action_page = shell_model->world_action_page;
         const auto current_combat_action_page =
@@ -5166,6 +5267,40 @@ void WindowManager::present_remastered_frame() {
                         legacy_key_message_for_contextual_overview(
                             *contextual_overview, context)
                         .has_value();
+              }
+              if (const auto* contextual_world_entry = std::get_if<
+                      realmz::presentation::ContextualWorldEntryAction>(
+                      &control.payload)) {
+                const auto modeled_action = std::ranges::find_if(
+                    shell_model->actions,
+                    [](const auto& action) {
+                      return action.intent == realmz::presentation::
+                          ActionIntent::contextual_world_entry;
+                    });
+                return control.kind == realmz::presentation::
+                        ShellControlKind::contextual_world_entry &&
+                    current_world_action_page == realmz::presentation::
+                        WorldActionPage::game &&
+                    action_panel.contains(control.bounds) &&
+                    snapshot.screen == context.screen &&
+                    snapshot.world.presentation ==
+                        context.world_presentation &&
+                    !snapshot.world.in_camp && !context.in_camp &&
+                    contextual_world_entry->mode != realmz::presentation::
+                        ContextualWorldEntryMode::unavailable &&
+                    snapshot.world.contextual_world_entry_mode ==
+                        contextual_world_entry->mode &&
+                    context.contextual_world_entry_mode ==
+                        contextual_world_entry->mode &&
+                    modeled_action != shell_model->actions.end() &&
+                    modeled_action->can_invoke() &&
+                    modeled_action->contextual_world_entry_mode ==
+                        std::optional<realmz::presentation::
+                            ContextualWorldEntryMode>{
+                                contextual_world_entry->mode} &&
+                    realmz::presentation::
+                        runtime_legacy_context_supports_contextual_world_entry(
+                            *contextual_world_entry, context);
               }
               if (const auto* guard =
                       std::get_if<
@@ -6591,6 +6726,42 @@ bool WindowManager::remastered_shell_keyboard_route_is_eligible() const {
       }
       continue;
     }
+    if (const auto* contextual_world_entry =
+            std::get_if<realmz::presentation::ContextualWorldEntryAction>(
+                &control.payload)) {
+      if (!surface_matches_context ||
+          control.kind != realmz::presentation::ShellControlKind::
+              contextual_world_entry ||
+          this->remastered_world_action_page !=
+              realmz::presentation::WorldActionPage::game ||
+          !this->adaptive_shell_plan->adaptive_layout->action_bar.contains(
+              control.bounds) ||
+          !realmz::presentation::
+              runtime_legacy_context_supports_contextual_world_entry(
+                  *contextual_world_entry, context)) {
+        return false;
+      }
+      try {
+        if (!snapshot) {
+          snapshot =
+              realmz::presentation::LegacyGameSnapshotSource().capture();
+        }
+      } catch (...) {
+        return false;
+      }
+      if ((snapshot->screen != context.screen) ||
+          (snapshot->world.presentation != context.world_presentation) ||
+          snapshot->world.in_camp || context.in_camp ||
+          (contextual_world_entry->mode == realmz::presentation::
+              ContextualWorldEntryMode::unavailable) ||
+          (snapshot->world.contextual_world_entry_mode !=
+              contextual_world_entry->mode) ||
+          (context.contextual_world_entry_mode !=
+              contextual_world_entry->mode)) {
+        return false;
+      }
+      continue;
+    }
     if (const auto* guard =
             std::get_if<realmz::presentation::GuardCombatantAction>(
                 &control.payload)) {
@@ -7480,6 +7651,9 @@ void WindowManager::dispatch_remastered_shell_control(
   const auto* contextual_overview =
       std::get_if<realmz::presentation::ContextualOverviewAction>(
           &control.payload);
+  const auto* contextual_world_entry =
+      std::get_if<realmz::presentation::ContextualWorldEntryAction>(
+          &control.payload);
   const auto* switch_weapon =
       std::get_if<realmz::presentation::SwitchWeaponSetAction>(
           &control.payload);
@@ -7526,6 +7700,20 @@ void WindowManager::dispatch_remastered_shell_control(
       case realmz::presentation::ContextualOverviewMode::make_scroll:
         return contextual_overview->member.has_value() &&
             (*contextual_overview->member <= 5U);
+    }
+    return false;
+  }();
+  const bool valid_contextual_world_entry_payload = [&]() {
+    if (!contextual_world_entry) {
+      return true;
+    }
+    switch (contextual_world_entry->mode) {
+      case realmz::presentation::ContextualWorldEntryMode::shop:
+      case realmz::presentation::ContextualWorldEntryMode::temple:
+      case realmz::presentation::ContextualWorldEntryMode::encounter:
+        return true;
+      case realmz::presentation::ContextualWorldEntryMode::unavailable:
+        return false;
     }
     return false;
   }();
@@ -7695,6 +7883,20 @@ void WindowManager::dispatch_remastered_shell_control(
             (!valid_contextual_overview_payload ||
                 control.kind != realmz::presentation::ShellControlKind::
                     contextual_overview ||
+                this->remastered_world_action_page !=
+                    realmz::presentation::WorldActionPage::game ||
+                !this->adaptive_shell_plan ||
+                !this->adaptive_shell_plan->adaptive_layout ||
+                ((this->adaptive_shell_plan->screen != realmz::presentation::
+                        ScreenContext::exploration) &&
+                    (this->adaptive_shell_plan->screen !=
+                        realmz::presentation::ScreenContext::dungeon)) ||
+                !this->adaptive_shell_plan->adaptive_layout->action_bar
+                     .contains(control.bounds))) ||
+        (contextual_world_entry &&
+            (!valid_contextual_world_entry_payload ||
+                control.kind != realmz::presentation::ShellControlKind::
+                    contextual_world_entry ||
                 this->remastered_world_action_page !=
                     realmz::presentation::WorldActionPage::game ||
                 !this->adaptive_shell_plan ||

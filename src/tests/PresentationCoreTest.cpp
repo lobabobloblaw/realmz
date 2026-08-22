@@ -127,15 +127,23 @@ void test_snapshot_values() {
   CHECK(snapshot.world.tile_at(1, 1)->terrain_id == 13);
   CHECK(snapshot.world.tile_at(2, 1) == nullptr);
   snapshot.world.usable_torch_source = TorchSource{.member = 2, .slot = 7};
+  CHECK(snapshot.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::unavailable);
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::temple;
 
   const GameSnapshot retained = snapshot;
   snapshot.party.members[0].name = "Changed in a later capture";
   snapshot.world.visible_tiles.pop_back();
   snapshot.world.usable_torch_source.reset();
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::shop;
   CHECK(retained.party.members[0].name == "Myr");
   CHECK(retained.world.has_complete_tile_grid());
   CHECK((retained.world.usable_torch_source ==
       std::optional<TorchSource>{TorchSource{.member = 2, .slot = 7}}));
+  CHECK(retained.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::temple);
   CHECK(!snapshot.world.has_complete_tile_grid());
   CHECK(!snapshot.world.usable_torch_source);
 }
@@ -272,6 +280,26 @@ void test_actions_and_events() {
       .mode = ContextualOverviewMode::make_scroll,
       .member = std::nullopt,
   }}));
+
+  UIAction contextual_world_entry{
+      .sequence = 19,
+      .payload = ContextualWorldEntryAction{
+          .mode = ContextualWorldEntryMode::temple,
+      },
+  };
+  CHECK(action_name(contextual_world_entry.payload) ==
+      "contextual_world_entry");
+  CHECK(std::get<ContextualWorldEntryAction>(
+      contextual_world_entry.payload).mode ==
+      ContextualWorldEntryMode::temple);
+  CHECK(contextual_world_entry.payload.index() ==
+      open_selected_item_drilldown.payload.index() + 1U);
+  CHECK(ContextualWorldEntryAction{}.mode ==
+      ContextualWorldEntryMode::unavailable);
+  CHECK((contextual_world_entry.payload !=
+      UIActionPayload{ContextualWorldEntryAction{
+          .mode = ContextualWorldEntryMode::shop,
+      }}));
 
   UIAction guard{
       .sequence = 13,

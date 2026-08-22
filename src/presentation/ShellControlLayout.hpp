@@ -43,6 +43,7 @@ enum class ShellControlKind {
   use_torch,
   contextual_overview,
   selected_item_drilldown,
+  contextual_world_entry,
 };
 
 struct ShellControlPlacement {
@@ -133,6 +134,10 @@ struct ShellControlLayoutRequest {
   std::optional<PartyMemberId> contextual_overview_member;
   std::optional<PartyMemberId> selected_item_drilldown_member;
   bool selected_item_drilldown_available = false;
+  bool contextual_world_entry_control_visible = false;
+  bool contextual_world_entry_available = false;
+  ContextualWorldEntryMode contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

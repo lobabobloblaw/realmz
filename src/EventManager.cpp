@@ -825,6 +825,27 @@ public:
     return true;
   }
 
+  bool push_semantic_contextual_world_entry_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticContextualWorldEntryTag(tagged_message)) {
+      return false;
+    }
+    // Retain the explicit Shop/Temple/Encounter mode until the guarded world
+    // loop can freshly validate the same non-camp context. No Classic key or
+    // pointer representation is synthesized while the command is queued.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = {};
+    ev.modifiers = 0;
+    ev.window_port = nullptr;
+    em_log.debug_f(
+        "Enqueued tagged semantic contextual world entry (what={}, "
+        "message=0x{:08X}, when=0x{:08X})",
+        name_for_event_type(ev.what), ev.message, ev.when);
+    return true;
+  }
+
   bool push_semantic_guard_combatant_event(uint32_t tagged_message) {
     if (!RealmzIsSemanticGuardCombatantTag(tagged_message)) {
       return false;
@@ -1983,6 +2004,28 @@ Boolean GetNextSemanticGameplayEvent(
       ret->message = 0;
     }
   } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticContextualWorldEntryTag(ret->message)) {
+    uint32_t classic_key_message = 0;
+    if (still_remastered && RealmzConsumeSemanticContextualWorldEntryEvent(
+            surface, ret->message, &classic_key_message)) {
+      // The completed boundary has already revalidated the exact live mode.
+      // Yield only Classic's lowercase g/e record with no inherited pointer,
+      // modifier, or window state; Classic owns every resulting effect.
+      ret->what = keyDown;
+      ret->message = classic_key_message;
+      ret->where = {};
+      ret->modifiers = 0;
+      ret->window_port = nullptr;
+    } else {
+      // A stale surface, camp transition, presentation change, or contextual
+      // mode change is inert and can never enter a preserved Classic switch.
+      ret->what = nullEvent;
+      ret->message = 0;
+      ret->where = {};
+      ret->modifiers = 0;
+      ret->window_port = nullptr;
+    }
+  } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticRestPartyTag(ret->message)) {
     uint32_t classic_key_message = 0;
     const bool mouse_button_held =
@@ -2441,6 +2484,10 @@ Boolean PushSemanticUseTorchEvent(uint32_t tagged_message) {
 
 Boolean PushSemanticContextualOverviewEvent(uint32_t tagged_message) {
   return em.push_semantic_contextual_overview_event(tagged_message);
+}
+
+Boolean PushSemanticContextualWorldEntryEvent(uint32_t tagged_message) {
+  return em.push_semantic_contextual_world_entry_event(tagged_message);
 }
 
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message) {

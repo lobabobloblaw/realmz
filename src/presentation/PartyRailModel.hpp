@@ -141,6 +141,7 @@ enum class ActionIntent {
   use_torch,
   contextual_overview,
   selected_item_drilldown,
+  contextual_world_entry,
 };
 
 // "deferred_to_engine" means that the snapshot satisfies the prerequisites
@@ -177,6 +178,9 @@ struct ActionControlModel {
   // reuses party_member for its selected-member target; Area Search leaves it
   // disengaged.
   std::optional<ContextualOverviewMode> contextual_overview_mode;
+  // Only set for the shared Shop/Temple/Encounter entry action. Carrying the
+  // exact snapshot mode prevents queued work from changing meaning.
+  std::optional<ContextualWorldEntryMode> contextual_world_entry_mode;
 
   bool operator==(const ActionControlModel&) const = default;
 

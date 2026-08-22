@@ -204,6 +204,14 @@ bool consume_contextual_overview(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_contextual_world_entry(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint32_t& output) {
+  return RealmzConsumeSemanticContextualWorldEntryEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 bool consume_guard(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tag,
@@ -2104,6 +2112,147 @@ void test_contextual_overview_tag_encoding_and_collisions() {
     CHECK(other_tag != 0);
     CHECK(!overview_tags.contains(other_tag));
     CHECK(RealmzIsSemanticContextualOverviewTag(other_tag) == 0);
+  }
+}
+
+void test_contextual_world_entry_tag_encoding_and_collisions() {
+  struct ModeCase {
+    ContextualWorldEntryMode mode;
+    uint8_t wire_mode;
+  };
+  constexpr std::array surfaces{
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+  };
+  constexpr std::array modes{
+      ModeCase{ContextualWorldEntryMode::shop, 0},
+      ModeCase{ContextualWorldEntryMode::temple, 1},
+      ModeCase{ContextualWorldEntryMode::encounter, 2},
+  };
+
+  std::set<uint32_t> entry_tags;
+  for (const auto surface : surfaces) {
+    for (const auto& mode : modes) {
+      const uint32_t tag = semantic_contextual_world_entry_tag(
+          ContextualWorldEntryAction{.mode = mode.mode}, surface);
+      CHECK(tag == (0x57450000U |
+          (static_cast<uint32_t>(surface) << 8U) | mode.wire_mode));
+      CHECK(RealmzIsSemanticContextualWorldEntryTag(tag) != 0);
+      CHECK(RealmzSemanticContextualWorldEntryTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+      CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticContextualOverviewTag(tag) == 0);
+      CHECK(RealmzIsSemanticUseTorchTag(tag) == 0);
+      CHECK(RealmzIsSemanticRestPartyTag(tag) == 0);
+      CHECK(RealmzIsSemanticGuardCombatantTag(tag) == 0);
+      CHECK(entry_tags.emplace(tag).second);
+    }
+  }
+  CHECK(entry_tags.size() == 6);
+  CHECK(semantic_contextual_world_entry_tag(
+      ContextualWorldEntryAction{.mode = ContextualWorldEntryMode::shop},
+      REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x57450100U);
+  CHECK(semantic_contextual_world_entry_tag(
+      ContextualWorldEntryAction{.mode = ContextualWorldEntryMode::encounter},
+      REALMZ_SEMANTIC_INPUT_DUNGEON) == 0x57450202U);
+
+  // Exhaust the complete SS/MM wire space. Exactly two surfaces by three
+  // explicit modes are valid; no unrecognized byte may collide with this or
+  // any other gameplay decoder.
+  for (uint32_t surface_byte = 0; surface_byte <= 0xFFU; ++surface_byte) {
+    for (uint32_t mode_byte = 0; mode_byte <= 0xFFU; ++mode_byte) {
+      const uint32_t tag =
+          0x57450000U | (surface_byte << 8U) | mode_byte;
+      const bool valid_surface = (surface_byte == 1U) || (surface_byte == 2U);
+      const bool valid_mode = mode_byte <= 2U;
+      const bool expected_valid = valid_surface && valid_mode;
+      CHECK((RealmzIsSemanticContextualWorldEntryTag(tag) != 0) ==
+          expected_valid);
+      CHECK((RealmzIsSemanticGameplayTag(tag) != 0) == expected_valid);
+      CHECK(RealmzSemanticContextualWorldEntryTagSurface(tag) ==
+          (expected_valid ? surface_byte : REALMZ_SEMANTIC_INPUT_NONE));
+      CHECK(RealmzSemanticGameplayTagSurface(tag) ==
+          (expected_valid ? surface_byte : REALMZ_SEMANTIC_INPUT_NONE));
+    }
+  }
+
+  // Exhaust the enum/surface inputs independently so the producer cannot
+  // accidentally depend on enum ordinals or truncate an unknown value.
+  for (uint32_t surface_value = 0; surface_value <= 0xFFU; ++surface_value) {
+    for (uint32_t enum_value = 0; enum_value <= 0xFFU; ++enum_value) {
+      const auto surface =
+          static_cast<RealmzSemanticInputSurface>(surface_value);
+      const auto mode = static_cast<ContextualWorldEntryMode>(enum_value);
+      uint32_t expected = 0;
+      if ((surface_value == REALMZ_SEMANTIC_INPUT_EXPLORATION) ||
+          (surface_value == REALMZ_SEMANTIC_INPUT_DUNGEON)) {
+        if (mode == ContextualWorldEntryMode::shop) {
+          expected = 0x57450000U | (surface_value << 8U);
+        } else if (mode == ContextualWorldEntryMode::temple) {
+          expected = 0x57450001U | (surface_value << 8U);
+        } else if (mode == ContextualWorldEntryMode::encounter) {
+          expected = 0x57450002U | (surface_value << 8U);
+        }
+      }
+      CHECK(semantic_contextual_world_entry_tag(
+                ContextualWorldEntryAction{.mode = mode}, surface) ==
+          expected);
+    }
+  }
+
+  for (const auto invalid_mode : {
+           ContextualWorldEntryMode::unavailable,
+           static_cast<ContextualWorldEntryMode>(0xFF),
+       }) {
+    CHECK(semantic_contextual_world_entry_tag(
+        ContextualWorldEntryAction{.mode = invalid_mode},
+        REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0);
+  }
+  for (const RealmzSemanticInputSurface invalid_surface : {
+           static_cast<RealmzSemanticInputSurface>(REALMZ_SEMANTIC_INPUT_NONE),
+           static_cast<RealmzSemanticInputSurface>(REALMZ_SEMANTIC_INPUT_COMBAT),
+           static_cast<RealmzSemanticInputSurface>(0xFF),
+       }) {
+    CHECK(semantic_contextual_world_entry_tag(
+        ContextualWorldEntryAction{.mode = ContextualWorldEntryMode::shop},
+        invalid_surface) == 0);
+  }
+
+  for (const uint32_t malformed : {
+           0U,
+           0x57440000U,
+           0x57450000U,
+           0x57450300U,
+           0x5745FF00U,
+           0x57450103U,
+           0x5745017FU,
+           0x574502FFU,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticContextualWorldEntryTag(malformed) == 0);
+    CHECK(RealmzSemanticContextualWorldEntryTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+    CHECK(RealmzIsSemanticGameplayTag(malformed) == 0);
+    CHECK(RealmzSemanticGameplayTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+  }
+
+  for (const uint32_t other_tag : {
+           semantic_contextual_overview_tag(
+               ContextualOverviewAction{
+                   .mode = ContextualOverviewMode::area_search,
+               },
+               REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_set_camp_state_tag(
+               false, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_inventory_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_guard_combatant_tag(
+               0, REALMZ_SEMANTIC_INPUT_COMBAT),
+       }) {
+    CHECK(other_tag != 0);
+    CHECK(!entry_tags.contains(other_tag));
+    CHECK(RealmzIsSemanticContextualWorldEntryTag(other_tag) == 0);
   }
 }
 
@@ -5192,6 +5341,206 @@ void test_contextual_overview_late_validation_and_exact_translation() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_contextual_world_entry_late_validation_and_exact_translation() {
+  struct ModeCase {
+    ContextualWorldEntryMode mode;
+    uint32_t classic_message;
+  };
+  constexpr std::array modes{
+      ModeCase{ContextualWorldEntryMode::shop, 0x00000567U},
+      ModeCase{ContextualWorldEntryMode::temple, 0x00000567U},
+      ModeCase{ContextualWorldEntryMode::encounter, 0x00000E65U},
+  };
+
+  const ContextualWorldEntryAction shop_action{
+      .mode = ContextualWorldEntryMode::shop,
+  };
+  const uint32_t outdoor_shop_tag = semantic_contextual_world_entry_tag(
+      shop_action, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  uint32_t output = kUnchangedClassicMessage;
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.in_camp = false;
+  captured_snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::shop;
+  captured_snapshot.party.fatigue = 999;
+  captured_snapshot.party.selected_member = std::nullopt;
+  captured_snapshot.party.members.clear();
+
+  // A completed top-level scope is mandatory, and successful delivery is
+  // single-use. Party/member state is deliberately irrelevant to this world
+  // action; Classic owns the selected member it shows after shop entry.
+  CHECK(!consume_contextual_world_entry(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_contextual_world_entry(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+  CHECK(output == 0x00000567U);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_contextual_world_entry(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+
+  // Null output still burns the completed authorization.
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticContextualWorldEntryEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            outdoor_shop_tag,
+            nullptr) == 0);
+  CHECK(!consume_contextual_world_entry(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+
+  // Every executable mode translates explicitly; the enum's ordinal value is
+  // never used as either its wire byte or its Classic key message.
+  for (const auto& mode : modes) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        WorldPresentation::outdoor);
+    captured_snapshot.world.contextual_world_entry_mode = mode.mode;
+    captured_snapshot.world.in_camp = false;
+    const uint32_t tag = semantic_contextual_world_entry_tag(
+        ContextualWorldEntryAction{.mode = mode.mode},
+        REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(consume_contextual_world_entry(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, tag, output));
+    CHECK(output == mode.classic_message);
+  }
+
+  // A queued action may not silently change among Shop, Temple, and Encounter.
+  for (size_t index = 0; index < modes.size(); ++index) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        WorldPresentation::outdoor);
+    captured_snapshot.world.contextual_world_entry_mode =
+        modes[(index + 1) % modes.size()].mode;
+    const uint32_t stale_tag = semantic_contextual_world_entry_tag(
+        ContextualWorldEntryAction{.mode = modes[index].mode},
+        REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(!consume_contextual_world_entry(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, stale_tag, output));
+    CHECK(output == kUnchangedClassicMessage);
+    captured_snapshot.world.contextual_world_entry_mode = modes[index].mode;
+    CHECK(!consume_contextual_world_entry(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, stale_tag, output));
+  }
+
+  for (const auto rejected_mode : {
+           ContextualWorldEntryMode::unavailable,
+           ContextualWorldEntryMode::shop,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        ScreenContext::exploration,
+        WorldPresentation::outdoor);
+    captured_snapshot.world.contextual_world_entry_mode = rejected_mode;
+    captured_snapshot.world.in_camp =
+        rejected_mode == ContextualWorldEntryMode::shop;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(!consume_contextual_world_entry(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+    CHECK(output == kUnchangedClassicMessage);
+  }
+
+  // Dungeon map and first-person presentations share the same exact route.
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    for (const auto& mode : modes) {
+      reset_capture(
+          REALMZ_LEGACY_SCREEN_DUNGEON,
+          ScreenContext::dungeon,
+          presentation);
+      captured_snapshot.world.contextual_world_entry_mode = mode.mode;
+      captured_snapshot.world.in_camp = false;
+      const uint32_t tag = semantic_contextual_world_entry_tag(
+          ContextualWorldEntryAction{.mode = mode.mode},
+          REALMZ_SEMANTIC_INPUT_DUNGEON);
+      complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+      output = kUnchangedClassicMessage;
+      CHECK(consume_contextual_world_entry(
+          REALMZ_SEMANTIC_INPUT_DUNGEON, tag, output));
+      CHECK(output == mode.classic_message);
+    }
+  }
+
+  // The encoded origin is checked before either live capture.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::dungeon_map);
+  captured_snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::shop;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_contextual_world_entry(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, outdoor_shop_tag, output));
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  for (const auto& invalid : {
+           std::pair{ScreenContext::dungeon, WorldPresentation::outdoor},
+           std::pair{
+               ScreenContext::exploration,
+               WorldPresentation::dungeon_map,
+           },
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        invalid.first,
+        invalid.second);
+    captured_snapshot.world.contextual_world_entry_mode =
+        ContextualWorldEntryMode::shop;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = kUnchangedClassicMessage;
+    CHECK(!consume_contextual_world_entry(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+    CHECK(output == kUnchangedClassicMessage);
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  captured_snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::shop;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_contextual_world_entry(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::shop;
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = kUnchangedClassicMessage;
+  CHECK(!consume_contextual_world_entry(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, outdoor_shop_tag, output));
+  CHECK(output == kUnchangedClassicMessage);
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void test_shared_combat_late_validation_matrix() {
   for (const auto& action : kCombatActionCases) {
     reset_valid_shared_combat();
@@ -6564,6 +6913,7 @@ int main() {
     test_set_search_state_tag_encoding_and_collisions();
     test_use_torch_tag_encoding_and_collisions();
     test_contextual_overview_tag_encoding_and_collisions();
+    test_contextual_world_entry_tag_encoding_and_collisions();
     test_open_scroll_case_tag_encoding_and_collisions();
     test_bandage_tag_encoding_collision_and_malformed_rejection();
     test_undo_tag_encoding_collision_and_malformed_rejection();
@@ -6589,6 +6939,7 @@ int main() {
     test_set_search_state_late_validation_and_absolute_handoff();
     test_use_torch_late_validation_and_source_handoff();
     test_contextual_overview_late_validation_and_exact_translation();
+    test_contextual_world_entry_late_validation_and_exact_translation();
     test_shared_combat_late_validation_matrix();
     test_show_combat_range_route_boundaries();
     test_bandage_combatant_route_and_canundo_boundaries();

@@ -799,6 +799,52 @@ std::vector<ActionControlModel> build_actions(
           tab_order++));
     }
   }
+
+  const auto contextual_world_entry_mode =
+      snapshot.world.contextual_world_entry_mode;
+  const bool executable_contextual_world_entry = [&] {
+    switch (contextual_world_entry_mode) {
+      case ContextualWorldEntryMode::shop:
+      case ContextualWorldEntryMode::temple:
+      case ContextualWorldEntryMode::encounter:
+        return true;
+      case ContextualWorldEntryMode::unavailable:
+        return false;
+    }
+    return false;
+  }();
+  const bool contextual_world_entry_available =
+      navigation_context && !snapshot.world.in_camp &&
+      executable_contextual_world_entry;
+  const std::string contextual_world_entry_label = [&] {
+    if (!contextual_world_entry_available) {
+      return std::string{"Entry"};
+    }
+    switch (contextual_world_entry_mode) {
+      case ContextualWorldEntryMode::shop:
+        return std::string{"Shop"};
+      case ContextualWorldEntryMode::temple:
+        return std::string{"Temple"};
+      case ContextualWorldEntryMode::encounter:
+        return std::string{"Encounter"};
+      case ContextualWorldEntryMode::unavailable:
+        return std::string{"Entry"};
+    }
+    return std::string{"Entry"};
+  }();
+  result.emplace_back(action(
+      ActionIntent::contextual_world_entry,
+      "action.world.entry",
+      contextual_world_entry_label,
+      contextual_world_entry_available
+          ? ActionAvailability::deferred_to_engine
+          : ActionAvailability::unavailable,
+      tab_order++,
+      contextual_world_entry_available
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{
+                unavailable_token("Entry is unavailable now")}));
+  result.back().contextual_world_entry_mode = contextual_world_entry_mode;
   return result;
 }
 

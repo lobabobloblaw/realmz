@@ -126,6 +126,14 @@ RealmzSemanticInputSurface RealmzSemanticContextualOverviewTagSurface(
 uint8_t RealmzSemanticContextualOverviewTagIsAreaSearch(
     uint32_t tagged_message);
 
+// Contextual-world-entry tags retain one explicit semantic mode. Wire payloads
+// 0, 1, and 2 mean Shop, Temple, and Encounter respectively; unavailable and
+// every other payload are malformed. The guarded world consumer rechecks the
+// exact live mode before yielding Classic's lowercase "g" or "e" key record.
+uint8_t RealmzIsSemanticContextualWorldEntryTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticContextualWorldEntryTagSurface(
+    uint32_t tagged_message);
+
 // Guard tags carry the acting combatant explicitly and are valid only on the
 // combat surface. This prevents a queued command from applying to a later turn.
 uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
@@ -351,6 +359,14 @@ uint8_t RealmzConsumeSemanticContextualOverviewEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the exact adaptive world presentation, non-camp state, and live
+// contextual entry mode. Classic retains all shop, temple, encounter, modal,
+// RNG, and mutation ownership after the exact lowercase key record is returned.
+uint8_t RealmzConsumeSemanticContextualWorldEntryEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint32_t* classic_key_message);
+
 // Revalidates the live acting party combatant, then returns the preserved
 // Classic "g" key record to the top-level combat loop.
 uint8_t RealmzConsumeSemanticGuardCombatantEvent(
@@ -490,6 +506,7 @@ enum class MovementCommand;
 enum class CombatFocusDirection;
 struct CombatFieldCell;
 struct ContextualOverviewAction;
+struct ContextualWorldEntryAction;
 
 [[nodiscard]] uint32_t semantic_movement_tag(
     MovementCommand command,
@@ -542,6 +559,10 @@ struct ContextualOverviewAction;
 
 [[nodiscard]] uint32_t semantic_contextual_overview_tag(
     const ContextualOverviewAction& action,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_contextual_world_entry_tag(
+    const ContextualWorldEntryAction& action,
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_guard_combatant_tag(

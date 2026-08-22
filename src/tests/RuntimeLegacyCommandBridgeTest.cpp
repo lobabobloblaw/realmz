@@ -78,6 +78,18 @@ static_assert(std::is_same_v<
     decltype(RuntimeLegacyWorldActionSinks::open_selected_item_drilldown),
     RuntimeLegacyOpenSelectedItemDrilldownSink>);
 static_assert(std::is_same_v<
+    RuntimeLegacyContextualWorldEntrySink,
+    std::function<bool(
+        const ContextualWorldEntryAction&,
+        uint32_t,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::contextual_world_entry),
+    RuntimeLegacyContextualWorldEntrySink>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyCommandContext::contextual_world_entry_mode),
+    ContextualWorldEntryMode>);
+static_assert(std::is_same_v<
     RuntimeLegacyRestPartySink,
     std::function<bool(
         uint32_t,
@@ -1287,6 +1299,206 @@ void test_selected_item_drilldown_context_and_named_sink_dispatch() {
   CHECK(movement_only.dispatch(UIAction{
       .sequence = sequence,
       .payload = OpenSelectedItemDrilldownAction{2},
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_contextual_world_entry_mapping_and_named_sink_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  };
+  int calls = 0;
+  bool accept = true;
+  ContextualWorldEntryAction received_action{};
+  uint32_t received_message = 0;
+  const RuntimeLegacyContextualWorldEntrySink sink =
+      [&calls,
+       &accept,
+       &received_action,
+       &received_message,
+       &context](
+          const ContextualWorldEntryAction& action,
+          uint32_t message,
+          const RuntimeLegacyCommandContext& captured_context) {
+        ++calls;
+        received_action = action;
+        received_message = message;
+        CHECK(captured_context == context);
+        return accept;
+      };
+  const auto make_bridge = [](RuntimeLegacyContextProvider provider,
+                              RuntimeLegacyContextualWorldEntrySink value) {
+    return RuntimeLegacyCommandBridge(
+        kRuntimeLegacyNamedActionSinks,
+        std::move(provider),
+        [](MovementCommand,
+            uint32_t,
+            const RuntimeLegacyCommandContext&) { return true; },
+        [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+        RuntimeLegacyWorldActionSinks{
+            .contextual_world_entry = std::move(value),
+        });
+  };
+  auto bridge = make_bridge([&context] { return context; }, sink);
+  ActionSequence sequence = 205;
+
+  for (const auto& [mode, expected_message] : {
+           std::pair{ContextualWorldEntryMode::shop, 0x00000567U},
+           std::pair{ContextualWorldEntryMode::temple, 0x00000567U},
+           std::pair{ContextualWorldEntryMode::encounter, 0x00000E65U},
+       }) {
+    context.contextual_world_entry_mode = mode;
+    const ContextualWorldEntryAction action{.mode = mode};
+    CHECK(runtime_legacy_context_supports_contextual_world_entry(
+        action, context));
+    CHECK(legacy_key_message_for_contextual_world_entry(action, context) ==
+        expected_message);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = action,
+    }).status == DispatchStatus::handled);
+    CHECK(received_action == action);
+    CHECK(received_message == expected_message);
+  }
+  CHECK(calls == 3);
+
+  context.contextual_world_entry_mode = ContextualWorldEntryMode::shop;
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    const ContextualWorldEntryAction action{
+        .mode = ContextualWorldEntryMode::shop,
+    };
+    CHECK(legacy_key_message_for_contextual_world_entry(action, context) ==
+        0x00000567U);
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = action,
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(calls == 5);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  };
+  for (const auto invalid_action : {
+           ContextualWorldEntryAction{
+               .mode = ContextualWorldEntryMode::unavailable},
+           ContextualWorldEntryAction{
+               .mode = ContextualWorldEntryMode::temple},
+           ContextualWorldEntryAction{
+               .mode = static_cast<ContextualWorldEntryMode>(0xFF)},
+       }) {
+    CHECK(!runtime_legacy_context_supports_contextual_world_entry(
+        invalid_action, context));
+    CHECK(!legacy_key_message_for_contextual_world_entry(
+        invalid_action, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = invalid_action,
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 5);
+
+  const ContextualWorldEntryAction shop{
+      .mode = ContextualWorldEntryMode::shop,
+  };
+  for (const auto invalid_context : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::title,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+               .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+               .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+               .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = false,
+               .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .in_camp = true,
+               .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .contextual_world_entry_mode =
+                   static_cast<ContextualWorldEntryMode>(0xFF),
+           },
+       }) {
+    context = invalid_context;
+    CHECK(!runtime_legacy_context_supports_contextual_world_entry(
+        shop, context));
+    CHECK(!legacy_key_message_for_contextual_world_entry(shop, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = shop,
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(calls == 5);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  };
+  accept = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = shop,
+  }).status == DispatchStatus::failed);
+  CHECK(calls == 6);
+
+  auto missing_provider = make_bridge({}, sink);
+  CHECK(missing_provider.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = shop,
+  }).status == DispatchStatus::failed);
+  auto empty_sink = make_bridge(
+      [&context] { return context; },
+      RuntimeLegacyContextualWorldEntrySink{});
+  CHECK(empty_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = shop,
+  }).status == DispatchStatus::failed);
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = shop,
   }).status == DispatchStatus::unsupported);
 }
 
@@ -7078,6 +7290,7 @@ int main() {
     test_open_scroll_case_mapping_and_named_sink_dispatch();
     test_open_character_sheet_context_and_named_sink_dispatch();
     test_selected_item_drilldown_context_and_named_sink_dispatch();
+    test_contextual_world_entry_mapping_and_named_sink_dispatch();
     test_rest_party_context_and_named_sink_dispatch();
     test_set_camp_state_context_and_named_sink_dispatch();
     test_set_search_state_context_and_named_sink_dispatch();

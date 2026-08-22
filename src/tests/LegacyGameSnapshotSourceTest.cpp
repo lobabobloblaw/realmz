@@ -42,6 +42,9 @@ Boolean inshop = 0;
 Boolean intemple = 0;
 Boolean indung = 0;
 Boolean incamp = 0;
+Boolean shopavail = 0;
+Boolean templeavail = 0;
+Boolean canshop = 0;
 Boolean spellcasting = 0;
 short partycondition[10] = {};
 struct character c[6] = {};
@@ -95,6 +98,7 @@ void reset_legacy_state() {
   encountflag = 0;
   viewtype = 1;
   initems = inswap = inbooty = inshop = intemple = indung = incamp = 0;
+  shopavail = templeavail = canshop = 0;
   spellcasting = 0;
   std::memset(partycondition, 0, sizeof(partycondition));
   std::memset(c, 0, sizeof(c));
@@ -334,6 +338,91 @@ void test_first_usable_torch_source_capture_is_exact_and_value_only() {
   c[0].numitems = 0;
   charnum = 6;
   CHECK(!source.capture().world.usable_torch_source);
+}
+
+void test_contextual_world_entry_mode_is_exact_and_value_only() {
+  reset_legacy_state();
+  LegacyGameSnapshotSource source;
+
+  const auto outdoor_encounter = source.capture();
+  CHECK(outdoor_encounter.screen == ScreenContext::exploration);
+  CHECK(outdoor_encounter.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::encounter);
+
+  templeavail = 1;
+  const auto outdoor_temple = source.capture();
+  CHECK(outdoor_temple.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::temple);
+
+  shopavail = 1;
+  const auto outdoor_shop = source.capture();
+  CHECK(outdoor_shop.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::shop);
+
+  // Shop is Classic buttonchoice's authoritative first branch. Both flags are
+  // normally true after loading a shop, so this priority is not an edge case.
+  CHECK(shopavail && templeavail);
+  CHECK(source.capture().world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::shop);
+
+  shopavail = 0;
+  templeavail = 0;
+  indung = 1;
+  CHECK(source.capture().screen == ScreenContext::dungeon);
+  CHECK(source.capture().world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::encounter);
+  templeavail = 1;
+  CHECK(source.capture().world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::temple);
+  shopavail = 1;
+  CHECK(source.capture().world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::shop);
+
+  // canshop affects only Classic artwork. It is serialized legacy state but is
+  // not consulted by either keyboard gates or buttonchoice dispatch.
+  shopavail = 0;
+  templeavail = 0;
+  canshop = 1;
+  CHECK(source.capture().world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::encounter);
+
+  incamp = 1;
+  CHECK(source.capture().world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::unavailable);
+  incamp = 0;
+
+  const auto require_nested_unavailable = [&] {
+    CHECK(source.capture().world.contextual_world_entry_mode ==
+        ContextualWorldEntryMode::unavailable);
+  };
+  initems = 1;
+  require_nested_unavailable();
+  initems = 0;
+  inswap = 1;
+  require_nested_unavailable();
+  inswap = 0;
+  inbooty = 1;
+  require_nested_unavailable();
+  inbooty = 0;
+  inshop = 1;
+  require_nested_unavailable();
+  inshop = 0;
+  intemple = 1;
+  require_nested_unavailable();
+  intemple = 0;
+  encountflag = 1;
+  require_nested_unavailable();
+  encountflag = 0;
+  incombat = 1;
+  require_nested_unavailable();
+
+  // Earlier captures remain detached values after Classic globals change.
+  CHECK(outdoor_encounter.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::encounter);
+  CHECK(outdoor_temple.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::temple);
+  CHECK(outdoor_shop.world.contextual_world_entry_mode ==
+      ContextualWorldEntryMode::shop);
 }
 
 void test_combat_capture() {
@@ -729,6 +818,7 @@ int main() {
     test_camp_state_capture_is_value_only();
     test_search_state_capture_is_value_only();
     test_first_usable_torch_source_capture_is_exact_and_value_only();
+    test_contextual_world_entry_mode_is_exact_and_value_only();
     test_combat_capture();
     test_encounter_and_bounds();
     std::cout << "LegacyGameSnapshotSourceTest passed (" << checks_run

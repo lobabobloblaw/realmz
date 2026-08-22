@@ -582,6 +582,184 @@ void test_open_character_sheet_control_is_the_fourth_party_action() {
   }).empty());
 }
 
+void test_contextual_world_entry_reuses_rest_slot_and_fails_closed() {
+  const LogicalRect panel{0.0, 0.0, 800.0, 150.0};
+  struct EntryCase {
+    ContextualWorldEntryMode mode;
+    const char* label;
+    const char* accessibility_label;
+  };
+  constexpr std::array cases{
+      EntryCase{ContextualWorldEntryMode::shop, "SHOP", "Enter shop"},
+      EntryCase{ContextualWorldEntryMode::temple, "TEMPLE", "Enter temple"},
+      EntryCase{
+          ContextualWorldEntryMode::encounter,
+          "ENCOUNTER",
+          "Check for a local encounter"},
+  };
+  struct Surface {
+    ScreenContext screen;
+    WorldPresentation presentation;
+  };
+  constexpr std::array surfaces{
+      Surface{ScreenContext::exploration, WorldPresentation::outdoor},
+      Surface{ScreenContext::dungeon, WorldPresentation::dungeon_map},
+      Surface{
+          ScreenContext::dungeon,
+          WorldPresentation::dungeon_first_person},
+  };
+
+  for (const auto surface : surfaces) {
+    for (const auto& entry_case : cases) {
+      const auto controls = compute_shell_control_layout({
+          .screen = surface.screen,
+          .world_presentation = surface.presentation,
+          .action_panel = panel,
+          .world_action_page = WorldActionPage::game,
+          .navigation_available = true,
+          .contextual_world_entry_control_visible = true,
+          .contextual_world_entry_available = true,
+          .contextual_world_entry_mode = entry_case.mode,
+      });
+      CHECK(controls.size() == kWorldPages.size() + 1U);
+      verify_world_tabs(controls, panel, WorldActionPage::game);
+      const auto& entry = controls.back();
+      CHECK(entry.region.value == 1129U);
+      CHECK(entry.kind == ShellControlKind::contextual_world_entry);
+      CHECK(entry.label == entry_case.label);
+      CHECK(entry.accessibility_label == entry_case.accessibility_label);
+      CHECK(entry.focus_identifier == "focus.action.world.entry");
+      CHECK(entry.tab_order == 1128);
+      CHECK(entry.enabled);
+      CHECK(action_name(entry.payload) == "contextual_world_entry");
+      CHECK((entry.payload == UIActionPayload{ContextualWorldEntryAction{
+          .mode = entry_case.mode,
+      }}));
+    }
+  }
+
+  const auto disabled_entry = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_world_entry_control_visible = true,
+      .contextual_world_entry_available = false,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  });
+  CHECK(disabled_entry.size() == kWorldPages.size() + 1U);
+  CHECK(!disabled_entry.back().enabled);
+  CHECK(disabled_entry.back().accessibility_label == "Enter shop");
+
+  const auto rest = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .rest_control_visible = true,
+      .rest_available = true,
+  });
+  CHECK(rest.size() == kWorldPages.size() + 1U);
+  CHECK(rest.back().kind == ShellControlKind::rest_party);
+  CHECK(rest.back().bounds == disabled_entry.back().bounds);
+
+  const auto full_entry_page = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .save_control_visible = true,
+      .save_available = true,
+      .load_control_visible = true,
+      .load_available = true,
+      .camp_control_visible = true,
+      .camp_available = true,
+      .camp_desired_in_camp = true,
+      .search_control_visible = true,
+      .search_available = true,
+      .search_desired_searching = true,
+      .torch_control_visible = true,
+      .torch_available = true,
+      .torch_source = TorchSource{.member = 2, .slot = 7},
+      .contextual_overview_control_visible = true,
+      .contextual_overview_available = true,
+      .contextual_overview_mode = ContextualOverviewMode::area_search,
+      .contextual_world_entry_control_visible = true,
+      .contextual_world_entry_available = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::temple,
+  });
+  CHECK(full_entry_page.size() == kWorldPages.size() + 7U);
+  CHECK(full_entry_page[kWorldPages.size() + 2U].kind ==
+      ShellControlKind::contextual_world_entry);
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .rest_control_visible = true,
+      .contextual_world_entry_control_visible = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_world_entry_control_visible = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::unavailable,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_world_entry_control_visible = true,
+      .contextual_world_entry_mode =
+          static_cast<ContextualWorldEntryMode>(0xFF),
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_world_entry_available = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .contextual_world_entry_control_visible = true,
+      .contextual_world_entry_available = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::encounter,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = panel,
+      .guard_combatant = CombatantId{2},
+      .contextual_world_entry_control_visible = true,
+      .contextual_world_entry_mode = ContextualWorldEntryMode::shop,
+  }).empty());
+}
+
 void test_world_action_controls_at_combined_minimum_layout() {
   constexpr std::array sizes{
       LogicalSize{1024.0, 768.0},
@@ -2141,6 +2319,7 @@ int main() {
     test_selected_item_drilldown_control_is_typed_and_fail_closed();
     test_open_scroll_case_control_is_distinct_and_visible_when_disabled();
     test_open_character_sheet_control_is_the_fourth_party_action();
+    test_contextual_world_entry_reuses_rest_slot_and_fails_closed();
     test_world_action_controls_at_combined_minimum_layout();
     test_combat_command_contracts_are_independent_and_fail_closed();
     test_persistent_named_combat_command_deck();

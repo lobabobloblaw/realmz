@@ -154,6 +154,16 @@ struct ContextualOverviewAction {
   bool operator==(const ContextualOverviewAction&) const = default;
 };
 
+// Requests one exact meaning of Classic's shared Shop/Temple/Encounter world
+// entry point. The explicit mode is a freshness token: delayed delivery must
+// never silently turn one entry intent into another. Unavailable is retained
+// for value-only presentation state and is never dispatchable.
+struct ContextualWorldEntryAction {
+  ContextualWorldEntryMode mode = ContextualWorldEntryMode::unavailable;
+
+  bool operator==(const ContextualWorldEntryAction&) const = default;
+};
+
 // Ends the explicitly identified party combatant's current turn in the
 // preserved Classic combat loop with its Guard command. Carrying the actor
 // prevents a queued action from silently retargeting after the turn advances.
@@ -542,7 +552,8 @@ using UIActionPayload = std::variant<
     SetSearchStateAction,
     UseTorchAction,
     ContextualOverviewAction,
-    OpenSelectedItemDrilldownAction>;
+    OpenSelectedItemDrilldownAction,
+    ContextualWorldEntryAction>;
 
 struct UIAction {
   ActionSequence sequence = 0;
@@ -637,6 +648,9 @@ struct UIAction {
     } else if constexpr (
         std::is_same_v<Action, OpenSelectedItemDrilldownAction>) {
       return "open_selected_item_drilldown";
+    } else if constexpr (
+        std::is_same_v<Action, ContextualWorldEntryAction>) {
+      return "contextual_world_entry";
     } else {
       return "set_presentation_mode";
     }

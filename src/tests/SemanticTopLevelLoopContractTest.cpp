@@ -369,6 +369,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic contextual Overview input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticContextualWorldEntryEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic contextual world-entry input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic guard input");
@@ -1280,6 +1284,16 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must have one late Torch consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticContextualOverviewEvent") == 1,
+      "semantic gameplay wrapper must have one late contextual Overview "
+      "consumer");
+  require(count_identifier(
+              semantic_wrapper,
+              "RealmzConsumeSemanticContextualWorldEntryEvent") == 1,
+      "semantic gameplay wrapper must have one late contextual world-entry "
+      "consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late guard consumer");
   require(count_identifier(
@@ -1349,14 +1363,15 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 30,
-      "semantic gameplay wrapper must recognize all thirty tagged paths");
-  require(count_identifier(semantic_wrapper, "keyDown") == 26 &&
-          count_text(compact_semantic, "ret->what=keyDown;") == 24 &&
+  require(count_identifier(semantic_wrapper, "app1Evt") == 31,
+      "semantic gameplay wrapper must recognize all thirty-one tagged paths");
+  require(count_identifier(semantic_wrapper, "keyDown") == 27 &&
+          count_text(compact_semantic, "ret->what=keyDown;") == 25 &&
           count_text(
               compact_semantic, ".kind=(ret->what==keyDown)") == 2,
       "only guarded Classic replay injection or late movement, inventory, "
-      "spellbook, non-combat scroll-case, contextual Overview, Rest, Camp, "
+      "spellbook, non-combat scroll-case, contextual Overview, contextual "
+      "world entry, Rest, Camp, "
       "guard, finish, delay, "
       "center, "
       "switch-weapon, cycle-focus, "
@@ -1425,6 +1440,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticContextualOverviewEvent") == 1,
       "EventManager may consume semantic contextual Overview input only "
+      "inside its gameplay wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticContextualWorldEntryEvent") == 1,
+      "EventManager may consume semantic contextual world-entry input only "
       "inside its gameplay wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
@@ -5679,10 +5698,13 @@ void verify_rest_party_window_manager_contract(
               "LegacyActionHandler<ContextualOverviewAction>"
               "contextual_overview;"
               "LegacyActionHandler<OpenSelectedItemDrilldownAction>"
-              "open_selected_item_drilldown;}"),
+              "open_selected_item_drilldown;"
+              "LegacyActionHandler<ContextualWorldEntryAction>"
+              "contextual_world_entry;}"),
       "LegacyActionHandlers must retain Rest and Camp followed by append-only "
-      "Search, Torch, contextual Overview, and selected-item drilldown so "
-      "positional aggregate clients keep their prior member order");
+      "Search, Torch, contextual Overview, selected-item drilldown, and "
+      "contextual world entry so positional aggregate clients keep their "
+      "prior member order");
 
   const std::string runtime_source = code_only(read_file(
       repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
@@ -7164,7 +7186,8 @@ void verify_use_torch_window_manager_contract(
       "if(has_semantic_torch){append_summary();}", renderer_summary);
   const std::size_t renderer_gate = compact_renderer.find(
       "has_semantic_search||has_semantic_torch||"
-      "has_semantic_contextual_overview||has_semantic_guard",
+      "has_semantic_contextual_overview||"
+      "has_semantic_contextual_world_entry||has_semantic_guard",
       renderer_compact_summary);
   const std::size_t renderer_allowlist = compact_renderer.find(
       "control.kind!=realmz::presentation::ShellControlKind::use_torch",
@@ -7450,7 +7473,8 @@ void verify_contextual_overview_window_manager_contract(
   const std::size_t delivery_start = compact_delivery.find(
       "RealmzIsSemanticContextualOverviewTag(ret->message)");
   const std::size_t delivery_end = compact_delivery.find(
-      "RealmzIsSemanticRestPartyTag(ret->message)", delivery_start);
+      "RealmzIsSemanticContextualWorldEntryTag(ret->message)",
+      delivery_start);
   require(delivery_start != std::string::npos &&
           delivery_end != std::string::npos && delivery_start < delivery_end,
       "EventManager contextual Overview delivery branch is missing");
@@ -7791,6 +7815,832 @@ void verify_contextual_overview_window_manager_contract(
         "contextual Overview must add no replay action, tag, enqueue, or "
         "consume vocabulary");
   }
+}
+
+void verify_contextual_world_entry_window_manager_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string snapshot_header = code_only(read_file(
+      repository_root / "src/presentation/GameSnapshot.hpp"));
+  const std::string entry_modes = type_body(
+      snapshot_header, "ContextualWorldEntryMode");
+  require(count_identifier(entry_modes, "unavailable") == 1 &&
+          count_identifier(entry_modes, "shop") == 1 &&
+          count_identifier(entry_modes, "temple") == 1 &&
+          count_identifier(entry_modes, "encounter") == 1,
+      "contextual world entry must retain exactly three executable modes and "
+      "one non-dispatchable unavailable state");
+  const std::string world_view = type_body(snapshot_header, "WorldView");
+  const std::size_t torch_field = find_identifier(
+      world_view, "usable_torch_source");
+  const std::size_t entry_field = find_identifier(
+      world_view, "contextual_world_entry_mode");
+  require(torch_field != std::string::npos &&
+          entry_field != std::string::npos && torch_field < entry_field &&
+          count_identifier(world_view, "contextual_world_entry_mode") == 1,
+      "the contextual world-entry snapshot field must remain append-only "
+      "after the existing world-action state");
+
+  const std::string raw_entry_ui_header = read_file(
+      repository_root / "src/presentation/UIAction.hpp");
+  const std::string ui_header = code_only(raw_entry_ui_header);
+  const std::string entry_action = type_body(
+      ui_header, "ContextualWorldEntryAction");
+  require(count_identifier(entry_action, "mode") == 1 &&
+          count_identifier(entry_action, "ContextualWorldEntryMode") == 2,
+      "ContextualWorldEntryAction must retain exactly one explicit mode");
+  require(without_whitespace(ui_header).contains(
+              "ContextualOverviewAction,OpenSelectedItemDrilldownAction,"
+              "ContextualWorldEntryAction>;"),
+      "ContextualWorldEntryAction must remain the append-only UI payload");
+  require(without_whitespace(raw_entry_ui_header).contains(
+              "return\"contextual_world_entry\";"),
+      "ContextualWorldEntryAction must retain its stable action name");
+
+  const std::string model_header = code_only(read_file(
+      repository_root / "src/presentation/PartyRailModel.hpp"));
+  const std::string action_intents = type_body(model_header, "ActionIntent");
+  const std::size_t overview_intent = find_identifier(
+      action_intents, "contextual_overview");
+  const std::size_t selected_item_intent = find_identifier(
+      action_intents, "selected_item_drilldown");
+  const std::size_t entry_intent = find_identifier(
+      action_intents, "contextual_world_entry");
+  require(overview_intent != std::string::npos &&
+          selected_item_intent != std::string::npos &&
+          entry_intent != std::string::npos &&
+          overview_intent < selected_item_intent &&
+          selected_item_intent < entry_intent,
+      "contextual world entry must remain the append-only world ActionIntent");
+  const std::string action_model = type_body(
+      model_header, "ActionControlModel");
+  const std::size_t modeled_overview = find_identifier(
+      action_model, "contextual_overview_mode");
+  const std::size_t modeled_entry = find_identifier(
+      action_model, "contextual_world_entry_mode");
+  require(modeled_overview != std::string::npos &&
+          modeled_entry != std::string::npos &&
+          modeled_overview < modeled_entry &&
+          count_identifier(action_model, "contextual_world_entry_mode") == 1,
+      "the detached action model must append and preserve the exact entry "
+      "mode freshness token");
+
+  const std::string snapshot_source = code_only(read_file(
+      repository_root /
+          "src/presentation/LegacyGameSnapshotSource.cpp"));
+  const std::string capture = function_body(snapshot_source, "capture");
+  const std::string compact_capture = without_whitespace(capture);
+  const std::size_t capture_noncamp = compact_capture.find(
+      "if(!snapshot.world.in_camp&&");
+  const std::size_t capture_shop = compact_capture.find(
+      "if(shopavail){", capture_noncamp);
+  const std::size_t capture_temple = compact_capture.find(
+      "elseif(templeavail){", capture_shop);
+  const std::size_t capture_encounter = compact_capture.find(
+      "ContextualWorldEntryMode::encounter;", capture_temple);
+  require(capture_noncamp != std::string::npos &&
+          compact_capture.find("ScreenContext::exploration", capture_noncamp) !=
+              std::string::npos &&
+          compact_capture.find("ScreenContext::dungeon", capture_noncamp) !=
+              std::string::npos &&
+          capture_shop != std::string::npos &&
+          capture_temple != std::string::npos &&
+          capture_encounter != std::string::npos &&
+          capture_noncamp < capture_shop && capture_shop < capture_temple &&
+          capture_temple < capture_encounter &&
+          count_identifier(capture, "canshop") == 0,
+      "snapshot capture must derive non-camp entry mode with exact "
+      "shopavail > templeavail > encounter priority and ignore canshop");
+
+  const std::string raw_entry_model_source = read_file(
+      repository_root / "src/presentation/PartyRailModel.cpp");
+  const std::string model_source = code_only(raw_entry_model_source);
+  const std::string build_actions = function_body(
+      model_source, "build_actions");
+  const std::string compact_actions = without_whitespace(build_actions);
+  for (const auto needle : {
+           "caseContextualWorldEntryMode::shop:",
+           "caseContextualWorldEntryMode::temple:",
+           "caseContextualWorldEntryMode::encounter:",
+           "caseContextualWorldEntryMode::unavailable:",
+           "navigation_context&&!snapshot.world.in_camp&&"
+               "executable_contextual_world_entry",
+           "ActionIntent::contextual_world_entry",
+           "ActionAvailability::deferred_to_engine",
+           "result.back().contextual_world_entry_mode="
+               "contextual_world_entry_mode;",
+       }) {
+    require(compact_actions.contains(needle),
+        std::string("contextual world-entry model must retain ") + needle);
+  }
+  const std::string compact_raw_model =
+      without_whitespace(raw_entry_model_source);
+  require(compact_raw_model.contains("returnstd::string{\"Shop\"};") &&
+          compact_raw_model.contains("returnstd::string{\"Temple\"};") &&
+          compact_raw_model.contains("returnstd::string{\"Encounter\"};") &&
+          compact_raw_model.contains("\"action.world.entry\""),
+      "contextual world-entry model must retain its dynamic labels and stable "
+      "command identifier");
+
+  const std::string legacy_header = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.hpp"));
+  const std::string handlers = type_body(legacy_header, "LegacyActionHandlers");
+  const std::size_t handler_selected = find_identifier(
+      handlers, "open_selected_item_drilldown");
+  const std::size_t handler_entry = find_identifier(
+      handlers, "contextual_world_entry");
+  require(handler_selected != std::string::npos &&
+          handler_entry != std::string::npos &&
+          handler_selected < handler_entry &&
+          count_identifier(handlers, "ContextualWorldEntryAction") == 1,
+      "the injected bridge must append one named typed world-entry handler");
+  const std::string legacy_source = code_only(read_file(
+      repository_root / "src/presentation/LegacyCommandBridge.cpp"));
+  const std::string injected_dispatch = function_body(
+      legacy_source, "dispatch");
+  require(count_identifier(injected_dispatch,
+              "ContextualWorldEntryAction") == 1 &&
+          count_identifier(injected_dispatch,
+              "contextual_world_entry") == 1,
+      "the injected bridge must route contextual world entry only through its "
+      "named handler");
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root /
+          "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string runtime_context = type_body(
+      runtime_header, "RuntimeLegacyCommandContext");
+  const std::size_t runtime_torch = find_identifier(
+      runtime_context, "usable_torch_source");
+  const std::size_t runtime_entry = find_identifier(
+      runtime_context, "contextual_world_entry_mode");
+  require(runtime_torch != std::string::npos &&
+          runtime_entry != std::string::npos && runtime_torch < runtime_entry,
+      "runtime context must append the exact contextual world-entry mode");
+  const std::string world_sinks = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  const std::size_t sink_selected = find_identifier(
+      world_sinks, "open_selected_item_drilldown");
+  const std::size_t sink_entry = find_identifier(
+      world_sinks, "contextual_world_entry");
+  require(count_identifier(
+              runtime_header, "RuntimeLegacyContextualWorldEntrySink") == 2 &&
+          sink_selected != std::string::npos &&
+          sink_entry != std::string::npos && sink_selected < sink_entry &&
+          count_identifier(runtime_header,
+              "runtime_legacy_context_supports_contextual_world_entry") == 1 &&
+          count_identifier(runtime_header,
+              "legacy_key_message_for_contextual_world_entry") == 1,
+      "runtime bridge must append one named world-entry sink, predicate, and "
+      "exact-key mapper");
+
+  const std::string runtime_source = code_only(read_file(
+      repository_root /
+          "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string compact_runtime = without_whitespace(runtime_source);
+  require(compact_runtime.contains(
+              "kEnterShopOrTempleMessage=0x00000567U;") &&
+          compact_runtime.contains(
+              "kCheckLocalEncounterMessage=0x00000E65U;"),
+      "contextual world entry must preserve Classic's exact lowercase g/e "
+      "key records");
+  const std::string runtime_support = function_body(
+      runtime_source, "runtime_legacy_context_supports_contextual_world_entry");
+  const std::string compact_support = without_whitespace(runtime_support);
+  for (const auto needle : {
+           "caseContextualWorldEntryMode::shop:",
+           "caseContextualWorldEntryMode::temple:",
+           "caseContextualWorldEntryMode::encounter:",
+           "caseContextualWorldEntryMode::unavailable:",
+           "!context.adaptive_eligible||context.in_camp||",
+           "action.mode!=context.contextual_world_entry_mode",
+           "context.screen==ScreenContext::exploration",
+           "context.world_presentation==WorldPresentation::outdoor",
+           "context.screen==ScreenContext::dungeon",
+           "WorldPresentation::dungeon_map",
+           "WorldPresentation::dungeon_first_person",
+       }) {
+    require(compact_support.contains(needle),
+        std::string("runtime world-entry predicate must retain ") + needle);
+  }
+  const std::string key_mapper = function_body(
+      runtime_source, "legacy_key_message_for_contextual_world_entry");
+  const std::string compact_mapper = without_whitespace(key_mapper);
+  require(compact_mapper.contains(
+              "caseContextualWorldEntryMode::shop:"
+              "caseContextualWorldEntryMode::temple:"
+              "returnkEnterShopOrTempleMessage;") &&
+          compact_mapper.contains(
+              "caseContextualWorldEntryMode::encounter:"
+              "returnkCheckLocalEncounterMessage;") &&
+          count_identifier(key_mapper, "keyDown") == 0 &&
+          count_identifier(key_mapper, "app1Evt") == 0 &&
+          count_identifier(key_mapper, "mouseDown") == 0,
+      "the runtime mapper must return only exact g/e records without forging "
+      "an event");
+  const std::size_t runtime_bundle = find_identifier(
+      runtime_source, "RuntimeLegacyWorldActionSinks");
+  const std::size_t runtime_bundle_open = runtime_source.find(
+      '{', runtime_bundle +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(runtime_bundle != std::string::npos &&
+          runtime_bundle_open != std::string::npos,
+      "runtime world-entry handler bundle is missing");
+  const std::size_t runtime_bundle_close = matching_delimiter(
+      runtime_source, runtime_bundle_open, '{', '}');
+  const std::string runtime_handlers = runtime_source.substr(
+      runtime_bundle_open, runtime_bundle_close - runtime_bundle_open + 1U);
+  const std::string compact_runtime_handlers =
+      without_whitespace(runtime_handlers);
+  require(compact_runtime_handlers.contains(
+              "handlers.contextual_world_entry=[") &&
+          compact_runtime_handlers.contains(
+              "legacy_key_message_for_contextual_world_entry(action,context)") &&
+          compact_runtime_handlers.contains(
+              "contextual_world_entry_sink(action,*message,context)"),
+      "runtime dispatch must preserve explicit mode and exact key through the "
+      "named world-entry sink");
+
+  const std::string layout_header = code_only(read_file(
+      repository_root / "src/presentation/ShellControlLayout.hpp"));
+  const std::string control_kinds = type_body(
+      layout_header, "ShellControlKind");
+  const std::size_t kind_selected = find_identifier(
+      control_kinds, "selected_item_drilldown");
+  const std::size_t kind_entry = find_identifier(
+      control_kinds, "contextual_world_entry");
+  require(kind_selected != std::string::npos &&
+          kind_entry != std::string::npos && kind_selected < kind_entry,
+      "contextual world entry must remain the append-only shell control kind");
+  const std::string layout_request = type_body(
+      layout_header, "ShellControlLayoutRequest");
+  const std::size_t request_selected = find_identifier(
+      layout_request, "selected_item_drilldown_available");
+  const std::size_t request_entry = find_identifier(
+      layout_request, "contextual_world_entry_control_visible");
+  require(request_selected != std::string::npos &&
+          request_entry != std::string::npos && request_selected < request_entry &&
+          count_identifier(layout_request,
+              "contextual_world_entry_control_visible") == 1 &&
+          count_identifier(layout_request,
+              "contextual_world_entry_available") == 1 &&
+          count_identifier(layout_request,
+              "contextual_world_entry_mode") == 1,
+      "layout request must append the exact world-entry visibility, liveness, "
+      "and mode evidence");
+  const std::string raw_layout_source = read_file(
+      repository_root / "src/presentation/ShellControlLayout.cpp");
+  const std::string layout_source = code_only(raw_layout_source);
+  const std::string layout = function_body(
+      layout_source, "compute_shell_control_layout");
+  const std::string compact_layout = without_whitespace(layout);
+  for (const auto needle : {
+           "((request.rest_control_visible||"
+               "request.contextual_world_entry_control_visible)?1U:0U)",
+           "request.rest_control_visible&&"
+               "request.contextual_world_entry_control_visible",
+           "kGameActionCapacity=7U;",
+           "if(request.rest_control_visible){",
+           "elseif(request.contextual_world_entry_control_visible){",
+           ".region=ShellRegionId{kContextualWorldEntryRegion}",
+           ".kind=ShellControlKind::contextual_world_entry",
+           ".tab_order=1128",
+           ".payload=ContextualWorldEntryAction{"
+               ".mode=request.contextual_world_entry_mode,}",
+       }) {
+    require(compact_layout.contains(needle),
+        std::string("mutually exclusive Rest/world-entry layout must retain ") +
+            needle);
+  }
+  const std::string compact_raw_layout =
+      without_whitespace(raw_layout_source);
+  require(compact_raw_layout.contains(
+              "kContextualWorldEntryRegion=1129U;") &&
+          compact_raw_layout.contains("label=\"SHOP\";") &&
+          compact_raw_layout.contains("label=\"TEMPLE\";") &&
+          compact_raw_layout.contains("label=\"ENCOUNTER\";") &&
+          compact_raw_layout.contains(
+              ".focus_identifier=\"focus.action.world.entry\""),
+      "mutually exclusive world-entry layout must retain region 1129, dynamic "
+      "labels, and stable focus identity");
+
+  const std::string boundary_header = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.h"));
+  for (const auto identifier : {
+           "RealmzIsSemanticContextualWorldEntryTag",
+           "RealmzSemanticContextualWorldEntryTagSurface",
+           "RealmzConsumeSemanticContextualWorldEntryEvent",
+           "semantic_contextual_world_entry_tag",
+       }) {
+    require(count_identifier(boundary_header, identifier) == 1,
+        std::string("semantic contextual world-entry boundary must expose one ") +
+            identifier);
+  }
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary = without_whitespace(boundary_source);
+  for (const auto constant : {
+           "kSemanticContextualWorldEntrySignature=0x57450000U;",
+           "kSemanticContextualWorldEntryMask=0xFFFF0000U;",
+           "kSemanticContextualWorldEntrySurfaceMask=0x0000FF00U;",
+           "kSemanticContextualWorldEntryModeMask=0x000000FFU;",
+           "kSemanticContextualWorldEntryShopMode=0;",
+           "kSemanticContextualWorldEntryTempleMode=1;",
+           "kSemanticContextualWorldEntryEncounterMode=2;",
+       }) {
+    require(compact_boundary.contains(constant),
+        std::string("strict 0x5745SSMM tag must retain ") + constant);
+  }
+  const std::string decode = function_body(
+      boundary_source, "decode_contextual_world_entry");
+  const std::string compact_decode = without_whitespace(decode);
+  require(count_identifier(decode, "is_world_gameplay_surface") == 1 &&
+          compact_decode.contains(
+              "casekSemanticContextualWorldEntryShopMode:") &&
+          compact_decode.contains(
+              "casekSemanticContextualWorldEntryTempleMode:") &&
+          compact_decode.contains(
+              "casekSemanticContextualWorldEntryEncounterMode:") &&
+          compact_decode.contains("default:returnstd::nullopt;") &&
+          count_text(compact_decode,
+              "static_cast<realmz::presentation::"
+              "ContextualWorldEntryMode>") == 0,
+      "0x5745 decoding must accept only world surfaces and explicit mode "
+      "bytes without raw enum casts");
+  const std::string make_tag = function_body(
+      boundary_source, "semantic_contextual_world_entry_tag");
+  const std::string compact_tag = without_whitespace(make_tag);
+  require(compact_tag.contains("caseContextualWorldEntryMode::shop:") &&
+          compact_tag.contains("caseContextualWorldEntryMode::temple:") &&
+          compact_tag.contains("caseContextualWorldEntryMode::encounter:") &&
+          compact_tag.contains("caseContextualWorldEntryMode::unavailable:") &&
+          compact_tag.contains(
+              "kSemanticContextualWorldEntrySignature|"
+              "(static_cast<uint32_t>(surface)<<8U)|wire_mode"),
+      "contextual world-entry tag creation must map only executable modes to "
+      "the originating world surface");
+  const std::string generic_tag = function_body(
+      boundary_source, "RealmzIsSemanticGameplayTag");
+  const std::string generic_surface = function_body(
+      boundary_source, "RealmzSemanticGameplayTagSurface");
+  require(count_identifier(generic_tag,
+              "decode_contextual_world_entry") == 1 &&
+          count_identifier(generic_surface,
+              "decode_contextual_world_entry") == 1,
+      "generic gameplay filtering must include contextual world-entry tags and "
+      "their originating surface");
+  const std::string consume = function_body(
+      boundary_source, "RealmzConsumeSemanticContextualWorldEntryEvent");
+  const std::string compact_consume = without_whitespace(consume);
+  const std::size_t consume_scope = compact_consume.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t consume_decode = compact_consume.find(
+      "decode_contextual_world_entry(tagged_message)", consume_scope);
+  const std::size_t consume_context = compact_consume.find(
+      "RealmzCaptureLegacyPresentationContext()", consume_decode);
+  const std::size_t consume_snapshot = compact_consume.find(
+      "LegacyGameSnapshotSource().capture()", consume_context);
+  const std::size_t consume_presentation = compact_consume.find(
+      "world_presentation_matches_surface(", consume_snapshot);
+  const std::size_t consume_camp = compact_consume.find(
+      "snapshot.world.in_camp", consume_presentation);
+  const std::size_t consume_mode = compact_consume.find(
+      "snapshot.world.contextual_world_entry_mode!=entry->action.mode",
+      consume_camp);
+  const std::size_t consume_mapper = compact_consume.find(
+      "legacy_key_message_for_contextual_world_entry(", consume_mode);
+  const std::size_t consume_output = compact_consume.find(
+      "*classic_key_message=*message", consume_mapper);
+  require(consume_scope != std::string::npos &&
+          consume_decode != std::string::npos &&
+          consume_context != std::string::npos &&
+          consume_snapshot != std::string::npos &&
+          consume_presentation != std::string::npos &&
+          consume_camp != std::string::npos &&
+          consume_mode != std::string::npos &&
+          consume_mapper != std::string::npos &&
+          consume_output != std::string::npos &&
+          consume_scope < consume_decode && consume_decode < consume_context &&
+          consume_context < consume_snapshot &&
+          consume_snapshot < consume_presentation &&
+          consume_presentation < consume_camp && consume_camp < consume_mode &&
+          consume_mode < consume_mapper && consume_mapper < consume_output,
+      "late contextual world-entry consumption must burn one scope and freshly "
+      "revalidate exact surface, presentation, camp, and mode before mapping");
+  require(count_identifier(consume, "keyDown") == 0 &&
+          count_identifier(consume, "buttonchoice") == 0 &&
+          count_identifier(consume, "shopbut") == 0 &&
+          count_identifier(consume, "Rand") == 0,
+      "the semantic consumer must return a key record without executing any "
+      "Classic entry effect");
+
+  const std::string event_source = code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  const std::string push = function_body(
+      event_source, "push_semantic_contextual_world_entry_event");
+  const std::string compact_push = without_whitespace(push);
+  require(count_identifier(push,
+              "RealmzIsSemanticContextualWorldEntryTag") == 1 &&
+          count_identifier(push, "app1Evt") == 1 &&
+          count_identifier(push, "keyDown") == 0 &&
+          count_identifier(push, "mouseDown") == 0 &&
+          compact_push.contains("ev.what=app1Evt;") &&
+          compact_push.contains("ev.message=tagged_message;") &&
+          compact_push.contains("ev.where={};") &&
+          compact_push.contains("ev.modifiers=0;") &&
+          compact_push.contains("ev.window_port=nullptr;"),
+      "EventManager must validate and queue one neutral tagged world-entry "
+      "app1Evt without key or pointer forgery");
+  const std::string public_push = function_body(
+      event_source, "PushSemanticContextualWorldEntryEvent");
+  require(without_whitespace(public_push).contains(
+              "returnem.push_semantic_contextual_world_entry_event("
+              "tagged_message);") &&
+          count_identifier(public_push, "keyDown") == 0,
+      "the public world-entry enqueue must delegate only to the validated "
+      "tagged queue");
+  const std::string delivery_source = function_body(
+      event_source, "GetNextSemanticGameplayEvent");
+  const std::string compact_delivery_source =
+      without_whitespace(delivery_source);
+  const std::size_t overview_delivery = compact_delivery_source.find(
+      "RealmzIsSemanticContextualOverviewTag(ret->message)");
+  const std::size_t delivery_start = compact_delivery_source.find(
+      "RealmzIsSemanticContextualWorldEntryTag(ret->message)",
+      overview_delivery);
+  const std::size_t delivery_end = compact_delivery_source.find(
+      "RealmzIsSemanticRestPartyTag(ret->message)", delivery_start);
+  require(overview_delivery != std::string::npos &&
+          delivery_start != std::string::npos &&
+          delivery_end != std::string::npos &&
+          overview_delivery < delivery_start && delivery_start < delivery_end,
+      "contextual world entry must retain its append-only EventManager branch "
+      "between Overview and Rest");
+  const std::string delivery = compact_delivery_source.substr(
+      delivery_start, delivery_end - delivery_start);
+  require(count_identifier(delivery,
+              "RealmzConsumeSemanticContextualWorldEntryEvent") == 1 &&
+          count_identifier(delivery, "keyDown") == 1 &&
+          count_identifier(delivery, "nullEvent") == 1 &&
+          count_identifier(delivery,
+              "is_mouse_button_down_without_event_pump") == 0 &&
+          count_identifier(delivery, "Button") == 0 &&
+          count_identifier(delivery, "mouseDown") == 0 &&
+          count_text(delivery, "ret->where={};") == 2 &&
+          count_text(delivery, "ret->modifiers=0;") == 2 &&
+          count_text(delivery, "ret->window_port=nullptr;") == 2 &&
+          delivery.contains(
+              "ret->what=keyDown;ret->message=classic_key_message;") &&
+          delivery.contains("ret->what=nullEvent;ret->message=0;"),
+      "world-entry delivery must yield one exact neutral keyDown or a fully "
+      "neutral inert rejection with no held-mouse gate");
+
+  const std::string window_raw = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string window_source = code_only(window_raw);
+  const std::string capture_context = function_body(
+      window_source, "capture_runtime_legacy_command_context");
+  require(without_whitespace(capture_context).contains(
+              "context.contextual_world_entry_mode="
+              "snapshot.world.contextual_world_entry_mode;") &&
+          count_identifier(capture_context,
+              "contextual_world_entry_mode") == 2,
+      "the runtime context provider must carry fresh world-entry mode into "
+      "pointer and keyboard liveness checks");
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t named_world_sinks = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t named_world_sinks_open = skip_whitespace(
+      create_window, named_world_sinks +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(named_world_sinks != std::string::npos &&
+          named_world_sinks_open < create_window.size() &&
+          create_window[named_world_sinks_open] == '{',
+      "WindowManager named contextual world-entry sink bundle is missing");
+  const std::size_t named_world_sinks_close = matching_delimiter(
+      create_window, named_world_sinks_open, '{', '}');
+  const std::string named_sinks = create_window.substr(
+      named_world_sinks_open,
+      named_world_sinks_close - named_world_sinks_open + 1U);
+  const std::string sink = designated_lambda_body(
+      named_sinks, "contextual_world_entry");
+  const std::string compact_sink = without_whitespace(sink);
+  const std::size_t sink_surface = compact_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_mapper = compact_sink.find(
+      "legacy_key_message_for_contextual_world_entry(action,context)",
+      sink_surface);
+  const std::size_t sink_message = compact_sink.find(
+      "message!=*expected", sink_mapper);
+  const std::size_t sink_tag = compact_sink.find(
+      "semantic_contextual_world_entry_tag(action,surface)", sink_message);
+  const std::size_t sink_push = compact_sink.find(
+      "returntag&&PushSemanticContextualWorldEntryEvent(tag);", sink_tag);
+  require(sink_surface != std::string::npos &&
+          sink_mapper != std::string::npos &&
+          sink_message != std::string::npos && sink_tag != std::string::npos &&
+          sink_push != std::string::npos && sink_surface < sink_mapper &&
+          sink_mapper < sink_message && sink_message < sink_tag &&
+          sink_tag < sink_push && count_identifier(sink, "keyDown") == 0 &&
+          count_identifier(sink, "mouseDown") == 0,
+      "WindowManager sink must bind the active world surface, verify the "
+      "expected key, encode the typed tag, and enqueue exactly once");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  for (const auto needle : {
+           "ActionIntent::contextual_world_entry",
+           "ContextualWorldEntryMode::unavailable",
+           "!snapshot.world.in_camp",
+           "snapshot.world.contextual_world_entry_mode=="
+               "contextual_world_entry_payload.mode",
+           "runtime_legacy_context_supports_contextual_world_entry(",
+           ".contextual_world_entry_control_visible="
+               "contextual_world_entry_control_visible",
+           ".contextual_world_entry_available="
+               "contextual_world_entry_available",
+           ".contextual_world_entry_mode="
+               "contextual_world_entry_payload.mode",
+       }) {
+    require(compact_present.contains(needle),
+        std::string("world-entry composition must retain ") + needle);
+  }
+  const std::size_t recomposition_context = compact_present.find(
+      "constrealmz::presentation::RuntimeLegacyCommandContextcontext{");
+  const std::size_t recomposition_entry_mode = compact_present.find(
+      ".contextual_world_entry_mode="
+      "snapshot.world.contextual_world_entry_mode,", recomposition_context);
+  const std::size_t recomposition_liveness = compact_present.find(
+      "constboolevery_enabled_control_is_live", recomposition_entry_mode);
+  require(recomposition_context != std::string::npos &&
+          recomposition_entry_mode != std::string::npos &&
+          recomposition_liveness != std::string::npos &&
+          recomposition_context < recomposition_entry_mode &&
+          recomposition_entry_mode < recomposition_liveness,
+      "WindowManager recomposition context must capture world-entry mode before "
+      "testing enabled-control liveness");
+  const std::size_t live_entry = compact_present.find(
+      "if(constauto*contextual_world_entry=std::get_if<"
+      "realmz::presentation::ContextualWorldEntryAction>",
+      recomposition_liveness);
+  const std::size_t live_entry_end = compact_present.find(
+      "if(constauto*guard=", live_entry);
+  require(live_entry != std::string::npos &&
+          live_entry_end != std::string::npos && live_entry < live_entry_end,
+      "composition-time contextual world-entry liveness branch is missing");
+  const std::string live_branch = compact_present.substr(
+      live_entry, live_entry_end - live_entry);
+  for (const auto needle : {
+           "ShellControlKind::contextual_world_entry",
+           "WorldActionPage::game",
+           "action_panel.contains(control.bounds)",
+           "!snapshot.world.in_camp&&!context.in_camp",
+           "contextual_world_entry->mode!="
+               "realmz::presentation::ContextualWorldEntryMode::unavailable",
+           "snapshot.world.contextual_world_entry_mode=="
+               "contextual_world_entry->mode",
+           "context.contextual_world_entry_mode=="
+               "contextual_world_entry->mode",
+           "modeled_action->contextual_world_entry_mode==",
+           "runtime_legacy_context_supports_contextual_world_entry(",
+       }) {
+    require(live_branch.contains(needle),
+        std::string("composition-time world-entry liveness must retain ") +
+            needle);
+  }
+
+  const std::string keyboard = function_body(
+      window_source, "remastered_shell_keyboard_route_is_eligible");
+  const std::string compact_keyboard = without_whitespace(keyboard);
+  const std::size_t keyboard_entry = compact_keyboard.find(
+      "if(constauto*contextual_world_entry=std::get_if<"
+      "realmz::presentation::ContextualWorldEntryAction>");
+  const std::size_t keyboard_entry_end = compact_keyboard.find(
+      "if(constauto*guard=", keyboard_entry);
+  require(keyboard_entry != std::string::npos &&
+          keyboard_entry_end != std::string::npos &&
+          keyboard_entry < keyboard_entry_end,
+      "keyboard contextual world-entry liveness branch is missing");
+  const std::string keyboard_branch = compact_keyboard.substr(
+      keyboard_entry, keyboard_entry_end - keyboard_entry);
+  for (const auto needle : {
+           "!surface_matches_context",
+           "ShellControlKind::contextual_world_entry",
+           "WorldActionPage::game",
+           "action_bar.contains(control.bounds)",
+           "runtime_legacy_context_supports_contextual_world_entry(",
+           "LegacyGameSnapshotSource().capture()",
+           "snapshot->world.in_camp||context.in_camp",
+           "ContextualWorldEntryMode::unavailable",
+           "snapshot->world.contextual_world_entry_mode!="
+               "contextual_world_entry->mode",
+           "context.contextual_world_entry_mode!="
+               "contextual_world_entry->mode",
+       }) {
+    require(keyboard_branch.contains(needle),
+        std::string("keyboard world-entry liveness must retain ") + needle);
+  }
+  require(count_identifier(keyboard_branch, "SDL_PollEvent") == 0 &&
+          count_identifier(keyboard_branch, "buttonchoice") == 0 &&
+          count_identifier(keyboard_branch, "shopbut") == 0,
+      "WindowManager world-entry liveness must remain read-only and "
+      "non-pumping");
+
+  const std::string dispatch = function_body(
+      window_source, "dispatch_remastered_shell_control");
+  const std::string compact_dispatch = without_whitespace(dispatch);
+  const std::size_t dispatch_payload = compact_dispatch.find(
+      "std::get_if<realmz::presentation::ContextualWorldEntryAction>("
+      "&control.payload)");
+  const std::size_t dispatch_shape = compact_dispatch.find(
+      "valid_contextual_world_entry_payload", dispatch_payload);
+  const std::size_t dispatch_live = compact_dispatch.find(
+      "this->remastered_shell_keyboard_route_is_eligible()", dispatch_shape);
+  const std::size_t dispatch_guard = compact_dispatch.find(
+      "(contextual_world_entry&&", dispatch_live);
+  const std::size_t dispatch_kind = compact_dispatch.find(
+      "ShellControlKind::contextual_world_entry", dispatch_guard);
+  const std::size_t dispatch_page = compact_dispatch.find(
+      "WorldActionPage::game", dispatch_kind);
+  const std::size_t dispatch_panel = compact_dispatch.find(
+      "action_bar.contains(control.bounds)", dispatch_page);
+  const std::size_t dispatch_bridge = compact_dispatch.find(
+      "runtime_legacy_command_bridge->dispatch(action)", dispatch_panel);
+  require(dispatch_payload != std::string::npos &&
+          dispatch_shape != std::string::npos &&
+          dispatch_live != std::string::npos &&
+          dispatch_guard != std::string::npos &&
+          dispatch_kind != std::string::npos &&
+          dispatch_page != std::string::npos &&
+          dispatch_panel != std::string::npos &&
+          dispatch_bridge != std::string::npos &&
+          dispatch_payload < dispatch_shape && dispatch_shape < dispatch_live &&
+          dispatch_live < dispatch_guard && dispatch_guard < dispatch_kind &&
+          dispatch_kind < dispatch_page && dispatch_page < dispatch_panel &&
+          dispatch_panel < dispatch_bridge &&
+          count_text(compact_dispatch,
+              "runtime_legacy_command_bridge->dispatch(action)") == 1,
+      "shell dispatch must validate executable mode, fresh liveness, and GAME "
+      "placement before its sole typed world-entry bridge dispatch");
+
+  const std::string renderer = function_body(
+      window_source, "draw_shell_panel_contents");
+  require(count_identifier(renderer,
+              "has_semantic_contextual_world_entry") >= 4 &&
+          count_identifier(renderer,
+              "contextual_world_entry_summary") >= 3 &&
+          count_text(window_raw,
+              "action_summary += contextual_world_entry_summary") == 1 &&
+          count_text(window_raw,
+              "append_summary(contextual_world_entry_summary)") == 1,
+      "wide and compact action chrome must summarize and admit the one dynamic "
+      "world-entry control");
+
+  for (const auto& [name, path] : std::array{
+           std::pair{"outdoor", "src/realmz_orig/checkkeypad.c"},
+           std::pair{"dungeon", "src/realmz_orig/threed.c"},
+       }) {
+    const std::string raw = read_file(repository_root / path);
+    const std::size_t encounter_case = raw.find("case 'e':");
+    const std::size_t encounter_end = raw.find("case 'a':", encounter_case);
+    const std::size_t shop_case = raw.find("case 'g':", encounter_end);
+    require(encounter_case != std::string::npos &&
+            encounter_end != std::string::npos &&
+            shop_case != std::string::npos &&
+            encounter_case < encounter_end && encounter_end < shop_case,
+        std::string("Classic ") + name +
+            " must retain separate lowercase e and g entry branches");
+    const std::string encounter_branch = without_whitespace(code_only(
+        raw.substr(encounter_case, encounter_end - encounter_case)));
+    const std::size_t shop_end = raw.find("break;", shop_case);
+    require(shop_end != std::string::npos,
+        std::string("Classic ") + name + " g branch is incomplete");
+    const std::string shop_branch = without_whitespace(code_only(
+        raw.substr(shop_case, shop_end + 6U - shop_case)));
+    require(encounter_branch.contains(
+                "if((!incamp)&&(!shopavail)&&(!templeavail))"
+                "theControl=shopbut;") &&
+            shop_branch.contains(
+                "if((!incamp)&&((shopavail)||(templeavail)))"
+                "theControl=shopbut;"),
+        std::string("Classic ") + name +
+            " e/g guards must retain non-camp encounter versus shop/temple "
+            "authority");
+  }
+
+  const std::string raw_classic_buttons = read_file(
+      repository_root / "src/realmz_orig/buttonchoice.c");
+  const std::string classic_buttons = code_only(raw_classic_buttons);
+  const std::string buttonchoice = function_body(
+      classic_buttons, "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t classic_entry = compact_buttonchoice.find(
+      "if(theControl==shopbut){");
+  const std::size_t classic_entry_end = compact_buttonchoice.find(
+      "if((theControl==tradebut)", classic_entry);
+  require(classic_entry != std::string::npos &&
+          classic_entry_end != std::string::npos &&
+          classic_entry < classic_entry_end,
+      "Classic buttonchoice world-entry branch is missing");
+  const std::string classic_branch = compact_buttonchoice.substr(
+      classic_entry, classic_entry_end - classic_entry);
+  const std::size_t classic_shop = classic_branch.find("if(shopavail){");
+  const std::size_t classic_temple = classic_branch.find(
+      "elseif(templeavail){", classic_shop);
+  const std::size_t classic_encounter = classic_branch.find(
+      "else{", classic_temple);
+  require(classic_shop != std::string::npos &&
+          classic_temple != std::string::npos &&
+          classic_encounter != std::string::npos &&
+          classic_shop < classic_temple && classic_temple < classic_encounter,
+      "Classic buttonchoice must retain shopavail > templeavail > seamless "
+      "encounter branch priority");
+  for (const auto identifier : {
+           "globalmacro", "newland", "seeshop", "temple", "Rand",
+           "saveland", "seemless", "needdungeonupdate",
+           "music", "sound",
+       }) {
+    require(count_identifier(classic_branch, identifier) != 0,
+        std::string("Classic world-entry effects must retain ") + identifier);
+  }
+  require(raw_classic_buttons.find("goto godooritem") != std::string::npos,
+      "Classic seamless encounter must retain its door-item handoff");
+  require(count_identifier(classic_branch,
+              "RealmzConsumeSemanticContextualWorldEntryEvent") == 0 &&
+          count_identifier(classic_branch,
+              "ContextualWorldEntryAction") == 0,
+      "Classic buttonchoice must own every world-entry effect without "
+      "consuming semantic vocabulary");
+
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/realmz_orig")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const auto extension = entry.path().extension();
+    if (extension != ".c" && extension != ".h") {
+      continue;
+    }
+    const std::string classic_source = code_only(read_file(entry.path()));
+    for (const auto forbidden : {
+             "ContextualWorldEntryAction",
+             "semantic_contextual_world_entry_tag",
+             "PushSemanticContextualWorldEntryEvent",
+             "RealmzConsumeSemanticContextualWorldEntryEvent",
+         }) {
+      require(count_identifier(classic_source, forbidden) == 0,
+          std::string("contextual world entry must add no Classic vocabulary: ") +
+              forbidden);
+    }
+  }
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string replay_source = code_only(read_file(entry.path()));
+    for (const auto forbidden : {
+             "ContextualWorldEntryAction",
+             "contextual_world_entry",
+             "semantic_contextual_world_entry_tag",
+             "PushSemanticContextualWorldEntryEvent",
+             "RealmzConsumeSemanticContextualWorldEntryEvent",
+         }) {
+      require(count_identifier(replay_source, forbidden) == 0,
+          std::string("contextual world entry must add no replay vocabulary: ") +
+              forbidden);
+    }
+  }
+
+  const std::string readme = read_file(repository_root / "README.md");
+  const std::string qa = read_file(
+      repository_root / "docs/QA_AND_RELEASE.md");
+  for (const auto* evidence : {&readme, &qa}) {
+    require(evidence->find("0x5745SSMM") != std::string::npos &&
+            evidence->find("shopavail > templeavail > encounter") !=
+                std::string::npos &&
+            evidence->find("canshop") != std::string::npos &&
+            evidence->find("0x00000567") != std::string::npos &&
+            evidence->find("0x00000E65") != std::string::npos,
+        "contextual world-entry documentation must retain priority, wire, and "
+        "exact-key evidence");
+  }
+  require(qa.find("no-redistribution manual-QA gap") != std::string::npos &&
+          qa.find("do not redistribute them") != std::string::npos,
+      "release QA must retain the private no-redistribution world-entry gap");
 }
 
 void verify_selected_item_drilldown_window_manager_contract(
@@ -8786,7 +9636,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0xDFEE5ADA03BB8C1CULL") !=
+          coverage_header.find("0x5DDB9787A449A153ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -8876,7 +9726,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0xDFEE5ADA03BB8C1CULL") !=
+          coverage_test.find("0x5DDB9787A449A153ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -12132,6 +12982,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_search_consumer_count = 0;
   std::size_t global_torch_consumer_count = 0;
   std::size_t global_contextual_overview_consumer_count = 0;
+  std::size_t global_contextual_world_entry_consumer_count = 0;
   std::size_t global_guard_consumer_count = 0;
   std::size_t global_finish_consumer_count = 0;
   std::size_t global_delay_consumer_count = 0;
@@ -12194,6 +13045,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticUseTorchEvent");
     global_contextual_overview_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticContextualOverviewEvent");
+    global_contextual_world_entry_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticContextualWorldEntryEvent");
     global_guard_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     global_finish_consumer_count += count_identifier(
@@ -12284,6 +13137,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic Torch input directly");
   require(global_contextual_overview_consumer_count == 0,
       "legacy loops must not consume tagged semantic contextual Overview "
+      "input directly");
+  require(global_contextual_world_entry_consumer_count == 0,
+      "legacy loops must not consume tagged semantic contextual world-entry "
       "input directly");
   require(global_guard_consumer_count == 0,
       "legacy loops must not consume tagged semantic guard input directly");
@@ -12390,6 +13246,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t search_consume_calls = 0;
   std::size_t torch_consume_calls = 0;
   std::size_t contextual_overview_consume_calls = 0;
+  std::size_t contextual_world_entry_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
   std::size_t finish_consume_calls = 0;
   std::size_t delay_consume_calls = 0;
@@ -12469,6 +13326,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticUseTorchEvent");
     contextual_overview_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticContextualOverviewEvent");
+    contextual_world_entry_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticContextualWorldEntryEvent");
     guard_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     finish_consume_calls += count_identifier(
@@ -12576,6 +13435,9 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   require(contextual_overview_consume_calls == 0,
       "only EventManager may call "
       "RealmzConsumeSemanticContextualOverviewEvent");
+  require(contextual_world_entry_consume_calls == 0,
+      "only EventManager may call "
+      "RealmzConsumeSemanticContextualWorldEntryEvent");
   require(guard_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
   require(finish_consume_calls == 0,
@@ -12673,6 +13535,7 @@ int main(int argc, char** argv) {
     verify_set_search_state_window_manager_contract(repository_root);
     verify_use_torch_window_manager_contract(repository_root);
     verify_contextual_overview_window_manager_contract(repository_root);
+    verify_contextual_world_entry_window_manager_contract(repository_root);
     verify_selected_item_drilldown_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);

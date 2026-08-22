@@ -18,6 +18,8 @@ struct RuntimeLegacyCommandContext {
   bool in_camp = false;
   bool searching = false;
   std::optional<TorchSource> usable_torch_source = std::nullopt;
+  ContextualWorldEntryMode contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
 
   bool operator==(const RuntimeLegacyCommandContext&) const = default;
 };
@@ -79,6 +81,10 @@ using RuntimeLegacyContextualOverviewSink = std::function<bool(
     const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyOpenSelectedItemDrilldownSink = std::function<bool(
     PartyMemberId,
+    const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacyContextualWorldEntrySink = std::function<bool(
+    const ContextualWorldEntryAction&,
+    uint32_t,
     const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
@@ -165,6 +171,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacyUseTorchSink use_torch;
   RuntimeLegacyContextualOverviewSink contextual_overview;
   RuntimeLegacyOpenSelectedItemDrilldownSink open_selected_item_drilldown;
+  RuntimeLegacyContextualWorldEntrySink contextual_world_entry;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -240,6 +247,21 @@ struct RuntimeLegacyCombatActionSinks {
 // accepts only the guarded top-level world presentations so the named runtime
 // sink can carry the member and surface without forging a key or pointer event.
 [[nodiscard]] bool runtime_legacy_context_supports_selected_item_drilldown(
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Contextual world entry reuses only preserved Classic keyboard routes. The
+// action must exactly match the fresh projected mode on an eligible top-level
+// world presentation outside camp.
+[[nodiscard]] bool runtime_legacy_context_supports_contextual_world_entry(
+    const ContextualWorldEntryAction& action,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Returns lowercase "g" for Shop/Temple entry and lowercase "e" for the
+// explicit local-encounter check. Unsupported or stale mode/context pairs fail
+// closed instead of queueing a legacy key record.
+[[nodiscard]] std::optional<uint32_t>
+legacy_key_message_for_contextual_world_entry(
+    const ContextualWorldEntryAction& action,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Classic lowercase "r" key record used by both preserved

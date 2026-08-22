@@ -71,6 +71,8 @@ GameSnapshot sample_snapshot() {
       },
   };
   snapshot.world.usable_torch_source = TorchSource{.member = 1, .slot = 7};
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::encounter;
   return snapshot;
 }
 
@@ -268,6 +270,18 @@ void test_action_availability_is_conservative() {
   CHECK(!area_search.party_member);
   CHECK(area_search.tab_order == use_torch.tab_order + 1);
   CHECK(area_search.availability_reason->label == "Game rules apply");
+  const auto& encounter_entry =
+      action_with(model, ActionIntent::contextual_world_entry);
+  CHECK(encounter_entry.can_invoke());
+  CHECK(encounter_entry.availability ==
+      ActionAvailability::deferred_to_engine);
+  CHECK(encounter_entry.command == "action.world.entry");
+  CHECK(encounter_entry.label == "Encounter");
+  CHECK(encounter_entry.contextual_world_entry_mode ==
+      std::optional<ContextualWorldEntryMode>{
+          ContextualWorldEntryMode::encounter});
+  CHECK(!encounter_entry.party_member);
+  CHECK(encounter_entry.availability_reason->label == "Game rules apply");
 
   snapshot.world.usable_torch_source.reset();
   model = build_presentation_shell_model(snapshot);
@@ -286,6 +300,8 @@ void test_action_availability_is_conservative() {
   snapshot.world.usable_torch_source = TorchSource{.member = 1, .slot = 7};
 
   snapshot.world.in_camp = true;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
   snapshot.party.members[1].use_scroll_available = true;
   model = build_presentation_shell_model(snapshot);
   const auto& available_rest = action_with(model, ActionIntent::rest);
@@ -324,6 +340,15 @@ void test_action_availability_is_conservative() {
   CHECK(make_scroll.party_member == 2);
   CHECK(make_scroll.tab_order == torch_while_camped.tab_order + 1);
   CHECK(action_with(model, ActionIntent::selected_item_drilldown).can_invoke());
+  const auto& unavailable_entry_in_camp =
+      action_with(model, ActionIntent::contextual_world_entry);
+  CHECK(!unavailable_entry_in_camp.can_invoke());
+  CHECK(unavailable_entry_in_camp.label == "Entry");
+  CHECK(unavailable_entry_in_camp.contextual_world_entry_mode ==
+      std::optional<ContextualWorldEntryMode>{
+          ContextualWorldEntryMode::unavailable});
+  CHECK(unavailable_entry_in_camp.availability_reason->label ==
+      "Entry is unavailable now");
 
   snapshot.party.members[1].use_scroll_available = false;
   model = build_presentation_shell_model(snapshot);
@@ -359,6 +384,8 @@ void test_action_availability_is_conservative() {
   CHECK(action_with(model, ActionIntent::selected_item_drilldown).can_invoke());
   snapshot.screen = ScreenContext::exploration;
   snapshot.world.in_camp = false;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::encounter;
   snapshot.world.searching = false;
 
   snapshot.party.members[1].use_scroll_available = true;
@@ -416,6 +443,8 @@ void test_action_availability_is_conservative() {
           ContextualOverviewMode::area_search});
 
   snapshot.world.in_camp = true;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
   model = build_presentation_shell_model(snapshot);
   const auto& make_scroll_without_selection =
       action_with(model, ActionIntent::contextual_overview);
@@ -427,8 +456,12 @@ void test_action_availability_is_conservative() {
   CHECK(make_scroll_without_selection.availability_reason->label ==
       "Select a party member first");
   snapshot.world.in_camp = false;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::encounter;
 
   snapshot.screen = ScreenContext::encounter;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
   snapshot.encounter = EncounterView{
       .active = true,
       .encounter_id = 8,
@@ -475,13 +508,106 @@ void test_action_availability_is_conservative() {
           ContextualOverviewMode::area_search});
   CHECK(overview_in_encounter.availability_reason->label ==
       "Area search is unavailable now");
-  CHECK(model.actions.size() == 16);
+  const auto& entry_in_encounter =
+      action_with(model, ActionIntent::contextual_world_entry);
+  CHECK(!entry_in_encounter.can_invoke());
+  CHECK(entry_in_encounter.label == "Entry");
+  CHECK(entry_in_encounter.contextual_world_entry_mode ==
+      std::optional<ContextualWorldEntryMode>{
+          ContextualWorldEntryMode::unavailable});
+  CHECK(model.actions.size() == 17);
   CHECK(model.actions[13].command == "encounter.choice.11");
   CHECK(model.actions[13].can_invoke());
   CHECK(model.actions[14].command == "encounter.choice.12");
   CHECK(!model.actions[14].can_invoke());
   CHECK(model.actions[15].intent == ActionIntent::cancel);
   CHECK(model.actions[15].can_invoke());
+  CHECK(model.actions[16].intent == ActionIntent::contextual_world_entry);
+}
+
+void test_contextual_world_entry_action_modes_are_explicit() {
+  auto snapshot = sample_snapshot();
+  snapshot.party.selected_member.reset();
+  for (auto& member : snapshot.party.members) {
+    member.selected = false;
+  }
+
+  struct ModeCase {
+    ContextualWorldEntryMode mode;
+    const char* label;
+  };
+  for (const auto& mode_case : {
+           ModeCase{ContextualWorldEntryMode::shop, "Shop"},
+           ModeCase{ContextualWorldEntryMode::temple, "Temple"},
+           ModeCase{ContextualWorldEntryMode::encounter, "Encounter"},
+       }) {
+    snapshot.world.contextual_world_entry_mode = mode_case.mode;
+    auto model = build_presentation_shell_model(snapshot);
+    const auto& entry =
+        action_with(model, ActionIntent::contextual_world_entry);
+    CHECK(entry.can_invoke());
+    CHECK(entry.availability == ActionAvailability::deferred_to_engine);
+    CHECK(entry.command == "action.world.entry");
+    CHECK(entry.label == mode_case.label);
+    CHECK(entry.contextual_world_entry_mode ==
+        std::optional<ContextualWorldEntryMode>{mode_case.mode});
+    CHECK(!entry.party_member);
+    CHECK(entry.availability_reason->label == "Game rules apply");
+    CHECK(entry.tab_order >
+        action_with(model, ActionIntent::open_character_sheet).tab_order);
+  }
+
+  snapshot.screen = ScreenContext::dungeon;
+  snapshot.world.contextual_world_entry_mode = ContextualWorldEntryMode::shop;
+  auto model = build_presentation_shell_model(snapshot);
+  CHECK(action_with(model, ActionIntent::contextual_world_entry).can_invoke());
+
+  snapshot.world.in_camp = true;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
+  model = build_presentation_shell_model(snapshot);
+  const auto& unavailable_entry =
+      action_with(model, ActionIntent::contextual_world_entry);
+  CHECK(!unavailable_entry.can_invoke());
+  CHECK(unavailable_entry.availability == ActionAvailability::unavailable);
+  CHECK(unavailable_entry.command == "action.world.entry");
+  CHECK(unavailable_entry.label == "Entry");
+  CHECK(unavailable_entry.contextual_world_entry_mode ==
+      std::optional<ContextualWorldEntryMode>{
+          ContextualWorldEntryMode::unavailable});
+  CHECK(!unavailable_entry.party_member);
+  CHECK(unavailable_entry.availability_reason->label ==
+      "Entry is unavailable now");
+
+  // Detached snapshots fail closed even if a malformed producer reports an
+  // executable world-entry mode while the party is still in camp.
+  snapshot.world.contextual_world_entry_mode = ContextualWorldEntryMode::shop;
+  model = build_presentation_shell_model(snapshot);
+  const auto& contradictory_camp_entry =
+      action_with(model, ActionIntent::contextual_world_entry);
+  CHECK(!contradictory_camp_entry.can_invoke());
+  CHECK(contradictory_camp_entry.availability ==
+      ActionAvailability::unavailable);
+  CHECK(contradictory_camp_entry.label == "Entry");
+  CHECK(contradictory_camp_entry.contextual_world_entry_mode ==
+      std::optional<ContextualWorldEntryMode>{ContextualWorldEntryMode::shop});
+
+  snapshot.world.in_camp = false;
+  snapshot.world.contextual_world_entry_mode = ContextualWorldEntryMode::temple;
+  snapshot.screen = ScreenContext::title;
+  model = build_presentation_shell_model(snapshot);
+  const auto& title_entry =
+      action_with(model, ActionIntent::contextual_world_entry);
+  CHECK(!title_entry.can_invoke());
+  CHECK(title_entry.label == "Entry");
+  CHECK(title_entry.contextual_world_entry_mode ==
+      std::optional<ContextualWorldEntryMode>{
+          ContextualWorldEntryMode::temple});
+
+  snapshot.screen = ScreenContext::exploration;
+  snapshot.encounter = EncounterView{.active = true};
+  model = build_presentation_shell_model(snapshot);
+  CHECK(!action_with(model, ActionIntent::contextual_world_entry).can_invoke());
 }
 
 void test_world_action_page_preferences_are_normalized() {
@@ -535,6 +661,8 @@ void test_world_action_page_preferences_are_normalized() {
 void test_combat_actions_track_the_active_party_combatant() {
   auto snapshot = sample_snapshot();
   snapshot.screen = ScreenContext::combat;
+  snapshot.world.contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
   snapshot.combat = CombatView{
       .active = true,
       .bandage_available = true,
@@ -564,7 +692,7 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 30U);
+  CHECK(model.actions.size() == 31U);
   const auto& camp_in_combat =
       action_with(model, ActionIntent::set_camp_state);
   CHECK(!camp_in_combat.can_invoke());
@@ -593,6 +721,13 @@ void test_combat_actions_track_the_active_party_combatant() {
   CHECK(!overview_in_combat.party_member);
   CHECK(overview_in_combat.availability_reason->label ==
       "Area search is unavailable now");
+  const auto& entry_in_combat =
+      action_with(model, ActionIntent::contextual_world_entry);
+  CHECK(!entry_in_combat.can_invoke());
+  CHECK(entry_in_combat.label == "Entry");
+  CHECK(entry_in_combat.contextual_world_entry_mode ==
+      std::optional<ContextualWorldEntryMode>{
+          ContextualWorldEntryMode::unavailable});
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());
@@ -1196,8 +1331,7 @@ void test_typography_keyboard_order_and_remappable_ids() {
   CHECK(model.keyboard_tab_order.front().command == "party.select.1");
   CHECK(model.keyboard_tab_order[1].command == "party.select.2");
   CHECK(model.drawers.tabs.empty());
-  CHECK(model.keyboard_tab_order.back().command ==
-      "action.character_sheet.open");
+  CHECK(model.keyboard_tab_order.back().command == "action.world.entry");
   CHECK(model.keyboard_tab_order[4].command == "action.items.quick");
   CHECK(model.keyboard_tab_order[4].enabled);
   CHECK(!model.keyboard_tab_order[5].enabled);
@@ -1241,6 +1375,7 @@ int main() {
     test_selection_fallback_and_meter_bounds();
     test_selected_details_retain_complete_member_status();
     test_action_availability_is_conservative();
+    test_contextual_world_entry_action_modes_are_explicit();
     test_world_action_page_preferences_are_normalized();
     test_combat_actions_track_the_active_party_combatant();
     test_events_drawers_motion_and_log_limit();

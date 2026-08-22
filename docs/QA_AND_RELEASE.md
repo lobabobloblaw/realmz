@@ -214,6 +214,26 @@ sound, tick/delay behavior, `updatefat(FALSE, -2, FALSE)`, both `timeclick`
 calls and any resulting encounters, and the preserved `revertgame` return. The
 semantic route does not synthesize a Rest hold, predict an encounter, or
 reproduce those mutations.
+Rest shares one persistent Game-page slot with a typed
+`ContextualWorldEntryAction`: camp presents REST, while ordinary non-camp
+outdoor or dungeon navigation presents SHOP, TEMPLE, or ENCOUNTER. Snapshot
+capture derives exactly one mode with the executable Classic priority
+`shopavail > templeavail > encounter`; the visual-only `canshop` flag does not
+participate. The strict single-use `0x5745SSMM` tag binds `SS=0x01` to outdoor
+and `SS=0x02` to dungeon, with explicit `MM=0`, `1`, and `2` mappings for shop,
+temple, and encounter; unavailable and every other byte are malformed.
+Completed-scope consumption freshly requires adaptive eligibility, the exact
+screen and outdoor or dungeon-map/first-person presentation, non-camp state,
+and a snapshot mode identical to the encoded action. EventManager converts an
+accepted tag only to a neutral, zero-modifier Classic lowercase `g` keyDown
+`0x00000567` for Shop or Temple or lowercase `e` keyDown `0x00000E65` for
+Encounter. Queueing forges no key, pointer, control, or window state, and
+delivery has no held-mouse gate. Classic's real `shopbut`, key guards, and
+`buttonchoice` branch retain authoritative priority, global-macro execution,
+shop and temple modal ownership, sound/music, RNG, land/dungeon saves,
+door-item handoff, and seamless transition state. No Classic source or replay
+schema/decoder vocabulary changes. Automated checks do not close the private,
+no-redistribution manual-QA gap described below.
 The adjacent member-free Camp control carries an explicit desired state in
 `SetCampStateAction`: Camp requests `true`, and Break Camp requests `false`.
 It is deferred only in ordinary outdoor or dungeon navigation with no active
@@ -231,8 +251,9 @@ remains authoritative for that
 permission and feedback, music and sound, `incamp` and related state changes,
 `moveparty(0)`, time advancement, `updatecontrols()`, and every preserved
 `revertgame` return. No Camp action or delivery vocabulary is added to replay.
-The Game page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP,
-SEARCH/STOP SEARCH, TORCH, and the contextual AREA SEARCH/MAKE SCROLL control.
+The Game page orders SAVE, LOAD, the mutually exclusive
+REST/SHOP/TEMPLE/ENCOUNTER position, CAMP/BREAK CAMP, SEARCH/STOP SEARCH,
+TORCH, and the contextual AREA SEARCH/MAKE SCROLL control.
 The member-free Search control remains available
 during
 ordinary outdoor or dungeon navigation with no active encounter, including
@@ -502,15 +523,15 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 47
-`semantic_complete`, and 42 `missing` roles. Cropping remains disabled. The
+The 95-row inventory currently contains six `retained_in_crop`, 49
+`semantic_complete`, and 40 `missing` roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Heal, context-sensitive Shop/Temple/seamless-encounter entry, Trade, Money/Swap, selected-member condition drilldown, and per-member Auto. Character Sheet and the distinct quick Equipment popup are covered interaction rows, not evidence for any broader inspection role. |
-| Dungeon | The corresponding dungeon Heal, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, condition drilldown, and per-member Auto, including dungeon-specific availability and input semantics. Character Sheet and quick Equipment remain distinct covered rows. |
+| Outdoor | Heal, Trade, Money/Swap, selected-member condition drilldown, and per-member Auto. Context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and the distinct quick Equipment popup are covered interaction rows, not evidence for any broader inspection role. |
+| Dungeon | The corresponding dungeon Heal, Trade, Money/Swap, condition drilldown, and per-member Auto, including dungeon-specific availability and input semantics. Context-sensitive Shop/Temple/seamless-encounter entry, Character Sheet, and quick Equipment remain distinct covered rows. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -698,7 +719,8 @@ Automated checks do not replace these release decisions:
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Equipment,
-  Spells, non-combat Use Scroll, Character, Save, Load, Rest, Camp/Break Camp,
+  Spells, non-combat Use Scroll, Character, Save, Load,
+  Rest/Shop/Temple/Encounter, Camp/Break Camp,
   Search/Stop Search, Torch, Area Search/Make Scroll,
   Guard, Finish, Delay, Center,
   Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
@@ -731,6 +753,28 @@ Automated checks do not replace these release decisions:
   mutation. Confirm replay schemas and decoders expose no Equipment vocabulary,
   keep all fixture data and resulting evidence private, and do not redistribute
   them;
+  close the private manual-QA gap for the mutually exclusive
+  Rest/Shop/Temple/Encounter GAME slot on disposable outdoor and dungeon
+  fixtures, exercising both dungeon map and first-person presentations. Confirm
+  camp shows REST and hides world entry, while leaving camp hides REST and shows
+  exactly one of SHOP, TEMPLE, or ENCOUNTER in the same position; verify the
+  snapshot and label priority is `shopavail > templeavail > encounter` when
+  both availability flags are true, and that toggling saved visual-only
+  `canshop` cannot change the action mode. Confirm the typed
+  `ContextualWorldEntryAction` always carries that explicit mode; only strict
+  `0x5745SSMM` tags with outdoor `SS=0x01` or dungeon `SS=0x02` and explicit
+  `MM=0/1/2` are accepted. Queue actions made stale by scope, surface, adaptive
+  eligibility, presentation, camp, or mode changes and confirm they are inert
+  rather than changing meaning. For each accepted pointer and keyboard
+  activation, verify one neutral zero-modifier lowercase `g` keyDown
+  `0x00000567` reaches Shop or Temple and one lowercase `e` keyDown
+  `0x00000E65` reaches Encounter, with no forged pointer/control/window state
+  and no held-mouse gate. Exercise shop and temple global macros, modal entry
+  and cancellation, encounter RNG including consumed positive door chances,
+  outdoor and dungeon save selection, seamless transitions, and the door-item
+  handoff; confirm Classic alone owns every effect. Confirm Classic sources and
+  replay schemas/decoders contain no contextual-world-entry vocabulary, keep
+  all fixtures and resulting evidence private, and do not redistribute them;
   verify Rest is unavailable outside camp; becomes inert after its semantic
   scope, surface, adaptive eligibility, presentation, or fresh camp state
   changes; yields the exact Classic `r` message only after every late gate;

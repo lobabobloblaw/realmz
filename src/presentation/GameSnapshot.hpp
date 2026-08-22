@@ -107,6 +107,17 @@ struct WorldTileView {
   bool operator==(const WorldTileView&) const = default;
 };
 
+// Value-only meaning of Classic's single contextual world-entry control. The
+// unavailable state is presentation evidence only and must never be dispatched;
+// the three executable modes preserve the branch selected by Classic's live
+// shopavail/templeavail priority.
+enum class ContextualWorldEntryMode {
+  unavailable,
+  shop,
+  temple,
+  encounter,
+};
+
 struct WorldView {
   WorldPresentation presentation = WorldPresentation::none;
   int32_t party_x = 0;
@@ -129,6 +140,10 @@ struct WorldView {
   // first Torch source exists. Appending preserves aggregate source
   // compatibility for prior WorldView clients.
   std::optional<TorchSource> usable_torch_source;
+  // Exact meaning of Classic's contextual Shop/Temple/Encounter entry point.
+  // Appending preserves positional source compatibility for existing snapshots.
+  ContextualWorldEntryMode contextual_world_entry_mode =
+      ContextualWorldEntryMode::unavailable;
 
   bool operator==(const WorldView&) const = default;
 

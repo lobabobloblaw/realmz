@@ -101,6 +101,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<ContextualOverviewAction> contextual_overview;
   LegacyActionHandler<OpenSelectedItemDrilldownAction>
       open_selected_item_drilldown;
+  LegacyActionHandler<ContextualWorldEntryAction> contextual_world_entry;
 };
 
 class InjectedLegacyCommandBridge final : public LegacyCommandBridge {

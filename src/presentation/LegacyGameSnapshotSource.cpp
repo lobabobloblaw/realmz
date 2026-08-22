@@ -45,6 +45,8 @@ extern Boolean inshop;
 extern Boolean intemple;
 extern Boolean indung;
 extern Boolean incamp;
+extern Boolean shopavail;
+extern Boolean templeavail;
 extern Boolean spellcasting;
 extern short partycondition[10];
 extern struct character c[6];
@@ -256,6 +258,20 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
         .member = legacy_torch_source.member,
         .slot = legacy_torch_source.slot,
     };
+  }
+  if (!snapshot.world.in_camp &&
+      ((snapshot.screen == ScreenContext::exploration) ||
+       (snapshot.screen == ScreenContext::dungeon))) {
+    if (shopavail) {
+      snapshot.world.contextual_world_entry_mode =
+          ContextualWorldEntryMode::shop;
+    } else if (templeavail) {
+      snapshot.world.contextual_world_entry_mode =
+          ContextualWorldEntryMode::temple;
+    } else {
+      snapshot.world.contextual_world_entry_mode =
+          ContextualWorldEntryMode::encounter;
+    }
   }
   snapshot.world.party_x = partyx;
   snapshot.world.party_y = partyy;

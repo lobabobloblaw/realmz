@@ -41,6 +41,7 @@ constexpr uint32_t kSetSearchStateRegion = 1125U;
 constexpr uint32_t kUseTorchRegion = 1126U;
 constexpr uint32_t kContextualOverviewRegion = 1127U;
 constexpr uint32_t kSelectedItemDrilldownRegion = 1128U;
+constexpr uint32_t kContextualWorldEntryRegion = 1129U;
 constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
@@ -261,6 +262,23 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       ? !request.contextual_overview_member.has_value()
       : (!request.contextual_overview_available ||
             request.contextual_overview_member.has_value());
+  const bool executable_contextual_world_entry_mode = [&request] {
+    switch (request.contextual_world_entry_mode) {
+      case ContextualWorldEntryMode::shop:
+      case ContextualWorldEntryMode::temple:
+      case ContextualWorldEntryMode::encounter:
+        return true;
+      case ContextualWorldEntryMode::unavailable:
+      default:
+        return false;
+    }
+  }();
+  const bool valid_contextual_world_entry_shape =
+      request.contextual_world_entry_control_visible
+      ? executable_contextual_world_entry_mode
+      : (!request.contextual_world_entry_available &&
+            request.contextual_world_entry_mode ==
+                ContextualWorldEntryMode::unavailable);
   const std::array party_members{
       request.inventory_member,
       request.spellbook_member,
@@ -348,7 +366,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   const size_t game_world_control_count =
       (request.save_control_visible ? 1U : 0U) +
       (request.load_control_visible ? 1U : 0U) +
-      (request.rest_control_visible ? 1U : 0U) +
+      ((request.rest_control_visible ||
+           request.contextual_world_entry_control_visible) ? 1U : 0U) +
       (request.camp_control_visible ? 1U : 0U) +
       (request.search_control_visible ? 1U : 0U) +
       (request.torch_control_visible ? 1U : 0U) +
@@ -381,8 +400,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
   constexpr size_t kPartyActionCapacity = 5U;
   // The GAME page always presents Torch and the contextual Overview action,
   // including disabled controls when their source or selected member is absent.
-  // Reserve all seven positions even for partial test requests so a later fully
-  // modeled page cannot make the persistent deck disappear.
+  // Rest and contextual world entry share one mutually exclusive position, so
+  // the fully modeled page continues to require exactly seven action slots.
   constexpr size_t kGameActionCapacity = 7U;
   const size_t required_world_control_capacity = std::max({
       world_page_control_count,
@@ -429,6 +448,7 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.character_sheet_member ||
               request.save_control_visible || request.load_control_visible ||
               request.rest_control_visible ||
+              request.contextual_world_entry_control_visible ||
               request.camp_control_visible ||
               request.search_control_visible ||
               request.torch_control_visible ||
@@ -446,6 +466,12 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.save_available && !request.save_control_visible) ||
       (request.load_available && !request.load_control_visible) ||
       (request.rest_available && !request.rest_control_visible) ||
+      (request.rest_control_visible &&
+          request.contextual_world_entry_control_visible) ||
+      (request.contextual_world_entry_available &&
+          (!request.contextual_world_entry_control_visible ||
+              !request.navigation_available)) ||
+      !valid_contextual_world_entry_shape ||
       (request.camp_available &&
           (!request.camp_control_visible ||
               !request.navigation_available)) ||
@@ -727,6 +753,41 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             .tab_order = 1118,
             .enabled = request.rest_available,
             .payload = RestPartyAction{},
+        });
+        x += button_width + gap;
+      } else if (request.contextual_world_entry_control_visible) {
+        std::string label;
+        std::string accessibility_label;
+        switch (request.contextual_world_entry_mode) {
+          case ContextualWorldEntryMode::shop:
+            label = "SHOP";
+            accessibility_label = "Enter shop";
+            break;
+          case ContextualWorldEntryMode::temple:
+            label = "TEMPLE";
+            accessibility_label = "Enter temple";
+            break;
+          case ContextualWorldEntryMode::encounter:
+            label = "ENCOUNTER";
+            accessibility_label = "Check for a local encounter";
+            break;
+          case ContextualWorldEntryMode::unavailable:
+          default:
+            return {};
+        }
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kContextualWorldEntryRegion},
+            .kind = ShellControlKind::contextual_world_entry,
+            .bounds = {x, y, button_width, button_height},
+            .label = std::move(label),
+            .accessibility_label = std::move(accessibility_label),
+            .focus_identifier = "focus.action.world.entry",
+            .tab_order = 1128,
+            .enabled = request.contextual_world_entry_available &&
+                request.navigation_available,
+            .payload = ContextualWorldEntryAction{
+                .mode = request.contextual_world_entry_mode,
+            },
         });
         x += button_width + gap;
       }

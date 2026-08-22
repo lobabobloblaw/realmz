@@ -23,6 +23,8 @@ constexpr uint32_t kRestPartyMessage = 0x00000F72U;
 constexpr uint32_t kSetCampStateMessage = 0x00000863U;
 constexpr uint32_t kAreaSearchMessage = 0x00000061U;
 constexpr uint32_t kMakeScrollMessage = 0x0000286BU;
+constexpr uint32_t kEnterShopOrTempleMessage = 0x00000567U;
+constexpr uint32_t kCheckLocalEncounterMessage = 0x00000E65U;
 constexpr uint32_t kGuardCombatantMessage = 0x00000567U;
 constexpr uint32_t kFinishCombatantMessage = 0x00000366U;
 constexpr uint32_t kDelayCombatantMessage = 0x00000264U;
@@ -944,6 +946,40 @@ LegacyActionHandlers make_handlers(
     }
     return DispatchResult::handled();
   };
+  handlers.contextual_world_entry = [
+      context_provider,
+      contextual_world_entry_sink =
+          std::move(world_action_sinks.contextual_world_entry)](
+          const ContextualWorldEntryAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!contextual_world_entry_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy contextual-world-entry sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic world "
+          "entry");
+    }
+    const auto message = legacy_key_message_for_contextual_world_entry(
+        action, context);
+    if (!message) {
+      return DispatchResult::rejected(
+          "Contextual world entry is not supported in the current legacy "
+          "context");
+    }
+    if (!contextual_world_entry_sink(action, *message, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic contextual-world-entry "
+          "action");
+    }
+    return DispatchResult::handled();
+  };
   handlers.contextual_overview = [
       context_provider = std::move(context_provider),
       contextual_overview_sink =
@@ -1347,6 +1383,52 @@ bool runtime_legacy_context_supports_selected_item_drilldown(
       (context.world_presentation == WorldPresentation::dungeon_map) ||
       (context.world_presentation == WorldPresentation::dungeon_first_person);
   return (context.screen == ScreenContext::dungeon) && dungeon_presentation;
+}
+
+bool runtime_legacy_context_supports_contextual_world_entry(
+    const ContextualWorldEntryAction& action,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  switch (action.mode) {
+    case ContextualWorldEntryMode::shop:
+    case ContextualWorldEntryMode::temple:
+    case ContextualWorldEntryMode::encounter:
+      break;
+    case ContextualWorldEntryMode::unavailable:
+    default:
+      return false;
+  }
+  if (!context.adaptive_eligible || context.in_camp ||
+      (action.mode != context.contextual_world_entry_mode)) {
+    return false;
+  }
+  const bool outdoor_presentation =
+      (context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor);
+  const bool dungeon_presentation =
+      (context.screen == ScreenContext::dungeon) &&
+      ((context.world_presentation == WorldPresentation::dungeon_map) ||
+       (context.world_presentation ==
+           WorldPresentation::dungeon_first_person));
+  return outdoor_presentation || dungeon_presentation;
+}
+
+std::optional<uint32_t> legacy_key_message_for_contextual_world_entry(
+    const ContextualWorldEntryAction& action,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!runtime_legacy_context_supports_contextual_world_entry(
+          action, context)) {
+    return std::nullopt;
+  }
+  switch (action.mode) {
+    case ContextualWorldEntryMode::shop:
+    case ContextualWorldEntryMode::temple:
+      return kEnterShopOrTempleMessage;
+    case ContextualWorldEntryMode::encounter:
+      return kCheckLocalEncounterMessage;
+    case ContextualWorldEntryMode::unavailable:
+    default:
+      return std::nullopt;
+  }
 }
 
 std::optional<uint32_t> legacy_key_message_for_rest_party(
