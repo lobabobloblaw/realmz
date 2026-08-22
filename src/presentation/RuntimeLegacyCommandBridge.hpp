@@ -16,6 +16,7 @@ struct RuntimeLegacyCommandContext {
   WorldPresentation world_presentation = WorldPresentation::none;
   bool adaptive_eligible = false;
   bool in_camp = false;
+  bool searching = false;
 
   bool operator==(const RuntimeLegacyCommandContext&) const = default;
 };
@@ -64,6 +65,9 @@ using RuntimeLegacyRestPartySink = std::function<bool(
 using RuntimeLegacySetCampStateSink = std::function<bool(
     bool,
     uint32_t,
+    const RuntimeLegacyCommandContext&)>;
+using RuntimeLegacySetSearchStateSink = std::function<bool(
+    bool,
     const RuntimeLegacyCommandContext&)>;
 using RuntimeLegacyGuardCombatantSink = std::function<bool(
     CombatantId,
@@ -146,6 +150,7 @@ struct RuntimeLegacyWorldActionSinks {
   RuntimeLegacyOpenCharacterSheetSink open_character_sheet;
   RuntimeLegacyRestPartySink rest_party;
   RuntimeLegacySetCampStateSink set_camp_state;
+  RuntimeLegacySetSearchStateSink set_search_state;
 };
 
 // The named-bundle constructor accepts only the named lvalue token below. Its
@@ -230,6 +235,13 @@ struct RuntimeLegacyCombatActionSinks {
 // retains the authoritative can-camp check and all feedback and mutations.
 [[nodiscard]] std::optional<uint32_t> legacy_key_message_for_set_camp_state(
     bool desired_in_camp,
+    const RuntimeLegacyCommandContext& context) noexcept;
+
+// Search has no preserved keyboard route. This predicate accepts only an
+// absolute desired-state mismatch on an exact guarded world presentation; the
+// semantic app-event handoff invokes the existing Classic Search control path.
+[[nodiscard]] bool runtime_legacy_context_supports_set_search_state(
+    bool desired_searching,
     const RuntimeLegacyCommandContext& context) noexcept;
 
 // Returns the exact Game > Save Current Game menu selection consumed by the

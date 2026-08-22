@@ -79,6 +79,22 @@ does not pre-evaluate Classic's historically inverted `cancamp` permission
 remains authoritative for denial feedback,
 music and sound, camp and movement state, time advancement, control refresh,
 and the preserved `revertgame` exits.
+The GAME page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP, and
+SEARCH/STOP SEARCH. Its Search control is available during ordinary outdoor or
+dungeon navigation with no active encounter, including while camped. It shows
+`SEARCH` with accessibility text `Start searching` when searching is off and
+`STOP SEARCH` with `Stop searching` when searching is on. The typed
+`SetSearchStateAction` carries the absolute desired searching state rather than
+a relative toggle. Its single-use `0x5753` tag carries the originating world
+surface plus a strict Boolean destination and is late-validated against the
+fresh adaptive screen, exact outdoor or dungeon map/first-person presentation,
+and a current any-nonzero Classic searching state still opposite to the
+request. A real live Classic `search` control is also required. Acceptance
+produces one neutral `app1Evt` sideband; it forges no key or pointer event and
+does not mutate search state directly. The preserved `buttonchoice` path with
+`theControl == search` alone owns sound, state, and icon changes. Secret checks and their search
+time cost still occur only when subsequent Classic movement invokes
+`checkforsecret`. The action adds no replay vocabulary.
 During combat, code-native Guard, Finish, Delay, Center, Switch Weapon, Center
 Previous/Next, Auto, Range, Bandage, Undo, Cast, Target, Escape, Use Scroll,
 and Center Cursor controls carry the stable active-party combatant ID in typed
@@ -220,9 +236,9 @@ false, unknown, absent, zero-revision, or mismatched input retains the complete
 `semantic_controls_ready` to `false`, so no cropped gameplay route is enabled.
 
 The current 95-row inventory remains deliberately incomplete: six roles are
-`retained_in_crop`, 39 are `semantic_complete`, and 50 remain `missing`, so
+`retained_in_crop`, 41 are `semantic_complete`, and 48 remain `missing`, so
 cropping stays disabled. Known missing outdoor and dungeon roles include
-Search, use/consume Torch, Heal, Make
+use/consume Torch, Heal, Make
 Scroll/Area Search, context-sensitive Shop/Temple/seamless-encounter entry,
 Trade, Money/Swap, active-member inspection, item and
 condition drilldowns, and the per-member Auto controls. Known missing combat
@@ -232,7 +248,8 @@ conditions, and monster attacks. Information gaps include ordered capture and
 retention of Classic messages for Event Log; pooled money and fatigue;
 party-wide condition indicators; complete all-member vitals and combat values,
 including armor class, spell points, and noncaster attack cadence; authoritative
-coordinates, calendar/clock, and Search/Torch state; focused-combatant details;
+coordinates, calendar/clock, and complete combined Search/Torch state (Torch
+remains absent); focused-combatant details;
 and combat round and enemies-remaining counts. The bounded selected-member
 Details renderer does not implicitly satisfy those distinct all-member,
 party-wide, or combat roles.

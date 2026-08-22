@@ -107,6 +107,15 @@ struct SetCampStateAction {
   bool operator==(const SetCampStateAction&) const = default;
 };
 
+// Requests an explicit transition into or out of Classic's persistent Search
+// condition. Carrying the desired state prevents a queued command from
+// reversing a newer Search transition as a relative toggle would.
+struct SetSearchStateAction {
+  bool desired_searching = false;
+
+  bool operator==(const SetSearchStateAction&) const = default;
+};
+
 // Ends the explicitly identified party combatant's current turn in the
 // preserved Classic combat loop with its Guard command. Carrying the actor
 // prevents a queued action from silently retargeting after the turn advances.
@@ -491,7 +500,8 @@ using UIActionPayload = std::variant<
     SetWorldActionPageAction,
     SetCombatActionPageAction,
     SetPresentationModeAction,
-    SetCampStateAction>;
+    SetCampStateAction,
+    SetSearchStateAction>;
 
 struct UIAction {
   ActionSequence sequence = 0;
@@ -577,6 +587,8 @@ struct UIAction {
       return "set_combat_action_page";
     } else if constexpr (std::is_same_v<Action, SetCampStateAction>) {
       return "set_camp_state";
+    } else if constexpr (std::is_same_v<Action, SetSearchStateAction>) {
+      return "set_search_state";
     } else {
       return "set_presentation_mode";
     }

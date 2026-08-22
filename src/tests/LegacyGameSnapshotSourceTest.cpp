@@ -42,6 +42,7 @@ Boolean intemple = 0;
 Boolean indung = 0;
 Boolean incamp = 0;
 Boolean spellcasting = 0;
+short partycondition[10] = {};
 struct character c[6] = {};
 struct monster monster[100] = {};
 char pos[6][2] = {};
@@ -94,6 +95,7 @@ void reset_legacy_state() {
   viewtype = 1;
   initems = inswap = inbooty = inshop = intemple = indung = incamp = 0;
   spellcasting = 0;
+  std::memset(partycondition, 0, sizeof(partycondition));
   std::memset(c, 0, sizeof(c));
   std::memset(monster, 0, sizeof(monster));
   std::memset(pos, 0, sizeof(pos));
@@ -255,6 +257,27 @@ void test_camp_state_capture_is_value_only() {
   const auto travel_snapshot = source.capture();
   CHECK(!travel_snapshot.world.in_camp);
   CHECK(camp_snapshot.world.in_camp);
+}
+
+void test_search_state_capture_is_value_only() {
+  reset_legacy_state();
+  LegacyGameSnapshotSource source;
+
+  CHECK(!source.capture().world.searching);
+
+  partycondition[PARTY_COND_SEARCH] = -1;
+  const auto persistent_search_snapshot = source.capture();
+  CHECK(persistent_search_snapshot.world.searching);
+
+  partycondition[PARTY_COND_SEARCH] = 7;
+  CHECK(source.capture().world.searching);
+
+  partycondition[PARTY_COND_SEARCH] = -9;
+  CHECK(source.capture().world.searching);
+
+  partycondition[PARTY_COND_SEARCH] = 0;
+  CHECK(!source.capture().world.searching);
+  CHECK(persistent_search_snapshot.world.searching);
 }
 
 void test_combat_capture() {
@@ -648,6 +671,7 @@ int main() {
     test_party_world_and_inventory_capture();
     test_noncombat_scroll_case_eligibility_capture();
     test_camp_state_capture_is_value_only();
+    test_search_state_capture_is_value_only();
     test_combat_capture();
     test_encounter_and_bounds();
     std::cout << "LegacyGameSnapshotSourceTest passed (" << checks_run

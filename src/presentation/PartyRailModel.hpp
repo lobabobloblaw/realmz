@@ -137,6 +137,7 @@ enum class ActionIntent {
   cancel,
   encounter_choice,
   set_camp_state,
+  set_search_state,
 };
 
 // "deferred_to_engine" means that the snapshot satisfies the prerequisites
@@ -161,6 +162,9 @@ struct ActionControlModel {
   // Only set for state-setting commands whose queued payload must preserve an
   // explicit camp destination rather than recompute a relative toggle.
   std::optional<bool> desired_in_camp;
+  // Only set for the persistent Search command so a queued activation cannot
+  // recompute a relative toggle against newer Classic state.
+  std::optional<bool> desired_searching;
 
   bool operator==(const ActionControlModel&) const = default;
 

@@ -92,6 +92,15 @@ RealmzSemanticInputSurface RealmzSemanticSetCampStateTagSurface(
 uint8_t RealmzSemanticSetCampStateTagDesiredInCamp(
     uint32_t tagged_message);
 
+// Set-search-state tags retain the originating world surface plus a strict
+// absolute boolean. Search has no Classic key route, so successful delivery is
+// staged for the preserved outer loop's existing Search-control path.
+uint8_t RealmzIsSemanticSetSearchStateTag(uint32_t tagged_message);
+RealmzSemanticInputSurface RealmzSemanticSetSearchStateTagSurface(
+    uint32_t tagged_message);
+uint8_t RealmzSemanticSetSearchStateTagDesiredSearching(
+    uint32_t tagged_message);
+
 // Guard tags carry the acting combatant explicitly and are valid only on the
 // combat surface. This prevents a queued command from applying to a later turn.
 uint8_t RealmzIsSemanticGuardCombatantTag(uint32_t tagged_message);
@@ -284,6 +293,14 @@ uint8_t RealmzConsumeSemanticSetCampStateEvent(
     uint32_t tagged_message,
     uint32_t* classic_key_message);
 
+// Revalidates the exact live world context and absolute Search-state mismatch,
+// then returns only a strict desired boolean for EventManager's one-shot
+// app1Evt sideband. It never creates Classic key or pointer input.
+uint8_t RealmzConsumeSemanticSetSearchStateEvent(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tagged_message,
+    uint8_t* desired_searching);
+
 // Revalidates the live acting party combatant, then returns the preserved
 // Classic "g" key record to the top-level combat loop.
 uint8_t RealmzConsumeSemanticGuardCombatantEvent(
@@ -458,6 +475,10 @@ struct CombatFieldCell;
 
 [[nodiscard]] uint32_t semantic_set_camp_state_tag(
     bool desired_in_camp,
+    RealmzSemanticInputSurface surface) noexcept;
+
+[[nodiscard]] uint32_t semantic_set_search_state_tag(
+    bool desired_searching,
     RealmzSemanticInputSurface surface) noexcept;
 
 [[nodiscard]] uint32_t semantic_guard_combatant_tag(

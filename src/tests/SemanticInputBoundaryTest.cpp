@@ -170,6 +170,14 @@ bool consume_set_camp_state(
              expected_surface, tag, &output) != 0;
 }
 
+bool consume_set_search_state(
+    RealmzSemanticInputSurface expected_surface,
+    uint32_t tag,
+    uint8_t& output) {
+  return RealmzConsumeSemanticSetSearchStateEvent(
+             expected_surface, tag, &output) != 0;
+}
+
 bool consume_guard(
     RealmzSemanticInputSurface expected_surface,
     uint32_t tag,
@@ -1701,6 +1709,79 @@ void test_set_camp_state_tag_encoding_and_collisions() {
        }) {
     CHECK(other_tag != 0);
     CHECK(RealmzIsSemanticSetCampStateTag(other_tag) == 0);
+  }
+}
+
+void test_set_search_state_tag_encoding_and_collisions() {
+  constexpr std::array surfaces{
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+  };
+  std::set<uint32_t> search_state_tags;
+  for (const auto surface : surfaces) {
+    for (const bool desired_searching : {false, true}) {
+      const uint32_t tag =
+          semantic_set_search_state_tag(desired_searching, surface);
+      CHECK((tag & 0xFFFF0000U) == 0x57530000U);
+      CHECK(((tag >> 8U) & 0xFFU) == static_cast<uint32_t>(surface));
+      CHECK((tag & 0xFFU) == static_cast<uint32_t>(desired_searching));
+      CHECK(RealmzIsSemanticSetSearchStateTag(tag) != 0);
+      CHECK(RealmzSemanticSetSearchStateTagSurface(tag) == surface);
+      CHECK((RealmzSemanticSetSearchStateTagDesiredSearching(tag) != 0) ==
+          desired_searching);
+      CHECK(RealmzIsSemanticGameplayTag(tag) != 0);
+      CHECK(RealmzSemanticGameplayTagSurface(tag) == surface);
+      CHECK(RealmzIsSemanticMovementTag(tag) == 0);
+      CHECK(RealmzIsSemanticRestPartyTag(tag) == 0);
+      CHECK(RealmzIsSemanticSetCampStateTag(tag) == 0);
+      CHECK(RealmzIsSemanticOpenCombatScrollCaseTag(tag) == 0);
+      CHECK(search_state_tags.emplace(tag).second);
+    }
+  }
+  CHECK(search_state_tags.size() == 4);
+  CHECK(semantic_set_search_state_tag(
+      false, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x57530100U);
+  CHECK(semantic_set_search_state_tag(
+      true, REALMZ_SEMANTIC_INPUT_EXPLORATION) == 0x57530101U);
+  CHECK(semantic_set_search_state_tag(
+      false, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0x57530200U);
+  CHECK(semantic_set_search_state_tag(
+      true, REALMZ_SEMANTIC_INPUT_DUNGEON) == 0x57530201U);
+  CHECK(semantic_set_search_state_tag(
+      true, REALMZ_SEMANTIC_INPUT_NONE) == 0);
+  CHECK(semantic_set_search_state_tag(
+      true, REALMZ_SEMANTIC_INPUT_COMBAT) == 0);
+  CHECK(semantic_set_search_state_tag(
+      true, static_cast<RealmzSemanticInputSurface>(0xFF)) == 0);
+
+  for (const uint32_t malformed : {
+           0U,
+           0x57530000U,
+           0x57530102U,
+           0x57530180U,
+           0x575302FFU,
+           0x57530300U,
+           0x5753FF01U,
+           0xFFFFFFFFU,
+       }) {
+    CHECK(RealmzIsSemanticSetSearchStateTag(malformed) == 0);
+    CHECK(RealmzSemanticSetSearchStateTagSurface(malformed) ==
+        REALMZ_SEMANTIC_INPUT_NONE);
+    CHECK(RealmzSemanticSetSearchStateTagDesiredSearching(malformed) == 0);
+  }
+
+  for (const uint32_t other_tag : {
+           semantic_set_camp_state_tag(
+               true, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_rest_party_tag(REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_character_sheet_tag(
+               0, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+           semantic_open_combat_scroll_case_tag(
+               0, REALMZ_SEMANTIC_INPUT_COMBAT),
+       }) {
+    CHECK(other_tag != 0);
+    CHECK(!search_state_tags.contains(other_tag));
+    CHECK(RealmzIsSemanticSetSearchStateTag(other_tag) == 0);
   }
 }
 
@@ -4015,6 +4096,169 @@ void test_set_camp_state_late_validation_and_exact_translation() {
   CHECK(snapshot_capture_calls == 1);
 }
 
+void test_set_search_state_late_validation_and_absolute_handoff() {
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.searching = false;
+  const uint32_t start_searching = semantic_set_search_state_tag(
+      true, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  const uint32_t stop_searching = semantic_set_search_state_tag(
+      false, REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  uint8_t output = 0xA5;
+
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, start_searching, output));
+  CHECK(output == 0xA5);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, start_searching, output));
+  CHECK(output == 1);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // Authorization and the desired state are each one-shot. A null output also
+  // burns a newly completed authorization before consulting live state.
+  output = 0xA5;
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, start_searching, output));
+  CHECK(output == 0xA5);
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(RealmzConsumeSemanticSetSearchStateEvent(
+            REALMZ_SEMANTIC_INPUT_EXPLORATION,
+            start_searching,
+            nullptr) == 0);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  // A same-shaped Camp tag cannot enter Search's no-key handoff.
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION,
+      semantic_set_camp_state_tag(
+          true, REALMZ_SEMANTIC_INPUT_EXPLORATION),
+      output));
+  CHECK(output == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 1);
+
+  captured_snapshot.world.searching = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, stop_searching, output));
+  CHECK(output == 0);
+
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = 0xA5;
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, start_searching, output));
+  CHECK(output == 0xA5);
+
+  captured_snapshot.world.searching = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, stop_searching, output));
+  CHECK(output == 0xA5);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_DUNGEON,
+        ScreenContext::dungeon,
+        presentation);
+    captured_snapshot.world.searching = false;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+    output = 0xA5;
+    CHECK(consume_set_search_state(
+        REALMZ_SEMANTIC_INPUT_DUNGEON,
+        semantic_set_search_state_tag(
+            true, REALMZ_SEMANTIC_INPUT_DUNGEON),
+        output));
+    CHECK(output == 1);
+  }
+
+  // A tag from the wrong originating surface fails before any context capture.
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::dungeon_map);
+  captured_snapshot.world.searching = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  output = 0xA5;
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_DUNGEON, start_searching, output));
+  CHECK(output == 0xA5);
+  CHECK(legacy_capture_calls == 0);
+  CHECK(snapshot_capture_calls == 0);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor,
+      false);
+  captured_snapshot.world.searching = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, start_searching, output));
+  CHECK(output == 0xA5);
+  CHECK(legacy_capture_calls == 1);
+  CHECK(snapshot_capture_calls == 0);
+
+  for (const auto& invalid : {
+           std::pair{
+               ScreenContext::dungeon,
+               WorldPresentation::outdoor,
+           },
+           std::pair{
+               ScreenContext::exploration,
+               WorldPresentation::dungeon_map,
+           },
+       }) {
+    reset_capture(
+        REALMZ_LEGACY_SCREEN_EXPLORATION,
+        invalid.first,
+        invalid.second);
+    captured_snapshot.world.searching = false;
+    complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+    output = 0xA5;
+    CHECK(!consume_set_search_state(
+        REALMZ_SEMANTIC_INPUT_EXPLORATION, start_searching, output));
+    CHECK(output == 0xA5);
+  }
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_DUNGEON,
+      ScreenContext::dungeon,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.searching = false;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_DUNGEON);
+  output = 0xA5;
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_DUNGEON,
+      semantic_set_search_state_tag(true, REALMZ_SEMANTIC_INPUT_DUNGEON),
+      output));
+  CHECK(output == 0xA5);
+
+  reset_capture(
+      REALMZ_LEGACY_SCREEN_EXPLORATION,
+      ScreenContext::exploration,
+      WorldPresentation::outdoor);
+  captured_snapshot.world.searching = false;
+  snapshot_capture_throws = true;
+  complete_top_level_scope(REALMZ_SEMANTIC_INPUT_EXPLORATION);
+  output = 0xA5;
+  CHECK(!consume_set_search_state(
+      REALMZ_SEMANTIC_INPUT_EXPLORATION, start_searching, output));
+  CHECK(output == 0xA5);
+  CHECK(snapshot_capture_calls == 1);
+}
+
 void test_shared_combat_late_validation_matrix() {
   for (const auto& action : kCombatActionCases) {
     reset_valid_shared_combat();
@@ -5383,6 +5627,7 @@ int main() {
     test_open_character_sheet_tag_encoding_and_collisions();
     test_rest_party_tag_encoding_and_collisions();
     test_set_camp_state_tag_encoding_and_collisions();
+    test_set_search_state_tag_encoding_and_collisions();
     test_open_scroll_case_tag_encoding_and_collisions();
     test_bandage_tag_encoding_collision_and_malformed_rejection();
     test_undo_tag_encoding_collision_and_malformed_rejection();
@@ -5404,6 +5649,7 @@ int main() {
     test_open_load_game_late_validation_and_exact_menu_translation();
     test_rest_party_late_validation_and_exact_translation();
     test_set_camp_state_late_validation_and_exact_translation();
+    test_set_search_state_late_validation_and_absolute_handoff();
     test_shared_combat_late_validation_matrix();
     test_show_combat_range_route_boundaries();
     test_bandage_combatant_route_and_canundo_boundaries();

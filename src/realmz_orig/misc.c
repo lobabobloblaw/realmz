@@ -2100,6 +2100,7 @@ over:
 
         case (app1Evt): {
           uint8_t semantic_character_member = 0;
+          uint8_t semantic_desired_searching = 0;
           const int maximum_member = (int)charnum;
           if (TakeSemanticOpenCharacterSheetMember(
                   &semantic_character_member) &&
@@ -2110,6 +2111,15 @@ over:
               (charmainbut != NIL)) {
             point.v = 51 * (short)semantic_character_member;
             theControl = charmainbut;
+            reply = 0;
+            goto goback2;
+          }
+          if (TakeSemanticSetSearchStateDesired(
+                  &semantic_desired_searching) &&
+              (search != NIL) &&
+              ((partycondition[PARTY_COND_SEARCH] != 0) !=
+                  (semantic_desired_searching != 0))) {
+            theControl = search;
             reply = 0;
             goto goback2;
           }

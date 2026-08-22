@@ -352,6 +352,10 @@ void require_no_semantic_scope_or_consumer(
       std::string(function_name) +
           " must not consume tagged semantic Camp input");
   require(count_identifier(
+              body, "RealmzConsumeSemanticSetSearchStateEvent") == 0,
+      std::string(function_name) +
+          " must not consume tagged semantic Search input");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must not consume tagged semantic guard input");
@@ -714,6 +718,29 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(camp_wrapper, "keyDown") == 0 &&
           count_identifier(camp_wrapper, "mouseDown") == 0,
       "public semantic Camp enqueue must not synthesize Classic input");
+
+  const std::string push_search = function_body(
+      source, "push_semantic_set_search_state_event");
+  const std::string compact_push_search = without_whitespace(push_search);
+  require(count_identifier(
+              push_search, "RealmzIsSemanticSetSearchStateTag") == 1 &&
+          count_identifier(push_search, "app1Evt") == 1,
+      "semantic Search enqueue must validate one Search tag and retain it as "
+      "one app1Evt");
+  require(count_identifier(push_search, "keyDown") == 0 &&
+          count_identifier(push_search, "mouseDown") == 0 &&
+          compact_push_search.contains("ev.what=app1Evt;") &&
+          compact_push_search.contains("ev.message=tagged_message;"),
+      "semantic Search enqueue must preserve its absolute tagged payload "
+      "without synthesizing Classic input");
+  const std::string search_wrapper = function_body(
+      source, "PushSemanticSetSearchStateEvent");
+  require(without_whitespace(search_wrapper).contains(
+              "returnem.push_semantic_set_search_state_event("
+              "tagged_message);") &&
+          count_identifier(search_wrapper, "keyDown") == 0 &&
+          count_identifier(search_wrapper, "mouseDown") == 0,
+      "public semantic Search enqueue must delegate only to its tagged queue");
 
   const std::string push_guard = function_body(
       source, "push_semantic_guard_combatant_event");
@@ -1210,6 +1237,10 @@ void verify_event_manager(const fs::path& repository_root) {
       "semantic gameplay wrapper must have one late Camp consumer");
   require(count_identifier(
               semantic_wrapper,
+              "RealmzConsumeSemanticSetSearchStateEvent") == 1,
+      "semantic gameplay wrapper must have one late Search consumer");
+  require(count_identifier(
+              semantic_wrapper,
               "RealmzConsumeSemanticGuardCombatantEvent") == 1,
       "semantic gameplay wrapper must have one late guard consumer");
   require(count_identifier(
@@ -1279,8 +1310,8 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(semantic_wrapper, "get_next_event") == 1 &&
           count_identifier(semantic_wrapper, "get_next_semantic_event") == 1,
       "semantic gameplay wrapper must separate its Classic and scoped polls");
-  require(count_identifier(semantic_wrapper, "app1Evt") == 26,
-      "semantic gameplay wrapper must recognize all twenty-six tagged paths");
+  require(count_identifier(semantic_wrapper, "app1Evt") == 27,
+      "semantic gameplay wrapper must recognize all twenty-seven tagged paths");
   require(count_identifier(semantic_wrapper, "keyDown") == 25 &&
           count_text(compact_semantic, "ret->what=keyDown;") == 23 &&
           count_text(
@@ -1338,6 +1369,10 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(
               source, "RealmzConsumeSemanticSetCampStateEvent") == 1,
       "EventManager may consume semantic Camp input only inside its gameplay "
+      "wrapper");
+  require(count_identifier(
+              source, "RealmzConsumeSemanticSetSearchStateEvent") == 1,
+      "EventManager may consume semantic Search input only inside its gameplay "
       "wrapper");
   require(count_identifier(
               source, "RealmzConsumeSemanticGuardCombatantEvent") == 1,
@@ -1619,9 +1654,29 @@ void verify_event_manager(const fs::path& repository_root) {
       "ret->what=nullEvent", camp_keydown);
   const std::size_t camp_rejected_message = compact_semantic.find(
       "ret->message=0", camp_null);
+  const std::size_t search_branch = compact_semantic.find(
+      "RealmzIsSemanticSetSearchStateTag(ret->message)",
+      camp_rejected_message);
+  const std::size_t search_consume = compact_semantic.find(
+      "RealmzConsumeSemanticSetSearchStateEvent(", search_branch);
+  const std::size_t search_stage = compact_semantic.find(
+      "stage_semantic_set_search_state_desired(desired_searching!=0);",
+      search_consume);
+  const std::size_t search_message = compact_semantic.find(
+      "ret->message=0", search_stage);
+  const std::size_t search_where = compact_semantic.find(
+      "ret->where={};", search_message);
+  const std::size_t search_modifiers = compact_semantic.find(
+      "ret->modifiers=0", search_where);
+  const std::size_t search_window = compact_semantic.find(
+      "ret->window_port=nullptr", search_modifiers);
+  const std::size_t search_null = compact_semantic.find(
+      "ret->what=nullEvent", search_window);
+  const std::size_t search_rejected_message = compact_semantic.find(
+      "ret->message=0", search_null);
   const std::size_t guard_branch = compact_semantic.find(
       "RealmzIsSemanticGuardCombatantTag(ret->message)",
-      camp_rejected_message);
+      search_rejected_message);
   const std::size_t guard_consume = compact_semantic.find(
       "RealmzConsumeSemanticGuardCombatantEvent(", guard_branch);
   const std::size_t guard_keydown = compact_semantic.find(
@@ -1873,6 +1928,15 @@ void verify_event_manager(const fs::path& repository_root) {
           camp_keydown != std::string::npos &&
           camp_null != std::string::npos &&
           camp_rejected_message != std::string::npos &&
+          search_branch != std::string::npos &&
+          search_consume != std::string::npos &&
+          search_stage != std::string::npos &&
+          search_message != std::string::npos &&
+          search_where != std::string::npos &&
+          search_modifiers != std::string::npos &&
+          search_window != std::string::npos &&
+          search_null != std::string::npos &&
+          search_rejected_message != std::string::npos &&
           guard_branch != std::string::npos &&
           guard_consume != std::string::npos &&
           guard_keydown != std::string::npos &&
@@ -2021,7 +2085,16 @@ void verify_event_manager(const fs::path& repository_root) {
           camp_consume < camp_keydown &&
           camp_keydown < camp_null &&
           camp_null < camp_rejected_message &&
-          camp_rejected_message < guard_branch &&
+          camp_rejected_message < search_branch &&
+          search_branch < search_consume &&
+          search_consume < search_stage &&
+          search_stage < search_message &&
+          search_message < search_where &&
+          search_where < search_modifiers &&
+          search_modifiers < search_window &&
+          search_window < search_null &&
+          search_null < search_rejected_message &&
+          search_rejected_message < guard_branch &&
           guard_branch < guard_consume &&
           guard_consume < guard_keydown &&
           guard_keydown < guard_null &&
@@ -2114,10 +2187,16 @@ void verify_event_manager(const fs::path& repository_root) {
   require(scope_block_close < camp_branch &&
           camp_branch < camp_consume &&
           camp_consume < camp_keydown && camp_keydown < camp_null &&
-          camp_null < guard_branch,
+          camp_null < search_branch,
       "Camp must leave semantic gameplay scope, revalidate its absolute "
       "desired state once, then produce only its lowercase-c handoff or an "
-      "inert rejection before combat Center routes");
+      "inert rejection before Search");
+  require(scope_block_close < search_branch &&
+          search_branch < search_consume && search_consume < search_stage &&
+          search_stage < search_null && search_null < guard_branch,
+      "Search must leave semantic gameplay scope, revalidate its absolute "
+      "desired state, and stage only a neutral app1Evt one-shot before combat "
+      "routes");
   require(scope_block_close < range_branch && range_branch < range_consume &&
           range_consume < range_keydown,
       "Range must leave semantic gameplay scope before its late Classic key "
@@ -2210,6 +2289,25 @@ void verify_event_manager(const fs::path& repository_root) {
               "clear_pending_semantic_center_combat_cursor_cell") == 1,
       "every ordinary, raw, or semantic event poll must clear a stale staged "
       "center-cursor cell before dequeuing another event");
+  require(count_identifier(
+              get_next, "clear_pending_semantic_set_search_state_desired") ==
+          1 &&
+          count_identifier(wait_next,
+              "clear_pending_semantic_set_search_state_desired") == 1 &&
+          count_identifier(semantic_wrapper,
+              "clear_pending_semantic_set_search_state_desired") == 1,
+      "every ordinary, raw, or semantic event poll must clear a stale staged "
+      "Search state before dequeuing another event");
+  require(without_whitespace(get_next).find(
+              "clear_pending_semantic_set_search_state_desired();") <
+          without_whitespace(get_next).find("*ret=em.get_next_event(0);") &&
+          compact_wait_next.find(
+              "clear_pending_semantic_set_search_state_desired();") <
+          compact_wait_next.find("*ret=em.get_next_event(sleep);") &&
+          compact_semantic.find(
+              "clear_pending_semantic_set_search_state_desired();") <
+          compact_semantic.find("*ret=em.get_next_semantic_event(0);"),
+      "Search one-shot state must clear before every event poll");
   require(compact_wait_next.contains(
               "*ret=em.get_next_event(sleep);"
               "return(ret->what!=nullEvent);"),
@@ -2233,6 +2331,9 @@ void verify_event_manager(const fs::path& repository_root) {
   require(count_identifier(cancel,
               "clear_pending_semantic_open_character_sheet_member") == 1,
       "semantic cancellation must clear a staged Character Sheet member once");
+  require(count_identifier(cancel,
+              "clear_pending_semantic_set_search_state_desired") == 1,
+      "semantic cancellation must clear a staged Search state once");
   const std::string take_character_sheet = function_body(
       source, "TakeSemanticOpenCharacterSheetMember");
   const std::string compact_take_character_sheet =
@@ -2262,6 +2363,22 @@ void verify_event_manager(const fs::path& repository_root) {
           compact_take_cursor.contains("*absolute_y=pending->y;"),
       "the Classic center-cursor cell handoff must clear before validating "
       "outputs and return the staged absolute coordinates at most once");
+  const std::string take_search = function_body(
+      source, "TakeSemanticSetSearchStateDesired");
+  const std::string compact_take_search = without_whitespace(take_search);
+  require(count_identifier(take_search,
+              "clear_pending_semantic_set_search_state_desired") == 1 &&
+          compact_take_search.contains(
+              "constautopending=pending_semantic_set_search_state_desired;") &&
+          compact_take_search.contains(
+              "if(!pending||!desired_searching)") &&
+          compact_take_search.contains(
+              "*desired_searching=*pending?1:0;") &&
+          compact_take_search.find(
+              "clear_pending_semantic_set_search_state_desired();") <
+              compact_take_search.find("if(!pending||!desired_searching)"),
+      "the Classic Search handoff must clear before null-output validation and "
+      "return a strict absolute boolean at most once");
   const std::string flush = function_body(source, "FlushEvents");
   require(count_identifier(flush,
               "clear_pending_semantic_open_character_sheet_member") == 1,
@@ -2271,6 +2388,9 @@ void verify_event_manager(const fs::path& repository_root) {
               "clear_pending_semantic_center_combat_cursor_cell") == 1,
       "Classic event flushing must also make any staged semantic cursor cell "
       "inert");
+  require(count_identifier(flush,
+              "clear_pending_semantic_set_search_state_desired") == 1,
+      "Classic event flushing must also make a staged Search state inert");
   const std::size_t invalidate = compact_cancel.find(
       "RealmzInvalidateSemanticInputBoundary()");
   const std::size_t discard = compact_cancel.find(
@@ -5404,9 +5524,10 @@ void verify_rest_party_window_manager_contract(
       legacy_bridge_header, "LegacyActionHandlers");
   require(without_whitespace(legacy_handlers).ends_with(
               "LegacyActionHandler<RestPartyAction>rest_party;"
-              "LegacyActionHandler<SetCampStateAction>set_camp_state;}"),
-      "LegacyActionHandlers must retain Rest followed by append-only Camp so "
-      "positional aggregate clients keep the pre-slice member order");
+              "LegacyActionHandler<SetCampStateAction>set_camp_state;"
+              "LegacyActionHandler<SetSearchStateAction>set_search_state;}"),
+      "LegacyActionHandlers must retain Rest and Camp followed by append-only "
+      "Search so positional aggregate clients keep their prior member order");
 
   const std::string runtime_source = code_only(read_file(
       repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
@@ -6271,20 +6392,20 @@ void verify_set_camp_state_window_manager_contract(
       "ret->what=keyDown", delivery_consume);
   const std::size_t delivery_null = compact_semantic_delivery.find(
       "ret->what=nullEvent", delivery_key);
-  const std::size_t delivery_guard = compact_semantic_delivery.find(
-      "RealmzIsSemanticGuardCombatantTag(ret->message)", delivery_null);
+  const std::size_t delivery_search = compact_semantic_delivery.find(
+      "RealmzIsSemanticSetSearchStateTag(ret->message)", delivery_null);
   require(delivery_camp != std::string::npos &&
           delivery_consume != std::string::npos &&
           delivery_key != std::string::npos &&
           delivery_null != std::string::npos &&
-          delivery_guard != std::string::npos &&
+          delivery_search != std::string::npos &&
           delivery_camp < delivery_consume &&
           delivery_consume < delivery_key && delivery_key < delivery_null &&
-          delivery_null < delivery_guard,
+          delivery_null < delivery_search,
       "EventManager Camp delivery must produce one guarded keyDown or an "
-      "inert rejection before any combat Center path");
+      "inert rejection before the Search path");
   const std::string delivery_route = compact_semantic_delivery.substr(
-      delivery_camp, delivery_guard - delivery_camp);
+      delivery_camp, delivery_search - delivery_camp);
   require(count_identifier(delivery_route, "keyDown") == 1 &&
           count_identifier(delivery_route, "nullEvent") == 1 &&
           count_identifier(delivery_route, "mouseDown") == 0 &&
@@ -6357,6 +6478,223 @@ void verify_set_camp_state_window_manager_contract(
             count_identifier(
                 replay_source, "PushSemanticSetCampStateEvent") == 0,
         "Camp slice must not add replay actions, tags, or enqueue vocabulary");
+  }
+}
+
+void verify_set_search_state_window_manager_contract(
+    const fs::path& repository_root) {
+  const auto type_body = [](const std::string& source,
+                             std::string_view type_name) {
+    const std::size_t name = find_identifier(source, type_name);
+    require(name != std::string::npos,
+        std::string("missing type definition for ") + std::string(type_name));
+    const std::size_t opening = source.find('{', name + type_name.size());
+    require(opening != std::string::npos,
+        std::string("missing type body for ") + std::string(type_name));
+    const std::size_t closing = matching_delimiter(source, opening, '{', '}');
+    return source.substr(opening, closing - opening + 1U);
+  };
+
+  const std::string runtime_header = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.hpp"));
+  const std::string runtime_context = type_body(
+      runtime_header, "RuntimeLegacyCommandContext");
+  const std::string world_sinks_type = type_body(
+      runtime_header, "RuntimeLegacyWorldActionSinks");
+  require(count_identifier(runtime_context, "searching") == 1 &&
+          count_identifier(
+              runtime_header, "RuntimeLegacySetSearchStateSink") == 2 &&
+          count_identifier(world_sinks_type, "set_search_state") == 1,
+      "runtime bridge must append one value-only Search flag and one named "
+      "absolute Search-state sink");
+
+  const std::string runtime_source = code_only(read_file(
+      repository_root / "src/presentation/RuntimeLegacyCommandBridge.cpp"));
+  const std::string compact_runtime = without_whitespace(runtime_source);
+  const std::string predicate = function_body(
+      runtime_source, "runtime_legacy_context_supports_set_search_state");
+  const std::string compact_predicate = without_whitespace(predicate);
+  require(compact_predicate.contains(
+              "if(!context.adaptive_eligible||"
+              "(context.searching==desired_searching)){returnfalse;}") &&
+          compact_predicate.contains(
+              "context.screen==ScreenContext::exploration") &&
+          compact_predicate.contains(
+              "context.world_presentation==WorldPresentation::outdoor") &&
+          compact_predicate.contains(
+              "context.screen==ScreenContext::dungeon") &&
+          compact_predicate.contains("WorldPresentation::dungeon_map") &&
+          compact_predicate.contains(
+              "WorldPresentation::dungeon_first_person") &&
+          count_identifier(predicate, "keyDown") == 0 &&
+          count_identifier(predicate, "mouseDown") == 0,
+      "Search availability must require an absolute mismatch and exact "
+      "adaptive world presentation without inventing Classic input");
+  require(compact_runtime.contains(
+              "handlers.set_camp_state=[context_provider,") &&
+          compact_runtime.contains(
+              "handlers.set_search_state=["
+              "context_provider=std::move(context_provider),") &&
+          compact_runtime.contains(
+              "runtime_legacy_context_supports_set_search_state("
+              "action.desired_searching,context)") &&
+          compact_runtime.contains(
+              "set_search_state_sink(action.desired_searching,context)"),
+      "Camp must copy the shared provider and only the final Search handler may "
+      "move it, while preserving the typed desired state through its sink");
+
+  const std::string boundary_source = code_only(read_file(
+      repository_root / "src/presentation/SemanticInputBoundary.cpp"));
+  const std::string compact_boundary = without_whitespace(boundary_source);
+  require(compact_boundary.contains(
+              "kSemanticSetSearchStateSignature=0x57530000U;") &&
+          compact_boundary.contains(
+              "kSemanticSetSearchStateMask=0xFFFF0000U;") &&
+          compact_boundary.contains(
+              "kSemanticSetSearchStateSurfaceMask=0x0000FF00U;") &&
+          compact_boundary.contains(
+              "kSemanticSetSearchStateDesiredMask=0x000000FFU;"),
+      "Search wire format must remain 0x5753SSDD with surface and strict "
+      "desired-state bytes");
+  const std::string decode = function_body(
+      boundary_source, "decode_set_search_state");
+  const std::string tag = function_body(
+      boundary_source, "semantic_set_search_state_tag");
+  require(count_identifier(decode, "is_world_gameplay_surface") == 1 &&
+          without_whitespace(decode).contains("desired_value>1U") &&
+          without_whitespace(tag).contains(
+              "if(!is_world_gameplay_surface(surface)){return0;}") &&
+          without_whitespace(tag).contains(
+              "kSemanticSetSearchStateSignature|"),
+      "Search tag decode/encode must reject non-world surfaces and every "
+      "payload other than strict false or true");
+  const std::string consumer = function_body(
+      boundary_source, "RealmzConsumeSemanticSetSearchStateEvent");
+  const std::string compact_consumer = without_whitespace(consumer);
+  const std::size_t authorize = compact_consumer.find(
+      "authorize_completed_scope(expected_surface)");
+  const std::size_t decode_position = compact_consumer.find(
+      "decode_set_search_state(tagged_message)", authorize);
+  const std::size_t origin = compact_consumer.find(
+      "search_state->surface!=expected_surface", decode_position);
+  const std::size_t legacy = compact_consumer.find(
+      "RealmzCaptureLegacyPresentationContext()", origin);
+  const std::size_t snapshot = compact_consumer.find(
+      "LegacyGameSnapshotSource().capture()", legacy);
+  const std::size_t snapshot_search = compact_consumer.find(
+      ".searching=snapshot.world.searching", snapshot);
+  const std::size_t late_predicate = compact_consumer.find(
+      "runtime_legacy_context_supports_set_search_state("
+      "search_state->desired_searching,context)", snapshot_search);
+  const std::size_t output = compact_consumer.find(
+      "*desired_searching=search_state->desired_searching?1:0",
+      late_predicate);
+  require(authorize != std::string::npos &&
+          decode_position != std::string::npos && origin != std::string::npos &&
+          legacy != std::string::npos && snapshot != std::string::npos &&
+          snapshot_search != std::string::npos &&
+          late_predicate != std::string::npos && output != std::string::npos &&
+          authorize < decode_position && decode_position < origin &&
+          origin < legacy && legacy < snapshot && snapshot < snapshot_search &&
+          snapshot_search < late_predicate && late_predicate < output,
+      "late Search consumption must burn scope authorization first, then "
+      "revalidate origin, fresh snapshot/presentation, mismatch, and emit only "
+      "a strict desired boolean");
+  require(count_identifier(consumer, "keyDown") == 0 &&
+          count_identifier(consumer, "mouseDown") == 0 &&
+          count_identifier(consumer, "partycondition") == 0 &&
+          count_identifier(consumer, "buttonchoice") == 0 &&
+          count_identifier(consumer, "PushSemanticSetSearchStateEvent") == 0,
+      "Search boundary consumer must neither forge input nor mutate or enter "
+      "Classic directly");
+
+  const std::string window_source = code_only(read_file(
+      repository_root / "src/WindowManager.cpp"));
+  const std::string context_capture = function_body(
+      window_source, "capture_runtime_legacy_command_context");
+  require(without_whitespace(context_capture).contains(
+              "context.searching=snapshot.world.searching;") &&
+          count_identifier(context_capture, "searching") == 2,
+      "production runtime context must capture Search from the fresh snapshot");
+  const std::string create_window = function_body(
+      window_source, "create_sdl_window");
+  const std::size_t world_sinks_name = find_identifier(
+      create_window, "RuntimeLegacyWorldActionSinks");
+  const std::size_t world_sinks_open = skip_whitespace(
+      create_window,
+      world_sinks_name +
+          std::string_view("RuntimeLegacyWorldActionSinks").size());
+  require(world_sinks_name != std::string::npos &&
+          world_sinks_open < create_window.size() &&
+          create_window[world_sinks_open] == '{',
+      "WindowManager named world-action sink bundle is missing");
+  const std::size_t world_sinks_close = matching_delimiter(
+      create_window, world_sinks_open, '{', '}');
+  const std::string world_sinks = create_window.substr(
+      world_sinks_open, world_sinks_close - world_sinks_open + 1U);
+  const std::string sink = designated_lambda_body(
+      world_sinks, "set_search_state");
+  const std::string compact_sink = without_whitespace(sink);
+  const std::size_t sink_surface = compact_sink.find(
+      "surface=RealmzCurrentSemanticInputSurface()");
+  const std::size_t sink_match = compact_sink.find(
+      "constboolmatching_surface=", sink_surface);
+  const std::size_t sink_predicate = compact_sink.find(
+      "runtime_legacy_context_supports_set_search_state("
+      "desired_searching,context)", sink_match);
+  const std::size_t sink_tag = compact_sink.find(
+      "semantic_set_search_state_tag(desired_searching,surface)",
+      sink_predicate);
+  const std::size_t sink_push = compact_sink.find(
+      "returntag&&PushSemanticSetSearchStateEvent(tag);", sink_tag);
+  require(sink_surface != std::string::npos && sink_match != std::string::npos &&
+          sink_predicate != std::string::npos && sink_tag != std::string::npos &&
+          sink_push != std::string::npos && sink_surface < sink_match &&
+          sink_match < sink_predicate && sink_predicate < sink_tag &&
+          sink_tag < sink_push && count_identifier(sink, "keyDown") == 0 &&
+          count_identifier(sink, "mouseDown") == 0 &&
+          count_identifier(sink, "partycondition") == 0,
+      "production Search sink must bind the active matching world surface, "
+      "validate absolute state, tag/push once, and never synthesize input");
+
+  const std::string present = function_body(
+      window_source, "present_remastered_frame");
+  const std::string compact_present = without_whitespace(present);
+  for (const auto needle : {
+           "ActionIntent::set_search_state",
+           "conststd::optional<bool>search_desired_searching=",
+           "constboolsearch_control_visible=",
+           "constboolsearch_available=",
+           "runtime_legacy_context_supports_set_search_state(",
+           ".search_control_visible=search_control_visible",
+           ".search_available=search_available",
+           ".search_desired_searching=search_desired_searching.value_or(false)",
+           "std::get_if<realmz::presentation::SetSearchStateAction>",
+           "ShellControlKind::set_search_state",
+           "snapshot.world.searching==context.searching",
+           "snapshot.world.searching!=search->desired_searching",
+       }) {
+    require(compact_present.contains(needle),
+        std::string("Search composition/freshness must retain ") + needle);
+  }
+
+  for (const auto& entry : fs::recursive_directory_iterator(
+           repository_root / "src/replay")) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string replay_source = code_only(read_file(entry.path()));
+    require(count_identifier(replay_source, "SetSearchStateAction") == 0 &&
+            count_identifier(
+                replay_source, "semantic_set_search_state_tag") == 0 &&
+            count_identifier(
+                replay_source, "PushSemanticSetSearchStateEvent") == 0 &&
+            count_identifier(
+                replay_source, "TakeSemanticSetSearchStateDesired") == 0 &&
+            count_identifier(replay_source,
+                "RealmzConsumeSemanticSetSearchStateEvent") == 0,
+        "Search slice must not add replay actions, tags, enqueue, consume, or "
+        "sideband vocabulary");
   }
 }
 
@@ -6744,7 +7082,7 @@ void verify_gameplay_chrome_coverage_contract(
       "inventory-wide missing roles");
   require(count_identifier(coverage_source, "compute_inventory_revision") >= 3 &&
           count_identifier(coverage_source, "static_assert") != 0 &&
-          coverage_header.find("0xB8F5AC1781FE2B3CULL") !=
+          coverage_header.find("0x5C623209F617C588ULL") !=
               std::string::npos,
       "gameplay-chrome inventory revision must be content-addressed and "
       "compile-time pinned");
@@ -6834,7 +7172,7 @@ void verify_gameplay_chrome_coverage_contract(
           coverage_test.find("kExpectedManifestRows.size() == 95U") !=
               std::string::npos &&
           coverage_test.find("first.size() == 95U") != std::string::npos &&
-          coverage_test.find("0xB8F5AC1781FE2B3CULL") !=
+          coverage_test.find("0x5C623209F617C588ULL") !=
               std::string::npos &&
           count_identifier(coverage_test,
               "test_inventory_revision_covers_every_ordered_manifest_field") >=
@@ -8001,6 +8339,10 @@ void verify_top_level_loop(
       std::string(function_name) +
           " must leave tagged load consumption to EventManager");
   require(count_identifier(
+              body, "RealmzConsumeSemanticSetSearchStateEvent") == 0,
+      std::string(function_name) +
+          " must leave tagged Search consumption to EventManager");
+  require(count_identifier(
               body, "RealmzConsumeSemanticGuardCombatantEvent") == 0,
       std::string(function_name) +
           " must leave tagged guard consumption to EventManager");
@@ -8175,6 +8517,72 @@ void verify_character_sheet_outer_loop(
           " must jump out of app1Evt to an existing shared buttonchoice label");
 }
 
+void verify_search_outer_loop(
+    std::string_view body,
+    std::string_view function_name,
+    std::string_view handoff_label) {
+  const std::string compact = without_whitespace(body);
+  const std::size_t take = compact.find(
+      "TakeSemanticSetSearchStateDesired(&semantic_desired_searching)");
+  require(take != std::string::npos,
+      std::string(function_name) +
+          " must take one staged absolute Search state in app1Evt");
+  const std::size_t branch_start = compact.rfind("case", take);
+  const std::size_t branch_end = compact.find("case", take + 1U);
+  require(branch_start != std::string::npos &&
+          branch_end != std::string::npos && branch_start < take &&
+          take < branch_end,
+      std::string(function_name) +
+          " Search handoff must remain bounded to app1Evt");
+  const std::string branch = compact.substr(
+      branch_start, branch_end - branch_start);
+  require(count_identifier(body, "TakeSemanticSetSearchStateDesired") == 1 &&
+          count_identifier(branch,
+              "TakeSemanticSetSearchStateDesired") == 1,
+      std::string(function_name) +
+          " must own exactly one Search one-shot take");
+  require(count_identifier(branch, "FindControl") == 0 &&
+          count_identifier(branch, "GlobalToLocal") == 0 &&
+          count_identifier(branch, "mouseDown") == 0 &&
+          count_identifier(branch, "keyDown") == 0 &&
+          count_identifier(branch, "sound") == 0 &&
+          count_identifier(branch, "ploticon3") == 0 &&
+          count_identifier(branch, "buttonchoice") == 0,
+      std::string(function_name) +
+          " Search app1Evt must not forge input or duplicate Classic behavior");
+
+  const std::size_t branch_take = branch.find(
+      "TakeSemanticSetSearchStateDesired(&semantic_desired_searching)");
+  const std::size_t live_control = branch.find("(search!=NIL)", branch_take);
+  const std::size_t mismatch = branch.find(
+      "((partycondition[PARTY_COND_SEARCH]!=0)!="
+      "(semantic_desired_searching!=0))",
+      live_control);
+  const std::size_t control = branch.find("theControl=search;", mismatch);
+  const std::size_t reply = branch.find("reply=0;", control);
+  const std::string goto_handoff = "goto" + std::string(handoff_label) + ";";
+  const std::size_t jump = branch.find(goto_handoff, reply);
+  require(live_control != std::string::npos && mismatch != std::string::npos &&
+          control != std::string::npos && reply != std::string::npos &&
+          jump != std::string::npos && branch_take < live_control &&
+          live_control < mismatch && mismatch < control && control < reply &&
+          reply < jump,
+      std::string(function_name) +
+          " must burn Search authorization, then recheck the live control and "
+          "absolute state mismatch before the shared Classic handoff");
+  require(count_identifier(branch, "partycondition") == 1 &&
+          count_identifier(branch, "PARTY_COND_SEARCH") == 1 &&
+          count_text(branch, "partycondition[PARTY_COND_SEARCH]=") == 0,
+      std::string(function_name) +
+          " Search handoff may read the authoritative condition once but never "
+          "mutate it directly");
+  require(!branch.contains(std::string(handoff_label) + ":") &&
+          compact.contains(
+              std::string(handoff_label) + ":reply=buttonchoice(reply);"),
+      std::string(function_name) +
+          " must jump out of app1Evt to the existing buttonchoice label");
+}
+
 void verify_legacy_loop_ownership(const fs::path& repository_root) {
   const fs::path legacy_root = repository_root / "src/realmz_orig";
   const std::string misc = code_only(read_file(legacy_root / "misc.c"));
@@ -8196,6 +8604,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       read_file(legacy_root / "getchoice.c"));
   const std::string question_source = code_only(
       read_file(legacy_root / "question.c"));
+  const std::string buttonchoice_source = code_only(
+      read_file(legacy_root / "buttonchoice.c"));
   const std::string presentation_context_source = code_only(read_file(
       repository_root / "src/presentation/LegacyPresentationContext.c"));
 
@@ -8227,6 +8637,36 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "REALMZ_SEMANTIC_INPUT_COMBAT");
   verify_character_sheet_outer_loop(mainscreen, "mainscreen", "goback2");
   verify_character_sheet_outer_loop(threed, "threed", "goback");
+  verify_search_outer_loop(mainscreen, "mainscreen", "goback2");
+  verify_search_outer_loop(threed, "threed", "goback");
+  const std::string buttonchoice = function_body(
+      buttonchoice_source, "buttonchoice");
+  const std::string compact_buttonchoice = without_whitespace(buttonchoice);
+  const std::size_t classic_search = compact_buttonchoice.find(
+      "if(theControl==search)");
+  const std::size_t classic_torch = compact_buttonchoice.find(
+      "if(theControl==torch)", classic_search);
+  require(classic_search != std::string::npos &&
+          classic_torch != std::string::npos && classic_search < classic_torch,
+      "Classic buttonchoice Search branch must remain present before Torch");
+  const std::string classic_search_branch = compact_buttonchoice.substr(
+      classic_search, classic_torch - classic_search);
+  for (const std::string_view required : {
+           "sound(141);",
+           "if(partycondition[PARTY_COND_SEARCH])",
+           "partycondition[PARTY_COND_SEARCH]=0;",
+           "GetControlBounds(search,&r);",
+           "ploticon3(128,r);",
+           "partycondition[PARTY_COND_SEARCH]=-1;",
+       }) {
+    require(classic_search_branch.contains(required),
+        std::string("Classic Search behavior must retain ") +
+            std::string(required));
+  }
+  require(count_identifier(classic_search_branch,
+              "TakeSemanticSetSearchStateDesired") == 0 &&
+          count_identifier(classic_search_branch, "app1Evt") == 0,
+      "Classic buttonchoice Search behavior must remain semantic-boundary free");
   const std::string compact_combat = without_whitespace(combat_raw);
   const std::size_t items_case = compact_combat.find("case'i':");
   const std::size_t items_next_case = compact_combat.find(
@@ -9858,6 +10298,7 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_spellbook_consumer_count = 0;
   std::size_t global_save_consumer_count = 0;
   std::size_t global_load_consumer_count = 0;
+  std::size_t global_search_consumer_count = 0;
   std::size_t global_guard_consumer_count = 0;
   std::size_t global_finish_consumer_count = 0;
   std::size_t global_delay_consumer_count = 0;
@@ -9876,7 +10317,9 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
   std::size_t global_center_cursor_consumer_count = 0;
   std::size_t global_selection_apply_count = 0;
   std::size_t global_character_sheet_take_count = 0;
+  std::size_t global_search_take_count = 0;
   std::vector<fs::path> character_sheet_take_callers;
+  std::vector<fs::path> search_take_callers;
   std::vector<fs::path> c_sources;
   for (const auto& entry : fs::recursive_directory_iterator(legacy_root)) {
     if (entry.is_regular_file() && entry.path().extension() == ".c") {
@@ -9906,6 +10349,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticOpenSaveGameEvent");
     global_load_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticOpenLoadGameEvent");
+    global_search_consumer_count += count_identifier(
+        source, "RealmzConsumeSemanticSetSearchStateEvent");
     global_guard_consumer_count += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     global_finish_consumer_count += count_identifier(
@@ -9947,6 +10392,12 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       character_sheet_take_callers.emplace_back(
           fs::relative(path, legacy_root));
     }
+    const std::size_t search_takes = count_identifier(
+        source, "TakeSemanticSetSearchStateDesired");
+    global_search_take_count += search_takes;
+    if (search_takes != 0) {
+      search_take_callers.emplace_back(fs::relative(path, legacy_root));
+    }
   }
   require(global_wrapper_count == 3,
       "only mainscreen, threed, and combat may call the semantic gameplay "
@@ -9969,6 +10420,8 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
       "legacy loops must not consume tagged semantic save input directly");
   require(global_load_consumer_count == 0,
       "legacy loops must not consume tagged semantic load input directly");
+  require(global_search_consumer_count == 0,
+      "legacy loops must not consume tagged semantic Search input directly");
   require(global_guard_consumer_count == 0,
       "legacy loops must not consume tagged semantic guard input directly");
   require(global_finish_consumer_count == 0,
@@ -10015,6 +10468,11 @@ void verify_legacy_loop_ownership(const fs::path& repository_root) {
               fs::path("misc.c"), fs::path("threed.c")},
       "only misc.c mainscreen and threed.c may take the staged Character "
       "Sheet member");
+  std::ranges::sort(search_take_callers);
+  require(global_search_take_count == 2 &&
+          search_take_callers == std::vector<fs::path>{
+              fs::path("misc.c"), fs::path("threed.c")},
+      "only misc.c mainscreen and threed.c may take the staged Search state");
 
   const std::string getchoice = function_body(getchoice_source, "getchoice");
   const std::string compact_getchoice = without_whitespace(getchoice);
@@ -10054,6 +10512,7 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t load_consume_calls = 0;
   std::size_t rest_consume_calls = 0;
   std::size_t camp_consume_calls = 0;
+  std::size_t search_consume_calls = 0;
   std::size_t guard_consume_calls = 0;
   std::size_t finish_consume_calls = 0;
   std::size_t delay_consume_calls = 0;
@@ -10071,8 +10530,10 @@ void verify_production_call_ownership(const fs::path& repository_root) {
   std::size_t scroll_case_consume_calls = 0;
   std::size_t center_cursor_consume_calls = 0;
   std::size_t character_sheet_take_calls = 0;
+  std::size_t search_take_calls = 0;
   std::vector<fs::path> wrapper_callers;
   std::vector<fs::path> character_sheet_take_callers;
+  std::vector<fs::path> search_take_callers;
 
   for (const auto& entry : fs::recursive_directory_iterator(source_root)) {
     if (!entry.is_regular_file()) {
@@ -10119,6 +10580,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
         source, "RealmzConsumeSemanticRestPartyEvent");
     camp_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticSetCampStateEvent");
+    search_consume_calls += count_identifier(
+        source, "RealmzConsumeSemanticSetSearchStateEvent");
     guard_consume_calls += count_identifier(
         source, "RealmzConsumeSemanticGuardCombatantEvent");
     finish_consume_calls += count_identifier(
@@ -10156,6 +10619,12 @@ void verify_production_call_ownership(const fs::path& repository_root) {
     character_sheet_take_calls += file_character_sheet_takes;
     if (file_character_sheet_takes != 0) {
       character_sheet_take_callers.emplace_back(relative);
+    }
+    const std::size_t file_search_takes = count_identifier(
+        source, "TakeSemanticSetSearchStateDesired");
+    search_take_calls += file_search_takes;
+    if (file_search_takes != 0) {
+      search_take_callers.emplace_back(relative);
     }
     if (file_wrapper_calls != 0) {
       wrapper_callers.emplace_back(relative);
@@ -10198,6 +10667,8 @@ void verify_production_call_ownership(const fs::path& repository_root) {
       "only EventManager may call RealmzConsumeSemanticRestPartyEvent");
   require(camp_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticSetCampStateEvent");
+  require(search_consume_calls == 0,
+      "only EventManager may call RealmzConsumeSemanticSetSearchStateEvent");
   require(guard_consume_calls == 0,
       "only EventManager may call RealmzConsumeSemanticGuardCombatantEvent");
   require(finish_consume_calls == 0,
@@ -10247,6 +10718,13 @@ void verify_production_call_ownership(const fs::path& repository_root) {
               fs::path("realmz_orig/threed.c")},
       "only the outdoor and dungeon top-level loops may take a staged "
       "Character Sheet member");
+  std::ranges::sort(search_take_callers);
+  require(search_take_calls == 2 &&
+          search_take_callers == std::vector<fs::path>{
+              fs::path("realmz_orig/misc.c"),
+              fs::path("realmz_orig/threed.c")},
+      "only the outdoor and dungeon top-level loops may take a staged Search "
+      "state");
 }
 
 } // namespace
@@ -10271,6 +10749,7 @@ int main(int argc, char** argv) {
     verify_character_sheet_window_manager_contract(repository_root);
     verify_rest_party_window_manager_contract(repository_root);
     verify_set_camp_state_window_manager_contract(repository_root);
+    verify_set_search_state_window_manager_contract(repository_root);
     verify_selected_party_details_renderer_contract(repository_root);
     verify_gameplay_chrome_coverage_contract(repository_root);
     verify_remastered_runtime_asset_integration(repository_root);

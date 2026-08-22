@@ -62,6 +62,7 @@ Boolean intemple = 0;
 Boolean indung = 0;
 Boolean incamp = 0;
 Boolean spellcasting = 0;
+short partycondition[10] = {};
 struct character c[6] = {};
 struct monster monster[100] = {};
 char pos[6][2] = {};
@@ -267,7 +268,9 @@ void reset_legacy_globals() {
   inshop = 0;
   intemple = 0;
   indung = 0;
+  incamp = 0;
   spellcasting = 0;
+  std::memset(partycondition, 0, sizeof(partycondition));
   std::memset(c, 0, sizeof(c));
   std::memset(monster, 0, sizeof(monster));
   std::memset(pos, 0, sizeof(pos));

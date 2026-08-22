@@ -44,6 +44,7 @@ extern Boolean intemple;
 extern Boolean indung;
 extern Boolean incamp;
 extern Boolean spellcasting;
+extern short partycondition[10];
 extern struct character c[6];
 extern struct itemattr allweapons[200];
 extern struct itemattr allarmor[200];
@@ -246,6 +247,7 @@ GameSnapshot LegacyGameSnapshotSource::capture() const {
 
   snapshot.world.presentation = world_presentation();
   snapshot.world.in_camp = incamp != 0;
+  snapshot.world.searching = partycondition[PARTY_COND_SEARCH] != 0;
   snapshot.world.party_x = partyx;
   snapshot.world.party_y = partyy;
   snapshot.world.land_level = landlevel;

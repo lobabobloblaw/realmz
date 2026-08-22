@@ -227,6 +227,15 @@ void test_action_availability_is_conservative() {
   CHECK(make_camp.label == "Camp");
   CHECK(make_camp.desired_in_camp == true);
   CHECK(make_camp.availability_reason->label == "Game rules apply");
+  const auto& start_search =
+      action_with(model, ActionIntent::set_search_state);
+  CHECK(start_search.can_invoke());
+  CHECK(start_search.availability == ActionAvailability::deferred_to_engine);
+  CHECK(start_search.command == "action.party.search");
+  CHECK(start_search.label == "Search");
+  CHECK(start_search.desired_searching == true);
+  CHECK(start_search.tab_order == make_camp.tab_order + 1);
+  CHECK(start_search.availability_reason->label == "Game rules apply");
 
   snapshot.world.in_camp = true;
   model = build_presentation_shell_model(snapshot);
@@ -243,7 +252,31 @@ void test_action_availability_is_conservative() {
   CHECK(break_camp.label == "Break camp");
   CHECK(break_camp.desired_in_camp == false);
   CHECK(break_camp.tab_order == available_rest.tab_order + 1);
+  const auto& search_while_camped =
+      action_with(model, ActionIntent::set_search_state);
+  CHECK(search_while_camped.can_invoke());
+  CHECK(search_while_camped.desired_searching == true);
+  CHECK(search_while_camped.tab_order == break_camp.tab_order + 1);
+
+  snapshot.world.searching = true;
+  model = build_presentation_shell_model(snapshot);
+  const auto& stop_search =
+      action_with(model, ActionIntent::set_search_state);
+  CHECK(stop_search.can_invoke());
+  CHECK(stop_search.label == "Stop search");
+  CHECK(stop_search.desired_searching == false);
+
+  snapshot.screen = ScreenContext::dungeon;
+  snapshot.world.searching = false;
+  model = build_presentation_shell_model(snapshot);
+  const auto& dungeon_search =
+      action_with(model, ActionIntent::set_search_state);
+  CHECK(dungeon_search.can_invoke());
+  CHECK(dungeon_search.desired_searching == true);
+  CHECK(action_with(model, ActionIntent::rest).can_invoke());
+  snapshot.screen = ScreenContext::exploration;
   snapshot.world.in_camp = false;
+  snapshot.world.searching = false;
 
   snapshot.party.members[1].use_scroll_available = true;
   model = build_presentation_shell_model(snapshot);
@@ -302,13 +335,19 @@ void test_action_availability_is_conservative() {
   CHECK(camp_in_encounter.desired_in_camp == true);
   CHECK(camp_in_encounter.availability_reason->label ==
       "Camp is unavailable now");
-  CHECK(model.actions.size() == 12);
-  CHECK(model.actions[9].command == "encounter.choice.11");
-  CHECK(model.actions[9].can_invoke());
-  CHECK(model.actions[10].command == "encounter.choice.12");
-  CHECK(!model.actions[10].can_invoke());
-  CHECK(model.actions[11].intent == ActionIntent::cancel);
-  CHECK(model.actions[11].can_invoke());
+  const auto& search_in_encounter =
+      action_with(model, ActionIntent::set_search_state);
+  CHECK(!search_in_encounter.can_invoke());
+  CHECK(search_in_encounter.desired_searching == true);
+  CHECK(search_in_encounter.availability_reason->label ==
+      "Search is unavailable now");
+  CHECK(model.actions.size() == 13);
+  CHECK(model.actions[10].command == "encounter.choice.11");
+  CHECK(model.actions[10].can_invoke());
+  CHECK(model.actions[11].command == "encounter.choice.12");
+  CHECK(!model.actions[11].can_invoke());
+  CHECK(model.actions[12].intent == ActionIntent::cancel);
+  CHECK(model.actions[12].can_invoke());
 }
 
 void test_world_action_page_preferences_are_normalized() {
@@ -391,13 +430,19 @@ void test_combat_actions_track_the_active_party_combatant() {
   };
 
   auto model = build_presentation_shell_model(snapshot);
-  CHECK(model.actions.size() == 26U);
+  CHECK(model.actions.size() == 27U);
   const auto& camp_in_combat =
       action_with(model, ActionIntent::set_camp_state);
   CHECK(!camp_in_combat.can_invoke());
   CHECK(camp_in_combat.desired_in_camp == true);
   CHECK(camp_in_combat.availability_reason->label ==
       "Camp is unavailable now");
+  const auto& search_in_combat =
+      action_with(model, ActionIntent::set_search_state);
+  CHECK(!search_in_combat.can_invoke());
+  CHECK(search_in_combat.desired_searching == true);
+  CHECK(search_in_combat.availability_reason->label ==
+      "Search is unavailable now");
   const auto& noncombat_scroll =
       action_with(model, ActionIntent::open_scroll_case);
   CHECK(!noncombat_scroll.can_invoke());

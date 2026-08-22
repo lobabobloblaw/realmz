@@ -96,6 +96,7 @@ struct LegacyActionHandlers {
   LegacyActionHandler<SetPresentationModeAction> set_presentation_mode;
   LegacyActionHandler<RestPartyAction> rest_party;
   LegacyActionHandler<SetCampStateAction> set_camp_state;
+  LegacyActionHandler<SetSearchStateAction> set_search_state;
 };
 
 class InjectedLegacyCommandBridge final : public LegacyCommandBridge {

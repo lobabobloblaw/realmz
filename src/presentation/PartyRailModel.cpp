@@ -363,6 +363,19 @@ std::vector<ActionControlModel> build_actions(
                 unavailable_token("Camp is unavailable now")}));
   result.back().desired_in_camp = !snapshot.world.in_camp;
 
+  result.emplace_back(action(
+      ActionIntent::set_search_state,
+      "action.party.search",
+      snapshot.world.searching ? "Stop search" : "Search",
+      navigation_context ? ActionAvailability::deferred_to_engine
+                         : ActionAvailability::unavailable,
+      tab_order++,
+      navigation_context
+          ? std::optional<StateTokenModel>{engine_rules_token()}
+          : std::optional<StateTokenModel>{
+                unavailable_token("Search is unavailable now")}));
+  result.back().desired_searching = !snapshot.world.searching;
+
   ActionAvailability scroll_availability =
       ActionAvailability::deferred_to_engine;
   std::optional<StateTokenModel> scroll_reason = engine_rules_token();

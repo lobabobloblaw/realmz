@@ -231,6 +231,28 @@ remains authoritative for that
 permission and feedback, music and sound, `incamp` and related state changes,
 `moveparty(0)`, time advancement, `updatecontrols()`, and every preserved
 `revertgame` return. No Camp action or delivery vocabulary is added to replay.
+The Game page then orders SAVE, LOAD, REST, CAMP/BREAK CAMP, and
+SEARCH/STOP SEARCH. The member-free Search control remains available during
+ordinary outdoor or dungeon navigation with no active encounter, including
+while camped. It presents `SEARCH` / `Start searching` when the current state is
+off and `STOP SEARCH` / `Stop searching` when it is on. Its typed
+`SetSearchStateAction` carries the absolute desired searching state. The
+single-use `0x5753` tag encodes the originating world surface and a strict
+Boolean destination; malformed Boolean values are rejected. After the
+completed semantic scope is consumed, late validation freshly requires
+adaptive eligibility, the exact exploration or dungeon screen and snapshot,
+matching outdoor or dungeon-map/first-person presentation, and a current
+any-nonzero Classic search state still opposite to the requested state. The
+Classic outer loop takes the strict Boolean sideband, then requires the real
+live `search` control before entering the existing `buttonchoice` path with
+`theControl == search`. EventManager
+returns a neutral `app1Evt`; the route fabricates no key or pointer event and
+performs no direct state mutation. Classic `buttonchoice` alone owns sound,
+persistent state, and icon updates. `checkforsecret` and its search-related time
+cost remain effects of subsequent Classic movement, not the semantic toggle.
+No Search action or delivery vocabulary is added to replay. Automated tests do
+not close the private manual-QA gap described below; it remains required before
+release.
 Combat exposes seventeen bounded semantic controls: typed `GuardCombatantAction`,
 `FinishCombatantAction`, `DelayCombatantAction`,
 `CenterActiveCombatantAction`, `SwitchWeaponSetAction`,
@@ -436,15 +458,15 @@ continues to pass a hardcoded `semantic_controls_ready = false`; no cropped
 Classic gameplay frame is enabled and this section does not claim runtime
 readiness.
 
-The 95-row inventory currently contains six `retained_in_crop`, 39
-`semantic_complete`, and 50 `missing` roles. Cropping remains disabled. The
+The 95-row inventory currently contains six `retained_in_crop`, 41
+`semantic_complete`, and 48 `missing` roles. Cropping remains disabled. The
 known incomplete roles include at least the following; the source-derived
 inventory remains authoritative and must reject an omitted role:
 
 | Surface | Known `missing` interaction roles |
 | --- | --- |
-| Outdoor | Search, use/consume Torch, Heal, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
-| Dungeon | The corresponding dungeon Search, use/consume Torch, Heal, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
+| Outdoor | Use/consume Torch, Heal, context-sensitive Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, selected-member item/condition drilldowns, and per-member Auto. |
+| Dungeon | The corresponding dungeon use/consume Torch, Heal, Make Scroll/Area Search, Shop/Temple/seamless-encounter entry, Trade, Money/Swap, active-member inspection, item/condition drilldowns, and per-member Auto, including dungeon-specific availability and input semantics. |
 | Combat | Conditional Turn Undead, per-member Auto, and distinct focused-combatant character/monster inspection, items, conditions, and monster-attack actions. |
 
 Known `missing` essential-information roles across these surfaces include
@@ -452,7 +474,8 @@ ordered capture and retention of the Classic message/flash stream for Event
 Log; pooled-money and fatigue status; party-wide condition indicators; complete
 all-member vitals and combat values, including armor class, spell points, and
 noncaster attack cadence; authoritative coordinates, calendar/clock, and
-Search/Torch state; focused-combatant information; and combat round and
+complete combined Search/Torch state (Torch remains absent); focused-combatant
+information; and combat round and
 enemies-remaining counts. Snapshot fields or the current placeholder Event Log
 do not satisfy the information-completeness check merely by existing. The
 selected-member Details inspector remains a distinct bounded renderer and does
@@ -630,6 +653,7 @@ Automated checks do not replace these release decisions:
   and reviewer sign-off with the release record;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, non-combat Use Scroll, Character, Save, Load, Rest, Camp/Break Camp,
+  Search/Stop Search,
   Guard, Finish, Delay, Center,
   Switch Weapon, Center Previous/Next, Combat Items, Auto, Range, Bandage, Undo,
   Combat Cast, Combat Target, Combat Escape, Use Scroll, and Center Cursor
@@ -663,6 +687,22 @@ Automated checks do not replace these release decisions:
   confirm Classic alone owns denial feedback, music, sound, state and movement
   updates, time, control refresh, and revert handling. Confirm replay schemas
   and decoders expose no Camp vocabulary;
+  close the remaining private manual-QA gap for Search on both outdoor and
+  dungeon fixtures, including while camped: confirm the GAME order is SAVE,
+  LOAD, REST, CAMP/BREAK CAMP, SEARCH/STOP SEARCH; verify the visible
+  `SEARCH`/`STOP SEARCH` labels and `Start searching`/`Stop searching`
+  accessibility text for both states; and prove pointer and keyboard activation
+  request an absolute desired state. Queue both same-state stale tags and tags
+  made stale by scope, surface, adaptive eligibility, presentation, real
+  Classic-control, or live-state changes and confirm they are inert. Exercise
+  zero and multiple nonzero Classic search values and confirm every nonzero
+  value is treated as searching. For each accepted action, verify exactly one
+  neutral `app1Evt` sideband reaches the real `search` control and existing
+  `buttonchoice` path with `theControl == search`, with no forged key, pointer,
+  or direct mutation;
+  confirm Classic alone owns sound, state, and icon changes, and that
+  `checkforsecret` and its time cost occur only during subsequent Classic
+  behavior. Confirm replay schemas and decoders expose no Search vocabulary;
   and inert stale Guard,
   Finish, Delay, and
   Center, Switch Weapon, and Center Previous/Next actions after the acting

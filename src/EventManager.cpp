@@ -97,6 +97,17 @@ static void stage_semantic_open_character_sheet_member(
   pending_semantic_open_character_sheet_member = party_member;
 }
 
+static std::optional<bool> pending_semantic_set_search_state_desired;
+
+static void clear_pending_semantic_set_search_state_desired() noexcept {
+  pending_semantic_set_search_state_desired.reset();
+}
+
+static void stage_semantic_set_search_state_desired(
+    bool desired_searching) noexcept {
+  pending_semantic_set_search_state_desired = desired_searching;
+}
+
 static constexpr uint16_t EVMOD_RIGHT_CONTROL_KEY_DOWN = 0x8000;
 static constexpr uint16_t EVMOD_RIGHT_OPTION_KEY_DOWN = 0x4000;
 static constexpr uint16_t EVMOD_RIGHT_SHIFT_KEY_DOWN = 0x2000;
@@ -687,6 +698,29 @@ public:
     ev.window_port = FrontWindow();
     em_log.debug_f(
         "Enqueued tagged semantic set camp state (what={}, "
+        "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
+        "modifiers=0x{:04X})",
+        name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
+        ev.where.v, ev.modifiers);
+    return true;
+  }
+
+  bool push_semantic_set_search_state_event(uint32_t tagged_message) {
+    if (!RealmzIsSemanticSetSearchStateTag(tagged_message)) {
+      return false;
+    }
+    // Search has no Classic key route. Retain the absolute desired state in
+    // the typed tag until the guarded world consumer can validate it and stage
+    // the one-shot outer-loop handoff.
+    auto& ev = this->event_queue.emplace_back();
+    ev.what = app1Evt;
+    ev.message = tagged_message;
+    ev.when = TickCount();
+    ev.where = this->mouse_loc;
+    ev.modifiers = EVMOD_MOUSE_BUTTON_UP | EVMOD_WINDOW_ACTIVATED;
+    ev.window_port = FrontWindow();
+    em_log.debug_f(
+        "Enqueued tagged semantic set search state (what={}, "
         "message=0x{:08X}, when=0x{:08X}, where=(h={}, v={}), "
         "modifiers=0x{:04X})",
         name_for_event_type(ev.what), ev.message, ev.when, ev.where.h,
@@ -1458,6 +1492,7 @@ void FlushEvents(int16_t which_mask, uint16_t stop_mask) {
   em_log.debug_f("FlushEvents(0x{:04X}, 0x{:04X})", which_mask, stop_mask);
   clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
+  clear_pending_semantic_set_search_state_desired();
   em.flush_events();
 }
 
@@ -1470,6 +1505,7 @@ Boolean GetNextEvent(int16_t which_mask, EventRecord* ret) {
 
   clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
+  clear_pending_semantic_set_search_state_desired();
   *ret = em.get_next_event(0);
   return (ret->what != nullEvent);
 }
@@ -1495,6 +1531,7 @@ Boolean GetNextSemanticGameplayEvent(
 
   clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
+  clear_pending_semantic_set_search_state_desired();
 
   const realmz::presentation::UIAction* replay_semantic_action = nullptr;
   std::uint32_t replay_expected_key_message = 0;
@@ -1844,6 +1881,22 @@ Boolean GetNextSemanticGameplayEvent(
       ret->message = 0;
     }
   } else if ((ret->what == app1Evt) &&
+      RealmzIsSemanticSetSearchStateTag(ret->message)) {
+    uint8_t desired_searching = 0;
+    if (still_remastered && RealmzConsumeSemanticSetSearchStateEvent(
+            surface, ret->message, &desired_searching)) {
+      // Search has no preserved key binding. Keep a neutral app1Evt and move
+      // only the validated absolute state into a one-shot outer-loop slot.
+      stage_semantic_set_search_state_desired(desired_searching != 0);
+      ret->message = 0;
+      ret->where = {};
+      ret->modifiers = 0;
+      ret->window_port = nullptr;
+    } else {
+      ret->what = nullEvent;
+      ret->message = 0;
+    }
+  } else if ((ret->what == app1Evt) &&
       RealmzIsSemanticGuardCombatantTag(ret->message)) {
     uint32_t classic_key_message = 0;
     if (still_remastered && RealmzConsumeSemanticGuardCombatantEvent(
@@ -2117,6 +2170,7 @@ Boolean WaitNextEvent(int16_t which_mask, EventRecord* ret, uint32_t sleep, RgnH
 
   clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
+  clear_pending_semantic_set_search_state_desired();
   *ret = em.get_next_event(sleep);
   return (ret->what != nullEvent);
 }
@@ -2210,6 +2264,10 @@ Boolean PushSemanticSetCampStateEvent(uint32_t tagged_message) {
   return em.push_semantic_set_camp_state_event(tagged_message);
 }
 
+Boolean PushSemanticSetSearchStateEvent(uint32_t tagged_message) {
+  return em.push_semantic_set_search_state_event(tagged_message);
+}
+
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message) {
   return em.push_semantic_guard_combatant_event(tagged_message);
 }
@@ -2284,6 +2342,16 @@ Boolean TakeSemanticOpenCharacterSheetMember(uint8_t* party_member) {
   return 1;
 }
 
+Boolean TakeSemanticSetSearchStateDesired(uint8_t* desired_searching) {
+  const auto pending = pending_semantic_set_search_state_desired;
+  clear_pending_semantic_set_search_state_desired();
+  if (!pending || !desired_searching) {
+    return 0;
+  }
+  *desired_searching = *pending ? 1 : 0;
+  return 1;
+}
+
 Boolean TakeSemanticCenterCombatCursorCell(
     uint8_t* absolute_x,
     uint8_t* absolute_y) {
@@ -2300,6 +2368,7 @@ Boolean TakeSemanticCenterCombatCursorCell(
 void CancelSemanticGameplayInput(void) {
   clear_pending_semantic_open_character_sheet_member();
   clear_pending_semantic_center_combat_cursor_cell();
+  clear_pending_semantic_set_search_state_desired();
   RealmzInvalidateSemanticInputBoundary();
   em.discard_semantic_gameplay_events();
 }

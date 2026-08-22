@@ -110,6 +110,9 @@ struct WorldView {
   // it preserves positional source compatibility for existing snapshots.
   // Presentation may gate Rest with it, but cannot mutate Classic state.
   bool in_camp = false;
+  // Value-only projection of Classic's persistent Search condition. Any
+  // nonzero legacy value is active; presentation cannot normalize or mutate it.
+  bool searching = false;
 
   bool operator==(const WorldView&) const = default;
 

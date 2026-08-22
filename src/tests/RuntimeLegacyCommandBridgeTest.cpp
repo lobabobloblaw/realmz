@@ -86,6 +86,14 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyWorldActionSinks::set_camp_state),
     RuntimeLegacySetCampStateSink>);
+static_assert(std::is_same_v<
+    RuntimeLegacySetSearchStateSink,
+    std::function<bool(
+        bool,
+        const RuntimeLegacyCommandContext&)>>);
+static_assert(std::is_same_v<
+    decltype(RuntimeLegacyWorldActionSinks::set_search_state),
+    RuntimeLegacySetSearchStateSink>);
 static_assert(std::is_aggregate_v<RuntimeLegacyCombatActionSinks>);
 static_assert(std::is_same_v<
     decltype(RuntimeLegacyCombatActionSinks::guard_combatant),
@@ -1431,6 +1439,189 @@ void test_set_camp_state_context_and_named_sink_dispatch() {
   CHECK(movement_only.dispatch(UIAction{
       .sequence = sequence,
       .payload = SetCampStateAction{.desired_in_camp = true},
+  }).status == DispatchStatus::unsupported);
+}
+
+void test_set_search_state_context_and_named_sink_dispatch() {
+  RuntimeLegacyCommandContext context{
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .in_camp = false,
+      .searching = false,
+  };
+  int context_calls = 0;
+  int camp_calls = 0;
+  int search_calls = 0;
+  bool accept_search = true;
+  bool received_desired_searching = false;
+  RuntimeLegacyCommandBridge bridge(
+      kRuntimeLegacyNamedActionSinks,
+      [&context, &context_calls] {
+        ++context_calls;
+        return context;
+      },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .set_camp_state = [&camp_calls](
+              bool,
+              uint32_t,
+              const RuntimeLegacyCommandContext&) {
+            ++camp_calls;
+            return true;
+          },
+          .set_search_state = [
+              &search_calls,
+              &accept_search,
+              &received_desired_searching,
+              &context](
+              bool desired_searching,
+              const RuntimeLegacyCommandContext& captured_context) {
+            ++search_calls;
+            received_desired_searching = desired_searching;
+            CHECK(captured_context == context);
+            return accept_search;
+          },
+      });
+
+  ActionSequence sequence = 118;
+  CHECK(runtime_legacy_context_supports_set_search_state(true, context));
+  CHECK(!runtime_legacy_context_supports_set_search_state(false, context));
+
+  // Camp immediately followed by Search proves Camp did not move the shared
+  // context provider out from under the later append-only world handler.
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetCampStateAction{.desired_in_camp = true},
+  }).status == DispatchStatus::handled);
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetSearchStateAction{.desired_searching = true},
+  }).status == DispatchStatus::handled);
+  CHECK(context_calls == 2);
+  CHECK(camp_calls == 1);
+  CHECK(search_calls == 1);
+  CHECK(received_desired_searching);
+
+  context.searching = true;
+  CHECK(runtime_legacy_context_supports_set_search_state(false, context));
+  CHECK(!runtime_legacy_context_supports_set_search_state(true, context));
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetSearchStateAction{.desired_searching = false},
+  }).status == DispatchStatus::handled);
+  CHECK(search_calls == 2);
+  CHECK(!received_desired_searching);
+
+  for (const auto presentation : {
+           WorldPresentation::dungeon_map,
+           WorldPresentation::dungeon_first_person,
+       }) {
+    context.screen = ScreenContext::dungeon;
+    context.world_presentation = presentation;
+    context.searching = false;
+    CHECK(runtime_legacy_context_supports_set_search_state(true, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = SetSearchStateAction{.desired_searching = true},
+    }).status == DispatchStatus::handled);
+  }
+  CHECK(search_calls == 4);
+
+  for (const auto& invalid : {
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = false,
+               .searching = false,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::exploration,
+               .world_presentation = WorldPresentation::dungeon_map,
+               .adaptive_eligible = true,
+               .searching = false,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::dungeon,
+               .world_presentation = WorldPresentation::outdoor,
+               .adaptive_eligible = true,
+               .searching = false,
+           },
+           RuntimeLegacyCommandContext{
+               .screen = ScreenContext::combat,
+               .world_presentation = WorldPresentation::none,
+               .adaptive_eligible = true,
+               .searching = false,
+           },
+       }) {
+    context = invalid;
+    CHECK(!runtime_legacy_context_supports_set_search_state(true, context));
+    CHECK(bridge.dispatch(UIAction{
+        .sequence = sequence++,
+        .payload = SetSearchStateAction{.desired_searching = true},
+    }).status == DispatchStatus::rejected);
+  }
+  CHECK(search_calls == 4);
+
+  context = {
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .adaptive_eligible = true,
+      .searching = true,
+  };
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetSearchStateAction{.desired_searching = true},
+  }).status == DispatchStatus::rejected);
+  CHECK(search_calls == 4);
+
+  context.searching = false;
+  accept_search = false;
+  CHECK(bridge.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetSearchStateAction{.desired_searching = true},
+  }).status == DispatchStatus::failed);
+  CHECK(search_calls == 5);
+
+  RuntimeLegacyCommandBridge missing_provider(
+      kRuntimeLegacyNamedActionSinks,
+      {},
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{
+          .set_search_state = [](
+              bool,
+              const RuntimeLegacyCommandContext&) { return true; },
+      });
+  CHECK(missing_provider.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetSearchStateAction{.desired_searching = true},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge empty_named_sink(
+      kRuntimeLegacyNamedActionSinks,
+      [&context] { return context; },
+      [](MovementCommand,
+          uint32_t,
+          const RuntimeLegacyCommandContext&) { return true; },
+      [](PartyMemberId, const RuntimeLegacyCommandContext&) { return true; },
+      RuntimeLegacyWorldActionSinks{});
+  CHECK(empty_named_sink.dispatch(UIAction{
+      .sequence = sequence++,
+      .payload = SetSearchStateAction{.desired_searching = true},
+  }).status == DispatchStatus::failed);
+
+  RuntimeLegacyCommandBridge movement_only(
+      [&context] { return context; },
+      [](uint32_t) { return true; });
+  CHECK(movement_only.dispatch(UIAction{
+      .sequence = sequence,
+      .payload = SetSearchStateAction{.desired_searching = true},
   }).status == DispatchStatus::unsupported);
 }
 
@@ -6284,6 +6475,7 @@ int main() {
     test_open_character_sheet_context_and_named_sink_dispatch();
     test_rest_party_context_and_named_sink_dispatch();
     test_set_camp_state_context_and_named_sink_dispatch();
+    test_set_search_state_context_and_named_sink_dispatch();
     test_empty_brace_world_sink_compatibility_is_unambiguous();
     test_open_save_game_mapping_and_dispatch();
     test_open_load_game_mapping_and_dispatch();

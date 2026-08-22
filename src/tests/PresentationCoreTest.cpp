@@ -206,6 +206,16 @@ void test_actions_and_events() {
   CHECK(set_camp_state.payload !=
       UIActionPayload{SetCampStateAction{.desired_in_camp = false}});
 
+  UIAction set_search_state{
+      .sequence = 15,
+      .payload = SetSearchStateAction{.desired_searching = true},
+  };
+  CHECK(action_name(set_search_state.payload) == "set_search_state");
+  CHECK(std::get<SetSearchStateAction>(
+            set_search_state.payload).desired_searching);
+  CHECK(set_search_state.payload !=
+      UIActionPayload{SetSearchStateAction{.desired_searching = false}});
+
   UIAction guard{
       .sequence = 13,
       .payload = GuardCombatantAction{2},

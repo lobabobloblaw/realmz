@@ -504,6 +504,9 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .camp_control_visible = true,
                  .camp_available = true,
                  .camp_desired_in_camp = true,
+                 .search_control_visible = true,
+                 .search_available = true,
+                 .search_desired_searching = true,
              },
              ShellControlLayoutRequest{
                  .screen = ScreenContext::dungeon,
@@ -527,6 +530,9 @@ void test_world_action_controls_at_combined_minimum_layout() {
                  .camp_control_visible = true,
                  .camp_available = true,
                  .camp_desired_in_camp = true,
+                 .search_control_visible = true,
+                 .search_available = true,
+                 .search_desired_searching = true,
              },
          }) {
       std::array<std::vector<ShellControlPlacement>, 3> layouts;
@@ -535,7 +541,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
         layouts[page_index] = compute_shell_control_layout(request);
         const size_t action_count = page_index == 0U
             ? (request.screen == ScreenContext::exploration ? 8U : 4U)
-            : 4U;
+            : (page_index == 1U ? 4U : 5U);
         CHECK(layouts[page_index].size() == kWorldPages.size() + action_count);
         verify_world_tabs(
             layouts[page_index], panel, kWorldPages[page_index]);
@@ -602,6 +608,7 @@ void test_world_action_controls_at_combined_minimum_layout() {
       const auto& load = game[4];
       const auto& rest = game[5];
       const auto& camp = game[6];
+      const auto& search = game[7];
       CHECK(save.region.value == 1102U);
       CHECK(save.kind == ShellControlKind::open_save_game);
       CHECK(save.label == "SAVE");
@@ -634,6 +641,14 @@ void test_world_action_controls_at_combined_minimum_layout() {
       CHECK(camp.tab_order == 1124);
       CHECK(camp.enabled);
       CHECK(camp.payload == UIActionPayload{SetCampStateAction{true}});
+      CHECK(search.region.value == 1125U);
+      CHECK(search.kind == ShellControlKind::set_search_state);
+      CHECK(search.label == "SEARCH");
+      CHECK(search.accessibility_label == "Start searching");
+      CHECK(search.focus_identifier == "focus.action.party.search");
+      CHECK(search.tab_order == 1125);
+      CHECK(search.enabled);
+      CHECK(search.payload == UIActionPayload{SetSearchStateAction{true}});
 
       // Every tab payload is a direct destination, including selecting the
       // already-active page. Recompose each target from every origin.
@@ -817,10 +832,71 @@ void test_world_action_controls_at_combined_minimum_layout() {
       .camp_desired_in_camp = true,
   }).empty());
 
-  // Dungeon Travel and the reserved four-slot Party page are both reachable
-  // at this exact 44-point floor. One point less in either dimension fails
-  // the whole persistent deck closed on every page.
-  constexpr LogicalRect exact_minimum{0.0, 0.0, 222.0, 120.0};
+  const auto search_disabled = compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .search_control_visible = true,
+      .search_available = false,
+      .search_desired_searching = true,
+  });
+  CHECK(search_disabled.size() == 4U);
+  verify_world_tabs(search_disabled, panel, WorldActionPage::game);
+  CHECK(search_disabled.back().region.value == 1125U);
+  CHECK(search_disabled.back().kind == ShellControlKind::set_search_state);
+  CHECK(search_disabled.back().label == "SEARCH");
+  CHECK(search_disabled.back().accessibility_label == "Start searching");
+  CHECK(search_disabled.back().focus_identifier ==
+      "focus.action.party.search");
+  CHECK(search_disabled.back().tab_order == 1125);
+  CHECK(!search_disabled.back().enabled);
+  CHECK(search_disabled.back().payload ==
+      UIActionPayload{SetSearchStateAction{true}});
+
+  const auto stop_search = compute_shell_control_layout({
+      .screen = ScreenContext::dungeon,
+      .world_presentation = WorldPresentation::dungeon_first_person,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .search_control_visible = true,
+      .search_available = true,
+      .search_desired_searching = false,
+  });
+  CHECK(stop_search.size() == 4U);
+  verify_world_tabs(stop_search, panel, WorldActionPage::game);
+  CHECK(stop_search.back().label == "STOP SEARCH");
+  CHECK(stop_search.back().accessibility_label == "Stop searching");
+  CHECK(stop_search.back().enabled);
+  CHECK(stop_search.back().payload ==
+      UIActionPayload{SetSearchStateAction{false}});
+
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = true,
+      .search_available = true,
+      .search_desired_searching = true,
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::exploration,
+      .world_presentation = WorldPresentation::outdoor,
+      .action_panel = panel,
+      .world_action_page = WorldActionPage::game,
+      .navigation_available = false,
+      .search_control_visible = true,
+      .search_available = true,
+      .search_desired_searching = true,
+  }).empty());
+
+  // Dungeon Travel, the reserved four-slot Party page, and the five-slot GAME
+  // page are all reachable at this exact 44-point floor. One point less in
+  // either dimension fails the whole persistent deck closed on every page.
+  constexpr LogicalRect exact_minimum{0.0, 0.0, 272.0, 120.0};
   for (const auto page : kWorldPages) {
     const ShellControlLayoutRequest exact_request{
         .screen = ScreenContext::dungeon,
@@ -845,12 +921,15 @@ void test_world_action_controls_at_combined_minimum_layout() {
         .camp_control_visible = true,
         .camp_available = true,
         .camp_desired_in_camp = true,
+        .search_control_visible = true,
+        .search_available = true,
+        .search_desired_searching = true,
     };
     const auto exact = compute_shell_control_layout(exact_request);
     CHECK(!exact.empty());
     verify_world_tabs(exact, exact_minimum, page);
     auto narrow_request = exact_request;
-    narrow_request.action_panel.width = 221.0;
+    narrow_request.action_panel.width = 271.0;
     CHECK(compute_shell_control_layout(narrow_request).empty());
     auto short_request = exact_request;
     short_request.action_panel.height = 119.0;
@@ -936,6 +1015,12 @@ void test_fail_closed_inputs() {
       .action_panel = usable,
       .world_action_page = WorldActionPage::game,
       .guard_combatant = CombatantId{2},
+  }).empty());
+  CHECK(compute_shell_control_layout({
+      .screen = ScreenContext::combat,
+      .action_panel = usable,
+      .guard_combatant = CombatantId{2},
+      .search_control_visible = true,
   }).empty());
 }
 

@@ -39,6 +39,7 @@ enum class ShellControlKind {
   center_combat_cursor,
   drawer_tab,
   set_camp_state,
+  set_search_state,
 };
 
 struct ShellControlPlacement {
@@ -116,6 +117,9 @@ struct ShellControlLayoutRequest {
   bool camp_control_visible = false;
   bool camp_available = false;
   bool camp_desired_in_camp = false;
+  bool search_control_visible = false;
+  bool search_available = false;
+  bool search_desired_searching = false;
 };
 
 // Produces code-native controls within the action bar. Empty output is a

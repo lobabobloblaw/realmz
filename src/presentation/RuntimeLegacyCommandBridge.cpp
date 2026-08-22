@@ -813,7 +813,7 @@ LegacyActionHandlers make_handlers(
     return DispatchResult::handled();
   };
   handlers.set_camp_state = [
-      context_provider = std::move(context_provider),
+      context_provider,
       set_camp_state_sink =
           std::move(world_action_sinks.set_camp_state)](
           const SetCampStateAction& action) {
@@ -842,6 +842,37 @@ LegacyActionHandlers make_handlers(
             action.desired_in_camp, *message, context)) {
       return DispatchResult::failed(
           "Legacy event queue rejected semantic set-camp-state action");
+    }
+    return DispatchResult::handled();
+  };
+  handlers.set_search_state = [
+      context_provider = std::move(context_provider),
+      set_search_state_sink =
+          std::move(world_action_sinks.set_search_state)](
+          const SetSearchStateAction& action) {
+    if (!context_provider) {
+      return DispatchResult::failed(
+          "Runtime legacy context provider is not available");
+    }
+    if (!set_search_state_sink) {
+      return DispatchResult::failed(
+          "Runtime legacy set-search-state sink is not available");
+    }
+
+    const auto context = context_provider();
+    if (!context.adaptive_eligible) {
+      return DispatchResult::rejected(
+          "Legacy gameplay surface is not eligible for semantic search state");
+    }
+    if (!runtime_legacy_context_supports_set_search_state(
+            action.desired_searching, context)) {
+      return DispatchResult::rejected(
+          "Search state is already satisfied or is not supported in the "
+          "current legacy context");
+    }
+    if (!set_search_state_sink(action.desired_searching, context)) {
+      return DispatchResult::failed(
+          "Legacy event queue rejected semantic set-search-state action");
     }
     return DispatchResult::handled();
   };
@@ -1238,6 +1269,23 @@ std::optional<uint32_t> legacy_key_message_for_set_camp_state(
     return kSetCampStateMessage;
   }
   return std::nullopt;
+}
+
+bool runtime_legacy_context_supports_set_search_state(
+    bool desired_searching,
+    const RuntimeLegacyCommandContext& context) noexcept {
+  if (!context.adaptive_eligible ||
+      (context.searching == desired_searching)) {
+    return false;
+  }
+  if ((context.screen == ScreenContext::exploration) &&
+      (context.world_presentation == WorldPresentation::outdoor)) {
+    return true;
+  }
+  const bool dungeon_presentation =
+      (context.world_presentation == WorldPresentation::dungeon_map) ||
+      (context.world_presentation == WorldPresentation::dungeon_first_person);
+  return (context.screen == ScreenContext::dungeon) && dungeon_presentation;
 }
 
 std::optional<RuntimeLegacyMenuCommand>

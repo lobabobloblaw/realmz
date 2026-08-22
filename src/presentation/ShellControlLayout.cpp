@@ -37,6 +37,7 @@ constexpr uint32_t kEscapeCombatRegion = 1121U;
 constexpr uint32_t kOpenCombatScrollCaseRegion = 1122U;
 constexpr uint32_t kCenterCombatCursorRegion = 1123U;
 constexpr uint32_t kSetCampStateRegion = 1124U;
+constexpr uint32_t kSetSearchStateRegion = 1125U;
 constexpr uint32_t kCombatTurnPageRegion = 1200U;
 constexpr uint32_t kCombatGearPageRegion = 1201U;
 constexpr uint32_t kCombatTacticsPageRegion = 1202U;
@@ -322,7 +323,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.save_control_visible ? 1U : 0U) +
       (request.load_control_visible ? 1U : 0U) +
       (request.rest_control_visible ? 1U : 0U) +
-      (request.camp_control_visible ? 1U : 0U);
+      (request.camp_control_visible ? 1U : 0U) +
+      (request.search_control_visible ? 1U : 0U);
   const size_t world_control_count = travel_world_page
       ? travel_world_control_count
       : (party_world_page ? party_world_control_count
@@ -392,7 +394,8 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
               request.character_sheet_member ||
               request.save_control_visible || request.load_control_visible ||
               request.rest_control_visible ||
-              request.camp_control_visible)) ||
+              request.camp_control_visible ||
+              request.search_control_visible)) ||
       (request.inventory_available && !request.inventory_member) ||
       (request.spellbook_available && !request.spellbook_member) ||
       (request.scroll_case_available && !request.scroll_case_member) ||
@@ -403,6 +406,9 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
       (request.rest_available && !request.rest_control_visible) ||
       (request.camp_available &&
           (!request.camp_control_visible ||
+              !request.navigation_available)) ||
+      (request.search_available &&
+          (!request.search_control_visible ||
               !request.navigation_available)) ||
       (request.guard_available && !valid_guard) ||
       (request.finish_available && !valid_finish) ||
@@ -665,6 +671,26 @@ std::vector<ShellControlPlacement> compute_shell_control_layout(
             .enabled = request.camp_available &&
                 request.navigation_available,
             .payload = SetCampStateAction{request.camp_desired_in_camp},
+        });
+        x += button_width + gap;
+      }
+      if (request.search_control_visible) {
+        result.emplace_back(ShellControlPlacement{
+            .region = ShellRegionId{kSetSearchStateRegion},
+            .kind = ShellControlKind::set_search_state,
+            .bounds = {x, y, button_width, button_height},
+            .label = request.search_desired_searching
+                ? "SEARCH"
+                : "STOP SEARCH",
+            .accessibility_label = request.search_desired_searching
+                ? "Start searching"
+                : "Stop searching",
+            .focus_identifier = "focus.action.party.search",
+            .tab_order = 1125,
+            .enabled = request.search_available &&
+                request.navigation_available,
+            .payload = SetSearchStateAction{
+                request.search_desired_searching},
         });
         x += button_width + gap;
       }

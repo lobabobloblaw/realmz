@@ -108,6 +108,7 @@ Boolean PushSemanticOpenSaveGameEvent(uint32_t tagged_message);
 Boolean PushSemanticOpenLoadGameEvent(uint32_t tagged_message);
 Boolean PushSemanticRestPartyEvent(uint32_t tagged_message);
 Boolean PushSemanticSetCampStateEvent(uint32_t tagged_message);
+Boolean PushSemanticSetSearchStateEvent(uint32_t tagged_message);
 Boolean PushSemanticGuardCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticFinishCombatantEvent(uint32_t tagged_message);
 Boolean PushSemanticDelayCombatantEvent(uint32_t tagged_message);
@@ -129,6 +130,11 @@ Boolean PushSemanticCenterCombatCursorEvent(uint32_t tagged_message);
 // Character Sheet handoff. The value is one-shot and is cleared before every
 // subsequent event poll, FlushEvents, or semantic-input cancellation.
 Boolean TakeSemanticOpenCharacterSheetMember(uint8_t* party_member);
+
+// Removes and returns the absolute Search state staged for the current
+// semantic app1Evt handoff. The strict 0/1 value is one-shot and clears before
+// pointer validation, every subsequent poll, flush, or semantic cancellation.
+Boolean TakeSemanticSetSearchStateDesired(uint8_t* desired_searching);
 
 // Removes and returns the absolute cell staged for the current semantic
 // lowercase-"m" handoff. The value is one-shot and is cleared before every
