@@ -93,8 +93,11 @@ struct ResourceSelectionHook::State {
     initializationAttempted = true;
     try {
       resolver.emplace(AssetManifest::load(manifestPath, censusPath, assetRoot));
-    } catch (const std::exception& error) {
-      initializationFailure = error.what();
+    } catch (const std::exception&) {
+      // Paths and parser/backend details are intentionally not retained at
+      // this runtime boundary. The manifest's dedicated tests report precise
+      // validation failures; gameplay only needs a stable safe fallback.
+      initializationFailure = "validation failed";
     }
   }
 };

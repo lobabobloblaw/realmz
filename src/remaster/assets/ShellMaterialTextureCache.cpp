@@ -2,61 +2,15 @@
 
 #include <cstddef>
 #include <cmath>
-#include <fstream>
 #include <format>
-#include <ios>
-#include <limits>
 #include <stdexcept>
-#include <string>
 #include <utility>
 
 #include <SDL3/SDL.h>
-#include <SDL3_image/SDL_image.h>
+
+#include "remaster/assets/VerifiedRasterSurface.hpp"
 
 namespace realmz::remaster::assets {
-namespace {
-
-constexpr std::size_t kMaximumEncodedMaterialBytes = 16U * 1024U * 1024U;
-
-[[nodiscard]] std::string loadVerifiedMaterialBytes(
-    const ShellMaterialDescriptor& material) {
-  std::ifstream input(material.path, std::ios::binary | std::ios::ate);
-  if (!input) {
-    throw std::runtime_error(std::format(
-        "Could not open shell material {}", material.key.toString()));
-  }
-
-  const auto end = input.tellg();
-  if ((end <= 0) ||
-      (end > static_cast<std::streamoff>(kMaximumEncodedMaterialBytes))) {
-    throw std::runtime_error(std::format(
-        "Shell material {} has an invalid encoded size",
-        material.key.toString()));
-  }
-  const auto byteCount = static_cast<std::size_t>(end);
-  if (byteCount > static_cast<std::size_t>(
-                      std::numeric_limits<std::streamsize>::max())) {
-    throw std::runtime_error(std::format(
-        "Shell material {} cannot be read on this platform",
-        material.key.toString()));
-  }
-
-  std::string bytes(byteCount, '\0');
-  input.seekg(0, std::ios::beg);
-  if (!input ||
-      !input.read(bytes.data(), static_cast<std::streamsize>(byteCount))) {
-    throw std::runtime_error(std::format(
-        "Could not read shell material {}", material.key.toString()));
-  }
-  if (assetContentSha256Hex(bytes) != material.sharedMasterSha256) {
-    throw std::runtime_error(std::format(
-        "Shell material {} changed after catalog validation",
-        material.key.toString()));
-  }
-  return bytes;
-}
-
-} // namespace
 
 ShellMaterialTextureCache::ShellMaterialTextureCache(
     SDL_Renderer* renderer, const ShellMaterialCatalog& catalog)
@@ -73,18 +27,8 @@ ShellMaterialTextureCache::ShellMaterialTextureCache(
       throw std::runtime_error(
           "Shell material catalog contains too many records");
     }
-    const auto encoded = loadVerifiedMaterialBytes(material);
-    auto* stream = SDL_IOFromConstMem(encoded.data(), encoded.size());
-    if (stream == nullptr) {
-      throw std::runtime_error(std::format(
-          "Could not create input stream for shell material {}",
-          material.key.toString()));
-    }
-    auto surface = sdl_make_unique(IMG_Load_IO(stream, true));
-    if (!surface) {
-      throw std::runtime_error(std::format(
-          "Could not decode shell material {}", material.key.toString()));
-    }
+    auto surface = loadVerifiedRasterSurface(
+        material.path, material.key, material.sharedMasterSha256);
     if ((surface->w <= 0) || (surface->h <= 0) ||
         (material.logicalDimensions.width == 0U) ||
         (material.logicalDimensions.height == 0U)) {

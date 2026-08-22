@@ -14,7 +14,7 @@ python3 -m unittest discover -s tests/release -p 'test_*.py' -v
 
 The source verifier is read-only. Development mode reports local changes but does not fail because of them. It does fail if source ancestry, dependency pins, a partially landed asset census, or a present provenance record is invalid.
 
-`run-core-tests.sh` compiles dependency-free tests directly with `${CXX:-c++}` in C++23 mode (using the `c++2b` spelling accepted by the macOS 14 toolchain) and warning-as-error flags. Aggregate fixtures deliberately rely on default member initialization, so `missing-field-initializers` is the sole disabled warning. Temporary executables are created under `mktemp` and removed on exit. It covers presentation routing, adaptive-shell geometry, input transforms and pointer capture, legacy screen-context classification, party/action accessibility models, 128 state-invariant mode switches, deterministic resource failures, live legacy-snapshot copying, exact native-material catalog bindings, exhaustive material/text contrast, asset validation, and user-data safety. It deliberately does not configure the full SDL application.
+`run-core-tests.sh` compiles dependency-free tests directly with `${CXX:-c++}` in C++23 mode (using the `c++2b` spelling accepted by the macOS 14 toolchain) and warning-as-error flags. Aggregate fixtures deliberately rely on default member initialization, so `missing-field-initializers` is the sole disabled warning. Temporary executables are created under `mktemp` and removed on exit. It covers presentation routing, adaptive-shell geometry, input transforms and pointer capture, legacy screen-context classification, party/action accessibility models, 128 state-invariant mode switches, deterministic resource failures, live legacy-snapshot copying, exact native-material and proof-bound portrait catalog bindings, exhaustive material/text contrast, asset validation, and user-data safety. The portrait catalog test also proves that no ID-only authorization API exists and that forged, wrong-payload, other-pack, passthrough, coverage-failure, and changed metadata proofs fail closed. The script deliberately does not configure the full SDL application.
 
 The same command exercises the synthetic semantic-replay fixture, process, and
 equivalence protocols. `scripts/semantic_replay_equivalence.py` now composes a
@@ -66,15 +66,45 @@ session without retaining stale raster handles.
 Native shell surfaces do not use that post-selection hook. They resolve the
 four public `ppat` keys 128–131 directly from the bundled runtime manifest and
 census after the manifest has validated all 11 approved public outputs. The
-cache reads each shell file through its native filesystem path into bounded
-memory, rechecks its approved SHA-256, decodes that exact buffer, sets linear
-sampling, and only then publishes the renderer-owned cache. No Classic
+cache uses the same verified-raster loader as QuickDraw's approved post-
+selection replacements and the native portrait cache: it reads each native
+path into bounded memory, rechecks its approved SHA-256 and bounded PNG
+dimensions, and decodes that exact buffer. It sets linear sampling and only
+then publishes the renderer-owned cache. No Classic
 resource handle or private resource-fork payload participates. Any catalog,
 digest, decode, sampling, or texture creation failure leaves the complete
 native shell on its existing flat fills; diagnostics do not disclose absolute
 host paths. An individual tiled-render failure is immediately covered by the
-same flat surface color. SDL render-device resets invalidate and rebuild the
-cache even when the renderer pointer remains stable.
+same flat surface color.
+
+The native portrait cache atomically realizes the four exact approved
+`Data Files/Portraits:cicn` keys 257, 267, 297, and 337 at a common physical-to-
+logical scale for 44×44 party-card slots. Realizing public catalog data does not
+authorize a draw. Each draw obtains fresh proof for the actual Resource Manager
+winner and requires the exact key, immutable Classic payload digest and
+approved coverage, override path, master key, logical dimensions, and approved
+PNG digest. A custom or colliding ID, unapproved replacement, Classic
+passthrough, pending writable change, user edit, or any mismatched proof falls
+back to the member's code-native name monogram.
+
+The approved Tutorial `PICT` 32128 receives its code-rendered `TUTORIAL` label
+only when key, approved output digest, and 320×320 logical dimensions all match.
+Composition is deterministic, changes only the reviewed plaque inset on a copy,
+and restores the shared font's prior size and style. Failure to load or
+configure the font, fit the text, or compose the copy rejects the complete
+approved override and uses Classic.
+
+A configured full test build registers headless SDL coverage for the shared
+loader, both native texture caches, and the Tutorial title compositor. It covers
+the seven non-material approved rasters plus isolated public-only and Unicode
+paths; exact-byte substitution, missing/truncated/malformed, encoded-size,
+dimension, pixel-count, and sanitized-diagnostic failures; all-or-nothing
+texture construction; correct and mismatched renderer draws; malformed
+destinations and proof rejection; deterministic plaque-only composition; and
+cache-before-renderer destruction. Window replacement and presentation-mode
+changes destroy both native caches. SDL render-device reset explicitly
+invalidates both caches before repaint even when the renderer pointer remains
+stable; render-target reset repaints without retaining a render target.
 
 The development executable exposes the migration path without touching the
 legacy installation:
@@ -269,6 +299,13 @@ party cards retain a second border. Deterministic dark/light scrims preserve
 the tile texture while the exhaustive pixel contract holds every production
 shell text/state pairing above 4.5:1 contrast.
 
+Party-card layouts reserve a contained 44×44 portrait slot and reflow name,
+level, stamina, and state text around it across compact/wide layouts and one
+through six members. The four reviewed native portraits are used only after a
+fresh proof of the actual Resource Manager winner; every other portrait remains
+a code-native monogram. The exact approved Tutorial title picture receives its
+reviewed title typography at render time rather than from baked generated text.
+
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
 local presentation actions with pointer and wrapping keyboard operation; they
@@ -287,13 +324,24 @@ and complete action dispatch remain acceptance work.
 Release-candidate tests must include:
 
 - resource precedence, scenario-local ID collisions, duplicate reuse, manifest validation, missing coverage, dimensions, masks, anchors, cursor hotspots, and atlas order;
+- shared verified-raster loading for every public approved-raster consumer,
+  including native non-ASCII paths, bounded exact-byte reads and PNG dimensions,
+  digest/substitution/missing/malformed/oversized rejection, sanitized failures,
+  and exact physical-to-logical scale checks;
 - exact key-only `ppat` 128–131 native-material bindings, isolated public-only
-  loading, native non-ASCII path handling, exact-byte digest revalidation,
-  valid-PNG substitution rejection, headless software-renderer
-  realization/drawing, atomic four-texture publication/fallback, renderer
-  mismatch rejection, replacement and reset recovery, Classic-mode
-  non-loading, state-role mapping, and exhaustive per-pixel contrast for every
-  shell text/state color;
+  loading, headless software-renderer realization/drawing, atomic four-texture
+  publication/fallback, renderer mismatch rejection, replacement and reset
+  recovery, Classic-mode non-loading, state-role mapping, and exhaustive per-
+  pixel contrast for every shell text/state color;
+- exact ordered `cicn` 257/267/297/337 portrait bindings, 44×44 layout at
+  compact/wide sizes for one through six members, absence of ID-only draw
+  authorization, fresh actual-winner proof matching every bound field,
+  custom/other-pack/passthrough/coverage-failure/writable-edit rejection,
+  monogram fallback, headless all-or-nothing texture realization, renderer
+  ownership/mismatch, and device-reset recovery;
+- exact Tutorial `PICT` 32128 key/digest/dimension gating, deterministic
+  code-rendered title pixels confined to the reviewed plaque inset, source
+  isolation, font-state restoration, and complete Classic fallback on failure;
 - logical/physical coordinate transforms, hit testing, stable semantic focus,
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
@@ -384,6 +432,17 @@ Automated checks do not replace these release decisions:
   corrupt each of the four packaged PNGs in a disposable copy and verify that
   no partial texture cache appears and the complete shell remains legible on
   its flat-color fallback;
+- native party portraits at compact and wide layouts, one through six members,
+  and both backing scales; in a disposable private fixture, verify all four
+  exact approved winners, then a custom ID, colliding other-pack ID, unapproved
+  resource, and user-edited resource each fall back to the correct monogram;
+  remove or corrupt each packaged portrait PNG and verify that no partial
+  portrait cache appears; trigger renderer replacement and SDL render-device
+  reset and verify both native caches recover without stale textures;
+- the exact approved Tutorial title picture with readable, centered code-
+  rendered typography at both backing scales; in a disposable package, change
+  its PNG digest or remove the bundled title font and verify complete Classic
+  fallback rather than a blank or partially composed approved picture;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
   Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat

@@ -178,6 +178,14 @@ run_cpp_test ShellMaterialCatalogTest \
   src/remaster/assets/AssetResolver.cpp \
   src/remaster/assets/ShellMaterialCatalog.cpp
 
+run_cpp_test PartyPortraitCatalogTest \
+  src/tests/PartyPortraitCatalogTest.cpp \
+  src/remaster/assets/AssetManifest.cpp \
+  src/remaster/assets/AssetResolver.cpp \
+  src/remaster/assets/PartyPortraitCatalog.cpp \
+  src/remaster/assets/PayloadDigest.cpp \
+  src/remaster/assets/ResourceSelectionHook.cpp
+
 run_cpp_test ResourceSelectionHookTest \
   src/tests/ResourceSelectionHookTest.cpp \
   src/remaster/assets/AssetManifest.cpp \

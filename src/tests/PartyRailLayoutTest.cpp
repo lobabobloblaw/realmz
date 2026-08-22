@@ -32,6 +32,18 @@ void check(bool condition, const char* expression, int line) {
       std::max(first.y, second.y) < std::min(first.bottom(), second.bottom());
 }
 
+[[nodiscard]] bool contains(
+    PhysicalRect outer,
+    PhysicalRect inner) noexcept {
+  return inner.x >= outer.x && inner.y >= outer.y &&
+      inner.right() <= outer.right() && inner.bottom() <= outer.bottom();
+}
+
+void check_near(double actual, double expected) {
+  constexpr double kTolerance = 1e-9;
+  CHECK(std::abs(actual - expected) <= kTolerance);
+}
+
 [[nodiscard]] TypographyModel typography(double scale) {
   return {
       .scale = scale,
@@ -46,6 +58,7 @@ void check(bool condition, const char* expression, int line) {
       .id = static_cast<PartyMemberId>(100U + index),
       .name = "Member " + std::to_string(index + 1U),
       .level = static_cast<int16_t>(index + 1U),
+      .portrait_id = static_cast<int32_t>(257U + index),
       .stamina = MeterModel{
           .current = static_cast<int32_t>(10U + index),
           .maximum = 20,
@@ -112,11 +125,30 @@ void verify_layout(
     CHECK(placed.name_text == members[index].name);
     CHECK(placed.level_text == "Lv " + std::to_string(members[index].level));
     CHECK(panel.contains(placed.card_bounds));
+    CHECK(placed.card_bounds.contains(placed.portrait_bounds));
     CHECK(placed.card_bounds.contains(placed.name_bounds));
     CHECK(placed.card_bounds.contains(placed.level_bounds));
     CHECK(placed.card_bounds.contains(placed.stamina_meter_bounds));
     CHECK(placed.card_bounds.contains(placed.stamina_value_bounds));
     CHECK(placed.card_bounds.contains(placed.state_bounds));
+    check_near(placed.portrait_bounds.width, 44.0);
+    check_near(placed.portrait_bounds.height, 44.0);
+    check_near(
+        placed.portrait_bounds.y + placed.portrait_bounds.height / 2.0,
+        placed.card_bounds.y + placed.card_bounds.height / 2.0);
+    CHECK(placed.portrait_bounds.right() < placed.name_bounds.x);
+    CHECK(placed.portrait_bounds.right() < placed.stamina_meter_bounds.x);
+    CHECK(placed.portrait_bounds.right() < placed.state_bounds.x);
+    CHECK(!interiors_overlap(
+        placed.portrait_bounds, placed.name_bounds));
+    CHECK(!interiors_overlap(
+        placed.portrait_bounds, placed.level_bounds));
+    CHECK(!interiors_overlap(
+        placed.portrait_bounds, placed.stamina_meter_bounds));
+    CHECK(!interiors_overlap(
+        placed.portrait_bounds, placed.stamina_value_bounds));
+    CHECK(!interiors_overlap(
+        placed.portrait_bounds, placed.state_bounds));
     CHECK(!interiors_overlap(placed.name_bounds, placed.level_bounds));
     CHECK(!interiors_overlap(
         placed.stamina_meter_bounds, placed.stamina_value_bounds));
@@ -124,6 +156,22 @@ void verify_layout(
     CHECK(!interiors_overlap(placed.name_bounds, placed.state_bounds));
     CHECK(!interiors_overlap(
         placed.stamina_meter_bounds, placed.state_bounds));
+    check_near(placed.name_bounds.x, placed.stamina_meter_bounds.x);
+    check_near(placed.name_bounds.x, placed.state_bounds.x);
+    check_near(placed.level_bounds.right(), placed.state_bounds.right());
+    check_near(
+        placed.stamina_value_bounds.right(), placed.state_bounds.right());
+    for (const double backing_scale : {1.0, 2.0}) {
+      const BackingTransform transform(backing_scale);
+      const auto physical_card = transform.to_physical(placed.card_bounds);
+      const auto physical_portrait =
+          transform.to_physical(placed.portrait_bounds);
+      CHECK(contains(physical_card, physical_portrait));
+      CHECK(physical_portrait.width ==
+          static_cast<int32_t>(44.0 * backing_scale));
+      CHECK(physical_portrait.height ==
+          static_cast<int32_t>(44.0 * backing_scale));
+    }
     verify_text_style(
         placed.name_text_style, type.body, placed.name_bounds);
     verify_text_style(
@@ -155,6 +203,10 @@ void verify_layout(
       CHECK(layout.members[index - 1U].card_bounds.y < placed.card_bounds.y);
       CHECK(!interiors_overlap(
           layout.members[index - 1U].card_bounds, placed.card_bounds));
+      const double card_gap = placed.card_bounds.y -
+          layout.members[index - 1U].card_bounds.bottom();
+      CHECK(card_gap >= 3.0);
+      CHECK(card_gap <= 4.0);
     }
   }
   CHECK(layout == compute_party_rail_layout({panel, members, type}));
@@ -175,6 +227,40 @@ void test_all_supported_counts_sizes_and_scales() {
       }
     }
   }
+}
+
+void test_portrait_slot_is_stable_across_asset_identities() {
+  auto approved = member(0);
+  auto unavailable = approved;
+  approved.portrait_id = 257;
+  unavailable.portrait_id = -32768;
+  const auto panel = LogicalRect{738.88, 24.0, 261.12, 565.76};
+  const auto type = typography(1.0);
+  const auto approved_layout = compute_party_rail_layout({
+      panel,
+      std::span<const PartyRailMemberModel>(&approved, 1U),
+      type,
+  });
+  const auto unavailable_layout = compute_party_rail_layout({
+      panel,
+      std::span<const PartyRailMemberModel>(&unavailable, 1U),
+      type,
+  });
+
+  // Asset selection belongs to the renderer. Geometry always reserves the
+  // same slot so a code-native fallback cannot cause a layout jump.
+  CHECK(approved_layout.members[0].portrait_bounds ==
+      unavailable_layout.members[0].portrait_bounds);
+  CHECK(approved_layout.members[0].name_bounds ==
+      unavailable_layout.members[0].name_bounds);
+  CHECK(approved_layout.members[0].level_bounds ==
+      unavailable_layout.members[0].level_bounds);
+  CHECK(approved_layout.members[0].stamina_meter_bounds ==
+      unavailable_layout.members[0].stamina_meter_bounds);
+  CHECK(approved_layout.members[0].stamina_value_bounds ==
+      unavailable_layout.members[0].stamina_value_bounds);
+  CHECK(approved_layout.members[0].state_bounds ==
+      unavailable_layout.members[0].state_bounds);
 }
 
 void test_state_tokens_are_complete_and_non_color() {
@@ -283,6 +369,15 @@ void test_invalid_requests_never_return_partial_layouts() {
     static_cast<void>(compute_party_rail_layout({
         {0.0, 0.0, 300.0, 400.0}, members, bad_type}));
   });
+
+  members.clear();
+  for (size_t index = 0; index < 6; ++index) {
+    members.emplace_back(member(index));
+  }
+  check_invalid_argument([&] {
+    static_cast<void>(compute_party_rail_layout({
+        {0.0, 0.0, 180.0, 160.0}, members, type}));
+  });
 }
 
 } // namespace
@@ -290,6 +385,7 @@ void test_invalid_requests_never_return_partial_layouts() {
 int main() {
   try {
     test_all_supported_counts_sizes_and_scales();
+    test_portrait_slot_is_stable_across_asset_identities();
     test_state_tokens_are_complete_and_non_color();
     test_fallbacks_and_text_fitting();
     test_invalid_requests_never_return_partial_layouts();

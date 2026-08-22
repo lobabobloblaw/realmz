@@ -39,6 +39,7 @@ AssetResolution AssetResolver::resolve(
       .overridePath = manifest_.assetRoot() / *entry->assetPath,
       .masterKey = entry->masterKey,
       .logicalDimensions = entry->logicalDimensions,
+      .approvedContentSha256 = entry->sharedMasterSha256,
       .diagnostic = "Approved remastered override",
   };
 }

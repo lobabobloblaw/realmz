@@ -95,6 +95,7 @@ realmz_configure_core_target(realmz_presentation_core)
 add_library(realmz_asset_core STATIC
     src/remaster/assets/AssetManifest.cpp
     src/remaster/assets/AssetResolver.cpp
+    src/remaster/assets/PartyPortraitCatalog.cpp
     src/remaster/assets/PayloadDigest.cpp
     src/remaster/assets/ResourceSelectionHook.cpp
     src/remaster/assets/ShellMaterialCatalog.cpp
@@ -301,6 +302,13 @@ if(REALMZ_BUILD_CORE_TESTS)
     realmz_configure_core_target(ShellMaterialCatalogTest)
     add_test(NAME ShellMaterialCatalogTest
         COMMAND ShellMaterialCatalogTest ${CMAKE_SOURCE_DIR})
+
+    add_executable(PartyPortraitCatalogTest
+        src/tests/PartyPortraitCatalogTest.cpp)
+    target_link_libraries(PartyPortraitCatalogTest PRIVATE realmz_asset_core)
+    realmz_configure_core_target(PartyPortraitCatalogTest)
+    add_test(NAME PartyPortraitCatalogTest
+        COMMAND PartyPortraitCatalogTest ${CMAKE_SOURCE_DIR})
 
     add_executable(ResourceSelectionHookTest
         src/tests/ResourceSelectionHookTest.cpp)
@@ -662,7 +670,10 @@ set(SOURCES
     src/presentation/LegacyGameSnapshotSource.cpp
     src/presentation/SemanticInputBoundary.cpp
     src/QuickDraw.cpp
+    src/remaster/assets/PartyPortraitTextureCache.cpp
     src/remaster/assets/ShellMaterialTextureCache.cpp
+    src/remaster/assets/TutorialTitleCompositor.cpp
+    src/remaster/assets/VerifiedRasterSurface.cpp
     src/ResourceManager.cpp
     src/SDLHelpers.cpp
     src/SoundManager.cpp
@@ -776,6 +787,7 @@ if(REALMZ_BUILD_CORE_TESTS)
     add_executable(ShellMaterialTextureCacheTest
         src/tests/ShellMaterialTextureCacheTest.cpp
         src/remaster/assets/ShellMaterialTextureCache.cpp
+        src/remaster/assets/VerifiedRasterSurface.cpp
         src/SDLHelpers.cpp)
     target_include_directories(ShellMaterialTextureCacheTest PRIVATE src)
     target_link_libraries(ShellMaterialTextureCacheTest PRIVATE
@@ -785,6 +797,48 @@ if(REALMZ_BUILD_CORE_TESTS)
     realmz_configure_core_target(ShellMaterialTextureCacheTest)
     add_test(NAME ShellMaterialTextureCacheTest
         COMMAND ShellMaterialTextureCacheTest ${CMAKE_SOURCE_DIR})
+
+    add_executable(PartyPortraitTextureCacheTest
+        src/tests/PartyPortraitTextureCacheTest.cpp
+        src/remaster/assets/PartyPortraitTextureCache.cpp
+        src/remaster/assets/VerifiedRasterSurface.cpp
+        src/SDLHelpers.cpp)
+    target_include_directories(PartyPortraitTextureCacheTest PRIVATE src)
+    target_link_libraries(PartyPortraitTextureCacheTest PRIVATE
+        realmz_asset_core
+        SDL3::SDL3-shared
+        SDL3_image::SDL3_image)
+    realmz_configure_core_target(PartyPortraitTextureCacheTest)
+    add_test(NAME PartyPortraitTextureCacheTest
+        COMMAND PartyPortraitTextureCacheTest ${CMAKE_SOURCE_DIR})
+
+    add_executable(VerifiedRasterSurfaceTest
+        src/tests/VerifiedRasterSurfaceTest.cpp
+        src/remaster/assets/VerifiedRasterSurface.cpp
+        src/SDLHelpers.cpp)
+    target_include_directories(VerifiedRasterSurfaceTest PRIVATE src)
+    target_link_libraries(VerifiedRasterSurfaceTest PRIVATE
+        realmz_asset_core
+        SDL3::SDL3-shared
+        SDL3_image::SDL3_image)
+    realmz_configure_core_target(VerifiedRasterSurfaceTest)
+    add_test(NAME VerifiedRasterSurfaceTest
+        COMMAND VerifiedRasterSurfaceTest ${CMAKE_SOURCE_DIR})
+
+    add_executable(TutorialTitleCompositorTest
+        src/tests/TutorialTitleCompositorTest.cpp
+        src/remaster/assets/TutorialTitleCompositor.cpp
+        src/remaster/assets/VerifiedRasterSurface.cpp
+        src/SDLHelpers.cpp)
+    target_include_directories(TutorialTitleCompositorTest PRIVATE src)
+    target_link_libraries(TutorialTitleCompositorTest PRIVATE
+        realmz_asset_core
+        SDL3::SDL3-shared
+        SDL3_image::SDL3_image
+        SDL3_ttf::SDL3_ttf)
+    realmz_configure_core_target(TutorialTitleCompositorTest)
+    add_test(NAME TutorialTitleCompositorTest
+        COMMAND TutorialTitleCompositorTest ${CMAKE_SOURCE_DIR})
 
     add_executable(SemanticReplayChildBootstrapTest
         src/tests/SemanticReplayChildBootstrapTest.cpp)

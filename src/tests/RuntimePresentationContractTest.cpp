@@ -692,6 +692,8 @@ void checkSameResolution(
   CHECK(left.kind == right.kind);
   CHECK(left.overridePath == right.overridePath);
   CHECK(left.masterKey == right.masterKey);
+  CHECK(left.logicalDimensions == right.logicalDimensions);
+  CHECK(left.approvedContentSha256 == right.approvedContentSha256);
   CHECK(left.diagnostic == right.diagnostic);
 }
 
@@ -728,6 +730,7 @@ void testCoverageFailuresAreDeterministic(
     CHECK(!first.covered());
     CHECK(!first.overridePath.has_value());
     CHECK(!first.masterKey.has_value());
+    CHECK(!first.approvedContentSha256.has_value());
     CHECK(first.diagnostic == expectedDiagnostic);
     diagnostics.emplace_back(first.diagnostic);
 
@@ -745,6 +748,7 @@ void testCoverageFailuresAreDeterministic(
     CHECK(classic.covered());
     CHECK(!classic.overridePath.has_value());
     CHECK(!classic.masterKey.has_value());
+    CHECK(!classic.approvedContentSha256.has_value());
     CHECK(classic.diagnostic ==
         "Classic presentation bypasses remastered overrides");
 

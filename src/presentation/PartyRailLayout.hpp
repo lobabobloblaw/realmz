@@ -29,6 +29,10 @@ struct PartyRailMemberLayout {
   PartyMemberId member_id = 0;
 
   LogicalRect card_bounds;
+  // Every card reserves one fixed logical portrait slot. Rendering may fill
+  // it with a verified portrait or a code-native fallback without changing
+  // the surrounding information geometry.
+  LogicalRect portrait_bounds;
   LogicalRect name_bounds;
   LogicalRect level_bounds;
   LogicalRect stamina_meter_bounds;

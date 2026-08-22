@@ -20,6 +20,8 @@ namespace realmz::remaster::assets {
 namespace {
 
 constexpr std::int64_t kSchemaVersion = 1;
+constexpr std::size_t kMaximumManifestDocumentBytes = 8U * 1024U * 1024U;
+constexpr std::size_t kMaximumApprovedAssetBytes = 16U * 1024U * 1024U;
 
 class JsonValue {
 public:
@@ -292,17 +294,100 @@ private:
   }
 };
 
-[[nodiscard]] std::string loadFile(const std::filesystem::path& path) {
-  std::ifstream input(path, std::ios::binary);
+[[nodiscard]] std::string loadFile(
+    const std::filesystem::path& path,
+    std::size_t maximumBytes,
+    std::string_view label) {
+  std::ifstream input(path, std::ios::binary | std::ios::ate);
   if (!input) {
-    throw AssetManifestError("cannot open " + path.string());
+    throw AssetManifestError(std::string(label) + " cannot be opened");
   }
-  std::ostringstream contents;
-  contents << input.rdbuf();
-  if (!input.good() && !input.eof()) {
-    throw AssetManifestError("cannot read " + path.string());
+  const auto end = input.tellg();
+  if ((end < 0) ||
+      (end > static_cast<std::streamoff>(maximumBytes)) ||
+      (static_cast<std::uintmax_t>(end) >
+          static_cast<std::uintmax_t>(
+              std::numeric_limits<std::streamsize>::max()))) {
+    throw AssetManifestError(std::string(label) + " has an invalid size");
   }
-  return contents.str();
+  const auto byteCount = static_cast<std::size_t>(end);
+  std::string contents(byteCount, '\0');
+  input.seekg(0, std::ios::beg);
+  if (!input || (byteCount > 0U &&
+      !input.read(contents.data(), static_cast<std::streamsize>(byteCount)))) {
+    throw AssetManifestError(std::string(label) + " cannot be read");
+  }
+  return contents;
+}
+
+[[nodiscard]] bool isPortableUtf8Path(
+    std::string_view value) noexcept {
+  std::size_t position = 0;
+  while (position < value.size()) {
+    const auto first = static_cast<unsigned char>(value[position]);
+    std::uint32_t codePoint = 0;
+    std::size_t width = 0;
+    if (first <= 0x7FU) {
+      codePoint = first;
+      width = 1U;
+    } else if (first >= 0xC2U && first <= 0xDFU) {
+      codePoint = static_cast<std::uint32_t>(first & 0x1FU);
+      width = 2U;
+    } else if (first >= 0xE0U && first <= 0xEFU) {
+      codePoint = static_cast<std::uint32_t>(first & 0x0FU);
+      width = 3U;
+    } else if (first >= 0xF0U && first <= 0xF4U) {
+      codePoint = static_cast<std::uint32_t>(first & 0x07U);
+      width = 4U;
+    } else {
+      return false;
+    }
+    if (position + width > value.size()) {
+      return false;
+    }
+    for (std::size_t offset = 1U; offset < width; ++offset) {
+      const auto continuation =
+          static_cast<unsigned char>(value[position + offset]);
+      if ((continuation & 0xC0U) != 0x80U) {
+        return false;
+      }
+      codePoint = (codePoint << 6U) |
+          static_cast<std::uint32_t>(continuation & 0x3FU);
+    }
+    if ((width == 3U && first == 0xE0U &&
+         static_cast<unsigned char>(value[position + 1U]) < 0xA0U) ||
+        (width == 3U && first == 0xEDU &&
+         static_cast<unsigned char>(value[position + 1U]) >= 0xA0U) ||
+        (width == 4U && first == 0xF0U &&
+         static_cast<unsigned char>(value[position + 1U]) < 0x90U) ||
+        (width == 4U && first == 0xF4U &&
+         static_cast<unsigned char>(value[position + 1U]) >= 0x90U) ||
+        codePoint == 0x7FU ||
+        (codePoint >= 0x80U && codePoint <= 0x9FU)) {
+      return false;
+    }
+    position += width;
+  }
+  return true;
+}
+
+[[nodiscard]] std::filesystem::path pathFromUtf8(
+    std::string_view value, std::string_view where) {
+  if (!isPortableUtf8Path(value)) {
+    throw AssetManifestError(
+        std::string(where) + " is not a portable UTF-8 path");
+  }
+  std::u8string utf8;
+  utf8.reserve(value.size());
+  for (const unsigned char byte : value) {
+    utf8.push_back(static_cast<char8_t>(byte));
+  }
+  try {
+    return std::filesystem::path(utf8);
+  } catch (const std::filesystem::filesystem_error&) {
+    throw AssetManifestError(
+        std::string(where) + " is not a portable UTF-8 path");
+  }
 }
 
 [[nodiscard]] const JsonValue::Object& asObject(const JsonValue& value, std::string_view where) {
@@ -823,8 +908,14 @@ struct ParsedCensus {
   if (field(object, "asset_path", where).isNull()) {
     result.assetPath = std::nullopt;
   } else {
-    result.assetPath = asString(
-        field(object, "asset_path", where), std::string(where) + ".asset_path");
+    const auto assetPathWhere = std::string(where) + ".asset_path";
+    const auto& assetPath = asString(
+        field(object, "asset_path", where), assetPathWhere);
+    if (!AssetManifest::isSafeAssetPath(assetPath)) {
+      throw AssetManifestError(
+          assetPathWhere + " is unsafe or is not a PNG path");
+    }
+    result.assetPath = pathFromUtf8(assetPath, assetPathWhere);
   }
   const auto& status = asString(field(object, "status", where), std::string(where) + ".status");
   if (status == "classic_passthrough") {
@@ -898,9 +989,11 @@ AssetManifest AssetManifest::load(
     const std::filesystem::path& manifestPath,
     const std::filesystem::path& censusPath,
     const std::filesystem::path& assetRoot) {
-  const auto censusContents = loadFile(censusPath);
+  const auto censusContents = loadFile(
+      censusPath, kMaximumManifestDocumentBytes, "asset census");
   const auto parsedCensus = parseCensus(JsonParser(censusContents).parse());
-  const auto manifestContents = loadFile(manifestPath);
+  const auto manifestContents = loadFile(
+      manifestPath, kMaximumManifestDocumentBytes, "asset manifest");
   const auto parsedManifest = JsonParser(manifestContents).parse();
   const auto& root = asObject(parsedManifest, "manifest");
   requireExactFields(root,
@@ -970,7 +1063,7 @@ AssetManifest AssetManifest::load(
         throw AssetManifestError(where + " passthrough entry claims override or generation metadata");
       }
     } else {
-      if (!entry.assetPath || !isSafeAssetPath(entry.assetPath->generic_string())) {
+      if (!entry.assetPath) {
         throw AssetManifestError(where + ".asset_path is unsafe or is not a PNG path");
       }
       if (!entry.promptSha256 || !isSha256(*entry.promptSha256) || !entry.reviewer ||
@@ -984,7 +1077,9 @@ AssetManifest AssetManifest::load(
           !std::filesystem::is_regular_file(diskPath)) {
         throw AssetManifestError(where + ".asset_path is missing or escapes the asset root");
       }
-      if (sha256(loadFile(diskPath)) != entry.sharedMasterSha256) {
+      if (sha256(loadFile(
+              diskPath, kMaximumApprovedAssetBytes,
+              where + ".asset_path")) != entry.sharedMasterSha256) {
         throw AssetManifestError(where + ".asset_path SHA-256 does not match shared_master_sha256");
       }
       const auto [iterator, inserted] = approvedPathForMaster.emplace(

@@ -113,6 +113,8 @@ public:
           throw std::logic_error("Tried to mark unknown data handle as modified");
         }
         res->data_modified = true;
+        res->asset_selection.reset();
+        res->asset_selection_source = nullptr;
       }
       this->state = ResourceManager::File::State::MODIFIED;
     }
@@ -277,14 +279,20 @@ public:
     throw std::out_of_range(std::format("Resource file with refnum {} is not open", refnum));
   }
 
-  std::shared_ptr<Resource> get_resource(int32_t type, int16_t id) {
+  std::shared_ptr<Resource> find_resource(int32_t type, int16_t id) {
     for (size_t z = this->search_start_index; z < this->files.size(); z++) {
       auto res = this->files[z]->get_resource(type, id);
       if (res != nullptr) {
         return res;
       }
     }
+    return nullptr;
+  }
 
+  std::shared_ptr<Resource> get_resource(int32_t type, int16_t id) {
+    if (auto res = this->find_resource(type, id)) {
+      return res;
+    }
     std::string type_str = ResourceDASM::string_for_resource_type(type);
     rm_log.info_f("{}:{} not found in any open resource file", type_str, id);
     this->print_chain();
@@ -331,8 +339,28 @@ public:
       return std::nullopt;
     }
 
+    // A mutable Handle may already differ from source_res between
+    // ChangedResource and UpdateResFile. Never authorize approved artwork
+    // against stale immutable bytes during that interval.
+    if (res->data_modified) {
+      res->asset_selection.reset();
+      res->asset_selection_source = nullptr;
+      this->last_asset_diagnostic =
+          "Selected raster resource has pending writable changes: " +
+          resourceTypeString(res->source_res->type) + ":" +
+          std::to_string(res->source_res->id);
+      return std::nullopt;
+    }
+
     if (res->asset_selection.has_value() &&
         res->asset_selection_source == res->source_res.get()) {
+      if (!res->asset_selection->resolution.covered()) {
+        // A mode transition clears the public diagnostic but deliberately
+        // retains immutable selection proofs. Re-observing a cached failure
+        // must restore the same deterministic diagnostic for this mode.
+        this->last_asset_diagnostic =
+            res->asset_selection->resolution.diagnostic;
+      }
       return res->asset_selection;
     }
 
@@ -456,6 +484,15 @@ std::optional<PostSelectionResult> resourceAssetSelectionForHandle(
   } catch (const std::out_of_range&) {
     return std::nullopt;
   }
+}
+
+std::optional<PostSelectionResult> resourceAssetSelectionForCurrentWinner(
+    std::uint32_t type, std::int16_t id) {
+  const auto selected = rm.find_resource(type, id);
+  if (!selected) {
+    return std::nullopt;
+  }
+  return rm.inspect_selected_resource(selected);
 }
 
 std::optional<std::string> resourceClassicPayloadForHandle(

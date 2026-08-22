@@ -24,6 +24,7 @@ class WindowManager;
 class Window;
 class DialogItem;
 namespace realmz::remaster::assets {
+class PartyPortraitTextureCache;
 class ShellMaterialTextureCache;
 }
 
@@ -124,6 +125,10 @@ private:
       remastered_shell_materials;
   SDL_Renderer* remastered_shell_material_renderer = nullptr;
   bool remastered_shell_materials_attempted = false;
+  std::unique_ptr<realmz::remaster::assets::PartyPortraitTextureCache>
+      remastered_party_portraits;
+  SDL_Renderer* remastered_party_portrait_renderer = nullptr;
+  bool remastered_party_portraits_attempted = false;
   bool text_editing_active = false;
   bool recomposite_enabled = true;
   SDL_ScaleMode scale_mode = SDL_SCALEMODE_PIXELART;
@@ -218,6 +223,7 @@ public:
   // SDL render-device reset events invalidate every renderer-owned texture
   // even when the SDL_Renderer pointer itself remains stable.
   void invalidate_remastered_shell_materials();
+  void invalidate_remastered_party_portraits();
 
   inline sdl_window_shared get_sdl_window() const {
     return this->sdl_window;
@@ -291,6 +297,8 @@ private:
       SDL_Renderer* renderer);
   [[nodiscard]] const realmz::remaster::assets::ShellMaterialTextureCache*
   ensure_remastered_shell_materials(SDL_Renderer* renderer);
+  [[nodiscard]] const realmz::remaster::assets::PartyPortraitTextureCache*
+  ensure_remastered_party_portraits(SDL_Renderer* renderer);
   void present_classic_frame() override;
   void present_remastered_frame() override;
   void dispatch_remastered_shell_control(

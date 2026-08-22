@@ -112,27 +112,57 @@ python3 scripts/remaster_asset_census.py validate \
 Each approved master record retains the Classic payload hash, exact approved
 PNG hash, prompt and input hashes, model/generation provenance, post-processing
 steps, reviewer, status, dimensions, anchors/hotspots, alpha policy, and
-duplicate mapping. The C++ loader independently hashes each approved PNG before
-making an override available. The placeholder and mixed runtime manifests
-prove coverage and safe fallback but are not complete release artwork. A
-release bundle still requires the separately verified full-approval contract.
+duplicate mapping. Every production public-raster consumer uses the shared C++
+verified-raster loader after its own authorization step. The loader reads the
+native path into bounded memory, rejects growth while reading, independently
+checks the lowercase approved SHA-256, validates bounded PNG/IHDR dimensions,
+and decodes that same in-memory buffer. Its failure boundary exposes only a
+stable `ResourceKey` and fixed phase, never an absolute host path or decoder
+diagnostic. The placeholder and mixed runtime manifests prove coverage and safe
+fallback but are not complete release artwork. A release bundle still requires
+the separately verified full-approval contract.
 
 The code-native shell consumes only the four public, approved `ui_surface`
 entries `Data Files/The Family Jewels:ppat:128` through `131`. Its catalog uses
 key-only Remastered resolution against the bundled runtime manifest and census;
 it does not open a Classic resource fork, hash a private Classic payload, or
 inspect a selected Resource Manager handle. The complete runtime manifest,
-census, and all 11 approved outputs must validate first. The four shell PNGs
-are then read through native filesystem paths into bounded memory, rehashed,
-and decoded from those same bytes before the cache is published. Missing,
-changed, undecodable, or untexturable input therefore selects the code-native
-flat-color shell for the whole cache rather than substituting private or
-Classic bytes. Fallback diagnostics contain stable resource keys/phases, not
-absolute host paths. A per-draw tiled-render failure is overwritten with the
-same surface's flat fallback. Only the 11 reviewed PNGs below
-`style-proof/generation/outputs` are packaged: Classic references, raw model
-outputs, post-processing evidence, review sheets, pipeline errors, logs, and
-generation handoffs remain excluded from artifacts.
+census, and all 11 approved outputs must validate first. The shared verified-
+raster loader then supplies all four exact PNGs before the renderer-owned cache
+is published. Missing, changed, malformed, oversized, undecodable, or
+untexturable input therefore selects the code-native flat-color shell for the
+whole cache rather than substituting private or Classic bytes. A per-draw tiled
+render failure is overwritten with the same surface's flat fallback.
+
+Native party portraits have a stricter proof boundary. Their public catalog is
+limited, in stable order, to `Data Files/Portraits:cicn:257`, `267`, `297`, and
+`337`; each entry must be an approved, self-mastered `portrait` with
+`original_mask` alpha, a unique path and pair of Classic/output digests, and a
+44×44 logical size. Catalog loading validates those public records and the four
+verified PNGs can be realized atomically, but neither operation authorizes a
+draw. There is deliberately no ID-only lookup. Immediately before a party-card
+draw, the shell asks the Resource Manager to run its normal search precedence
+and return post-selection proof for the actual winner. Authorization requires
+an approved override whose exact `ResourceKey`, immutable Classic payload
+digest and coverage result, override path, master key, logical dimensions, and
+approved output digest all match the catalog. Pending writable resource changes
+clear cached proof and cannot authorize an override. Custom IDs, another pack's
+colliding ID, Classic passthroughs, coverage failures, unapproved replacements,
+and user-edited resources consequently render a code-native name monogram.
+
+The reviewed `Scenarios/Tutorial/Scenario:PICT:32128` output satisfies the
+style-proof rule that replacement title text not be baked into generated art.
+After exact post-selection coverage and verified PNG loading, only that key,
+its approved output digest, and its 320×320 logical dimensions may receive the
+deterministic code-rendered `TUTORIAL` label. The compositor uses the bundled
+Black Chancery font at 32-point bold, centers dark ink inside the reviewed
+240×48 plaque inset, returns a separate surface, and cannot change pixels
+outside that inset. Any eligibility, font, or composition failure rejects the
+entire approved replacement and uses the Classic picture.
+
+Only the 11 reviewed PNGs below `style-proof/generation/outputs` are packaged:
+Classic references, raw model outputs, post-processing evidence, review sheets,
+pipeline errors, logs, and generation handoffs remain excluded from artifacts.
 
 The pre-generation style proof has an independently validated, exactly
 24-reference Classic selection at

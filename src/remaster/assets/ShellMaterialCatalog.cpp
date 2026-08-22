@@ -90,6 +90,10 @@ ShellMaterialCatalog ShellMaterialCatalog::load(
         *resolution.logicalDimensions != entry->logicalDimensions) {
       fail(key, "does not preserve its manifest logical dimensions");
     }
+    if (!resolution.approvedContentSha256 ||
+        *resolution.approvedContentSha256 != entry->sharedMasterSha256) {
+      fail(key, "does not preserve its approved content digest");
+    }
 
     for (std::size_t previous = 0; previous < index; ++previous) {
       if (materials[previous].path == *resolution.overridePath) {

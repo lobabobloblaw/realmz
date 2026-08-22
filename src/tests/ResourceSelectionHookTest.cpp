@@ -97,6 +97,23 @@ int main(int argc, char** argv) {
     require(classic.immutablePayloadSha256.empty(),
         "Classic selection unnecessarily hashed its payload");
 
+    ResourceSelectionHook failingHook(
+        repositoryRoot / "private-location/manifest.json",
+        repositoryRoot / "private-location/census.json",
+        repositoryRoot / "private-location");
+    failingHook.setPresentationMode(PresentationMode::remastered);
+    const auto unavailable = failingHook.inspect(
+        "Data Files/Portraits", typeCode("cicn"), 257, "abc");
+    require(unavailable.resolution.kind ==
+            AssetResolutionKind::CoverageFailure,
+        "unavailable manifest did not fail closed");
+    require(unavailable.resolution.diagnostic ==
+            "Remastered asset manifest unavailable: validation failed",
+        "manifest initialization failure was not sanitized");
+    require(unavailable.resolution.diagnostic.find(
+                repositoryRoot.string()) == std::string::npos,
+        "manifest initialization failure leaked a host path");
+
     ResourceSelectionHook hook(manifestPath, censusPath, remasteredRoot);
     hook.setPresentationMode(PresentationMode::remastered);
     const auto missing = hook.inspect(

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -21,6 +22,15 @@ void setResourcePresentationMode(presentation::PresentationMode mode);
 // override path and the Classic logical dimensions to render into.
 [[nodiscard]] std::optional<PostSelectionResult>
 resourceAssetSelectionForHandle(Handle selectedResource);
+
+// Re-runs the legacy search precedence for this type/id and returns proof for
+// the actual current winner. Native renderers must request this immediately
+// before drawing; an integer resource ID alone never authorizes an override.
+// A writable resource with pending changes deliberately has no proof. Missing
+// resources return no proof without emitting the legacy search-chain log.
+[[nodiscard]] std::optional<PostSelectionResult>
+resourceAssetSelectionForCurrentWinner(
+    std::uint32_t type, std::int16_t id);
 
 // Returns the immutable bytes from the selected resource fork, even if a
 // QuickDraw decoder has replaced the mutable Handle contents. This lets mode

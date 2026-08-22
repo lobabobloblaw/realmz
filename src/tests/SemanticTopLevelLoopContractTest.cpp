@@ -215,6 +215,42 @@ void require(bool condition, std::string_view detail) {
     const std::size_t parameters_end = matching_delimiter(
         stripped_source, position, '(', ')');
     position = skip_whitespace(stripped_source, parameters_end + 1);
+    bool consumed_qualifier = true;
+    while (consumed_qualifier) {
+      consumed_qualifier = false;
+      for (const auto qualifier : {
+               std::string_view("const"), std::string_view("volatile"),
+               std::string_view("override"), std::string_view("final")}) {
+        if (find_identifier(stripped_source, qualifier, position) == position) {
+          position = skip_whitespace(
+              stripped_source, position + qualifier.size());
+          consumed_qualifier = true;
+          break;
+        }
+      }
+      if (consumed_qualifier) {
+        continue;
+      }
+      if (find_identifier(stripped_source, "noexcept", position) == position) {
+        position = skip_whitespace(stripped_source,
+            position + std::string_view("noexcept").size());
+        if (position < stripped_source.size() &&
+            stripped_source[position] == '(') {
+          position = skip_whitespace(stripped_source,
+              matching_delimiter(stripped_source, position, '(', ')') + 1);
+        }
+        consumed_qualifier = true;
+      } else if (position < stripped_source.size() &&
+          stripped_source[position] == '&') {
+        ++position;
+        if (position < stripped_source.size() &&
+            stripped_source[position] == '&') {
+          ++position;
+        }
+        position = skip_whitespace(stripped_source, position);
+        consumed_qualifier = true;
+      }
+    }
     if (position < stripped_source.size() &&
         stripped_source[position] == '{') {
       const std::size_t body_end = matching_delimiter(
@@ -3811,48 +3847,118 @@ void verify_window_manager_shell_dispatch_freshness(
       "capability");
 }
 
-void verify_shell_material_integration(const fs::path& repository_root) {
+void verify_remastered_runtime_asset_integration(
+    const fs::path& repository_root) {
   const std::string raw_source = read_file(
       repository_root / "src/WindowManager.cpp");
   const std::string source = code_only(raw_source);
+  const std::string raw_window_header = read_file(
+      repository_root / "src/WindowManager.hpp");
+  const std::string window_header = code_only(raw_window_header);
   const std::string raw_cache_source = read_file(repository_root /
       "src/remaster/assets/ShellMaterialTextureCache.cpp");
   const std::string cache_source = code_only(raw_cache_source);
   const std::string compact_cache_source = without_whitespace(cache_source);
   const std::string catalog_source = code_only(read_file(
       repository_root / "src/remaster/assets/ShellMaterialCatalog.cpp"));
-  const std::string compact_source = without_whitespace(source);
-  const std::string ensure = function_body(
+  const std::string raw_portrait_catalog_source = read_file(repository_root /
+      "src/remaster/assets/PartyPortraitCatalog.cpp");
+  const std::string portrait_catalog_source =
+      code_only(raw_portrait_catalog_source);
+  const std::string raw_portrait_catalog_header = read_file(repository_root /
+      "src/remaster/assets/PartyPortraitCatalog.hpp");
+  const std::string portrait_catalog_header =
+      code_only(raw_portrait_catalog_header);
+  const std::string raw_portrait_cache_source = read_file(repository_root /
+      "src/remaster/assets/PartyPortraitTextureCache.cpp");
+  const std::string portrait_cache_source =
+      code_only(raw_portrait_cache_source);
+  const std::string portrait_cache_header = code_only(read_file(
+      repository_root / "src/remaster/assets/PartyPortraitTextureCache.hpp"));
+  const std::string compact_portrait_cache_source =
+      without_whitespace(portrait_cache_source);
+  const std::string raw_verified_source = read_file(repository_root /
+      "src/remaster/assets/VerifiedRasterSurface.cpp");
+  const std::string verified_source = code_only(raw_verified_source);
+  const std::string raw_quickdraw_source = read_file(
+      repository_root / "src/QuickDraw.cpp");
+  const std::string quickdraw_source = code_only(raw_quickdraw_source);
+  const std::string raw_tutorial_source = read_file(repository_root /
+      "src/remaster/assets/TutorialTitleCompositor.cpp");
+  const std::string tutorial_source = code_only(raw_tutorial_source);
+  const std::string raw_tutorial_header = read_file(repository_root /
+      "src/remaster/assets/TutorialTitleCompositor.hpp");
+  const std::string raw_resource_manager_source = read_file(
+      repository_root / "src/ResourceManager.cpp");
+  const std::string resource_manager_source =
+      code_only(raw_resource_manager_source);
+  const std::string shell_ensure = function_body(
       source, "ensure_remastered_shell_materials");
-  const std::string compact_ensure = without_whitespace(ensure);
+  const std::string compact_shell_ensure =
+      without_whitespace(shell_ensure);
+  const std::string portrait_ensure = function_body(
+      source, "ensure_remastered_party_portraits");
+  const std::string compact_portrait_ensure =
+      without_whitespace(portrait_ensure);
   const std::string classic = function_body(source, "present_classic_frame");
   const std::string remastered = function_body(
       source, "present_remastered_frame");
   const std::string compact_remastered = without_whitespace(remastered);
 
-  const std::size_t attempted = compact_ensure.find(
+  const std::size_t attempted = compact_shell_ensure.find(
       "this->remastered_shell_materials_attempted=true;");
-  const std::size_t catalog = compact_ensure.find(
+  const std::size_t catalog = compact_shell_ensure.find(
       "realmz::remaster::assets::ShellMaterialCatalog::load(", attempted);
-  const std::size_t publish = compact_ensure.find(
+  const std::size_t publish = compact_shell_ensure.find(
       "this->remastered_shell_materials="
       "std::make_unique<ShellMaterialTextureCache>(renderer,catalog);",
       catalog);
-  const std::size_t catch_reset = compact_ensure.find(
+  const std::size_t catch_reset = compact_shell_ensure.find(
       "this->remastered_shell_materials.reset();", publish);
   require(attempted != std::string::npos && catalog != std::string::npos &&
           publish != std::string::npos && catch_reset != std::string::npos &&
           attempted < catalog && catalog < publish && publish < catch_reset,
       "native shell materials must be loaded and published atomically, with "
       "the whole cache cleared on failure");
+
+  const std::size_t portrait_attempted = compact_portrait_ensure.find(
+      "this->remastered_party_portraits_attempted=true;");
+  const std::size_t portrait_catalog = compact_portrait_ensure.find(
+      "realmz::remaster::assets::PartyPortraitCatalog::load(",
+      portrait_attempted);
+  const std::size_t portrait_publish = compact_portrait_ensure.find(
+      "this->remastered_party_portraits="
+      "std::make_unique<PartyPortraitTextureCache>("
+      "renderer,std::move(catalog));",
+      portrait_catalog);
+  const std::size_t portrait_catch_reset = compact_portrait_ensure.find(
+      "this->remastered_party_portraits.reset();", portrait_publish);
+  require(portrait_attempted != std::string::npos &&
+          portrait_catalog != std::string::npos &&
+          portrait_publish != std::string::npos &&
+          portrait_catch_reset != std::string::npos &&
+          portrait_attempted < portrait_catalog &&
+          portrait_catalog < portrait_publish &&
+          portrait_publish < portrait_catch_reset,
+      "native party portraits must load and publish atomically, with the "
+      "whole proof-bound cache cleared on failure");
+  require(count_identifier(shell_ensure,
+              "ensure_remastered_party_portraits") == 0 &&
+          count_identifier(portrait_ensure,
+              "ensure_remastered_shell_materials") == 0,
+      "shell-material and party-portrait realization must remain two "
+      "separate public runtime asset ensures");
   require(count_text(raw_source,
-              "root / \"phase1.runtime-manifest.json\"") == 1 &&
-          count_text(raw_source, "root / \"phase1.census.json\"") == 1 &&
+              "root / \"phase1.runtime-manifest.json\"") == 2 &&
+          count_text(raw_source, "root / \"phase1.census.json\"") == 2 &&
           count_text(raw_source,
-              "host_path_for_mac_filename(\":Remastered\", false)") == 1 &&
-          count_identifier(ensure, "host_filename_for_mac_filename") == 0,
-      "native shell material loading must use only the bundled public "
-      "Remastered manifest, census, and native asset root");
+              "host_path_for_mac_filename(\":Remastered\", false)") == 2 &&
+          count_identifier(shell_ensure,
+              "host_filename_for_mac_filename") == 0 &&
+          count_identifier(portrait_ensure,
+              "host_filename_for_mac_filename") == 0,
+      "both native runtime asset ensures must independently use only the "
+      "bundled public Remastered manifest, census, and native asset root");
   for (const auto forbidden : {
            "ResourceSelectionHook",
            "resourceAssetSelectionForHandle",
@@ -3860,7 +3966,7 @@ void verify_shell_material_integration(const fs::path& repository_root) {
            "classicPayloadSha256",
            "GetResource",
        }) {
-    require(count_identifier(ensure, forbidden) == 0,
+    require(count_identifier(shell_ensure, forbidden) == 0,
         std::string("native shell material loader must not use private/") +
             "Classic resource API " + forbidden);
     require(count_identifier(cache_source, forbidden) == 0,
@@ -3871,11 +3977,43 @@ void verify_shell_material_integration(const fs::path& repository_root) {
             "Classic resource API " + forbidden);
   }
 
+  for (const auto forbidden : {
+           "ResourceSelectionHook",
+           "resourceAssetSelectionForHandle",
+           "resourceAssetSelectionForCurrentWinner",
+           "PayloadDigest",
+           "GetResource",
+       }) {
+    require(count_identifier(portrait_ensure, forbidden) == 0,
+        std::string("native portrait loader must not use private/Classic ") +
+            "resource API " + forbidden);
+    require(count_identifier(portrait_cache_source, forbidden) == 0,
+        std::string("portrait texture cache must not bypass its proof via ") +
+            forbidden);
+    require(count_identifier(portrait_catalog_source, forbidden) == 0,
+        std::string("portrait catalog must not select a Classic winner via ") +
+            forbidden);
+  }
+
   require(count_identifier(classic, "ensure_remastered_shell_materials") == 0 &&
+          count_identifier(classic,
+              "ensure_remastered_party_portraits") == 0 &&
           count_identifier(remastered,
-              "ensure_remastered_shell_materials") == 1,
-      "Classic presentation must never initiate native material loading; "
-      "Remastered presentation must use exactly one cache per frame");
+              "ensure_remastered_shell_materials") == 1 &&
+          count_identifier(remastered,
+              "ensure_remastered_party_portraits") == 1,
+      "Classic presentation must never initiate either public native asset "
+      "loader; Remastered presentation must request each cache once per frame");
+  const std::size_t ensure_shell_in_frame = compact_remastered.find(
+      "this->ensure_remastered_shell_materials(renderer);");
+  const std::size_t ensure_portraits_in_frame = compact_remastered.find(
+      "this->ensure_remastered_party_portraits(renderer);",
+      ensure_shell_in_frame);
+  require(ensure_shell_in_frame != std::string::npos &&
+          ensure_portraits_in_frame != std::string::npos &&
+          ensure_shell_in_frame < ensure_portraits_in_frame,
+      "the Remastered frame must retain separate shell and portrait cache "
+      "handles before interpreting draw commands");
   const std::size_t captured_pointer = compact_remastered.find(
       "if(constauto&captured=this->remastered_pressed_shell_control)");
   const std::size_t live_pointer = compact_remastered.find(
@@ -3902,21 +4040,97 @@ void verify_shell_material_integration(const fs::path& repository_root) {
           count_identifier(cache_source, "SDL_RenderTextureTiled") == 1,
       "shell textures must build as a complete local set and render through "
       "SDL's tiled-texture path");
-  require(count_identifier(cache_source, "assetContentSha256Hex") == 1 &&
-          count_identifier(cache_source, "SDL_IOFromConstMem") == 1 &&
-          count_identifier(cache_source, "IMG_Load_IO") == 1 &&
-          count_identifier(cache_source, "IMG_Load") == 0 &&
-          count_text(raw_cache_source, "material.path.string()") == 0 &&
-          count_identifier(cache_source, "SDL_GetError") == 0,
-      "shell material bytes must be opened with native paths, hash-verified, "
-      "decoded from that exact memory, and reported without absolute paths");
-  require(count_identifier(ensure, "what") == 0 &&
+
+  const std::string verified_load = function_body(
+      verified_source, "loadVerifiedRasterSurface");
+  const std::string compact_verified_load =
+      without_whitespace(verified_load);
+  const std::string bounded_read = function_body(
+      verified_source, "loadBoundedBytes");
+  const std::string png_preflight = function_body(
+      verified_source, "preflightPng");
+  const std::size_t bounded_bytes = compact_verified_load.find(
+      "constautoencoded=loadBoundedBytes(path,key);");
+  const std::size_t digest_check = compact_verified_load.find(
+      "assetContentSha256Hex(encoded)!=expectedSha256", bounded_bytes);
+  const std::size_t preflight = compact_verified_load.find(
+      "constautodimensions=preflightPng(encoded,key);", digest_check);
+  const std::size_t exact_stream = compact_verified_load.find(
+      "SDL_IOFromConstMem(encoded.data(),encoded.size())", preflight);
+  const std::size_t typed_decode = compact_verified_load.find(
+      "IMG_LoadTyped_IO(stream,true", exact_stream);
+  const std::size_t decoded_dimensions = compact_verified_load.find(
+      "static_cast<std::uint32_t>(surface->w)!=dimensions.width",
+      typed_decode);
+  require(bounded_bytes != std::string::npos &&
+          digest_check != std::string::npos &&
+          preflight != std::string::npos &&
+          exact_stream != std::string::npos &&
+          typed_decode != std::string::npos &&
+          decoded_dimensions != std::string::npos &&
+          bounded_bytes < digest_check && digest_check < preflight &&
+          preflight < exact_stream && exact_stream < typed_decode &&
+          typed_decode < decoded_dimensions,
+      "the shared raster loader must bound and snapshot native bytes, verify "
+      "their digest and PNG header, decode that exact buffer as PNG, then "
+      "cross-check decoded dimensions");
+  require(count_identifier(bounded_read, "ifstream") == 1 &&
+          count_identifier(bounded_read,
+              "kMaximumVerifiedRasterEncodedBytes") == 1 &&
+          count_identifier(bounded_read, "peek") == 1 &&
+          count_identifier(png_preflight, "kPngSignature") == 2 &&
+          count_identifier(png_preflight, "kMaximumVerifiedRasterDimension") ==
+              2 &&
+          count_identifier(png_preflight, "kMaximumVerifiedRasterPixels") == 1 &&
+          count_identifier(verified_load, "isLowercaseSha256") == 1 &&
+          count_identifier(verified_load, "assetContentSha256Hex") == 1 &&
+          count_identifier(verified_load, "SDL_IOFromConstMem") == 1 &&
+          count_identifier(verified_load, "IMG_LoadTyped_IO") == 1 &&
+          count_text(raw_verified_source, "\"PNG\"") == 1,
+      "shared raster verification must retain its size, digest-shape, PNG, "
+      "pixel-count, exact-memory, and typed-decoder defenses");
+  require(count_identifier(verified_source, "SDL_GetError") == 0 &&
+          count_text(raw_verified_source, ".string()") == 0 &&
+          count_identifier(verified_source, "IMG_Load") == 0 &&
+          count_identifier(verified_source, "IMG_Load_IO") == 0 &&
+          count_identifier(verified_source, "GetResource") == 0 &&
+          count_identifier(verified_source, "ResourceSelectionHook") == 0 &&
+          count_identifier(verified_source, "resourceAssetSelectionForHandle") ==
+              0,
+      "shared raster verification must not leak decoder/path details or "
+      "acquire private Classic resources");
+
+  for (const auto consumer : std::array{
+           std::string_view(cache_source),
+           std::string_view(portrait_cache_source),
+       }) {
+    require(count_identifier(consumer, "loadVerifiedRasterSurface") == 1 &&
+            count_identifier(consumer, "assetContentSha256Hex") == 0 &&
+            count_identifier(consumer, "SDL_IOFromConstMem") == 0 &&
+            count_identifier(consumer, "IMG_LoadTyped_IO") == 0 &&
+            count_identifier(consumer, "IMG_Load_IO") == 0 &&
+            count_identifier(consumer, "IMG_Load") == 0,
+        "every native texture cache must delegate exactly once to the shared "
+        "verified raster surface boundary without a decoder bypass");
+  }
+  require(count_text(raw_cache_source, "material.path.string()") == 0 &&
+          count_text(raw_portrait_cache_source, "portrait.path.string()") == 0 &&
+          count_identifier(cache_source, "SDL_GetError") == 0 &&
+          count_identifier(portrait_cache_source, "SDL_GetError") == 0,
+      "native texture caches must report stable resource identities without "
+      "absolute paths or backend diagnostics");
+  require(count_identifier(shell_ensure, "what") == 0 &&
+          count_identifier(portrait_ensure, "what") == 0 &&
           count_text(raw_source,
               "Could not validate and realize Remastered shell materials; ") ==
               1 &&
-          count_text(raw_source, "using flat colors") == 1,
-      "native shell material fallback diagnostics must not expose absolute "
-      "asset or user paths");
+          count_text(raw_source, "using flat colors") == 1 &&
+          count_text(raw_source,
+              "Could not validate and realize Remastered party portraits; ") ==
+              1 &&
+          count_text(raw_source, "using code-native monograms") == 1,
+      "public runtime asset fallback diagnostics must not expose absolute "
+      "asset paths, user paths, or exception details");
 
   const std::string panel_draw = function_body(
       source, "draw_shell_panel_contents");
@@ -3949,6 +4163,324 @@ void verify_shell_material_integration(const fs::path& repository_root) {
       "native shell catalog must use only key-based two-argument Remastered "
       "asset resolution");
 
+  const std::string approved_image = function_body(
+      quickdraw_source, "approved_image_for_resource");
+  const std::string compact_approved_image =
+      without_whitespace(approved_image);
+  const std::size_t override_gate = compact_approved_image.find(
+      "selection->resolution.kind!=AssetResolutionKind::Override");
+  const std::size_t approved_digest = compact_approved_image.find(
+      "!resolution.approvedContentSha256", override_gate);
+  const std::size_t verified_decode = compact_approved_image.find(
+      "loadVerifiedRasterSurface(", approved_digest);
+  const std::size_t logical_scale = compact_approved_image.find(
+      "SDL_ScaleSurface(", verified_decode);
+  const std::size_t argb_conversion = compact_approved_image.find(
+      "SDL_ConvertSurface(", logical_scale);
+  const std::size_t tutorial_gate = compact_approved_image.find(
+      "tutorialTitleEligible(", argb_conversion);
+  const std::size_t tutorial_compose = compact_approved_image.find(
+      "composeTutorialTitle(", tutorial_gate);
+  const std::size_t final_image = compact_approved_image.find(
+      "image_for_sdl_surface(converted.get())", tutorial_compose);
+  require(override_gate != std::string::npos &&
+          approved_digest != std::string::npos &&
+          verified_decode != std::string::npos &&
+          logical_scale != std::string::npos &&
+          argb_conversion != std::string::npos &&
+          tutorial_gate != std::string::npos &&
+          tutorial_compose != std::string::npos &&
+          final_image != std::string::npos &&
+          override_gate < approved_digest &&
+          approved_digest < verified_decode &&
+          verified_decode < logical_scale && logical_scale < argb_conversion &&
+          argb_conversion < tutorial_gate &&
+          tutorial_gate < tutorial_compose && tutorial_compose < final_image,
+      "QuickDraw must require a selected approved override and verified "
+      "digest, scale and convert its exact bytes, then gate and compose only "
+      "the Tutorial title before publishing pixels");
+  require(count_identifier(approved_image, "loadVerifiedRasterSurface") == 1 &&
+          count_identifier(approved_image, "assetContentSha256Hex") == 0 &&
+          count_identifier(approved_image, "SDL_IOFromConstMem") == 0 &&
+          count_identifier(approved_image, "IMG_LoadTyped_IO") == 0 &&
+          count_identifier(approved_image, "IMG_Load_IO") == 0 &&
+          count_identifier(approved_image, "IMG_Load") == 0 &&
+          count_identifier(approved_image, "SDL_GetError") == 0 &&
+          count_text(raw_quickdraw_source,
+              "resolution.overridePath->string()") == 0,
+      "QuickDraw must use the shared verified raster boundary without a "
+      "direct decoder, digest, backend-error, or host-path bypass");
+
+  const std::size_t font_ready = compact_approved_image.find(
+      "TTF_WasInit()", tutorial_gate);
+  const std::size_t chancery_font = compact_approved_image.find(
+      "load_font(BLACK_CHANCERY_FONT_ID)", font_ready);
+  const std::size_t remember_font_size = compact_approved_image.find(
+      "TTF_GetFontSize(*titleFont)", chancery_font);
+  const std::size_t configure_font = compact_approved_image.find(
+      "TTF_SetFontSize(*titleFont,kTutorialTitlePointSize)",
+      remember_font_size);
+  const std::size_t bold_font = compact_approved_image.find(
+      "previousStyle|TTF_STYLE_BOLD", configure_font);
+  const std::size_t restore_font_size = compact_approved_image.find(
+      "TTF_SetFontSize(*titleFont,previousPointSize)", tutorial_compose);
+  const std::size_t restore_font_style = compact_approved_image.find(
+      "TTF_SetFontStyle(*titleFont,previousStyle)", restore_font_size);
+  const std::size_t reject_failed_title = compact_approved_image.find(
+      "if(!titled||!restored)", restore_font_style);
+  require(font_ready != std::string::npos &&
+          chancery_font != std::string::npos &&
+          remember_font_size != std::string::npos &&
+          configure_font != std::string::npos &&
+          bold_font != std::string::npos &&
+          restore_font_size != std::string::npos &&
+          restore_font_style != std::string::npos &&
+          reject_failed_title != std::string::npos &&
+          tutorial_gate < font_ready && font_ready < chancery_font &&
+          chancery_font < remember_font_size &&
+          remember_font_size < configure_font && configure_font < bold_font &&
+          bold_font < tutorial_compose && tutorial_compose < restore_font_size &&
+          restore_font_size < restore_font_style &&
+          restore_font_style < reject_failed_title,
+      "Tutorial typography must use initialized bundled Black Chancery, "
+      "temporarily configure the reviewed title face, restore shared font "
+      "state, and fail back to Classic if composition or restoration fails");
+  require(count_identifier(approved_image,
+              "VerifiedRasterSurfaceError") == 1 &&
+          count_identifier(approved_image,
+              "verifiedRasterSurfacePhaseName") == 1 &&
+          count_identifier(approved_image, "exception") == 1,
+      "QuickDraw fallback must distinguish a stable verified-raster phase "
+      "from a path-free generic failure");
+
+  const std::string tutorial_eligibility = function_body(
+      tutorial_source, "tutorialTitleEligible");
+  const std::string tutorial_compositor = function_body(
+      tutorial_source, "composeTutorialTitle");
+  const std::string compact_tutorial_compositor =
+      without_whitespace(tutorial_compositor);
+  require(count_text(raw_tutorial_source,
+              "\"Scenarios/Tutorial/Scenario\"") == 1 &&
+          count_text(raw_tutorial_source, "\"PICT\"") == 1 &&
+          count_text(raw_tutorial_source, "32128") == 1 &&
+          count_text(raw_tutorial_header,
+              "b3ad37374ae9b92a0bf745627c4db0d5022b53e16fa9d106bc4b5b4ecc032bba") ==
+              1 &&
+          count_identifier(tutorial_eligibility,
+              "kTutorialTitleApprovedOutputSha256") == 1 &&
+          count_identifier(tutorial_eligibility,
+              "kTutorialTitleLogicalDimensions") == 1,
+      "Tutorial title authorization must remain bound to only the reviewed "
+      "Tutorial PICT key, approved output digest, and logical dimensions");
+  const std::size_t compositor_gate = compact_tutorial_compositor.find(
+      "tutorialTitleEligible(");
+  const std::size_t duplicate_source = compact_tutorial_compositor.find(
+      "SDL_DuplicateSurface(source)", compositor_gate);
+  const std::size_t render_title = compact_tutorial_compositor.find(
+      "TTF_RenderText_Blended(", duplicate_source);
+  const std::size_t blit_title = compact_tutorial_compositor.find(
+      "SDL_BlitSurface(title.get(),nullptr,result.get(),&destination)",
+      render_title);
+  require(compositor_gate != std::string::npos &&
+          duplicate_source != std::string::npos &&
+          render_title != std::string::npos &&
+          blit_title != std::string::npos &&
+          compositor_gate < duplicate_source &&
+          duplicate_source < render_title && render_title < blit_title &&
+          count_identifier(tutorial_compositor, "SDL_DuplicateSurface") == 1 &&
+          count_identifier(tutorial_compositor, "SDL_BlitSurface") == 1,
+      "Tutorial composition must authorize first and render only onto one "
+      "independent copy, discarding every partial failure");
+
+  const std::string portrait_catalog_load = function_body(
+      portrait_catalog_source, "load");
+  const std::string portrait_authorization = function_body(
+      portrait_catalog_source, "authorizeSelectedPortrait");
+  const std::string compact_portrait_authorization =
+      without_whitespace(portrait_authorization);
+  require(count_text(raw_portrait_catalog_source,
+              "\"Data Files/Portraits\"") == 1 &&
+          count_text(raw_portrait_catalog_source, "\"cicn\"") == 1 &&
+          count_text(raw_portrait_catalog_source,
+              "{257, 267, 297, 337}") == 1 &&
+          count_text(raw_portrait_catalog_source,
+              "kPortraitDimensions{44U, 44U}") == 1 &&
+          count_text(raw_portrait_catalog_source, "\"portrait\"") == 1 &&
+          count_text(raw_portrait_catalog_source, "\"original_mask\"") == 1 &&
+          count_identifier(portrait_catalog_load, "classicPayloadSha256") >= 2 &&
+          count_identifier(portrait_catalog_load,
+              "approvedContentSha256") >= 3 &&
+          count_identifier(portrait_catalog_load, "overridePath") >= 2 &&
+          count_identifier(portrait_catalog_load, "masterKey") >= 2 &&
+          count_identifier(portrait_catalog_load, "logicalDimensions") >= 3,
+      "the public portrait catalog must pin its four exact keys, dimensions, "
+      "semantic/alpha policy, and distinct Classic/output/path proofs");
+  require(count_identifier(portrait_catalog_header,
+              "authorizeSelectedPortrait") == 1 &&
+          count_identifier(portrait_catalog_header,
+              "PostSelectionResult") == 2 &&
+          count_identifier(portrait_catalog_header, "find") == 0 &&
+          count_identifier(portrait_catalog_header, "int16_t") == 0 &&
+          count_identifier(portrait_cache_header, "draw") == 1 &&
+          count_identifier(portrait_cache_header,
+              "PostSelectionResult") == 1 &&
+          count_identifier(portrait_cache_header, "int16_t") == 0 &&
+          compact_portrait_authorization.contains(
+              "selection.resolution.kind!=AssetResolutionKind::Override") &&
+          count_identifier(portrait_authorization, "selection") >= 10 &&
+          count_identifier(portrait_authorization, "immutablePayloadSha256") ==
+              1 &&
+          count_identifier(portrait_authorization, "overridePath") == 2 &&
+          count_identifier(portrait_authorization, "masterKey") == 2 &&
+          count_identifier(portrait_authorization, "logicalDimensions") == 3 &&
+          count_identifier(portrait_authorization,
+              "approvedContentSha256") == 3,
+      "portrait catalog/cache APIs must expose only the complete live "
+      "PostSelectionResult proof, no ID lookup, and compare every selected "
+      "winner field");
+
+  const std::string portrait_draw = function_body(
+      portrait_cache_source, "draw");
+  const std::string compact_portrait_draw =
+      without_whitespace(portrait_draw);
+  const std::size_t portrait_local_records =
+      compact_portrait_cache_source.find("Recordsloaded;");
+  const std::size_t portrait_verified_surface =
+      compact_portrait_cache_source.find(
+          "loadVerifiedRasterSurface(", portrait_local_records);
+  const std::size_t portrait_publish_records =
+      compact_portrait_cache_source.find(
+          "this->records_=std::move(loaded);", portrait_verified_surface);
+  require(portrait_local_records != std::string::npos &&
+          portrait_verified_surface != std::string::npos &&
+          portrait_publish_records != std::string::npos &&
+          portrait_local_records < portrait_verified_surface &&
+          portrait_verified_surface < portrait_publish_records &&
+          count_identifier(portrait_cache_source,
+              "loadVerifiedRasterSurface") == 1 &&
+          count_identifier(portrait_cache_source,
+              "SDL_CreateTextureFromSurface") == 1 &&
+          count_identifier(portrait_cache_source,
+              "SDL_SetTextureBlendMode") == 1,
+      "portrait textures must verify and configure a complete local set "
+      "before atomically publishing renderer-owned records");
+  require(compact_portrait_draw.contains(
+              "this->catalog_.authorizeSelectedPortrait(selection)") &&
+          compact_portrait_draw.contains(
+              "record.key==portrait->key") &&
+          count_identifier(portrait_draw, "SDL_RenderTexture") == 1 &&
+          count_identifier(portrait_draw, "resourceAssetSelectionForCurrentWinner") ==
+              0 &&
+          count_identifier(portrait_draw, "GetResource") == 0,
+      "portrait drawing must accept a caller's live proof, authorize it in "
+      "the catalog, then select a texture by the authorized exact key only");
+
+  const std::string party_panel_draw = function_body(
+      source, "draw_shell_panel_contents");
+  const std::string compact_party_panel_draw =
+      without_whitespace(party_panel_draw);
+  const std::size_t current_winner = compact_party_panel_draw.find(
+      "resourceAssetSelectionForCurrentWinner(");
+  const std::size_t proof_draw = compact_party_panel_draw.find(
+      "portraits->draw(renderer,*selection,portrait_rect)", current_winner);
+  const std::size_t monogram_fallback = compact_party_panel_draw.find(
+      "if(!portrait_drawn){draw_shell_portrait_monogram(", proof_draw);
+  require(current_winner != std::string::npos &&
+          proof_draw != std::string::npos &&
+          monogram_fallback != std::string::npos &&
+          current_winner < proof_draw && proof_draw < monogram_fallback &&
+          count_identifier(party_panel_draw,
+              "resourceAssetSelectionForCurrentWinner") == 1 &&
+          count_identifier(party_panel_draw, "GetResource") == 0 &&
+          count_identifier(party_panel_draw,
+              "resourceAssetSelectionForHandle") == 0,
+      "each party card must re-run Resource Manager winner selection "
+      "immediately before proof-bound drawing and otherwise use its native "
+      "monogram fallback");
+
+  const std::string current_winner_selection = function_body(
+      resource_manager_source, "resourceAssetSelectionForCurrentWinner");
+  const std::string compact_current_winner_selection =
+      without_whitespace(current_winner_selection);
+  const std::string quiet_resource_lookup = function_body(
+      resource_manager_source, "find_resource");
+  const std::string compact_quiet_resource_lookup =
+      without_whitespace(quiet_resource_lookup);
+  const std::string inspect_selected = function_body(
+      resource_manager_source, "inspect_selected_resource");
+  const std::string compact_inspect_selected =
+      without_whitespace(inspect_selected);
+  const std::size_t quiet_winner = compact_current_winner_selection.find(
+      "constautoselected=rm.find_resource(type,id);");
+  const std::size_t absent_winner = compact_current_winner_selection.find(
+      "if(!selected){returnstd::nullopt;}", quiet_winner);
+  const std::size_t inspect_winner = compact_current_winner_selection.find(
+      "returnrm.inspect_selected_resource(selected);", absent_winner);
+  require(quiet_winner != std::string::npos &&
+          absent_winner != std::string::npos &&
+          inspect_winner != std::string::npos &&
+          quiet_winner < absent_winner && absent_winner < inspect_winner &&
+          count_identifier(current_winner_selection, "Handle") == 0 &&
+          count_identifier(current_winner_selection, "get_resource") == 0 &&
+          count_identifier(current_winner_selection, "print_chain") == 0 &&
+          count_identifier(current_winner_selection, "rm_log") == 0 &&
+          count_identifier(current_winner_selection, "host_filename") == 0 &&
+          count_identifier(current_winner_selection, "throw") == 0 &&
+          compact_quiet_resource_lookup.contains(
+              "for(size_tz=this->search_start_index;z<this->files.size();z++)"
+              "{autores=this->files[z]->get_resource(type,id);"
+              "if(res!=nullptr){returnres;}}") &&
+          count_identifier(quiet_resource_lookup, "print_chain") == 0 &&
+          count_identifier(quiet_resource_lookup, "rm_log") == 0 &&
+          count_identifier(quiet_resource_lookup, "host_filename") == 0 &&
+          count_identifier(quiet_resource_lookup, "throw") == 0,
+      "native portrait proof must quietly re-run unchanged legacy resource "
+      "search precedence, return no proof for a missing custom ID, and never "
+      "leak the open resource-file chain or host paths");
+  const std::size_t classic_bypass = compact_inspect_selected.find(
+      "this->presentation_mode=="
+      "realmz::presentation::PresentationMode::classic");
+  const std::size_t writable_rejection = compact_inspect_selected.find(
+      "if(res->data_modified)", classic_bypass);
+  const std::size_t cached_source_proof = compact_inspect_selected.find(
+      "res->asset_selection_source==res->source_res.get()",
+      writable_rejection);
+  const std::size_t cached_failure = compact_inspect_selected.find(
+      "!res->asset_selection->resolution.covered()", cached_source_proof);
+  const std::size_t cached_diagnostic = compact_inspect_selected.find(
+      "this->last_asset_diagnostic="
+      "res->asset_selection->resolution.diagnostic;",
+      cached_failure);
+  const std::size_t immutable_inspection = compact_inspect_selected.find(
+      "hook.inspect(*file->logical_pack,res->source_res->type,"
+      "res->source_res->id,res->source_res->data)", cached_diagnostic);
+  require(classic_bypass != std::string::npos &&
+          writable_rejection != std::string::npos &&
+          cached_source_proof != std::string::npos &&
+          cached_failure != std::string::npos &&
+          cached_diagnostic != std::string::npos &&
+          immutable_inspection != std::string::npos &&
+          classic_bypass < writable_rejection &&
+          writable_rejection < cached_source_proof &&
+          cached_source_proof < cached_failure &&
+          cached_failure < cached_diagnostic &&
+          cached_diagnostic < immutable_inspection &&
+          count_identifier(inspect_selected, "data_handle") == 0,
+      "winner proof must preserve zero-cost Classic bypass, reject pending "
+      "writable changes, bind cached proof to its immutable source object, "
+      "restore cached failure diagnostics after a mode cycle, and inspect "
+      "immutable fork bytes only");
+  const std::string mark_modified = function_body(
+      resource_manager_source, "mark_modified");
+  const std::string write_resources = function_body(
+      resource_manager_source, "write");
+  require(count_identifier(mark_modified, "asset_selection") == 1 &&
+          count_identifier(mark_modified, "asset_selection_source") == 1 &&
+          count_identifier(write_resources, "asset_selection") == 1 &&
+          count_identifier(write_resources, "asset_selection_source") == 1,
+      "writable resource mutation and publication must invalidate both the "
+      "cached selection proof and its source-identity guard");
+
   const std::string file_manager_source = code_only(read_file(
       repository_root / "src/FileManager.cpp"));
   const std::string native_host_path = function_body(
@@ -3963,14 +4495,12 @@ void verify_shell_material_integration(const fs::path& repository_root) {
               "host_path_for_mac_filename") == 1,
       "bundled paths must convert SDL UTF-8 directly to native filesystem "
       "paths before joining validated Classic-relative components");
-  const std::string raw_resource_manager_source = read_file(
-      repository_root / "src/ResourceManager.cpp");
   require(count_text(raw_resource_manager_source,
               "host_path_for_mac_filename(\":Remastered\", false)") == 1 &&
           count_text(raw_resource_manager_source,
               "host_filename_for_mac_filename(\":Remastered\", false)") == 0,
-      "both native Remastered asset consumers must preserve the SDL UTF-8 "
-      "base path as a native filesystem path");
+      "the proof-producing Resource Manager must preserve the SDL UTF-8 base "
+      "path as a native filesystem path");
 
   const std::string cmake_source = read_file(
       repository_root / "CMakeLists.txt");
@@ -3999,25 +4529,85 @@ void verify_shell_material_integration(const fs::path& repository_root) {
 
   const std::string create_window = function_body(source, "create_sdl_window");
   const std::string compact_create_window = without_whitespace(create_window);
-  const std::size_t invalidate_before_window = compact_create_window.find(
+  const std::size_t invalidate_shell_before_window = compact_create_window.find(
       "this->invalidate_remastered_shell_materials();");
+  const std::size_t invalidate_portraits_before_window =
+      compact_create_window.find(
+          "this->invalidate_remastered_party_portraits();",
+          invalidate_shell_before_window);
   const std::size_t replace_window = compact_create_window.find(
       "this->sdl_window=sdl_make_shared(SDL_CreateWindow(",
-      invalidate_before_window);
-  require(invalidate_before_window != std::string::npos &&
+      invalidate_portraits_before_window);
+  require(invalidate_shell_before_window != std::string::npos &&
+          invalidate_portraits_before_window != std::string::npos &&
           replace_window != std::string::npos &&
-          invalidate_before_window < replace_window,
-      "renderer-owned shell textures must be destroyed before replacing the "
-      "SDL window and its associated renderer");
-  const std::string invalidation = function_body(
+          invalidate_shell_before_window < invalidate_portraits_before_window &&
+          invalidate_portraits_before_window < replace_window,
+      "all renderer-owned public textures must be destroyed before replacing "
+      "the SDL window and its associated renderer");
+
+  const std::size_t window_member = find_identifier(
+      window_header, "sdl_window");
+  const std::size_t shell_cache_member = find_identifier(
+      window_header, "remastered_shell_materials", window_member);
+  const std::size_t portrait_cache_member = find_identifier(
+      window_header, "remastered_party_portraits", shell_cache_member);
+  require(window_member != std::string::npos &&
+          shell_cache_member != std::string::npos &&
+          portrait_cache_member != std::string::npos &&
+          window_member < shell_cache_member &&
+          window_member < portrait_cache_member,
+      "renderer-owned caches must remain declared after the SDL window so "
+      "C++ destruction order releases their textures before the renderer");
+
+  const std::string shell_invalidation = function_body(
       source, "invalidate_remastered_shell_materials");
-  require(count_identifier(invalidation, "reset") == 1 &&
-          count_identifier(invalidation,
+  const std::string portrait_invalidation = function_body(
+      source, "invalidate_remastered_party_portraits");
+  require(count_identifier(shell_invalidation, "reset") == 1 &&
+          count_identifier(shell_invalidation,
               "remastered_shell_material_renderer") == 1 &&
-          count_identifier(invalidation,
+          count_identifier(shell_invalidation,
               "remastered_shell_materials_attempted") == 1,
       "shell material invalidation must clear textures, renderer identity, "
       "and the attempt latch");
+  require(count_identifier(portrait_invalidation, "reset") == 1 &&
+          count_identifier(portrait_invalidation,
+              "remastered_party_portrait_renderer") == 1 &&
+          count_identifier(portrait_invalidation,
+              "remastered_party_portraits_attempted") == 1,
+      "party portrait invalidation must clear textures, renderer identity, "
+      "and the attempt latch");
+  require(compact_shell_ensure.contains(
+              "if(renderer!=this->remastered_shell_material_renderer)"
+              "{this->remastered_shell_materials.reset();") &&
+          compact_portrait_ensure.contains(
+              "if(renderer!=this->remastered_party_portrait_renderer)"
+              "{this->remastered_party_portraits.reset();"),
+      "each public texture cache must independently invalidate when its SDL "
+      "renderer identity changes");
+
+  const std::string mode_switch = function_body(
+      source, "set_presentation_mode");
+  const std::string compact_mode_switch = without_whitespace(mode_switch);
+  const std::size_t mode_invalidate_shell = compact_mode_switch.find(
+      "this->invalidate_remastered_shell_materials();");
+  const std::size_t mode_invalidate_portraits = compact_mode_switch.find(
+      "this->invalidate_remastered_party_portraits();",
+      mode_invalidate_shell);
+  const std::size_t mutate_mode = compact_mode_switch.find(
+      "this->presentation_host.set_mode(mode);", mode_invalidate_portraits);
+  const std::size_t refresh_resource_assets = compact_mode_switch.find(
+      "RealmzRefreshPresentationAssets();", mutate_mode);
+  require(mode_invalidate_shell != std::string::npos &&
+          mode_invalidate_portraits != std::string::npos &&
+          mutate_mode != std::string::npos &&
+          refresh_resource_assets != std::string::npos &&
+          mode_invalidate_shell < mode_invalidate_portraits &&
+          mode_invalidate_portraits < mutate_mode &&
+          mutate_mode < refresh_resource_assets,
+      "mode switches must drop both renderer caches before changing mode and "
+      "refreshing Resource Manager-backed presentation assets");
 
   const std::string event_source = code_only(read_file(
       repository_root / "src/EventManager.cpp"));
@@ -4028,22 +4618,28 @@ void verify_shell_material_integration(const fs::path& repository_root) {
   const std::size_t device_invalidate = compact_enqueue.find(
       "WindowManager::instance().invalidate_remastered_shell_materials();",
       device_reset);
+  const std::size_t device_invalidate_portraits = compact_enqueue.find(
+      "WindowManager::instance().invalidate_remastered_party_portraits();",
+      device_invalidate);
   const std::size_t device_repaint = compact_enqueue.find(
-      "WindowManager::instance().recomposite_all();", device_invalidate);
+      "WindowManager::instance().recomposite_all();",
+      device_invalidate_portraits);
   const std::size_t targets_reset = compact_enqueue.find(
       "caseSDL_EVENT_RENDER_TARGETS_RESET:", device_repaint);
   const std::size_t targets_repaint = compact_enqueue.find(
       "WindowManager::instance().recomposite_all();", targets_reset);
   require(device_reset != std::string::npos &&
           device_invalidate != std::string::npos &&
+          device_invalidate_portraits != std::string::npos &&
           device_repaint != std::string::npos &&
           targets_reset != std::string::npos &&
           targets_repaint != std::string::npos &&
           device_reset < device_invalidate &&
-          device_invalidate < device_repaint &&
+          device_invalidate < device_invalidate_portraits &&
+          device_invalidate_portraits < device_repaint &&
           device_repaint < targets_reset && targets_reset < targets_repaint,
-      "SDL render-device reset must invalidate shell textures before repaint, "
-      "and render-target reset must repaint");
+      "SDL render-device reset must invalidate both public texture caches "
+      "before repaint, and render-target reset must repaint");
 }
 
 void verify_center_combat_cursor_contract(
@@ -6517,7 +7113,7 @@ int main(int argc, char** argv) {
     verify_production_call_ownership(repository_root);
     verify_window_manager_named_combat_sinks(repository_root);
     verify_window_manager_shell_dispatch_freshness(repository_root);
-    verify_shell_material_integration(repository_root);
+    verify_remastered_runtime_asset_integration(repository_root);
     verify_mode_switch_cancellation(repository_root);
     std::cout << "SemanticTopLevelLoopContractTest passed ("
               << checks_run << " checks)\n";

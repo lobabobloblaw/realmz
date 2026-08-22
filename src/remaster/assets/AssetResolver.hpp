@@ -22,6 +22,9 @@ struct AssetResolution {
   std::optional<std::filesystem::path> overridePath;
   std::optional<ResourceKey> masterKey;
   std::optional<AssetDimensions> logicalDimensions;
+  // Exact approved PNG bytes. Consumers must re-check this digest against
+  // the bytes they decode instead of reopening an earlier-validated path.
+  std::optional<std::string> approvedContentSha256;
   std::string diagnostic;
 
   [[nodiscard]] bool covered() const noexcept {

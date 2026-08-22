@@ -135,18 +135,36 @@ phase-one runtime manifest now replaces 11 hash-locked, human-approved raster
 resources (four UI materials, four portraits, two world/title pictures, and one
 terrain icon) and leaves the other 1,509 covered resources as exact Classic
 passthroughs. Presentation-mode changes rehydrate cached patterns and pictures,
-so switching between Classic and Remastered does not require a restart. The
-native shell now also tiles those exact approved UI materials directly:
-`ppat` 131 for panels, 129 for ordinary controls, 128 for selected controls,
-and 130 for pressed or inactive controls. Hash-bound contrast scrims retain
-texture while preserving the established text palette and non-color state
-cues. The complete 11-output runtime manifest validates first; each of the four
-shell PNGs is then read through its native filesystem path into bounded memory,
-rechecked against its approved SHA-256, and decoded from those exact bytes.
-Catalog, digest, decode, sampling, or texture-construction failure publishes no
-partial cache and leaves every native surface on its previous flat RGB fill; a
-failed tiled draw is overwritten by that surface's same flat fill. macOS and
-Windows package rules install the same allow-listed public runtime tree.
+so switching between Classic and Remastered does not require a restart. Every
+production consumer of those public approved PNGs now uses one verified raster
+loader: it reads a bounded native-path file into memory, checks its approved
+SHA-256 and bounded PNG dimensions, and decodes that exact buffer. Failures
+report only a stable resource key and phase before the consumer falls back.
+
+The native shell tiles the exact approved `ppat` materials directly: 131 for
+panels, 129 for ordinary controls, 128 for selected controls, and 130 for
+pressed or inactive controls. Hash-bound contrast scrims retain texture while
+preserving the established text palette and non-color state cues. Its party
+rail can also draw only the four approved `Data Files/Portraits:cicn` resources
+257, 267, 297, and 337 in their 44×44 portrait slots. Immediately before each
+portrait draw, the shell asks the Resource Manager for fresh post-selection
+proof of the actual winning resource. The exact pack/type/ID, immutable Classic
+payload digest and approved coverage, override path, master key, logical size,
+and approved PNG digest must all match the public catalog; there is no ID-only
+authorization path. A custom, unapproved, other-pack, or user-edited resource
+therefore remains visible as a code-native name monogram instead of borrowing
+approved art.
+
+The approved `Scenarios/Tutorial/Scenario:PICT:32128` replacement deliberately
+contains no baked title text. Only that exact key, approved output digest, and
+320×320 logical size are eligible for a deterministic code-rendered
+`TUTORIAL` title in the reviewed plaque; a mismatch or font/composition failure
+uses the complete Classic picture. Both native four-texture caches publish only
+after all four textures succeed, are destroyed before their renderer, and are
+invalidated on window replacement, presentation-mode changes, and SDL render-
+device reset. A failed material draw is covered by its flat fill, while a failed
+portrait draw uses its monogram. macOS and Windows package rules install the
+same allow-listed public runtime tree.
 This is an integration milestone, not full-bake or release
 approval; ten attempted style-proof assets remain rejected for human art
 direction, and the broader provenance/release gates remain in force.

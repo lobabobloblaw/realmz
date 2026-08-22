@@ -14,8 +14,11 @@ constexpr double kMinimumPanelWidth = 180.0;
 constexpr double kMinimumPanelHeight = 160.0;
 constexpr double kPanelInset = 10.0;
 constexpr double kHeadingGap = 6.0;
-constexpr double kCardGap = 4.0;
+constexpr double kPreferredCardGap = 4.0;
+constexpr double kMinimumCardGap = 3.0;
 constexpr double kMaximumCardHeight = 78.0;
+constexpr double kPortraitSize = 44.0;
+constexpr double kPortraitGap = 6.0;
 constexpr double kAverageGlyphWidthInEms = 0.58;
 constexpr double kMinimumPracticalPointSize = 8.0;
 
@@ -181,27 +184,36 @@ void validate_request(const PartyRailLayoutRequest& request) {
   constexpr double kVerticalInset = 4.0;
   const double inner_width = card.width - 2.0 * kHorizontalInset;
   const double inner_height = card.height - 2.0 * kVerticalInset;
+  const double text_width = inner_width - kPortraitSize - kPortraitGap;
   const double row_gap = std::clamp(inner_height * 0.04, 1.0, 2.0);
   const double row_height = inner_height - 2.0 * row_gap;
   const double name_height = row_height * 0.35;
   const double stamina_row_height = row_height * 0.32;
   const double state_height = row_height - name_height - stamina_row_height;
-  if ((inner_width <= 0.0) || (state_height <= 0.0)) {
+  if ((card.height < kPortraitSize) || (text_width <= 0.0) ||
+      (state_height <= 0.0)) {
     throw std::invalid_argument("party panel is too small for member cards");
   }
 
-  const double level_width = std::clamp(inner_width * 0.25, 42.0, 62.0);
-  const double column_gap = std::clamp(inner_width * 0.025, 3.0, 7.0);
-  const double name_width = inner_width - level_width - column_gap;
-  const double value_width = std::clamp(inner_width * 0.32, 64.0, 88.0);
-  const double meter_width = inner_width - value_width - column_gap;
+  const double level_width = std::clamp(text_width * 0.25, 42.0, 62.0);
+  const double column_gap = std::clamp(text_width * 0.025, 3.0, 7.0);
+  const double name_width = text_width - level_width - column_gap;
+  const double value_width = std::clamp(text_width * 0.32, 64.0, 88.0);
+  const double meter_width = text_width - value_width - column_gap;
   if ((name_width <= 0.0) || (meter_width <= 0.0)) {
     throw std::invalid_argument("party panel is too narrow for member cards");
   }
 
   const double left = card.x + kHorizontalInset;
+  const LogicalRect portrait_bounds{
+      left,
+      card.y + (card.height - kPortraitSize) / 2.0,
+      kPortraitSize,
+      kPortraitSize,
+  };
+  const double text_left = portrait_bounds.right() + kPortraitGap;
   const double top = card.y + kVerticalInset;
-  const LogicalRect name_bounds{left, top, name_width, name_height};
+  const LogicalRect name_bounds{text_left, top, name_width, name_height};
   const LogicalRect level_bounds{
       name_bounds.right() + column_gap,
       top,
@@ -214,7 +226,7 @@ void validate_request(const PartyRailLayoutRequest& request) {
   const double meter_track_y =
       meter_y + (stamina_row_height - meter_height) / 2.0;
   const LogicalRect stamina_meter_bounds{
-      left,
+      text_left,
       meter_track_y,
       meter_width,
       meter_height,
@@ -226,9 +238,9 @@ void validate_request(const PartyRailLayoutRequest& request) {
       stamina_row_height,
   };
   const LogicalRect state_bounds{
-      left,
+      text_left,
       meter_y + stamina_row_height + row_gap,
-      inner_width,
+      text_width,
       state_height,
   };
 
@@ -254,6 +266,7 @@ void validate_request(const PartyRailLayoutRequest& request) {
       .member_index = member_index,
       .member_id = member.id,
       .card_bounds = card,
+      .portrait_bounds = portrait_bounds,
       .name_bounds = name_bounds,
       .level_bounds = level_bounds,
       .stamina_meter_bounds = stamina_meter_bounds,
@@ -296,8 +309,22 @@ PartyRailLayout compute_party_rail_layout(
   const double cards_top = heading_bounds.bottom() + kHeadingGap;
   const double cards_height = request.party_panel.bottom() - kPanelInset -
       cards_top;
-  const double total_gaps =
-      kCardGap * static_cast<double>(request.members.size() - 1U);
+  const auto gap_count = request.members.size() - 1U;
+  double card_gap = kPreferredCardGap;
+  if (gap_count > 0U) {
+    // Preserve the established four-point rhythm whenever possible. Only the
+    // shortest six-member wide rail at the largest text scale needs a slightly
+    // tighter gap to keep every fixed portrait at its full logical size.
+    const double maximum_gap_for_full_portraits =
+        (cards_height -
+            kPortraitSize * static_cast<double>(request.members.size())) /
+        static_cast<double>(gap_count);
+    card_gap = std::clamp(
+        maximum_gap_for_full_portraits,
+        kMinimumCardGap,
+        kPreferredCardGap);
+  }
+  const double total_gaps = card_gap * static_cast<double>(gap_count);
   const double card_height = std::min(
       kMaximumCardHeight,
       (cards_height - total_gaps) /
@@ -323,7 +350,7 @@ PartyRailLayout compute_party_rail_layout(
         card_height,
     };
     result.members.emplace_back(layout_member(request, index, card));
-    card_y += card_height + kCardGap;
+    card_y += card_height + card_gap;
   }
   return result;
 }

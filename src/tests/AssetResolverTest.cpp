@@ -13,6 +13,7 @@ using realmz::remaster::assets::AssetManifestError;
 using realmz::remaster::assets::AssetResolutionKind;
 using realmz::remaster::assets::AssetResolver;
 using realmz::remaster::assets::ResourceKey;
+using realmz::remaster::assets::assetContentSha256Hex;
 using realmz::presentation::PresentationMode;
 
 namespace {
@@ -71,6 +72,16 @@ void requireManifestFailure(Callback&& callback, std::string_view message) {
   throw std::runtime_error(std::string(message));
 }
 
+template <typename Callback>
+std::string manifestFailureMessage(Callback&& callback) {
+  try {
+    callback();
+  } catch (const AssetManifestError& error) {
+    return error.what();
+  }
+  throw std::runtime_error("expected AssetManifestError");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -101,18 +112,27 @@ int main(int argc, char** argv) {
 
     AssetResolver resolver(std::move(manifest));
     const ResourceKey missing{"Scenarios/Not Installed/Scenario", "PICT", 32128};
+    const auto classicMissing =
+        resolver.resolve(PresentationMode::classic, missing);
     require(
-        resolver.resolve(PresentationMode::classic, missing).kind ==
-            AssetResolutionKind::ClassicBypass,
+        classicMissing.kind == AssetResolutionKind::ClassicBypass,
         "Classic mode did not bypass remastered coverage");
+    require(!classicMissing.approvedContentSha256,
+        "Classic bypass unexpectedly carried an approved content digest");
+    const auto uncoveredMissing =
+        resolver.resolve(PresentationMode::remastered, missing);
     require(
-        resolver.resolve(PresentationMode::remastered, missing).kind ==
-            AssetResolutionKind::CoverageFailure,
+        uncoveredMissing.kind == AssetResolutionKind::CoverageFailure,
         "Remastered mode did not report missing coverage");
+    require(!uncoveredMissing.approvedContentSha256,
+        "coverage failure unexpectedly carried an approved content digest");
+    const auto tutorialPassthrough =
+        resolver.resolve(PresentationMode::remastered, tutorialPicture);
     require(
-        resolver.resolve(PresentationMode::remastered, tutorialPicture).kind ==
-            AssetResolutionKind::ClassicPassthrough,
+        tutorialPassthrough.kind == AssetResolutionKind::ClassicPassthrough,
         "placeholder coverage did not resolve as ClassicPassthrough");
+    require(!tutorialPassthrough.approvedContentSha256,
+        "Classic passthrough unexpectedly carried an approved content digest");
     require(
         resolver.resolve(
             PresentationMode::remastered, tutorialPicture, tutorialPayloadSha256).kind ==
@@ -213,6 +233,86 @@ int main(int argc, char** argv) {
     require(overrideResult.logicalDimensions ==
             realmz::remaster::assets::AssetDimensions{.width = 44, .height = 44},
         "override did not retain the Classic logical dimensions");
+    require(overrideResult.approvedContentSha256 ==
+            "4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802d20dab6",
+        "override did not carry the exact approved content digest");
+
+    auto unicodeManifest = approvedManifest;
+    replaceFirst(unicodeManifest, "test-approved.png",
+        "art-\\u00e9/portrait-\\u754c.png");
+    const auto unicodeRelative =
+        std::filesystem::path(std::u8string(u8"art-\u00e9/portrait-\u754c.png"));
+    std::filesystem::create_directories(
+        (temporaryRoot / unicodeRelative).parent_path());
+    std::filesystem::copy_file(
+        temporaryRoot / "test-approved.png", temporaryRoot / unicodeRelative);
+    const auto unicodeManifestPath = temporaryRoot / "unicode-approved.json";
+    saveFile(unicodeManifestPath, unicodeManifest);
+    AssetResolver unicodeResolver(AssetManifest::load(
+        unicodeManifestPath, censusPath, temporaryRoot));
+    const auto unicodeOverride = unicodeResolver.resolve(
+        PresentationMode::remastered, firstEntry);
+    require(unicodeOverride.overridePath ==
+            std::filesystem::weakly_canonical(temporaryRoot / unicodeRelative),
+        "UTF-8 asset_path did not round-trip through the native path type");
+
+    for (const auto& invalidPath : {
+             std::string("invalid-\xFF.png", 13U),
+             std::string("invalid-\xC0\xAF.png", 14U),
+             std::string("invalid-\xED\xA0\x80.png", 15U),
+             std::string("invalid-\xC2\x85.png", 14U),
+         }) {
+      auto invalidUtf8Manifest = approvedManifest;
+      replaceFirst(invalidUtf8Manifest, "test-approved.png", invalidPath);
+      const auto invalidUtf8ManifestPath =
+          temporaryRoot / ("invalid-utf8-" +
+              std::to_string(static_cast<unsigned char>(invalidPath[8])) +
+              ".json");
+      saveFile(invalidUtf8ManifestPath, invalidUtf8Manifest);
+      const auto invalidUtf8Failure = manifestFailureMessage([&] {
+        (void)AssetManifest::load(
+            invalidUtf8ManifestPath, censusPath, temporaryRoot);
+      });
+      require(invalidUtf8Failure ==
+              "manifest.entries[0].asset_path is not a portable UTF-8 path",
+          "invalid UTF-8 asset_path did not fail closed");
+      require(invalidUtf8Failure.find(temporaryRoot.string()) ==
+              std::string::npos,
+          "invalid UTF-8 asset_path diagnostic leaked its host path");
+    }
+
+    const auto oversizedManifestPath = temporaryRoot / "oversized.json";
+    saveFile(oversizedManifestPath,
+        std::string(8U * 1024U * 1024U + 1U, 'x'));
+    const auto oversizedManifestFailure = manifestFailureMessage([&] {
+      (void)AssetManifest::load(
+          oversizedManifestPath, censusPath, temporaryRoot);
+    });
+    require(oversizedManifestFailure == "asset manifest has an invalid size",
+        "oversized manifest did not fail with a stable bounded-read diagnostic");
+    require(oversizedManifestFailure.find(temporaryRoot.string()) ==
+            std::string::npos,
+        "bounded manifest diagnostic leaked its host path");
+
+    const std::string oversizedAsset(16U * 1024U * 1024U + 1U, 'x');
+    auto oversizedAssetManifest = approvedManifest;
+    replaceFirst(oversizedAssetManifest,
+        "4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802d20dab6",
+        assetContentSha256Hex(oversizedAsset));
+    const auto oversizedAssetManifestPath =
+        temporaryRoot / "oversized-asset.json";
+    saveFile(oversizedAssetManifestPath, oversizedAssetManifest);
+    saveFile(temporaryRoot / "test-approved.png", oversizedAsset);
+    const auto oversizedAssetFailure = manifestFailureMessage([&] {
+      (void)AssetManifest::load(
+          oversizedAssetManifestPath, censusPath, temporaryRoot);
+    });
+    require(oversizedAssetFailure ==
+            "manifest.entries[0].asset_path has an invalid size",
+        "oversized approved asset did not fail before hashing");
+    require(oversizedAssetFailure.find(temporaryRoot.string()) ==
+            std::string::npos,
+        "bounded asset diagnostic leaked its host path");
 
     saveFile(temporaryRoot / "test-approved.png", "tampered");
     requireManifestFailure(

@@ -11,6 +11,7 @@
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_properties.h>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -19,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -51,9 +53,11 @@
 #include "presentation/PartyRailModel.hpp"
 #include "presentation/SemanticInputBoundary.h"
 #include "replay/ReplayRuntime.hpp"
+#include "remaster/assets/PartyPortraitTextureCache.hpp"
 #include "remaster/assets/ShellMaterialTextureCache.hpp"
 
 using ResourceDASM::ResourceFile;
+using realmz::remaster::assets::PartyPortraitTextureCache;
 using realmz::remaster::assets::ShellMaterialTextureCache;
 
 // Enable these to save an image named debug*.bmp every time the main window or dialog items are recomposited
@@ -1359,6 +1363,7 @@ void WindowManager::create_sdl_window() {
   }
 
   this->invalidate_remastered_shell_materials();
+  this->invalidate_remastered_party_portraits();
   this->sdl_window = sdl_make_shared(SDL_CreateWindow(
       realmz::app::kProductName.data(), initial_width, initial_height,
       SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
@@ -2267,6 +2272,94 @@ void draw_shell_text(
       static_cast<float>(text_style.line_height));
 }
 
+[[nodiscard]] std::string party_portrait_monogram(
+    std::string_view name) {
+  std::size_t offset = 0;
+  while (offset < name.size() &&
+      static_cast<unsigned char>(name[offset]) < 0x80U &&
+      std::isspace(static_cast<unsigned char>(name[offset]))) {
+    ++offset;
+  }
+  if (offset >= name.size()) {
+    return "?";
+  }
+
+  const auto lead = static_cast<unsigned char>(name[offset]);
+  if (lead < 0x80U) {
+    char initial = static_cast<char>(lead);
+    if (initial >= 'a' && initial <= 'z') {
+      initial = static_cast<char>(initial - ('a' - 'A'));
+    }
+    return std::string(1U, initial);
+  }
+
+  std::size_t byteCount = 0;
+  if ((lead & 0xE0U) == 0xC0U) {
+    byteCount = 2U;
+  } else if ((lead & 0xF0U) == 0xE0U) {
+    byteCount = 3U;
+  } else if ((lead & 0xF8U) == 0xF0U) {
+    byteCount = 4U;
+  } else {
+    return "?";
+  }
+  if (byteCount > name.size() - offset) {
+    return "?";
+  }
+  for (std::size_t index = 1; index < byteCount; ++index) {
+    if ((static_cast<unsigned char>(name[offset + index]) & 0xC0U) !=
+        0x80U) {
+      return "?";
+    }
+  }
+  return std::string(name.substr(offset, byteCount));
+}
+
+void draw_shell_portrait_monogram(
+    SDL_Renderer* renderer,
+    TTF_Font* font,
+    std::string_view name,
+    const realmz::presentation::LogicalRect& bounds,
+    SDL_Color color,
+    double backing_scale) {
+  if (!renderer || !font || bounds.width <= 0.0 || bounds.height <= 0.0 ||
+      !std::isfinite(backing_scale) || backing_scale <= 0.0) {
+    return;
+  }
+  const auto monogram = party_portrait_monogram(name);
+  constexpr float kLogicalPointSize = 20.0F;
+  if (!TTF_SetFontSize(
+          font, kLogicalPointSize * static_cast<float>(backing_scale))) {
+    return;
+  }
+  TTF_SetFontStyle(font, TTF_STYLE_BOLD);
+  auto surface = sdl_make_unique(TTF_RenderText_Blended(
+      font, monogram.data(), monogram.size(), color));
+  if (!surface) {
+    return;
+  }
+  auto texture = sdl_make_unique(
+      SDL_CreateTextureFromSurface(renderer, surface.get()));
+  if (!texture) {
+    return;
+  }
+  SDL_SetTextureScaleMode(texture.get(), SDL_SCALEMODE_LINEAR);
+  const double width = std::min(
+      bounds.width - 8.0, surface->w / backing_scale);
+  const double height = std::min(
+      bounds.height - 8.0, surface->h / backing_scale);
+  if (width <= 0.0 || height <= 0.0) {
+    return;
+  }
+  const SDL_FRect destination{
+      static_cast<float>(bounds.x + (bounds.width - width) / 2.0),
+      static_cast<float>(bounds.y + (bounds.height - height) / 2.0),
+      static_cast<float>(width),
+      static_cast<float>(height),
+  };
+  SDL_RenderTexture(renderer, texture.get(), nullptr, &destination);
+}
+
 SDL_Color shell_state_color(
     realmz::presentation::StateEmphasis emphasis) noexcept {
   using realmz::presentation::StateEmphasis;
@@ -2377,6 +2470,7 @@ void draw_shell_panel_contents(
     SDL_Renderer* renderer,
     TTF_Font* font,
     const ShellMaterialTextureCache* materials,
+    const PartyPortraitTextureCache* portraits,
     realmz::presentation::ShellPanelKind kind,
     const realmz::presentation::LogicalRect& panel,
     const realmz::presentation::PresentationShellModel& model,
@@ -2486,6 +2580,35 @@ void draw_shell_panel_contents(
                 ? kSelectedMaterialInk
                 : SDL_Color{250, 232, 174, 255});
       }
+
+      const auto portrait_rect = sdl_rect(placed.portrait_bounds);
+      SDL_SetRenderDrawColor(renderer, 18, 20, 25, 255);
+      SDL_RenderFillRect(renderer, &portrait_rect);
+      bool portrait_drawn = false;
+      if (portraits &&
+          member.portrait_id >= std::numeric_limits<std::int16_t>::min() &&
+          member.portrait_id <= std::numeric_limits<std::int16_t>::max()) {
+        const auto selection = realmz::remaster::assets::
+            resourceAssetSelectionForCurrentWinner(
+                ResourceDASM::RESOURCE_TYPE_cicn,
+                static_cast<std::int16_t>(member.portrait_id));
+        if (selection) {
+          portrait_drawn = portraits->draw(
+              renderer, *selection, portrait_rect);
+        }
+      }
+      if (!portrait_drawn) {
+        draw_shell_portrait_monogram(
+            renderer, font, member.name, placed.portrait_bounds,
+            kHeading, backing_scale);
+      }
+      const auto portrait_border = selected_material
+          ? kSelectedMaterialInk
+          : SDL_Color{116, 96, 66, 255};
+      SDL_SetRenderDrawColor(renderer,
+          portrait_border.r, portrait_border.g, portrait_border.b,
+          portrait_border.a);
+      SDL_RenderRect(renderer, &portrait_rect);
 
       draw_shell_text(renderer, font, placed.name_text,
           placed.name_bounds,
@@ -3155,6 +3278,41 @@ WindowManager::ensure_remastered_shell_materials(SDL_Renderer* renderer) {
     }
   }
   return this->remastered_shell_materials.get();
+}
+
+const PartyPortraitTextureCache*
+WindowManager::ensure_remastered_party_portraits(SDL_Renderer* renderer) {
+  if (renderer == nullptr) {
+    return nullptr;
+  }
+  if (renderer != this->remastered_party_portrait_renderer) {
+    this->remastered_party_portraits.reset();
+    this->remastered_party_portrait_renderer = renderer;
+    this->remastered_party_portraits_attempted = false;
+  }
+  if (!this->remastered_party_portraits_attempted) {
+    this->remastered_party_portraits_attempted = true;
+    try {
+      const auto root =
+          host_path_for_mac_filename(":Remastered", false);
+      auto catalog = realmz::remaster::assets::PartyPortraitCatalog::load(
+          root / "phase1.runtime-manifest.json",
+          root / "phase1.census.json", root);
+      this->remastered_party_portraits =
+          std::make_unique<PartyPortraitTextureCache>(
+              renderer, std::move(catalog));
+    } catch (const std::exception&) {
+      this->remastered_party_portraits.reset();
+      static bool warned = false;
+      if (!warned) {
+        wm_log.warning_f(
+            "Could not validate and realize Remastered party portraits; "
+            "using code-native monograms");
+        warned = true;
+      }
+    }
+  }
+  return this->remastered_party_portraits.get();
 }
 
 void WindowManager::present_classic_frame() {
@@ -4599,6 +4757,8 @@ void WindowManager::present_remastered_frame() {
   }
   const auto* shell_materials =
       this->ensure_remastered_shell_materials(renderer);
+  const auto* party_portraits =
+      this->ensure_remastered_party_portraits(renderer);
   for (const auto& command : this->adaptive_shell_plan->commands) {
     if (const auto* clear =
             std::get_if<realmz::presentation::ClearShellCommand>(&command)) {
@@ -4632,6 +4792,7 @@ void WindowManager::present_remastered_frame() {
             renderer,
             shell_font,
             shell_materials,
+            party_portraits,
             panel->panel,
             panel->destination,
             *shell_model,
@@ -6374,6 +6535,12 @@ void WindowManager::invalidate_remastered_shell_materials() {
   this->remastered_shell_materials_attempted = false;
 }
 
+void WindowManager::invalidate_remastered_party_portraits() {
+  this->remastered_party_portraits.reset();
+  this->remastered_party_portrait_renderer = nullptr;
+  this->remastered_party_portraits_attempted = false;
+}
+
 void WindowManager::set_scale_mode(SDL_ScaleMode mode) {
   if (mode == this->scale_mode) {
     return;
@@ -6571,6 +6738,7 @@ void WindowManager::set_presentation_mode(
   this->remastered_combat_action_page =
       realmz::presentation::CombatActionPage::primary;
   this->invalidate_remastered_shell_materials();
+  this->invalidate_remastered_party_portraits();
   this->presentation_host.set_mode(mode);
   realmz::remaster::assets::setResourcePresentationMode(mode);
   RealmzRefreshPresentationAssets();

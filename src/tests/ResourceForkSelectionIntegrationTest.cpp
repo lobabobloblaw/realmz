@@ -17,6 +17,7 @@
 namespace {
 
 using realmz::presentation::PresentationMode;
+using realmz::remaster::assets::AssetManifest;
 using realmz::remaster::assets::AssetResolutionKind;
 using realmz::remaster::assets::ResourceSelectionHook;
 
@@ -90,6 +91,9 @@ int main(int argc, char** argv) {
     ResourceSelectionHook runtimeHook(
         remasteredRoot / "scopes/phase1.runtime-manifest.json",
         remasteredRoot / "scopes/phase1.census.json", remasteredRoot);
+    const auto runtimeManifest = AssetManifest::load(
+        remasteredRoot / "scopes/phase1.runtime-manifest.json",
+        remasteredRoot / "scopes/phase1.census.json", remasteredRoot);
     runtimeHook.setPresentationMode(PresentationMode::remastered);
     std::set<std::string> overrides;
     std::size_t passthroughs = 0;
@@ -103,11 +107,18 @@ int main(int argc, char** argv) {
           if (selected.resolution.kind == AssetResolutionKind::Override) {
             require(selected.resolution.logicalDimensions.has_value(),
                 "runtime override lost its logical dimensions");
+            const auto* manifestEntry = runtimeManifest.find(selected.key);
+            require(manifestEntry != nullptr &&
+                    selected.resolution.approvedContentSha256 ==
+                        manifestEntry->sharedMasterSha256,
+                "runtime override lost its exact approved content digest");
             overrides.emplace(selected.key.toString());
           } else {
             require(selected.resolution.kind == AssetResolutionKind::ClassicPassthrough,
                 "runtime manifest produced a coverage failure: " +
                     selected.resolution.diagnostic);
+            require(!selected.resolution.approvedContentSha256,
+                "Classic passthrough carried an approved content digest");
             ++passthroughs;
           }
         }

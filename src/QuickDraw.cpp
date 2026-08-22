@@ -4,12 +4,14 @@
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_surface.h>
 #include <SDL3/SDL_video.h>
-#include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
@@ -30,6 +32,8 @@
 #include "StringConvert.hpp"
 #include "Types.hpp"
 #include "WindowManager.hpp"
+#include "remaster/assets/TutorialTitleCompositor.hpp"
+#include "remaster/assets/VerifiedRasterSurface.hpp"
 
 static phosg::PrefixedLogger qd_log("[QuickDraw] ", DEFAULT_LOG_LEVEL);
 
@@ -208,47 +212,123 @@ static std::optional<phosg::ImageRGBA8888N> approved_image_for_resource(
     return std::nullopt;
   }
   const auto& resolution = selection->resolution;
-  if (!resolution.overridePath || !resolution.logicalDimensions) {
-    qd_log.warning_f("Approved override lacks a path or logical dimensions for {}",
+  if (!resolution.overridePath || !resolution.logicalDimensions ||
+      !resolution.approvedContentSha256) {
+    qd_log.warning_f(
+        "Approved override metadata is incomplete for {}; using Classic",
         selection->key.toString());
     return std::nullopt;
   }
 
   try {
-    auto loaded = sdl_make_unique(IMG_Load(resolution.overridePath->string().c_str()));
-    if (!loaded) {
-      qd_log.warning_f("Could not load approved override {} for {}: {}",
-          resolution.overridePath->string(), selection->key.toString(), SDL_GetError());
+    auto loaded = loadVerifiedRasterSurface(
+        *resolution.overridePath, selection->key,
+        *resolution.approvedContentSha256);
+    const auto logicalWidth = resolution.logicalDimensions->width;
+    const auto logicalHeight = resolution.logicalDimensions->height;
+    const auto logicalPixels = static_cast<std::uint64_t>(logicalWidth) *
+        static_cast<std::uint64_t>(logicalHeight);
+    if (logicalWidth == 0U || logicalHeight == 0U ||
+        logicalWidth > static_cast<std::uint32_t>(
+            std::numeric_limits<int>::max()) ||
+        logicalHeight > static_cast<std::uint32_t>(
+            std::numeric_limits<int>::max()) ||
+        logicalPixels > kMaximumVerifiedRasterPixels) {
+      qd_log.warning_f(
+          "Approved override {} has unsafe logical dimensions; using Classic",
+          selection->key.toString());
       return std::nullopt;
     }
-    const auto width = static_cast<int>(resolution.logicalDimensions->width);
-    const auto height = static_cast<int>(resolution.logicalDimensions->height);
+    const auto width = static_cast<int>(logicalWidth);
+    const auto height = static_cast<int>(logicalHeight);
+    const double horizontalScale =
+        static_cast<double>(loaded->w) / static_cast<double>(width);
+    const double verticalScale =
+        static_cast<double>(loaded->h) / static_cast<double>(height);
+    if (!std::isfinite(horizontalScale) || !std::isfinite(verticalScale) ||
+        horizontalScale <= 0.0 || verticalScale <= 0.0 ||
+        std::abs(horizontalScale - verticalScale) > 0.0001) {
+      qd_log.warning_f(
+          "Approved override {} has a non-uniform source scale; using Classic",
+          selection->key.toString());
+      return std::nullopt;
+    }
     SDL_Surface* source = loaded.get();
     sdl_surface_ptr scaled;
     if (source->w != width || source->h != height) {
       scaled = sdl_make_unique(SDL_ScaleSurface(source, width, height, SDL_SCALEMODE_LINEAR));
       if (!scaled) {
-        qd_log.warning_f("Could not resize approved override {} for {}: {}",
-            resolution.overridePath->string(), selection->key.toString(), SDL_GetError());
+        qd_log.warning_f(
+            "Approved override {} could not be resized; using Classic",
+            selection->key.toString());
         return std::nullopt;
       }
       source = scaled.get();
     }
     auto converted = sdl_make_unique(SDL_ConvertSurface(source, SDL_PIXELFORMAT_ARGB8888));
     if (!converted) {
-      qd_log.warning_f("Could not convert approved override {} for {}: {}",
-          resolution.overridePath->string(), selection->key.toString(), SDL_GetError());
+      qd_log.warning_f(
+          "Approved override {} could not be converted; using Classic",
+          selection->key.toString());
       return std::nullopt;
     }
+
+    if (tutorialTitleEligible(
+            selection->key, *resolution.approvedContentSha256,
+            *resolution.logicalDimensions)) {
+      if (!TTF_WasInit()) {
+        qd_log.warning_f(
+            "Tutorial title typography is unavailable; using Classic");
+        return std::nullopt;
+      }
+      auto titleFontVariant = load_font(BLACK_CHANCERY_FONT_ID);
+      const auto* titleFont = std::get_if<TTF_Font*>(&titleFontVariant);
+      if (titleFont == nullptr || *titleFont == nullptr) {
+        qd_log.warning_f(
+            "Tutorial title font is unavailable; using Classic");
+        return std::nullopt;
+      }
+      constexpr float kTutorialTitlePointSize = 32.0F;
+      const float previousPointSize = TTF_GetFontSize(*titleFont);
+      const auto previousStyle = TTF_GetFontStyle(*titleFont);
+      if (!std::isfinite(previousPointSize) || previousPointSize <= 0.0F ||
+          !TTF_SetFontSize(*titleFont, kTutorialTitlePointSize)) {
+        qd_log.warning_f(
+            "Tutorial title font could not be configured; using Classic");
+        return std::nullopt;
+      }
+      TTF_SetFontStyle(*titleFont,
+          static_cast<TTF_FontStyleFlags>(previousStyle | TTF_STYLE_BOLD));
+      auto titled = composeTutorialTitle(
+          selection->key, *resolution.approvedContentSha256,
+          *resolution.logicalDimensions, converted.get(), *titleFont);
+      const bool restored = TTF_SetFontSize(*titleFont, previousPointSize);
+      TTF_SetFontStyle(*titleFont, previousStyle);
+      if (!titled || !restored) {
+        qd_log.warning_f(
+            "Tutorial title composition failed; using Classic");
+        return std::nullopt;
+      }
+      converted = std::move(titled);
+    }
+
     auto image = image_for_sdl_surface(converted.get());
     if (logged_approved_overrides.emplace(selection->key.toString()).second) {
-      qd_log.info_f("Loaded approved override {} for {} at {}x{} Classic logical pixels",
-          resolution.overridePath->string(), selection->key.toString(), width, height);
+      qd_log.info_f(
+          "Loaded approved override {} at {}x{} Classic logical pixels",
+          selection->key.toString(), width, height);
     }
     return image;
-  } catch (const std::exception& error) {
-    qd_log.warning_f("Approved override failed for {}; using Classic: {}",
-        selection->key.toString(), error.what());
+  } catch (const VerifiedRasterSurfaceError& error) {
+    qd_log.warning_f(
+        "Approved override {} failed during {}; using Classic",
+        selection->key.toString(),
+        verifiedRasterSurfacePhaseName(error.phase()));
+    return std::nullopt;
+  } catch (const std::exception&) {
+    qd_log.warning_f(
+        "Approved override {} failed; using Classic",
+        selection->key.toString());
     return std::nullopt;
   }
 }
