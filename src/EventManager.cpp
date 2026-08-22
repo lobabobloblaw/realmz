@@ -1118,6 +1118,18 @@ protected:
         WindowManager::instance().save_prefs();
         exit(EXIT_SUCCESS);
         break;
+      case SDL_EVENT_RENDER_DEVICE_RESET:
+        // SDL invalidates every texture owned by the renderer while the
+        // renderer pointer itself may remain unchanged. Drop the four native
+        // shell textures before drawing the recovery frame.
+        WindowManager::instance().invalidate_remastered_shell_materials();
+        WindowManager::instance().recomposite_all();
+        break;
+      case SDL_EVENT_RENDER_TARGETS_RESET:
+        // The shell does not retain render targets, but the window contents
+        // must still be repainted after SDL discards target state.
+        WindowManager::instance().recomposite_all();
+        break;
       case SDL_EVENT_WINDOW_RESIZED:
       case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         this->reset_mouse_state();

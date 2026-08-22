@@ -14,6 +14,11 @@
 
 namespace realmz::remaster::assets {
 
+// Returns the lowercase SHA-256 digest of exact public asset bytes. This is
+// separate from Classic resource-payload hashing so native shell consumers do
+// not need to use the private resource-selection path.
+[[nodiscard]] std::string assetContentSha256Hex(std::string_view content);
+
 struct AssetPoint {
   std::int32_t x = 0;
   std::int32_t y = 0;

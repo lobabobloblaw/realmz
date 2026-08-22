@@ -7,7 +7,9 @@ and complete Classic presentation while introducing a live Classic/Remastered
 renderer boundary and an independently reviewed asset pipeline. Selected
 bitmap resources now pass through a pack-aware runtime coverage check after
 the legacy search chain chooses their source fork; Classic mode bypasses this
-check entirely.
+check entirely. The code-native Remastered shell separately resolves its four
+surface materials by public manifest key and never reads a Classic resource
+payload to choose them.
 
 Remastered mode currently runs a responsive compatibility shell with a
 1024×768 minimum. During exploration, dungeon play, and combat, it uniformly
@@ -133,8 +135,19 @@ phase-one runtime manifest now replaces 11 hash-locked, human-approved raster
 resources (four UI materials, four portraits, two world/title pictures, and one
 terrain icon) and leaves the other 1,509 covered resources as exact Classic
 passthroughs. Presentation-mode changes rehydrate cached patterns and pictures,
-so switching between Classic and Remastered does not require a restart. This is
-an integration milestone, not full-bake or release
+so switching between Classic and Remastered does not require a restart. The
+native shell now also tiles those exact approved UI materials directly:
+`ppat` 131 for panels, 129 for ordinary controls, 128 for selected controls,
+and 130 for pressed or inactive controls. Hash-bound contrast scrims retain
+texture while preserving the established text palette and non-color state
+cues. The complete 11-output runtime manifest validates first; each of the four
+shell PNGs is then read through its native filesystem path into bounded memory,
+rechecked against its approved SHA-256, and decoded from those exact bytes.
+Catalog, digest, decode, sampling, or texture-construction failure publishes no
+partial cache and leaves every native surface on its previous flat RGB fill; a
+failed tiled draw is overwritten by that surface's same flat fill. macOS and
+Windows package rules install the same allow-listed public runtime tree.
+This is an integration milestone, not full-bake or release
 approval; ten attempted style-proof assets remain rejected for human art
 direction, and the broader provenance/release gates remain in force.
 

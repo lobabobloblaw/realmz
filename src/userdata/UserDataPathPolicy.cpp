@@ -38,6 +38,15 @@ void validate_relative_path(const fs::path& path) {
 
 } // namespace
 
+fs::path path_from_utf8(std::string_view utf8_path) {
+  std::u8string encoded;
+  encoded.reserve(utf8_path.size());
+  for (const unsigned char byte : utf8_path) {
+    encoded.push_back(static_cast<char8_t>(byte));
+  }
+  return fs::path(encoded);
+}
+
 fs::path safe_relative_path_for_classic_path(
     std::string_view classic_path,
     bool implicitly_local) {

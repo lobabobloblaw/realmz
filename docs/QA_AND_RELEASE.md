@@ -14,7 +14,7 @@ python3 -m unittest discover -s tests/release -p 'test_*.py' -v
 
 The source verifier is read-only. Development mode reports local changes but does not fail because of them. It does fail if source ancestry, dependency pins, a partially landed asset census, or a present provenance record is invalid.
 
-`run-core-tests.sh` compiles dependency-free tests directly with `${CXX:-c++}` in C++23 mode (using the `c++2b` spelling accepted by the macOS 14 toolchain) and warning-as-error flags. Aggregate fixtures deliberately rely on default member initialization, so `missing-field-initializers` is the sole disabled warning. Temporary executables are created under `mktemp` and removed on exit. It covers presentation routing, adaptive-shell geometry, input transforms and pointer capture, legacy screen-context classification, party/action accessibility models, 128 state-invariant mode switches, deterministic resource failures, live legacy-snapshot copying, asset validation, and user-data safety. It deliberately does not configure the full SDL application.
+`run-core-tests.sh` compiles dependency-free tests directly with `${CXX:-c++}` in C++23 mode (using the `c++2b` spelling accepted by the macOS 14 toolchain) and warning-as-error flags. Aggregate fixtures deliberately rely on default member initialization, so `missing-field-initializers` is the sole disabled warning. Temporary executables are created under `mktemp` and removed on exit. It covers presentation routing, adaptive-shell geometry, input transforms and pointer capture, legacy screen-context classification, party/action accessibility models, 128 state-invariant mode switches, deterministic resource failures, live legacy-snapshot copying, exact native-material catalog bindings, exhaustive material/text contrast, asset validation, and user-data safety. It deliberately does not configure the full SDL application.
 
 The same command exercises the synthetic semantic-replay fixture, process, and
 equivalence protocols. `scripts/semantic_replay_equivalence.py` now composes a
@@ -62,6 +62,19 @@ Remastered selection runs only after the legacy resource chain has selected the
 owning fork. Switching Presentation mode reloads the cached UI patterns and
 background pictures, so Classic and Remastered can be compared in one running
 session without retaining stale raster handles.
+
+Native shell surfaces do not use that post-selection hook. They resolve the
+four public `ppat` keys 128–131 directly from the bundled runtime manifest and
+census after the manifest has validated all 11 approved public outputs. The
+cache reads each shell file through its native filesystem path into bounded
+memory, rechecks its approved SHA-256, decodes that exact buffer, sets linear
+sampling, and only then publishes the renderer-owned cache. No Classic
+resource handle or private resource-fork payload participates. Any catalog,
+digest, decode, sampling, or texture creation failure leaves the complete
+native shell on its existing flat fills; diagnostics do not disclose absolute
+host paths. An individual tiled-render failure is immediately covered by the
+same flat surface color. SDL render-device resets invalidate and rebuild the
+cache even when the renderer pointer remains stable.
 
 The development executable exposes the migration path without touching the
 legacy installation:
@@ -248,6 +261,14 @@ active page without relying on color. This replaces relative More/Back paging
 without changing action payloads, combat-command availability checks, or
 legacy handoffs.
 
+Panels and controls use the approved native material set: panel `ppat` 131,
+normal 129, selected 128, and pressed/inactive 130, with inactive taking
+precedence over interactive states. Selected tabs retain their double border
+and underline, active drawers retain the explicit `OPEN` label, and selected
+party cards retain a second border. Deterministic dark/light scrims preserve
+the tile texture while the exhaustive pixel contract holds every production
+shell text/state pairing above 4.5:1 contrast.
+
 Details and log surfaces stay informational, and the complete
 Classic frame remains interactive. Compact Details/Event Log drawer tabs are
 local presentation actions with pointer and wrapping keyboard operation; they
@@ -266,6 +287,13 @@ and complete action dispatch remain acceptance work.
 Release-candidate tests must include:
 
 - resource precedence, scenario-local ID collisions, duplicate reuse, manifest validation, missing coverage, dimensions, masks, anchors, cursor hotspots, and atlas order;
+- exact key-only `ppat` 128–131 native-material bindings, isolated public-only
+  loading, native non-ASCII path handling, exact-byte digest revalidation,
+  valid-PNG substitution rejection, headless software-renderer
+  realization/drawing, atomic four-texture publication/fallback, renderer
+  mismatch rejection, replacement and reset recovery, Classic-mode
+  non-loading, state-role mapping, and exhaustive per-pixel contrast for every
+  shell text/state color;
 - logical/physical coordinate transforms, hit testing, stable semantic focus,
   Tab/Shift-Tab wrapping, Return/Space release activation, repeat suppression,
   cancelled key-up ownership, 1024×768 through ultrawide layouts, and 1×/2×
@@ -307,7 +335,11 @@ The development gate checks:
 - `APPL`, high-resolution capability, and macOS 13.3 minimum in the plist and every Mach-O slice;
 - x86_64 and arm64 slices in the executable and all packaged Mach-O files;
 - only system or bundle-relative dylib loads and bundle-relative `LC_RPATH` values;
-- core data, Tutorial, City, and a final or placeholder phase-one remaster manifest;
+- core data, Tutorial, City, a final or placeholder phase-one remaster manifest,
+  the bound runtime manifest and census, and the exact paths and SHA-256
+  digests of all 11 approved public runtime PNGs, including the four native
+  shell materials; every other style-proof input/evidence path and every
+  symlink must be absent;
 - complete license, attribution, modification, and provenance notices.
 
 Canonical notice paths are:
@@ -347,6 +379,11 @@ Automated checks do not replace these release decisions:
 
 - two human start-to-finish playthroughs of Tutorial and City, with no unresolved Classic fallback;
 - complete keyboard operation, remappable shortcuts, scalable UI/text, reduced motion, contrast-safe focus/state styling, and non-color state cues;
+- native panel, normal, selected, pressed, and inactive materials at compact
+  and wide layouts at both 1× and 2× backing scales; deliberately remove or
+  corrupt each of the four packaged PNGs in a disposable copy and verify that
+  no partial texture cache appears and the complete shell remains legible on
+  its flat-color fallback;
 - pointer and Tab/Shift-Tab plus Return/Space activation for code-native Items,
   Spells, Save, Load, Guard, Finish, Delay, Center, Switch Weapon, Center
   Previous/Next, Combat Items, Auto, Range, Bandage, Undo, Combat Cast, Combat

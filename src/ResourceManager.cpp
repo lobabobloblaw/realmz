@@ -417,8 +417,8 @@ public:
 private:
   realmz::remaster::assets::ResourceSelectionHook& asset_selection_hook() {
     if (!this->asset_hook) {
-      const auto root = std::filesystem::path(
-          host_filename_for_mac_filename(":Remastered", false));
+      const auto root =
+          host_path_for_mac_filename(":Remastered", false);
       this->asset_hook =
           std::make_unique<realmz::remaster::assets::ResourceSelectionHook>(
               root / "phase1.runtime-manifest.json",

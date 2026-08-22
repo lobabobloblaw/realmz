@@ -117,6 +117,23 @@ making an override available. The placeholder and mixed runtime manifests
 prove coverage and safe fallback but are not complete release artwork. A
 release bundle still requires the separately verified full-approval contract.
 
+The code-native shell consumes only the four public, approved `ui_surface`
+entries `Data Files/The Family Jewels:ppat:128` through `131`. Its catalog uses
+key-only Remastered resolution against the bundled runtime manifest and census;
+it does not open a Classic resource fork, hash a private Classic payload, or
+inspect a selected Resource Manager handle. The complete runtime manifest,
+census, and all 11 approved outputs must validate first. The four shell PNGs
+are then read through native filesystem paths into bounded memory, rehashed,
+and decoded from those same bytes before the cache is published. Missing,
+changed, undecodable, or untexturable input therefore selects the code-native
+flat-color shell for the whole cache rather than substituting private or
+Classic bytes. Fallback diagnostics contain stable resource keys/phases, not
+absolute host paths. A per-draw tiled-render failure is overwritten with the
+same surface's flat fallback. Only the 11 reviewed PNGs below
+`style-proof/generation/outputs` are packaged: Classic references, raw model
+outputs, post-processing evidence, review sheets, pipeline errors, logs, and
+generation handoffs remain excluded from artifacts.
+
 The pre-generation style proof has an independently validated, exactly
 24-reference Classic selection at
 `assets/remastered/style-proof/classic-selection.json`. It covers four

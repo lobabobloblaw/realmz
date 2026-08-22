@@ -372,6 +372,159 @@ else
   fi
 fi
 
+runtime_manifest="$resources/Remastered/phase1.runtime-manifest.json"
+asset_census="$resources/Remastered/phase1.census.json"
+if native_material_diagnostic="$("$python_tool" - \
+    "$resources/Remastered" "$runtime_manifest" "$asset_census" <<'PY'
+import hashlib
+import json
+from pathlib import Path, PurePosixPath
+import sys
+
+root = Path(sys.argv[1])
+runtime_path = Path(sys.argv[2])
+census_path = Path(sys.argv[3])
+
+if root.is_symlink() or not root.is_dir():
+    raise SystemExit("bundled Remastered root is missing or is a symlink")
+for item in root.rglob("*"):
+    if item.is_symlink():
+        raise SystemExit(
+            "symlink leaked into bundled Remastered tree: "
+            + item.relative_to(root).as_posix()
+        )
+
+for label, path in (("runtime manifest", runtime_path), ("asset census", census_path)):
+    if not path.is_file() or path.stat().st_size == 0:
+        raise SystemExit(f"missing or empty {label}: {path.name}")
+try:
+    runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+    census = json.loads(census_path.read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"cannot parse runtime material metadata: {exc}")
+if not isinstance(runtime, dict) or not isinstance(runtime.get("entries"), list):
+    raise SystemExit("runtime manifest entries are invalid")
+if not isinstance(census, dict) or not isinstance(census.get("entries"), list):
+    raise SystemExit("asset census entries are invalid")
+census_digest = hashlib.sha256(census_path.read_bytes()).hexdigest()
+if runtime.get("census_sha256") != census_digest:
+    raise SystemExit("runtime manifest is not bound to the bundled census")
+
+expected_outputs = {
+    "style-proof/generation/outputs/01_ui_material_ppat_128.png":
+        "3b3a30342aef0e49b0b43a04bec3592abda5d629963bc8a68c8cb296eef1961e",
+    "style-proof/generation/outputs/02_ui_material_ppat_129.png":
+        "dfe2dadfa74ef37ee4d6de5f8e607eb082285f6e1a994a5e0e26ba2463d7f52f",
+    "style-proof/generation/outputs/03_ui_material_ppat_130.png":
+        "df44c09cef3bd20e1c8de43e39c6c88573942a9f17ab5f4f3968f4c04ab72504",
+    "style-proof/generation/outputs/04_ui_material_ppat_131.png":
+        "7081f60b8a7ea247fb5d181e6d8b2dfcaaf7a12046a58c31fef318c21f5fc3f9",
+    "style-proof/generation/outputs/05_portrait_cicn_257.png":
+        "8eae998f6e9d745911ed518f7ad2629abd95a72d5c66c5ba0e9655663e0f2cc1",
+    "style-proof/generation/outputs/06_portrait_cicn_267.png":
+        "5786f9cbf6901739f34acaa72f603cdc62a53423d94b31956fbe90f1af9be281",
+    "style-proof/generation/outputs/07_portrait_cicn_297.png":
+        "c5bc0a5c315cfc115d6d1a806f9396670e59734a84102dc492d547cced78aca0",
+    "style-proof/generation/outputs/08_portrait_cicn_337.png":
+        "3bc7ac4e0d6bb17cab9562f0f2f4db178c9eddc584f658e524ab947b59a3ec5e",
+    "style-proof/generation/outputs/17_world_dungeon_PICT_50.png":
+        "86e0607e8092710896fc07a1fab3c034cbd2c10340de7bec09eee0aecfd2d899",
+    "style-proof/generation/outputs/20_world_dungeon_cicn_m167.png":
+        "44ba9ea12d1afee69d5ed23ff2032cd0d553b3cfd04aad8300076bb140d07578",
+    "style-proof/generation/outputs/21_tutorial_city_PICT_32128.png":
+        "b3ad37374ae9b92a0bf745627c4db0d5022b53e16fa9d106bc4b5b4ecc032bba",
+}
+approved_outputs = {}
+for index, entry in enumerate(runtime["entries"]):
+    if not isinstance(entry, dict) or entry.get("status") != "approved":
+        continue
+    relative = entry.get("asset_path")
+    digest = entry.get("shared_master_sha256")
+    if not isinstance(relative, str) or not isinstance(digest, str):
+        raise SystemExit(f"runtime approved entry {index} has invalid output metadata")
+    normalized = PurePosixPath(relative)
+    if (
+        normalized.is_absolute()
+        or relative != normalized.as_posix()
+        or normalized.parts[:3] != ("style-proof", "generation", "outputs")
+        or len(normalized.parts) != 4
+        or normalized.suffix != ".png"
+        or relative in approved_outputs
+    ):
+        raise SystemExit(f"runtime approved output path is unsafe or duplicated: {relative}")
+    approved_outputs[relative] = digest
+if approved_outputs != expected_outputs:
+    raise SystemExit("runtime approved output path/hash set is not the reviewed 11-file set")
+
+allowed_directories = {
+    "style-proof",
+    "style-proof/generation",
+    "style-proof/generation/outputs",
+}
+allowed_files = set(expected_outputs) | {
+    "phase1.manifest.json",
+    "phase1.placeholder-manifest.json",
+    "phase1.runtime-manifest.json",
+    "phase1.census.json",
+    "phase1.scope.json",
+}
+for item in root.rglob("*"):
+    relative = item.relative_to(root).as_posix()
+    if item.is_dir():
+        if relative not in allowed_directories:
+            raise SystemExit(f"private Remastered directory leaked into bundle: {relative}")
+    elif item.is_file():
+        if relative not in allowed_files:
+            raise SystemExit(f"unexpected Remastered file leaked into bundle: {relative}")
+    else:
+        raise SystemExit(f"special Remastered entry leaked into bundle: {relative}")
+
+for relative, digest in expected_outputs.items():
+    output = root / relative
+    if output.is_symlink() or not output.is_file() or output.stat().st_size == 0:
+        raise SystemExit(f"approved runtime output is missing: {relative}")
+    if hashlib.sha256(output.read_bytes()).hexdigest() != digest:
+        raise SystemExit(f"approved runtime output hash mismatch: {relative}")
+
+expected = (
+    (128, "style-proof/generation/outputs/01_ui_material_ppat_128.png",
+     "3b3a30342aef0e49b0b43a04bec3592abda5d629963bc8a68c8cb296eef1961e"),
+    (129, "style-proof/generation/outputs/02_ui_material_ppat_129.png",
+     "dfe2dadfa74ef37ee4d6de5f8e607eb082285f6e1a994a5e0e26ba2463d7f52f"),
+    (130, "style-proof/generation/outputs/03_ui_material_ppat_130.png",
+     "df44c09cef3bd20e1c8de43e39c6c88573942a9f17ab5f4f3968f4c04ab72504"),
+    (131, "style-proof/generation/outputs/04_ui_material_ppat_131.png",
+     "7081f60b8a7ea247fb5d181e6d8b2dfcaaf7a12046a58c31fef318c21f5fc3f9"),
+)
+pack = "Data Files/The Family Jewels"
+for resource_id, relative, digest in expected:
+    key = {"pack": pack, "type": "ppat", "id": resource_id}
+    matches = [entry for entry in runtime["entries"] if entry.get("key") == key]
+    if len(matches) != 1:
+        raise SystemExit(f"runtime manifest must contain exactly one ppat {resource_id}")
+    entry = matches[0]
+    if (
+        entry.get("master_key") != key
+        or entry.get("status") != "approved"
+        or entry.get("semantic_family") != "ui_surface"
+        or entry.get("alpha_policy") != "opaque_tile"
+        or entry.get("logical_dimensions") != {"width": 64, "height": 64}
+        or entry.get("asset_path") != relative
+        or entry.get("shared_master_sha256") != digest
+    ):
+        raise SystemExit(f"runtime ppat {resource_id} binding is invalid")
+    census_matches = [
+        entry for entry in census["entries"] if entry.get("key") == key
+    ]
+    if len(census_matches) != 1:
+        raise SystemExit(f"asset census must contain exactly one ppat {resource_id}")
+PY
+)"; then
+  ok "runtime manifest, census, and 11 approved public outputs are hash-valid"
+else
+  fail "native shell material bundle is invalid: $native_material_diagnostic"
+fi
+
 notices="$resources/Notices"
 declare -a notice_files=(LICENSE ATTRIBUTION.md MODIFICATIONS.md CONTENT_PROVENANCE.md)
 for notice in "${notice_files[@]}"; do

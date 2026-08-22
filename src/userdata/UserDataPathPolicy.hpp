@@ -5,6 +5,12 @@
 
 namespace realmz::userdata {
 
+// Converts UTF-8 bytes supplied by SDL and other cross-platform APIs into a
+// native filesystem path. On Windows this performs the required UTF-8 to wide
+// conversion instead of interpreting the bytes in the process code page.
+[[nodiscard]] std::filesystem::path path_from_utf8(
+    std::string_view utf8_path);
+
 // Converts a Classic Mac path to a host-relative path. Explicit Classic paths
 // begin with ':'. Callers may opt into treating an unprefixed name as local,
 // which is needed for Toolbox APIs that already imply the current volume.

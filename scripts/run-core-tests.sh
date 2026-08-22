@@ -172,6 +172,12 @@ run_cpp_test AssetResolverTest \
   src/remaster/assets/AssetManifest.cpp \
   src/remaster/assets/AssetResolver.cpp
 
+run_cpp_test ShellMaterialCatalogTest \
+  src/tests/ShellMaterialCatalogTest.cpp \
+  src/remaster/assets/AssetManifest.cpp \
+  src/remaster/assets/AssetResolver.cpp \
+  src/remaster/assets/ShellMaterialCatalog.cpp
+
 run_cpp_test ResourceSelectionHookTest \
   src/tests/ResourceSelectionHookTest.cpp \
   src/remaster/assets/AssetManifest.cpp \

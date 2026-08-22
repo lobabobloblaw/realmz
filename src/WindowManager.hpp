@@ -23,6 +23,9 @@
 class WindowManager;
 class Window;
 class DialogItem;
+namespace realmz::remaster::assets {
+class ShellMaterialTextureCache;
+}
 
 class Window : public std::enable_shared_from_this<Window> {
 private:
@@ -115,6 +118,12 @@ private:
   std::shared_ptr<Window> top_window;
   std::shared_ptr<Window> bottom_window;
   sdl_window_shared sdl_window;
+  // Declared after the SDL window so its renderer-owned textures are destroyed
+  // before SDL_DestroyWindow tears down the associated renderer.
+  std::unique_ptr<realmz::remaster::assets::ShellMaterialTextureCache>
+      remastered_shell_materials;
+  SDL_Renderer* remastered_shell_material_renderer = nullptr;
+  bool remastered_shell_materials_attempted = false;
   bool text_editing_active = false;
   bool recomposite_enabled = true;
   SDL_ScaleMode scale_mode = SDL_SCALEMODE_PIXELART;
@@ -206,6 +215,10 @@ public:
   void recomposite_from_window(std::shared_ptr<Window> updated_window);
   void recomposite_all();
 
+  // SDL render-device reset events invalidate every renderer-owned texture
+  // even when the SDL_Renderer pointer itself remains stable.
+  void invalidate_remastered_shell_materials();
+
   inline sdl_window_shared get_sdl_window() const {
     return this->sdl_window;
   }
@@ -276,6 +289,8 @@ private:
   bool classic_to_render_rect(float* x, float* y, float* w, float* h) const;
   [[nodiscard]] sdl_texture_ptr create_classic_frame_texture(
       SDL_Renderer* renderer);
+  [[nodiscard]] const realmz::remaster::assets::ShellMaterialTextureCache*
+  ensure_remastered_shell_materials(SDL_Renderer* renderer);
   void present_classic_frame() override;
   void present_remastered_frame() override;
   void dispatch_remastered_shell_control(

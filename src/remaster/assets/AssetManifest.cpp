@@ -851,6 +851,10 @@ struct ParsedCensus {
 
 } // namespace
 
+std::string assetContentSha256Hex(std::string_view content) {
+  return sha256(content);
+}
+
 std::string ResourceKey::toString() const {
   return pack + ":" + type + ":" + std::to_string(id);
 }

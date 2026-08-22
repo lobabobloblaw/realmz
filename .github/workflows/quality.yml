@@ -67,6 +67,9 @@ jobs:
       - name: Exercise shell verifiers with synthetic artifacts
         run: python3 -m unittest discover -s tests/release -p 'test_*.py' -v
 
+      - name: Verify native shell material contrast
+        run: python3 -m unittest tests.assets.test_shell_material_contrast -v
+
       - name: Exercise semantic replay protocols and equivalence gate
         run: >-
           python3 -m unittest discover -s tests/semantic

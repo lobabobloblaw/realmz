@@ -2425,18 +2425,25 @@ void verify_window_manager_shell_dispatch_freshness(
   const std::size_t selected_render_state = compact_panel_draw.find(
       "constboolselected_tab=control.selected&&control.kind=="
       "realmz::presentation::ShellControlKind::combat_action_page;");
+  const std::size_t selected_material_state = compact_panel_draw.find(
+      "constboolselected_material=material_drawn&&"
+      "(surface_state==ShellSurfaceState::selected);",
+      selected_render_state);
   const std::size_t selected_inner_border = compact_panel_draw.find(
-      "if(pressed||selected_tab)", selected_render_state);
+      "if(pressed||selected_tab)", selected_material_state);
   const std::size_t selected_indicator = compact_panel_draw.find(
       "if(selected_tab)", selected_inner_border);
   const std::size_t selected_label = compact_panel_draw.find(
-      "selected_tab?kSelected:(control.enabled?kBody:kMuted)",
+      "selected_material?kSelectedMaterialInk:"
+      "(selected_tab?kSelected:(control.enabled?kBody:kMuted))",
       selected_indicator);
   require(selected_render_state != std::string::npos &&
+          selected_material_state != std::string::npos &&
           selected_inner_border != std::string::npos &&
           selected_indicator != std::string::npos &&
           selected_label != std::string::npos &&
-          selected_render_state < selected_inner_border &&
+          selected_render_state < selected_material_state &&
+          selected_material_state < selected_inner_border &&
           selected_inner_border < selected_indicator &&
           selected_indicator < selected_label,
       "WindowManager must render the selected combat tab with a persistent "
@@ -3802,6 +3809,241 @@ void verify_window_manager_shell_dispatch_freshness(
   require(count_identifier(compact_eligibility, "escape_available") == 0,
       "fresh Escape route eligibility must not depend on a synthetic Escape "
       "capability");
+}
+
+void verify_shell_material_integration(const fs::path& repository_root) {
+  const std::string raw_source = read_file(
+      repository_root / "src/WindowManager.cpp");
+  const std::string source = code_only(raw_source);
+  const std::string raw_cache_source = read_file(repository_root /
+      "src/remaster/assets/ShellMaterialTextureCache.cpp");
+  const std::string cache_source = code_only(raw_cache_source);
+  const std::string compact_cache_source = without_whitespace(cache_source);
+  const std::string catalog_source = code_only(read_file(
+      repository_root / "src/remaster/assets/ShellMaterialCatalog.cpp"));
+  const std::string compact_source = without_whitespace(source);
+  const std::string ensure = function_body(
+      source, "ensure_remastered_shell_materials");
+  const std::string compact_ensure = without_whitespace(ensure);
+  const std::string classic = function_body(source, "present_classic_frame");
+  const std::string remastered = function_body(
+      source, "present_remastered_frame");
+  const std::string compact_remastered = without_whitespace(remastered);
+
+  const std::size_t attempted = compact_ensure.find(
+      "this->remastered_shell_materials_attempted=true;");
+  const std::size_t catalog = compact_ensure.find(
+      "realmz::remaster::assets::ShellMaterialCatalog::load(", attempted);
+  const std::size_t publish = compact_ensure.find(
+      "this->remastered_shell_materials="
+      "std::make_unique<ShellMaterialTextureCache>(renderer,catalog);",
+      catalog);
+  const std::size_t catch_reset = compact_ensure.find(
+      "this->remastered_shell_materials.reset();", publish);
+  require(attempted != std::string::npos && catalog != std::string::npos &&
+          publish != std::string::npos && catch_reset != std::string::npos &&
+          attempted < catalog && catalog < publish && publish < catch_reset,
+      "native shell materials must be loaded and published atomically, with "
+      "the whole cache cleared on failure");
+  require(count_text(raw_source,
+              "root / \"phase1.runtime-manifest.json\"") == 1 &&
+          count_text(raw_source, "root / \"phase1.census.json\"") == 1 &&
+          count_text(raw_source,
+              "host_path_for_mac_filename(\":Remastered\", false)") == 1 &&
+          count_identifier(ensure, "host_filename_for_mac_filename") == 0,
+      "native shell material loading must use only the bundled public "
+      "Remastered manifest, census, and native asset root");
+  for (const auto forbidden : {
+           "ResourceSelectionHook",
+           "resourceAssetSelectionForHandle",
+           "PayloadDigest",
+           "classicPayloadSha256",
+           "GetResource",
+       }) {
+    require(count_identifier(ensure, forbidden) == 0,
+        std::string("native shell material loader must not use private/") +
+            "Classic resource API " + forbidden);
+    require(count_identifier(cache_source, forbidden) == 0,
+        std::string("native shell material texture cache must not use private/") +
+            "Classic resource API " + forbidden);
+    require(count_identifier(catalog_source, forbidden) == 0,
+        std::string("native shell material catalog must not use private/") +
+            "Classic resource API " + forbidden);
+  }
+
+  require(count_identifier(classic, "ensure_remastered_shell_materials") == 0 &&
+          count_identifier(remastered,
+              "ensure_remastered_shell_materials") == 1,
+      "Classic presentation must never initiate native material loading; "
+      "Remastered presentation must use exactly one cache per frame");
+  const std::size_t captured_pointer = compact_remastered.find(
+      "if(constauto&captured=this->remastered_pressed_shell_control)");
+  const std::size_t live_pointer = compact_remastered.find(
+      "returncandidate.enabled&&", captured_pointer);
+  const std::size_t published_pointer_visual = compact_remastered.find(
+      "pressed_control=control->region;", live_pointer);
+  require(captured_pointer != std::string::npos &&
+          live_pointer != std::string::npos &&
+          published_pointer_visual != std::string::npos &&
+          captured_pointer < live_pointer &&
+          live_pointer < published_pointer_visual,
+      "a captured pointer press must match a currently enabled live control "
+      "before it can render pressed state");
+  const std::size_t local_records = compact_cache_source.find(
+      "Recordsloaded;");
+  const std::size_t tiled_texture = compact_cache_source.find(
+      "SDL_RenderTextureTiled(", local_records);
+  const std::size_t publish_records = compact_cache_source.find(
+      "this->records_=std::move(loaded);", local_records);
+  require(local_records != std::string::npos &&
+          tiled_texture != std::string::npos &&
+          publish_records != std::string::npos &&
+          local_records < publish_records &&
+          count_identifier(cache_source, "SDL_RenderTextureTiled") == 1,
+      "shell textures must build as a complete local set and render through "
+      "SDL's tiled-texture path");
+  require(count_identifier(cache_source, "assetContentSha256Hex") == 1 &&
+          count_identifier(cache_source, "SDL_IOFromConstMem") == 1 &&
+          count_identifier(cache_source, "IMG_Load_IO") == 1 &&
+          count_identifier(cache_source, "IMG_Load") == 0 &&
+          count_text(raw_cache_source, "material.path.string()") == 0 &&
+          count_identifier(cache_source, "SDL_GetError") == 0,
+      "shell material bytes must be opened with native paths, hash-verified, "
+      "decoded from that exact memory, and reported without absolute paths");
+  require(count_identifier(ensure, "what") == 0 &&
+          count_text(raw_source,
+              "Could not validate and realize Remastered shell materials; ") ==
+              1 &&
+          count_text(raw_source, "using flat colors") == 1,
+      "native shell material fallback diagnostics must not expose absolute "
+      "asset or user paths");
+
+  const std::string panel_draw = function_body(
+      source, "draw_shell_panel_contents");
+  require(count_identifier(source, "draw_shell_material_or_color") == 5 &&
+          count_identifier(panel_draw, "draw_shell_material_or_color") == 3 &&
+          count_identifier(remastered, "draw_shell_material_or_color") == 1 &&
+          count_identifier(remastered, "draw_shell_panel_contents") == 1,
+      "one shared material-or-flat path must cover panels, party cards, "
+      "action controls, and drawer tabs");
+  for (const auto state : {
+           "panel", "normal", "selected", "pressed", "inactive"}) {
+    require(count_text(source,
+                "ShellSurfaceState::" + std::string(state)) != 0,
+        std::string("native shell material integration is missing state ") +
+            state);
+  }
+  require(count_text(raw_source, "SDL_Color{240, 227, 190, 144}") == 1 &&
+          count_text(raw_source, "SDL_Color{12, 13, 17, 186}") == 1 &&
+          count_text(raw_source,
+              "kSelectedMaterialInk{22, 24, 35, 255}") == 1,
+      "hash-pinned material contrast scrims and selected ink changed without "
+      "updating their exhaustive pixel contract");
+
+  const std::string catalog_load = function_body(catalog_source, "load");
+  const std::string compact_catalog_load = without_whitespace(catalog_load);
+  require(count_identifier(catalog_load, "resolve") == 1 &&
+          compact_catalog_load.find(
+              "resolver.resolve(presentation::PresentationMode::remastered,key)") !=
+              std::string::npos,
+      "native shell catalog must use only key-based two-argument Remastered "
+      "asset resolution");
+
+  const std::string file_manager_source = code_only(read_file(
+      repository_root / "src/FileManager.cpp"));
+  const std::string native_host_path = function_body(
+      file_manager_source, "host_path_for_mac_filename");
+  const std::string legacy_host_string = function_body(
+      file_manager_source, "host_filename_for_mac_filename");
+  require(count_identifier(native_host_path, "SDL_GetBasePath") == 1 &&
+          count_identifier(native_host_path, "path_from_utf8") == 1 &&
+          count_identifier(native_host_path,
+              "safe_relative_path_for_classic_path") == 1 &&
+          count_identifier(legacy_host_string,
+              "host_path_for_mac_filename") == 1,
+      "bundled paths must convert SDL UTF-8 directly to native filesystem "
+      "paths before joining validated Classic-relative components");
+  const std::string raw_resource_manager_source = read_file(
+      repository_root / "src/ResourceManager.cpp");
+  require(count_text(raw_resource_manager_source,
+              "host_path_for_mac_filename(\":Remastered\", false)") == 1 &&
+          count_text(raw_resource_manager_source,
+              "host_filename_for_mac_filename(\":Remastered\", false)") == 0,
+      "both native Remastered asset consumers must preserve the SDL UTF-8 "
+      "base path as a native filesystem path");
+
+  const std::string cmake_source = read_file(
+      repository_root / "CMakeLists.txt");
+  const std::size_t windows_install_begin = cmake_source.find(
+      "elseif(WIN32)\n    install(TARGETS Realmz");
+  const std::size_t windows_dependencies = cmake_source.find(
+      "# CMake's RUNTIME_DEPENDENCIES", windows_install_begin);
+  require(windows_install_begin != std::string::npos &&
+          windows_dependencies != std::string::npos &&
+          windows_install_begin < windows_dependencies,
+      "could not isolate the Windows package resource-install contract");
+  const std::string windows_install = cmake_source.substr(
+      windows_install_begin, windows_dependencies - windows_install_begin);
+  for (const auto required : {
+           "phase1.placeholder-manifest.json",
+           "phase1.runtime-manifest.json",
+           "phase1.census.json",
+           "phase1.scope.json",
+           "assets/remastered/style-proof/generation/outputs/",
+           "${CMAKE_INSTALL_BINDIR}/Remastered/style-proof/generation/outputs",
+       }) {
+    require(count_text(windows_install, required) != 0,
+        std::string("Windows package omits native Remastered runtime input ") +
+            required);
+  }
+
+  const std::string create_window = function_body(source, "create_sdl_window");
+  const std::string compact_create_window = without_whitespace(create_window);
+  const std::size_t invalidate_before_window = compact_create_window.find(
+      "this->invalidate_remastered_shell_materials();");
+  const std::size_t replace_window = compact_create_window.find(
+      "this->sdl_window=sdl_make_shared(SDL_CreateWindow(",
+      invalidate_before_window);
+  require(invalidate_before_window != std::string::npos &&
+          replace_window != std::string::npos &&
+          invalidate_before_window < replace_window,
+      "renderer-owned shell textures must be destroyed before replacing the "
+      "SDL window and its associated renderer");
+  const std::string invalidation = function_body(
+      source, "invalidate_remastered_shell_materials");
+  require(count_identifier(invalidation, "reset") == 1 &&
+          count_identifier(invalidation,
+              "remastered_shell_material_renderer") == 1 &&
+          count_identifier(invalidation,
+              "remastered_shell_materials_attempted") == 1,
+      "shell material invalidation must clear textures, renderer identity, "
+      "and the attempt latch");
+
+  const std::string event_source = code_only(read_file(
+      repository_root / "src/EventManager.cpp"));
+  const std::string enqueue = function_body(event_source, "enqueue_sdl_event");
+  const std::string compact_enqueue = without_whitespace(enqueue);
+  const std::size_t device_reset = compact_enqueue.find(
+      "caseSDL_EVENT_RENDER_DEVICE_RESET:");
+  const std::size_t device_invalidate = compact_enqueue.find(
+      "WindowManager::instance().invalidate_remastered_shell_materials();",
+      device_reset);
+  const std::size_t device_repaint = compact_enqueue.find(
+      "WindowManager::instance().recomposite_all();", device_invalidate);
+  const std::size_t targets_reset = compact_enqueue.find(
+      "caseSDL_EVENT_RENDER_TARGETS_RESET:", device_repaint);
+  const std::size_t targets_repaint = compact_enqueue.find(
+      "WindowManager::instance().recomposite_all();", targets_reset);
+  require(device_reset != std::string::npos &&
+          device_invalidate != std::string::npos &&
+          device_repaint != std::string::npos &&
+          targets_reset != std::string::npos &&
+          targets_repaint != std::string::npos &&
+          device_reset < device_invalidate &&
+          device_invalidate < device_repaint &&
+          device_repaint < targets_reset && targets_reset < targets_repaint,
+      "SDL render-device reset must invalidate shell textures before repaint, "
+      "and render-target reset must repaint");
 }
 
 void verify_center_combat_cursor_contract(
@@ -6275,6 +6517,7 @@ int main(int argc, char** argv) {
     verify_production_call_ownership(repository_root);
     verify_window_manager_named_combat_sinks(repository_root);
     verify_window_manager_shell_dispatch_freshness(repository_root);
+    verify_shell_material_integration(repository_root);
     verify_mode_switch_cancellation(repository_root);
     std::cout << "SemanticTopLevelLoopContractTest passed ("
               << checks_run << " checks)\n";

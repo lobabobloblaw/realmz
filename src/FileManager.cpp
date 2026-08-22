@@ -189,17 +189,26 @@ static bool list_replay_input_directory_no_follow(
 #endif
 }
 
-std::string
-host_filename_for_mac_filename(const std::string& mac_path, bool implicitly_local) {
-  std::string ret = normalize_mac_path(mac_path, implicitly_local);
-
-  auto base_path = SDL_GetBasePath();
+std::filesystem::path
+host_path_for_mac_filename(
+    const std::string& mac_path, bool implicitly_local) {
+  const auto relative_path =
+      realmz::userdata::safe_relative_path_for_classic_path(
+          mac_path, implicitly_local);
+  const auto* base_path = SDL_GetBasePath();
   if (!base_path) {
     fm_log.error_f("Failed to get SDL base path: {}", SDL_GetError());
-    return "";
+    return {};
   }
 
-  return realmz::userdata::confined_path_below_root(base_path, ret).string();
+  return realmz::userdata::confined_path_below_root(
+      realmz::userdata::path_from_utf8(base_path), relative_path);
+}
+
+std::string
+host_filename_for_mac_filename(
+    const std::string& mac_path, bool implicitly_local) {
+  return host_path_for_mac_filename(mac_path, implicitly_local).string();
 }
 
 std::string host_filename_for_FSSpec(const FSSpec* fsp) {

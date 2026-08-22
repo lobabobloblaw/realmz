@@ -34,6 +34,13 @@ void check_invalid(Function&& function) {
 }
 
 void test_classic_path_conversion_and_confinement() {
+  const std::string utf8_path = "Realmz-\xC3\xA9-\xE7\x95\x8C";
+  const auto native_utf8_path = path_from_utf8(utf8_path);
+  const auto encoded_native_path = native_utf8_path.generic_u8string();
+  CHECK(std::string(
+            reinterpret_cast<const char*>(encoded_native_path.data()),
+            encoded_native_path.size()) == utf8_path);
+
   CHECK(safe_relative_path_for_classic_path(
             ":Character Files:Hero One") ==
       fs::path("Character Files") / "Hero One");

@@ -12,6 +12,7 @@
 #include <SDL3/SDL_properties.h>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <format>
 #include <limits>
 #include <memory>
@@ -26,7 +27,6 @@
 #include <SDL3/SDL_pixels.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_video.h>
-#include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 #include <phosg/Strings.hh>
@@ -34,6 +34,7 @@
 #include <resource_file/ResourceFile.hh>
 
 #include "EventManager.h"
+#include "FileManager.hpp"
 #include "Font.hpp"
 #include "MemoryManager.h"
 #include "QuickDraw.h"
@@ -50,8 +51,10 @@
 #include "presentation/PartyRailModel.hpp"
 #include "presentation/SemanticInputBoundary.h"
 #include "replay/ReplayRuntime.hpp"
+#include "remaster/assets/ShellMaterialTextureCache.hpp"
 
 using ResourceDASM::ResourceFile;
+using realmz::remaster::assets::ShellMaterialTextureCache;
 
 // Enable these to save an image named debug*.bmp every time the main window or dialog items are recomposited
 static constexpr bool ENABLE_RECOMPOSITE_DEBUG = false;
@@ -1355,6 +1358,7 @@ void WindowManager::create_sdl_window() {
     this->windowed_h = initial_height;
   }
 
+  this->invalidate_remastered_shell_materials();
   this->sdl_window = sdl_make_shared(SDL_CreateWindow(
       realmz::app::kProductName.data(), initial_width, initial_height,
       SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
@@ -2134,6 +2138,53 @@ ShellPanelColors shell_panel_color(
   return {31, 34, 43};
 }
 
+[[nodiscard]] bool draw_shell_material_or_color(
+    SDL_Renderer* renderer,
+    const ShellMaterialTextureCache* materials,
+    realmz::remaster::assets::ShellSurfaceState state,
+    const SDL_FRect& destination,
+    SDL_Color fallback) {
+  const auto role =
+      realmz::remaster::assets::shellMaterialRoleForSurfaceState(state);
+  if (role && materials && materials->draw(renderer, *role, destination)) {
+    // The approved tiles are intentionally textured, so raw pixels do not
+    // provide a uniform contrast floor for shell text. Preserve their detail
+    // beneath a deterministic scrim: selected surfaces become parchment-light
+    // for dark ink, while all other surfaces become dark enough for the
+    // existing heading/body/muted palette. Exhaustive pixel checks over the
+    // four hash-pinned inputs keep both paths above WCAG AA contrast.
+    const SDL_Color scrim =
+        state == realmz::remaster::assets::ShellSurfaceState::selected
+        ? SDL_Color{240, 227, 190, 144}
+        : SDL_Color{12, 13, 17, 186};
+    SDL_BlendMode previous_blend_mode = SDL_BLENDMODE_NONE;
+    const bool captured_blend_mode = SDL_GetRenderDrawBlendMode(
+        renderer, &previous_blend_mode);
+    const bool scrim_drawn =
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND) &&
+        SDL_SetRenderDrawColor(
+            renderer, scrim.r, scrim.g, scrim.b, scrim.a) &&
+        SDL_RenderFillRect(renderer, &destination);
+    SDL_SetRenderDrawBlendMode(
+        renderer,
+        captured_blend_mode ? previous_blend_mode : SDL_BLENDMODE_NONE);
+    if (scrim_drawn) {
+      return true;
+    }
+  }
+  SDL_BlendMode previous_blend_mode = SDL_BLENDMODE_NONE;
+  const bool captured_blend_mode = SDL_GetRenderDrawBlendMode(
+      renderer, &previous_blend_mode);
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+  SDL_SetRenderDrawColor(
+      renderer, fallback.r, fallback.g, fallback.b, fallback.a);
+  SDL_RenderFillRect(renderer, &destination);
+  SDL_SetRenderDrawBlendMode(
+      renderer,
+      captured_blend_mode ? previous_blend_mode : SDL_BLENDMODE_NONE);
+  return false;
+}
+
 void draw_shell_text(
     SDL_Renderer* renderer,
     TTF_Font* font,
@@ -2295,7 +2346,8 @@ void draw_shell_meter(
 
 void draw_shell_focus_corners(
     SDL_Renderer* renderer,
-    const realmz::presentation::LogicalRect& bounds) {
+    const realmz::presentation::LogicalRect& bounds,
+    SDL_Color color = SDL_Color{250, 232, 174, 255}) {
   SDL_FRect ring = sdl_rect(bounds);
   ring.x += 3.0f;
   ring.y += 3.0f;
@@ -2304,7 +2356,7 @@ void draw_shell_focus_corners(
   if ((ring.w < 8.0f) || (ring.h < 8.0f)) {
     return;
   }
-  SDL_SetRenderDrawColor(renderer, 250, 232, 174, 255);
+  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
   SDL_RenderRect(renderer, &ring);
   const float left = ring.x;
   const float top = ring.y;
@@ -2324,6 +2376,7 @@ void draw_shell_focus_corners(
 void draw_shell_panel_contents(
     SDL_Renderer* renderer,
     TTF_Font* font,
+    const ShellMaterialTextureCache* materials,
     realmz::presentation::ShellPanelKind kind,
     const realmz::presentation::LogicalRect& panel,
     const realmz::presentation::PresentationShellModel& model,
@@ -2334,11 +2387,13 @@ void draw_shell_panel_contents(
   using realmz::presentation::ActionAvailability;
   using realmz::presentation::LogicalRect;
   using realmz::presentation::ShellPanelKind;
+  using realmz::remaster::assets::ShellSurfaceState;
 
   constexpr SDL_Color kHeading{224, 205, 165, 255};
   constexpr SDL_Color kBody{222, 222, 218, 255};
   constexpr SDL_Color kMuted{164, 164, 158, 255};
   constexpr SDL_Color kSelected{231, 188, 105, 255};
+  constexpr SDL_Color kSelectedMaterialInk{22, 24, 35, 255};
   const double left = panel.x + 14.0;
   const double width = std::max(0.0, panel.width - 28.0);
   const float heading_size = static_cast<float>(
@@ -2386,22 +2441,38 @@ void draw_shell_panel_contents(
           pressed_control && (*pressed_control == party_control->region);
       const bool focused = party_control != controls.end() &&
           focused_control && (*focused_control == party_control->region);
+      const bool inactive = party_control != controls.end() &&
+          !party_control->enabled;
+      const auto surface_state = inactive
+          ? ShellSurfaceState::inactive
+          : (pressed
+                  ? ShellSurfaceState::pressed
+                  : (member.selected ? ShellSurfaceState::selected
+                                     : ShellSurfaceState::normal));
       auto card_rect = sdl_rect(placed.card_bounds);
+      const bool material_drawn = draw_shell_material_or_color(
+          renderer, materials, surface_state, card_rect,
+          SDL_Color{
+              static_cast<Uint8>(
+                  pressed ? 67 : (member.selected ? 50 : 37)),
+              static_cast<Uint8>(
+                  pressed ? 57 : (member.selected ? 48 : 40)),
+              static_cast<Uint8>(
+                  pressed ? 43 : (member.selected ? 43 : 48)),
+              255});
+      const bool selected_material =
+          material_drawn && (surface_state == ShellSurfaceState::selected);
       SDL_SetRenderDrawColor(
           renderer,
-          pressed ? 67 : (member.selected ? 50 : 37),
-          pressed ? 57 : (member.selected ? 48 : 40),
-          pressed ? 43 : (member.selected ? 43 : 48),
-          255);
-      SDL_RenderFillRect(renderer, &card_rect);
-      SDL_SetRenderDrawColor(
-          renderer,
-          member.selected ? 187 : 76,
-          member.selected ? 145 : 72,
-          member.selected ? 78 : 64,
+          selected_material ? kSelectedMaterialInk.r :
+              static_cast<Uint8>(member.selected ? 187 : 76),
+          selected_material ? kSelectedMaterialInk.g :
+              static_cast<Uint8>(member.selected ? 145 : 72),
+          selected_material ? kSelectedMaterialInk.b :
+              static_cast<Uint8>(member.selected ? 78 : 64),
           255);
       SDL_RenderRect(renderer, &card_rect);
-      if (pressed) {
+      if (pressed || member.selected) {
         SDL_FRect inner = card_rect;
         inner.x += 2.0f;
         inner.y += 2.0f;
@@ -2410,28 +2481,39 @@ void draw_shell_panel_contents(
         SDL_RenderRect(renderer, &inner);
       }
       if (focused) {
-        draw_shell_focus_corners(renderer, placed.card_bounds);
+        draw_shell_focus_corners(renderer, placed.card_bounds,
+            selected_material
+                ? kSelectedMaterialInk
+                : SDL_Color{250, 232, 174, 255});
       }
 
       draw_shell_text(renderer, font, placed.name_text,
           placed.name_bounds,
-          member.selected ? kSelected : kBody,
+          selected_material
+              ? kSelectedMaterialInk
+              : (member.selected ? kSelected : kBody),
           backing_scale, placed.name_text_style,
           member.selected ? TTF_STYLE_BOLD : TTF_STYLE_NORMAL);
       draw_shell_text(renderer, font, placed.level_text,
-          placed.level_bounds, kMuted, backing_scale,
+          placed.level_bounds,
+          selected_material ? kSelectedMaterialInk : kMuted, backing_scale,
           placed.level_text_style);
       draw_shell_meter(renderer, placed.stamina_meter_bounds,
           member.stamina.fill_fraction,
           member.stamina.maximum > 0);
       draw_shell_text(renderer, font, placed.stamina_value_text,
-          placed.stamina_value_bounds, kMuted, backing_scale,
+          placed.stamina_value_bounds,
+          selected_material ? kSelectedMaterialInk : kMuted, backing_scale,
           placed.stamina_value_text_style);
 
       const auto emphasis =
           strongest_shell_state_emphasis(placed.state_tokens);
       draw_shell_text(renderer, font, placed.state_text,
-          placed.state_bounds, shell_state_color(emphasis), backing_scale,
+          placed.state_bounds,
+          selected_material
+              ? kSelectedMaterialInk
+              : shell_state_color(emphasis),
+          backing_scale,
           placed.state_text_style,
           member.conscious ? TTF_STYLE_NORMAL : TTF_STYLE_BOLD);
     }
@@ -2685,22 +2767,54 @@ void draw_shell_panel_contents(
         const bool selected_tab = control.selected &&
             control.kind == realmz::presentation::ShellControlKind::
                 combat_action_page;
+        const auto surface_state = !control.enabled
+            ? ShellSurfaceState::inactive
+            : (pressed
+                    ? ShellSurfaceState::pressed
+                    : (selected_tab ? ShellSurfaceState::selected
+                                    : ShellSurfaceState::normal));
         auto button = sdl_rect(control.bounds);
+        const bool material_drawn = draw_shell_material_or_color(
+            renderer, materials, surface_state, button,
+            SDL_Color{
+                static_cast<Uint8>(pressed
+                        ? 91
+                        : (selected_tab
+                                  ? 76
+                                  : (control.enabled ? 52 : 39))),
+                static_cast<Uint8>(pressed
+                        ? 73
+                        : (selected_tab
+                                  ? 61
+                                  : (control.enabled ? 49 : 39))),
+                static_cast<Uint8>(pressed
+                        ? 46
+                        : (selected_tab
+                                  ? 38
+                                  : (control.enabled ? 43 : 42))),
+                255});
+        const bool selected_material =
+            material_drawn && (surface_state == ShellSurfaceState::selected);
         SDL_SetRenderDrawColor(
             renderer,
-            pressed ? 91 : (selected_tab ? 76 : (control.enabled ? 52 : 39)),
-            pressed ? 73 : (selected_tab ? 61 : (control.enabled ? 49 : 39)),
-            pressed ? 46 : (selected_tab ? 38 : (control.enabled ? 43 : 42)),
-            255);
-        SDL_RenderFillRect(renderer, &button);
-        SDL_SetRenderDrawColor(
-            renderer,
-            pressed ? 238 :
-                (selected_tab ? 231 : (control.enabled ? 174 : 92)),
-            pressed ? 196 :
-                (selected_tab ? 188 : (control.enabled ? 139 : 87)),
-            pressed ? 110 :
-                (selected_tab ? 105 : (control.enabled ? 81 : 77)),
+            selected_material ? kSelectedMaterialInk.r :
+                static_cast<Uint8>(pressed
+                        ? 238
+                        : (selected_tab
+                                  ? 231
+                                  : (control.enabled ? 174 : 92))),
+            selected_material ? kSelectedMaterialInk.g :
+                static_cast<Uint8>(pressed
+                        ? 196
+                        : (selected_tab
+                                  ? 188
+                                  : (control.enabled ? 139 : 87))),
+            selected_material ? kSelectedMaterialInk.b :
+                static_cast<Uint8>(pressed
+                        ? 110
+                        : (selected_tab
+                                  ? 105
+                                  : (control.enabled ? 81 : 77))),
             255);
         SDL_RenderRect(renderer, &button);
         if (pressed || selected_tab) {
@@ -2721,7 +2835,10 @@ void draw_shell_panel_contents(
               button.x + button.w - 7.0f, indicator_y - 1.0f);
         }
         if (focused) {
-          draw_shell_focus_corners(renderer, control.bounds);
+          draw_shell_focus_corners(renderer, control.bounds,
+              selected_material
+                  ? kSelectedMaterialInk
+                  : SDL_Color{250, 232, 174, 255});
         }
         const double horizontal_label_inset =
             control.kind == realmz::presentation::ShellControlKind::
@@ -2739,7 +2856,11 @@ void draw_shell_panel_contents(
                     0.0, control.bounds.width - 2.0 * horizontal_label_inset),
                 std::max(0.0, control.bounds.height - 18.0),
             },
-            selected_tab ? kSelected : (control.enabled ? kBody : kMuted),
+            selected_material
+                ? kSelectedMaterialInk
+                : (selected_tab
+                          ? kSelected
+                          : (control.enabled ? kBody : kMuted)),
             backing_scale,
             caption_size,
             TTF_STYLE_BOLD);
@@ -2819,22 +2940,33 @@ void draw_shell_panel_contents(
           (*pressed_control == control->region);
       const bool focused = focused_control &&
           (*focused_control == control->region);
+      const auto surface_state = !control->enabled
+          ? ShellSurfaceState::inactive
+          : (pressed
+                  ? ShellSurfaceState::pressed
+                  : (tab.active ? ShellSurfaceState::selected
+                                : ShellSurfaceState::normal));
       auto button = sdl_rect(control->bounds);
+      const bool material_drawn = draw_shell_material_or_color(
+          renderer, materials, surface_state, button,
+          SDL_Color{
+              static_cast<Uint8>(pressed ? 91 : (tab.active ? 57 : 39)),
+              static_cast<Uint8>(pressed ? 73 : (tab.active ? 51 : 42)),
+              static_cast<Uint8>(pressed ? 46 : (tab.active ? 39 : 45)),
+              255});
+      const bool selected_material =
+          material_drawn && (surface_state == ShellSurfaceState::selected);
       SDL_SetRenderDrawColor(
           renderer,
-          pressed ? 91 : (tab.active ? 57 : 39),
-          pressed ? 73 : (tab.active ? 51 : 42),
-          pressed ? 46 : (tab.active ? 39 : 45),
-          255);
-      SDL_RenderFillRect(renderer, &button);
-      SDL_SetRenderDrawColor(
-          renderer,
-          tab.active ? 222 : 116,
-          tab.active ? 174 : 101,
-          tab.active ? 92 : 82,
+          selected_material ? kSelectedMaterialInk.r :
+              static_cast<Uint8>(tab.active ? 222 : 116),
+          selected_material ? kSelectedMaterialInk.g :
+              static_cast<Uint8>(tab.active ? 174 : 101),
+          selected_material ? kSelectedMaterialInk.b :
+              static_cast<Uint8>(tab.active ? 92 : 82),
           255);
       SDL_RenderRect(renderer, &button);
-      if (pressed) {
+      if (pressed || tab.active) {
         SDL_FRect inner = button;
         inner.x += 2.0f;
         inner.y += 2.0f;
@@ -2843,7 +2975,10 @@ void draw_shell_panel_contents(
         SDL_RenderRect(renderer, &inner);
       }
       if (focused) {
-        draw_shell_focus_corners(renderer, control->bounds);
+        draw_shell_focus_corners(renderer, control->bounds,
+            selected_material
+                ? kSelectedMaterialInk
+                : SDL_Color{250, 232, 174, 255});
       }
       std::string label = control->label;
       if (tab.badge_count != 0U) {
@@ -2862,7 +2997,9 @@ void draw_shell_panel_contents(
               std::max(0.0, control->bounds.width - 14.0),
               std::max(0.0, control->bounds.height - 10.0),
           },
-          tab.active ? kSelected : kBody,
+          selected_material
+              ? kSelectedMaterialInk
+              : (tab.active ? kSelected : kBody),
           backing_scale,
           caption_size,
           TTF_STYLE_BOLD);
@@ -2983,6 +3120,41 @@ sdl_texture_ptr WindowManager::create_classic_frame_texture(
   }
   SDL_SetTextureScaleMode(texture.get(), this->scale_mode);
   return texture;
+}
+
+const ShellMaterialTextureCache*
+WindowManager::ensure_remastered_shell_materials(SDL_Renderer* renderer) {
+  if (renderer == nullptr) {
+    return nullptr;
+  }
+  if (renderer != this->remastered_shell_material_renderer) {
+    this->remastered_shell_materials.reset();
+    this->remastered_shell_material_renderer = renderer;
+    this->remastered_shell_materials_attempted = false;
+  }
+  if (!this->remastered_shell_materials_attempted) {
+    this->remastered_shell_materials_attempted = true;
+    try {
+      const auto root =
+          host_path_for_mac_filename(":Remastered", false);
+      const auto catalog =
+          realmz::remaster::assets::ShellMaterialCatalog::load(
+              root / "phase1.runtime-manifest.json",
+              root / "phase1.census.json", root);
+      this->remastered_shell_materials =
+          std::make_unique<ShellMaterialTextureCache>(renderer, catalog);
+    } catch (const std::exception&) {
+      this->remastered_shell_materials.reset();
+      static bool warned = false;
+      if (!warned) {
+        wm_log.warning_f(
+            "Could not validate and realize Remastered shell materials; "
+            "using flat colors");
+        warned = true;
+      }
+    }
+  }
+  return this->remastered_shell_materials.get();
 }
 
 void WindowManager::present_classic_frame() {
@@ -4391,11 +4563,21 @@ void WindowManager::present_remastered_frame() {
       focused_control = control->region;
     }
   }
-  std::optional<realmz::presentation::ShellRegionId> pressed_control =
-      this->remastered_pressed_shell_control
-      ? std::optional<realmz::presentation::ShellRegionId>{
-            this->remastered_pressed_shell_control->region}
-      : std::nullopt;
+  std::optional<realmz::presentation::ShellRegionId> pressed_control;
+  if (const auto& captured = this->remastered_pressed_shell_control) {
+    const auto control = std::ranges::find_if(
+        this->remastered_shell_controls,
+        [&captured](const auto& candidate) {
+          return candidate.enabled &&
+              (candidate.region == captured->region) &&
+              (candidate.kind == captured->kind) &&
+              (candidate.focus_identifier == captured->focus_identifier) &&
+              (candidate.payload == captured->payload);
+        });
+    if (control != this->remastered_shell_controls.end()) {
+      pressed_control = control->region;
+    }
+  }
   if (const auto pressed_identifier =
           this->remastered_shell_keyboard.pressed_identifier()) {
     const auto control = std::ranges::find_if(
@@ -4415,6 +4597,8 @@ void WindowManager::present_remastered_frame() {
     // Classic renderer still honors the user's filter preference separately.
     SDL_SetTextureScaleMode(texture.get(), SDL_SCALEMODE_NEAREST);
   }
+  const auto* shell_materials =
+      this->ensure_remastered_shell_materials(renderer);
   for (const auto& command : this->adaptive_shell_plan->commands) {
     if (const auto* clear =
             std::get_if<realmz::presentation::ClearShellCommand>(&command)) {
@@ -4436,15 +4620,18 @@ void WindowManager::present_remastered_frame() {
                        &command)) {
       const auto destination = sdl_rect(panel->destination);
       const auto color = shell_panel_color(panel->panel);
-      SDL_SetRenderDrawColor(
-          renderer, color.red, color.green, color.blue, 255);
-      SDL_RenderFillRect(renderer, &destination);
+      (void)draw_shell_material_or_color(
+          renderer, shell_materials,
+          realmz::remaster::assets::ShellSurfaceState::panel,
+          destination,
+          SDL_Color{color.red, color.green, color.blue, 255});
       SDL_SetRenderDrawColor(renderer, 91, 76, 55, 255);
       SDL_RenderRect(renderer, &destination);
       if (shell_model && shell_font) {
         draw_shell_panel_contents(
             renderer,
             shell_font,
+            shell_materials,
             panel->panel,
             panel->destination,
             *shell_model,
@@ -6181,6 +6368,12 @@ void WindowManager::recomposite_all() {
   this->recomposite(nullptr);
 }
 
+void WindowManager::invalidate_remastered_shell_materials() {
+  this->remastered_shell_materials.reset();
+  this->remastered_shell_material_renderer = nullptr;
+  this->remastered_shell_materials_attempted = false;
+}
+
 void WindowManager::set_scale_mode(SDL_ScaleMode mode) {
   if (mode == this->scale_mode) {
     return;
@@ -6377,6 +6570,7 @@ void WindowManager::set_presentation_mode(
   this->remastered_combat_cursor_sample.reset();
   this->remastered_combat_action_page =
       realmz::presentation::CombatActionPage::primary;
+  this->invalidate_remastered_shell_materials();
   this->presentation_host.set_mode(mode);
   realmz::remaster::assets::setResourcePresentationMode(mode);
   RealmzRefreshPresentationAssets();

@@ -97,6 +97,7 @@ add_library(realmz_asset_core STATIC
     src/remaster/assets/AssetResolver.cpp
     src/remaster/assets/PayloadDigest.cpp
     src/remaster/assets/ResourceSelectionHook.cpp
+    src/remaster/assets/ShellMaterialCatalog.cpp
 )
 target_include_directories(realmz_asset_core PUBLIC src)
 realmz_configure_core_target(realmz_asset_core)
@@ -293,6 +294,13 @@ if(REALMZ_BUILD_CORE_TESTS)
     realmz_configure_core_target(AssetResolverTest)
     add_test(NAME AssetResolverTest
         COMMAND AssetResolverTest ${CMAKE_SOURCE_DIR})
+
+    add_executable(ShellMaterialCatalogTest
+        src/tests/ShellMaterialCatalogTest.cpp)
+    target_link_libraries(ShellMaterialCatalogTest PRIVATE realmz_asset_core)
+    realmz_configure_core_target(ShellMaterialCatalogTest)
+    add_test(NAME ShellMaterialCatalogTest
+        COMMAND ShellMaterialCatalogTest ${CMAKE_SOURCE_DIR})
 
     add_executable(ResourceSelectionHookTest
         src/tests/ResourceSelectionHookTest.cpp)
@@ -654,6 +662,7 @@ set(SOURCES
     src/presentation/LegacyGameSnapshotSource.cpp
     src/presentation/SemanticInputBoundary.cpp
     src/QuickDraw.cpp
+    src/remaster/assets/ShellMaterialTextureCache.cpp
     src/ResourceManager.cpp
     src/SDLHelpers.cpp
     src/SoundManager.cpp
@@ -764,6 +773,19 @@ target_link_libraries(realmz_lib
 )
 
 if(REALMZ_BUILD_CORE_TESTS)
+    add_executable(ShellMaterialTextureCacheTest
+        src/tests/ShellMaterialTextureCacheTest.cpp
+        src/remaster/assets/ShellMaterialTextureCache.cpp
+        src/SDLHelpers.cpp)
+    target_include_directories(ShellMaterialTextureCacheTest PRIVATE src)
+    target_link_libraries(ShellMaterialTextureCacheTest PRIVATE
+        realmz_asset_core
+        SDL3::SDL3-shared
+        SDL3_image::SDL3_image)
+    realmz_configure_core_target(ShellMaterialTextureCacheTest)
+    add_test(NAME ShellMaterialTextureCacheTest
+        COMMAND ShellMaterialTextureCacheTest ${CMAKE_SOURCE_DIR})
+
     add_executable(SemanticReplayChildBootstrapTest
         src/tests/SemanticReplayChildBootstrapTest.cpp)
     realmz_configure_core_target(SemanticReplayChildBootstrapTest)
@@ -1019,6 +1041,27 @@ elseif(WIN32)
         "base/Realmz/Scenarios/City of Bywater"
         DESTINATION "${CMAKE_INSTALL_BINDIR}/Scenarios")
     install(FILES ${CHARACTER_DATA_FILES} DESTINATION "${CMAKE_INSTALL_BINDIR}/Character Files")
+    install(FILES
+        "assets/remastered/scopes/phase1.placeholder-manifest.json"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/Remastered"
+        RENAME "phase1.placeholder-manifest.json")
+    install(FILES
+        "assets/remastered/scopes/phase1.runtime-manifest.json"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/Remastered"
+        RENAME "phase1.runtime-manifest.json")
+    install(FILES
+        "assets/remastered/scopes/phase1.census.json"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/Remastered"
+        RENAME "phase1.census.json")
+    install(FILES
+        "assets/remastered/scopes/phase1.json"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}/Remastered"
+        RENAME "phase1.scope.json")
+    install(DIRECTORY
+        "assets/remastered/style-proof/generation/outputs/"
+        DESTINATION
+            "${CMAKE_INSTALL_BINDIR}/Remastered/style-proof/generation/outputs"
+        FILES_MATCHING PATTERN "*.png")
 
     # CMake's RUNTIME_DEPENDENCIES argument to install should work to include necessary
     # runtime dlls alongside the Realmz executable, but unfortunately (as of 4.1.1) it does

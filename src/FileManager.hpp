@@ -14,10 +14,13 @@
 
 #include <stdio.h>
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 
+std::filesystem::path host_path_for_mac_filename(
+    const std::string& mac_path, bool implicitly_local);
 std::string host_filename_for_mac_filename(const std::string& mac_path, bool implicitly_local);
 std::string host_filename_for_FSSpec(const FSSpec* fsp);
 

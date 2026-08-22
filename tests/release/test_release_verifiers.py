@@ -211,6 +211,23 @@ class MacArtifactVerifierTest(unittest.TestCase):
         (remastered / "phase1.placeholder-manifest.json").write_text(
             '{"schema_version":1,"status":"placeholder"}\n', encoding="utf-8"
         )
+        shutil.copyfile(
+            REPO / "assets/remastered/scopes/phase1.runtime-manifest.json",
+            remastered / "phase1.runtime-manifest.json",
+        )
+        shutil.copyfile(
+            REPO / "assets/remastered/scopes/phase1.census.json",
+            remastered / "phase1.census.json",
+        )
+        material_source = (
+            REPO / "assets/remastered/style-proof/generation/outputs"
+        )
+        material_destination = (
+            remastered / "style-proof/generation/outputs"
+        )
+        material_destination.mkdir(parents=True)
+        for source in material_source.glob("*.png"):
+            shutil.copyfile(source, material_destination / source.name)
 
         notices = self.resources / "Notices"
         notices.mkdir()
@@ -332,6 +349,68 @@ INFO
         result = self.run_verifier("--mode", "development")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("macOS artifact verification passed", result.stdout)
+
+    def test_native_shell_material_bundle_is_hash_bound_and_public_only(self) -> None:
+        material = (
+            self.resources
+            / "Remastered/style-proof/generation/outputs"
+            / "01_ui_material_ppat_128.png"
+        )
+        original = material.read_bytes()
+        material.write_bytes(original + b"tampered")
+        result = self.run_verifier("--mode", "development")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("approved runtime output hash mismatch", result.stderr)
+
+        material.write_bytes(original)
+        private_input = (
+            self.resources
+            / "Remastered/style-proof/generation/raw/attempt.png"
+        )
+        private_input.parent.mkdir(parents=True)
+        private_input.write_bytes(b"private")
+        result = self.run_verifier("--mode", "development")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("private Remastered directory leaked", result.stderr)
+
+        shutil.rmtree(private_input.parent)
+        unexpected = (
+            self.resources
+            / "Remastered/style-proof/generation/postprocess/receipt.json"
+        )
+        unexpected.parent.mkdir(parents=True)
+        unexpected.write_text("private\n", encoding="utf-8")
+        result = self.run_verifier("--mode", "development")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("private Remastered directory leaked", result.stderr)
+
+    def test_remastered_metadata_symlink_is_rejected(self) -> None:
+        runtime = self.resources / "Remastered/phase1.runtime-manifest.json"
+        external = self.root / "external-runtime-manifest.json"
+        external.write_bytes(runtime.read_bytes())
+        runtime.unlink()
+        runtime.symlink_to(external)
+        result = self.run_verifier("--mode", "development")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink leaked into bundled Remastered tree", result.stderr)
+
+    def test_every_approved_runtime_output_is_required(self) -> None:
+        output = (
+            self.resources
+            / "Remastered/style-proof/generation/outputs"
+            / "05_portrait_cicn_257.png"
+        )
+        output.unlink()
+        result = self.run_verifier("--mode", "development")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("approved runtime output is missing", result.stderr)
+
+    def test_native_shell_material_metadata_is_required(self) -> None:
+        census = self.resources / "Remastered/phase1.census.json"
+        census.unlink()
+        result = self.run_verifier("--mode", "development")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing or empty asset census", result.stderr)
 
     def test_original_bundle_identity_is_rejected(self) -> None:
         plist_path = self.app / "Contents" / "Info.plist"
